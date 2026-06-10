@@ -2,4 +2,3 @@ node_modules/
 tmp/
 *.tgz
 .DS_Store
-.agent-portal/
