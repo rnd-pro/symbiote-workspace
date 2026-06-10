@@ -1,10 +1,12 @@
 /**
  * symbiote-workspace — Node-safe root entry point.
  *
- * Exports schema, validation, planning, and sharing utilities.
+ * Exports schema, validation, planning, sharing, and plugin utilities.
  * Does NOT import browser-only code (DOM, CustomElements).
+ * Does NOT import server-only code (node:fs, node:http).
  *
  * Browser-only assembly lives in `symbiote-workspace/browser`.
+ * Server mode lives in `symbiote-workspace/server`.
  */
 
 export {
@@ -39,3 +41,17 @@ export {
 export {
   checkDesignGuardrails,
 } from './validation/index.js';
+
+export {
+  PLUGIN_SCHEMA,
+  PLUGIN_CATEGORIES,
+  validatePluginDefinition,
+  registerPlugin,
+  activatePlugin,
+  unregisterPlugin,
+  listPlugins,
+  getPlugin,
+  getPluginStatus,
+  clearPlugins,
+  validatePlugin,
+} from './plugins/index.js';

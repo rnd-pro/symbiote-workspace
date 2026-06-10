@@ -1,8 +1,8 @@
 {
   "name": "symbiote-workspace",
-  "version": "0.1.0-alpha.1",
+  "version": "0.2.0-alpha.1",
   "type": "module",
-  "description": "Agent-driven workspace orchestration: intent → plan → build → serialize → share. Portable workspace configs over symbiote-ui primitives.",
+  "description": "Agent-driven workspace orchestration with plugin system: intent → plan → build → serve. Portable workspace configs, plugin registry, and server mode.",
   "main": "index.js",
   "exports": {
     ".": {
@@ -34,16 +34,27 @@
       "import": "./validation/index.js",
       "default": "./validation/index.js"
     },
+    "./plugins": {
+      "import": "./plugins/index.js",
+      "default": "./plugins/index.js"
+    },
+    "./server": {
+      "import": "./server/index.js",
+      "default": "./server/index.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
     "index.js",
     "browser.js",
+    "cli.js",
     "schema/",
     "loader/",
     "constructor/",
     "sharing/",
     "validation/",
+    "plugins/",
+    "server/",
     "README.md",
     "LICENSE",
     "CHANGELOG.md"
@@ -63,12 +74,20 @@
     "orchestration",
     "symbiote",
     "agent",
+    "plugins",
     "runtime-ui",
     "portable-config",
-    "web-components"
+    "web-components",
+    "server"
   ],
   "peerDependencies": {
-    "symbiote-ui": ">=0.3.0-alpha.40"
+    "symbiote-ui": ">=0.3.0-alpha.40",
+    "symbiote-engine": ">=0.3.0-alpha.11"
+  },
+  "peerDependenciesMeta": {
+    "symbiote-engine": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "symbiote-ui": "0.3.0-alpha.42"
