@@ -1,8 +1,8 @@
 # symbiote-workspace
 
-Agent-driven workspace orchestration: **intent → plan → build → serialize → share**.
+Agent-driven workspace orchestration with plugin system: **intent → plan → build → serve**.
 
-Portable workspace configs over [symbiote-ui](https://github.com/RND-PRO/symbiote-ui) primitives.
+Portable workspace configs over [symbiote-ui](https://github.com/RND-PRO/symbiote-ui) primitives. Optional server mode via [symbiote-engine](https://github.com/RND-PRO/symbiote-engine).
 
 ## Install
 
@@ -10,14 +10,19 @@ Portable workspace configs over [symbiote-ui](https://github.com/RND-PRO/symbiot
 npm install symbiote-workspace
 ```
 
-## Architecture
+For server mode (optional):
 
+```bash
+npm install symbiote-workspace symbiote-engine
 ```
-symbiote-workspace (orchestration)
-├── depends on: symbiote-ui (primitives)
-├── optionally: symbiote-engine (persistence)
-└── consumed by: Agent Portal, any chat host, standalone apps
-```
+
+## Entry Points
+
+- `symbiote-workspace` — Node-safe root: schema, loader, constructor, sharing, validation, plugins
+- `symbiote-workspace/browser` — Browser-only: DOM mounting + all isomorphic APIs
+- `symbiote-workspace/plugins` — Plugin schema, validation, and registry
+- `symbiote-workspace/server` — Node-only: workspace server + plugin loader
+- `symbiote-workspace/schema` — Schema definitions and validators only
 
 ### Modules
 
@@ -28,12 +33,8 @@ symbiote-workspace (orchestration)
 | **Constructor** | `symbiote-workspace/constructor` | Intent → workspace plan, template matching |
 | **Sharing** | `symbiote-workspace/sharing` | Export, import, diff, merge configs |
 | **Validation** | `symbiote-workspace/validation` | Design guardrails, register density checks |
-
-### Entry Points
-
-- `symbiote-workspace` — Node-safe root: all isomorphic APIs
-- `symbiote-workspace/browser` — Browser-only: DOM mounting + all isomorphic APIs
-- `symbiote-workspace/schema` — Schema definitions and validators only
+| **Plugins** | `symbiote-workspace/plugins` | Plugin format, validation, registry with lifecycle |
+| **Server** | `symbiote-workspace/server` | Plugin loader + workspace server wrapper |
 
 ## Quick Start
 
@@ -62,6 +63,96 @@ console.log(guardrails.pass); // true
 // 4. Export for sharing
 let { json } = exportConfig(config);
 console.log(json); // portable JSON, no auth/server data
+```
+
+## Plugin System
+
+Everything beyond core libraries is a plugin: tunnel providers, handler packs, UI components, marketplace, enterprise features.
+
+### Plugin Format
+
+```javascript
+// my-plugin.plugin.js
+export default {
+  name: '@symbiote/my-plugin',
+  version: '1.0.0',
+  category: 'handler',            // handler | provider | component | theme | integration
+
+  // Engine handlers (registered in symbiote-engine Registry)
+  handlers: [
+    {
+      type: 'my/action',
+      driver: {
+        inputs: [{ name: 'data', type: 'any' }],
+        outputs: [{ name: 'result', type: 'any' }],
+      },
+      lifecycle: {
+        execute: async (inputs, params) => { /* ... */ },
+      },
+    },
+  ],
+
+  // UI components (tag names for symbiote-ui catalog)
+  components: ['sn-my-widget'],
+
+  // Workspace integration
+  workspace: {
+    configSchema: { myParam: { type: 'string' } },
+  },
+
+  // Lifecycle hooks
+  activate: (ctx) => { /* ctx.server, ctx.graph, ctx.wss, ctx.broadcast */ },
+  deactivate: () => { /* cleanup */ },
+};
+```
+
+### Plugin API
+
+```javascript
+import {
+  registerPlugin,
+  activatePlugin,
+  unregisterPlugin,
+  listPlugins,
+  validatePlugin,
+} from 'symbiote-workspace/plugins';
+
+let result = registerPlugin(myPlugin);
+console.log(result.ok); // true
+
+await activatePlugin('my-plugin', { server, graph });
+
+console.log(listPlugins());
+// [{ name: 'my-plugin', version: '1.0.0', category: 'handler', status: 'active' }]
+```
+
+## Server Mode
+
+Start a workspace server with plugins. Requires `symbiote-engine` as a peer dependency.
+
+### Programmatic
+
+```javascript
+import { createWorkspaceServer } from 'symbiote-workspace/server';
+
+let { server, wss, graph, plugins, close } = await createWorkspaceServer({
+  port: 3100,
+  pluginsDir: './plugins',           // scan for .plugin.js files
+  plugins: ['@symbiote/pack-ai'],    // npm packages
+  handlersDir: './handlers',         // .handler.js files (engine compat)
+  workflowFile: './project.workflow.json',
+  verbose: true,
+});
+```
+
+### CLI
+
+```bash
+npx symbiote-workspace serve --port 3100 --plugins-dir ./plugins
+npx symbiote-workspace serve --plugins @symbiote/tunnel-cloudflare
+npx symbiote-workspace validate workspace.config.json
+npx symbiote-workspace plan "build me a video editor"
+npx symbiote-workspace list-templates
 ```
 
 ## Workspace Config
@@ -121,6 +212,12 @@ listTemplates(); // ['chat', 'editor', 'graph', 'dashboard']
 let template = getTemplate('chat');
 console.log(template.config); // Full workspace config
 ```
+
+## Related Packages
+
+- [`symbiote-ui`](https://github.com/RND-PRO/symbiote-ui) - Web Components, provider catalogs, layout metadata, and WebMCP descriptors.
+- [`symbiote-engine`](https://github.com/RND-PRO/symbiote-engine) - runtime execution, CLI commands, server helpers, persistence, and handlers.
+- [`symbiote-node`](https://github.com/RND-PRO/symbiote-node) - terminal migration facade for older imports.
 
 ## License
 
