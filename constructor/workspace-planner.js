@@ -16,27 +16,47 @@ let WORKSPACE_TEMPLATES = {
       version: WORKSPACE_SCHEMA_VERSION,
       name: 'Chat Workspace',
       register: 'tool',
+      groups: [
+        { id: 'chat', name: 'Chat', icon: 'chat' },
+      ],
+      sections: [
+        { id: 'messages', label: 'Messages', icon: 'chat', order: 0, groupId: 'chat' },
+      ],
+      panelTypes: {
+        conversations: {
+          title: 'Conversations',
+          icon: 'forum',
+          component: 'sn-tree-panel',
+          behavior: { importance: 30, minInlineSize: 200 },
+        },
+        transcript: {
+          title: 'Messages',
+          icon: 'chat',
+          component: 'chat-transcript',
+          behavior: { importance: 80 },
+        },
+        composer: {
+          title: 'Composer',
+          icon: 'edit',
+          component: 'chat-composer',
+          behavior: { importance: 90, minBlockSize: 80 },
+        },
+      },
       layout: {
         type: 'split',
         direction: 'horizontal',
-        ratio: [0.25, 0.75],
-        children: [
-          {
-            type: 'single',
-            component: 'sn-tree-panel',
-            label: 'Conversations',
-          },
-          {
-            type: 'stack',
-            children: [
-              { type: 'single', component: 'sn-chat-transcript', label: 'Messages' },
-              { type: 'single', component: 'sn-chat-composer', label: 'Composer' },
-            ],
-          },
-        ],
+        ratio: 0.25,
+        first: { type: 'panel', panelType: 'conversations' },
+        second: {
+          type: 'split',
+          direction: 'vertical',
+          ratio: 0.75,
+          first: { type: 'panel', panelType: 'transcript' },
+          second: { type: 'panel', panelType: 'composer' },
+        },
       },
       components: {
-        catalog: ['sn-tree-panel', 'sn-chat-transcript', 'sn-chat-composer'],
+        catalog: ['sn-tree-panel', 'chat-transcript', 'chat-composer'],
       },
     },
   },
@@ -48,30 +68,47 @@ let WORKSPACE_TEMPLATES = {
       version: WORKSPACE_SCHEMA_VERSION,
       name: 'Editor Workspace',
       register: 'tool',
+      groups: [
+        { id: 'editor', name: 'Editor', icon: 'code' },
+      ],
+      sections: [
+        { id: 'source', label: 'Source', icon: 'code', order: 0, groupId: 'editor' },
+      ],
+      panelTypes: {
+        files: {
+          title: 'Files',
+          icon: 'folder',
+          component: 'sn-tree-panel',
+          behavior: { importance: 30, minInlineSize: 180 },
+        },
+        source: {
+          title: 'Source',
+          icon: 'code',
+          component: 'source-editor',
+          behavior: { importance: 90 },
+        },
+        preview: {
+          title: 'Preview',
+          icon: 'preview',
+          component: 'sn-canvas-viewport',
+          behavior: { importance: 50, minInlineSize: 280 },
+        },
+      },
       layout: {
         type: 'split',
         direction: 'horizontal',
-        ratio: [0.2, 0.5, 0.3],
-        children: [
-          {
-            type: 'single',
-            component: 'sn-tree-panel',
-            label: 'Files',
-          },
-          {
-            type: 'single',
-            component: 'sn-source-editor',
-            label: 'Source',
-          },
-          {
-            type: 'single',
-            component: 'sn-output-preview',
-            label: 'Preview',
-          },
-        ],
+        ratio: 0.2,
+        first: { type: 'panel', panelType: 'files' },
+        second: {
+          type: 'split',
+          direction: 'horizontal',
+          ratio: 0.6,
+          first: { type: 'panel', panelType: 'source' },
+          second: { type: 'panel', panelType: 'preview' },
+        },
       },
       components: {
-        catalog: ['sn-tree-panel', 'sn-source-editor', 'sn-output-preview'],
+        catalog: ['sn-tree-panel', 'source-editor', 'sn-canvas-viewport'],
       },
     },
   },
@@ -83,27 +120,39 @@ let WORKSPACE_TEMPLATES = {
       version: WORKSPACE_SCHEMA_VERSION,
       name: 'Graph Workspace',
       register: 'tool',
+      groups: [
+        { id: 'graph', name: 'Graph', icon: 'hub' },
+      ],
+      sections: [
+        { id: 'canvas', label: 'Canvas', icon: 'hub', order: 0, groupId: 'graph' },
+      ],
+      panelTypes: {
+        canvas: {
+          title: 'Canvas',
+          icon: 'hub',
+          component: 'node-canvas',
+          behavior: { importance: 90 },
+          menuActions: [
+            { id: 'zoom-fit', label: 'Fit to View', icon: 'fit_screen' },
+            { id: 'snap-grid', label: 'Snap to Grid', icon: 'grid_on', active: true },
+          ],
+        },
+        inspector: {
+          title: 'Inspector',
+          icon: 'tune',
+          component: 'inspector-panel',
+          behavior: { importance: 40, minInlineSize: 240 },
+        },
+      },
       layout: {
         type: 'split',
         direction: 'horizontal',
-        ratio: [0.7, 0.3],
-        children: [
-          {
-            type: 'stack',
-            children: [
-              { type: 'single', component: 'sn-toolbar', label: 'Toolbar' },
-              { type: 'single', component: 'sn-graph-canvas', label: 'Canvas' },
-            ],
-          },
-          {
-            type: 'single',
-            component: 'sn-inspector-panel',
-            label: 'Inspector',
-          },
-        ],
+        ratio: 0.7,
+        first: { type: 'panel', panelType: 'canvas' },
+        second: { type: 'panel', panelType: 'inspector' },
       },
       components: {
-        catalog: ['sn-toolbar', 'sn-graph-canvas', 'sn-inspector-panel'],
+        catalog: ['node-canvas', 'inspector-panel'],
       },
     },
   },
@@ -115,33 +164,43 @@ let WORKSPACE_TEMPLATES = {
       version: WORKSPACE_SCHEMA_VERSION,
       name: 'Dashboard Workspace',
       register: 'presentation',
+      groups: [
+        { id: 'dashboard', name: 'Dashboard', icon: 'dashboard' },
+      ],
+      sections: [
+        { id: 'overview', label: 'Overview', icon: 'dashboard', order: 0, groupId: 'dashboard' },
+      ],
+      panelTypes: {
+        'panel-1': { title: 'Panel 1', icon: 'analytics', component: 'sn-card' },
+        'panel-2': { title: 'Panel 2', icon: 'insights', component: 'sn-card' },
+        'panel-3': { title: 'Panel 3', icon: 'monitoring', component: 'sn-card' },
+        'panel-4': { title: 'Panel 4', icon: 'bar_chart', component: 'sn-card' },
+      },
       layout: {
         type: 'split',
         direction: 'vertical',
-        ratio: [0.5, 0.5],
-        children: [
-          {
-            type: 'split',
-            direction: 'horizontal',
-            ratio: [0.5, 0.5],
-            children: [
-              { type: 'single', component: 'sn-panel', label: 'Panel 1' },
-              { type: 'single', component: 'sn-panel', label: 'Panel 2' },
-            ],
-          },
-          {
-            type: 'split',
-            direction: 'horizontal',
-            ratio: [0.5, 0.5],
-            children: [
-              { type: 'single', component: 'sn-panel', label: 'Panel 3' },
-              { type: 'single', component: 'sn-panel', label: 'Panel 4' },
-            ],
-          },
-        ],
+        ratio: 0.5,
+        first: {
+          type: 'split',
+          direction: 'horizontal',
+          ratio: 0.5,
+          first: { type: 'panel', panelType: 'panel-1' },
+          second: { type: 'panel', panelType: 'panel-2' },
+        },
+        second: {
+          type: 'split',
+          direction: 'horizontal',
+          ratio: 0.5,
+          first: { type: 'panel', panelType: 'panel-3' },
+          second: { type: 'panel', panelType: 'panel-4' },
+        },
+      },
+      rootBehavior: {
+        responsiveMode: 'stack',
+        responsiveBreakpoint: 768,
       },
       components: {
-        catalog: ['sn-panel'],
+        catalog: ['sn-card'],
       },
     },
   },
@@ -156,23 +215,93 @@ let WORKSPACE_TEMPLATES = {
       theme: {
         params: { mode: 'dark', hue: 218, chroma: 30 },
       },
+      groups: [
+        { id: 'video-editor', name: 'Video Editor', icon: 'movie', color: 'var(--sn-tab-accent-5)' },
+      ],
+      sections: [
+        { id: 'studio', label: 'Studio', icon: 'movie', order: 0, groupId: 'video-editor', layoutId: 'studio' },
+        { id: 'preview', label: 'Preview', icon: 'smart_display', order: 100, groupId: 'video-editor', layoutId: 'preview' },
+        { id: 'effects', label: 'Effects', icon: 'auto_awesome', order: 200, groupId: 'video-editor', layoutId: 'effects' },
+      ],
+      panelTypes: {
+        viewport: {
+          title: 'Viewport',
+          icon: 'smart_display',
+          component: 'sn-canvas-viewport',
+          behavior: { importance: 90, minInlineSize: 320, minBlockSize: 200 },
+        },
+        timeline: {
+          title: 'Timeline',
+          icon: 'view_timeline',
+          component: 'sn-timeline-editor',
+          behavior: { importance: 80, minBlockSize: 120, collapse: 'auto' },
+        },
+        'node-graph': {
+          title: 'Node Graph',
+          icon: 'hub',
+          component: 'node-canvas',
+          behavior: { importance: 50, minInlineSize: 300 },
+          menuActions: [
+            { id: 'zoom-fit', label: 'Fit to View', icon: 'fit_screen' },
+          ],
+        },
+        inspector: {
+          title: 'Properties',
+          icon: 'tune',
+          component: 'inspector-panel',
+          behavior: { importance: 30, minInlineSize: 200 },
+        },
+      },
+      layouts: {
+        studio: {
+          type: 'split',
+          direction: 'vertical',
+          ratio: 0.6,
+          first: {
+            type: 'split',
+            direction: 'horizontal',
+            ratio: 0.45,
+            first: { type: 'panel', panelType: 'viewport' },
+            second: {
+              type: 'split',
+              direction: 'horizontal',
+              ratio: 0.65,
+              first: { type: 'panel', panelType: 'node-graph' },
+              second: { type: 'panel', panelType: 'inspector' },
+            },
+          },
+          second: { type: 'panel', panelType: 'timeline' },
+        },
+        preview: {
+          type: 'split',
+          direction: 'vertical',
+          ratio: 0.7,
+          first: { type: 'panel', panelType: 'viewport' },
+          second: { type: 'panel', panelType: 'timeline' },
+        },
+        effects: {
+          type: 'split',
+          direction: 'horizontal',
+          ratio: 0.6,
+          first: { type: 'panel', panelType: 'node-graph' },
+          second: { type: 'panel', panelType: 'inspector' },
+        },
+      },
       layout: {
         type: 'split',
         direction: 'vertical',
-        ratio: [0.6, 0.4],
-        children: [
-          {
-            type: 'split',
-            direction: 'horizontal',
-            ratio: [0.45, 0.35, 0.2],
-            children: [
-              { type: 'single', component: 'sn-canvas-viewport', label: 'Viewport' },
-              { type: 'single', component: 'node-canvas', label: 'Node Graph' },
-              { type: 'single', component: 'inspector-panel', label: 'Properties' },
-            ],
-          },
-          { type: 'single', component: 'sn-timeline-editor', label: 'Timeline' },
-        ],
+        ratio: 0.6,
+        first: { type: 'panel', panelType: 'viewport' },
+        second: { type: 'panel', panelType: 'timeline' },
+      },
+      events: [
+        { id: 'timeline-to-viewport', sourcePanel: 'timeline', event: 'frame-change', targetPanel: 'viewport', targetMethod: 'setFrame' },
+        { id: 'timeline-playback', sourcePanel: 'timeline', event: 'playback-state', targetPanel: 'viewport', targetProperty: 'playing' },
+      ],
+      rootBehavior: {
+        responsiveMode: 'drawer',
+        responsiveBreakpoint: 720,
+        swipeControl: 'edge',
       },
       components: {
         catalog: ['sn-canvas-viewport', 'node-canvas', 'inspector-panel', 'sn-timeline-editor'],

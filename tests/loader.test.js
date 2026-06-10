@@ -9,17 +9,15 @@ import {
 } from '../loader/index.js';
 
 let VALID_CONFIG = {
-  version: '0.1.0',
+  version: '0.2.0',
   name: 'Test',
   register: 'tool',
   layout: {
     type: 'split',
     direction: 'horizontal',
-    ratio: [0.3, 0.7],
-    children: [
-      { type: 'single', component: 'sn-tree-panel' },
-      { type: 'single', component: 'sn-editor' },
-    ],
+    ratio: 0.3,
+    first: { type: 'panel', panelType: 'tree' },
+    second: { type: 'panel', panelType: 'editor' },
   },
   components: {
     catalog: ['sn-tree-panel'],

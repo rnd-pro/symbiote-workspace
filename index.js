@@ -55,3 +55,10 @@ export {
   clearPlugins,
   validatePlugin,
 } from './plugins/index.js';
+
+export {
+  dispatch,
+  TOOLS,
+  isMutating,
+  createSession,
+} from './runtime/index.js';

@@ -1,6 +1,11 @@
 import {
   WORKSPACE_SCHEMA_VERSION,
   WORKSPACE_REGISTER_VALUES,
+  COLLAPSE_POLICIES,
+  OVERFLOW_POLICIES,
+  RESPONSIVE_MODES,
+  MOBILE_DOCKS,
+  SWIPE_CONTROLS,
 } from './workspace-schema.js';
 
 /** @type {Set<string>} */
@@ -119,14 +124,73 @@ export function validateWorkspaceConfig(config, options = {}) {
     validateLayoutNode(config.layout, 'layout', errors, warnings);
   }
 
+  // Validate named layouts
+  if (config.layouts !== undefined) {
+    if (!isObject(config.layouts)) {
+      errors.push({ path: 'layouts', message: 'Field "layouts" must be an object.', severity: 'error' });
+    } else {
+      for (let [layoutId, layoutNode] of Object.entries(config.layouts)) {
+        validateLayoutNode(layoutNode, `layouts.${layoutId}`, errors, warnings);
+      }
+    }
+  }
+
+  // Validate groups
+  if (config.groups !== undefined) {
+    if (!Array.isArray(config.groups)) {
+      errors.push({ path: 'groups', message: 'Field "groups" must be an array.', severity: 'error' });
+    } else {
+      validateGroups(config.groups, errors, warnings);
+    }
+  }
+
+  // Validate sections
+  if (config.sections !== undefined) {
+    if (!Array.isArray(config.sections)) {
+      errors.push({ path: 'sections', message: 'Field "sections" must be an array.', severity: 'error' });
+    } else {
+      let groupIds = new Set((config.groups || []).map((g) => g.id));
+      validateSections(config.sections, groupIds, errors, warnings);
+    }
+  }
+
+  // Validate panelTypes
+  if (config.panelTypes !== undefined) {
+    if (!isObject(config.panelTypes)) {
+      errors.push({ path: 'panelTypes', message: 'Field "panelTypes" must be an object.', severity: 'error' });
+    } else {
+      validatePanelTypes(config.panelTypes, errors, warnings);
+    }
+  }
+
+  // Validate events
+  if (config.events !== undefined) {
+    if (!Array.isArray(config.events)) {
+      errors.push({ path: 'events', message: 'Field "events" must be an array.', severity: 'error' });
+    } else {
+      validateEvents(config.events, errors, warnings);
+    }
+  }
+
+  // Validate rootBehavior
+  if (config.rootBehavior !== undefined) {
+    validateBehavior(config.rootBehavior, 'rootBehavior', errors, warnings);
+  }
+
+  // Cross-reference: layout panelTypes → panelTypes definitions
+  if (config.panelTypes && config.layout) {
+    crossReferenceLayout(config.layout, config.panelTypes, 'layout', errors, warnings);
+  }
+
   if (config.components !== undefined && !isObject(config.components)) {
     errors.push({ path: 'components', message: 'Field "components" must be an object.', severity: 'error' });
   }
 
   if (options.strict) {
     let knownKeys = new Set([
-      'version', 'name', 'register', 'theme', 'layout',
-      'components', 'data', 'engine',
+      'version', 'name', 'register', 'theme', 'layout', 'layouts',
+      'components', 'data', 'engine', 'groups', 'sections', 'panelTypes',
+      'events', 'rootBehavior',
     ]);
     for (let key of Object.keys(config)) {
       if (!knownKeys.has(key)) {
@@ -148,39 +212,196 @@ export function validateWorkspaceConfig(config, options = {}) {
   };
 }
 
-let LAYOUT_TYPES = new Set(['split', 'tabs', 'sidebar', 'stack', 'single']);
+let LAYOUT_TYPES = new Set(['panel', 'split']);
 
 function validateLayoutNode(node, path, errors, warnings) {
   if (!isObject(node)) return;
 
-  if (node.type && !LAYOUT_TYPES.has(node.type)) {
+  if (!node.type) {
+    errors.push({
+      path: `${path}.type`,
+      message: 'Layout node requires a "type" field.',
+      severity: 'error',
+    });
+    return;
+  }
+
+  if (!LAYOUT_TYPES.has(node.type)) {
     warnings.push({
       path: `${path}.type`,
-      message: `Unknown layout type: "${node.type}".`,
+      message: `Unknown layout type: "${node.type}". Expected: panel or split.`,
       severity: 'warning',
     });
   }
 
-  if (node.children && !Array.isArray(node.children)) {
-    errors.push({
-      path: `${path}.children`,
-      message: 'Layout "children" must be an array.',
-      severity: 'error',
-    });
-  }
-
-  if (Array.isArray(node.children)) {
-    for (let i = 0; i < node.children.length; i++) {
-      validateLayoutNode(node.children[i], `${path}.children[${i}]`, errors, warnings);
+  if (node.type === 'panel') {
+    if (!node.panelType || typeof node.panelType !== 'string') {
+      warnings.push({
+        path: `${path}.panelType`,
+        message: 'Panel node should have a "panelType" string.',
+        severity: 'warning',
+      });
     }
   }
 
-  if (node.ratio && !Array.isArray(node.ratio)) {
-    errors.push({
-      path: `${path}.ratio`,
-      message: 'Layout "ratio" must be an array of numbers.',
-      severity: 'error',
-    });
+  if (node.type === 'split') {
+    if (!node.direction || !['horizontal', 'vertical'].includes(node.direction)) {
+      errors.push({
+        path: `${path}.direction`,
+        message: 'Split node requires direction: "horizontal" or "vertical".',
+        severity: 'error',
+      });
+    }
+
+    if (node.ratio !== undefined) {
+      if (typeof node.ratio !== 'number' || node.ratio < 0.05 || node.ratio > 0.95) {
+        errors.push({
+          path: `${path}.ratio`,
+          message: 'Split ratio must be a number between 0.05 and 0.95.',
+          severity: 'error',
+        });
+      }
+    }
+
+    if (!node.first) {
+      errors.push({
+        path: `${path}.first`,
+        message: 'Split node requires a "first" child.',
+        severity: 'error',
+      });
+    } else {
+      validateLayoutNode(node.first, `${path}.first`, errors, warnings);
+    }
+
+    if (!node.second) {
+      errors.push({
+        path: `${path}.second`,
+        message: 'Split node requires a "second" child.',
+        severity: 'error',
+      });
+    } else {
+      validateLayoutNode(node.second, `${path}.second`, errors, warnings);
+    }
+  }
+
+  if (node.behavior) {
+    validateBehavior(node.behavior, `${path}.behavior`, errors, warnings);
+  }
+}
+
+function validateBehavior(behavior, path, errors, warnings) {
+  if (!isObject(behavior)) {
+    errors.push({ path, message: 'Behavior must be an object.', severity: 'error' });
+    return;
+  }
+  if (behavior.collapse && !COLLAPSE_POLICIES.includes(behavior.collapse)) {
+    errors.push({ path: `${path}.collapse`, message: `Invalid collapse: "${behavior.collapse}". Valid: ${COLLAPSE_POLICIES.join(', ')}`, severity: 'error' });
+  }
+  if (behavior.overflow && !OVERFLOW_POLICIES.includes(behavior.overflow)) {
+    errors.push({ path: `${path}.overflow`, message: `Invalid overflow: "${behavior.overflow}". Valid: ${OVERFLOW_POLICIES.join(', ')}`, severity: 'error' });
+  }
+  if (behavior.responsiveMode && !RESPONSIVE_MODES.includes(behavior.responsiveMode)) {
+    errors.push({ path: `${path}.responsiveMode`, message: `Invalid responsiveMode: "${behavior.responsiveMode}". Valid: ${RESPONSIVE_MODES.join(', ')}`, severity: 'error' });
+  }
+  if (behavior.mobileDock && !MOBILE_DOCKS.includes(behavior.mobileDock)) {
+    errors.push({ path: `${path}.mobileDock`, message: `Invalid mobileDock: "${behavior.mobileDock}". Valid: ${MOBILE_DOCKS.join(', ')}`, severity: 'error' });
+  }
+  if (behavior.swipeControl && !SWIPE_CONTROLS.includes(behavior.swipeControl)) {
+    errors.push({ path: `${path}.swipeControl`, message: `Invalid swipeControl: "${behavior.swipeControl}". Valid: ${SWIPE_CONTROLS.join(', ')}`, severity: 'error' });
+  }
+}
+
+function validateGroups(groups, errors, warnings) {
+  let ids = new Set();
+  for (let i = 0; i < groups.length; i++) {
+    let g = groups[i];
+    let path = `groups[${i}]`;
+    if (!g.id) errors.push({ path: `${path}.id`, message: 'Group requires an "id".', severity: 'error' });
+    if (!g.name) errors.push({ path: `${path}.name`, message: 'Group requires a "name".', severity: 'error' });
+    if (g.id && ids.has(g.id)) {
+      errors.push({ path: `${path}.id`, message: `Duplicate group ID: "${g.id}".`, severity: 'error' });
+    }
+    if (g.id) ids.add(g.id);
+  }
+}
+
+function validateSections(sections, groupIds, errors, warnings) {
+  let ids = new Set();
+  for (let i = 0; i < sections.length; i++) {
+    let s = sections[i];
+    let path = `sections[${i}]`;
+    if (!s.id) errors.push({ path: `${path}.id`, message: 'Section requires an "id".', severity: 'error' });
+    if (!s.label) errors.push({ path: `${path}.label`, message: 'Section requires a "label".', severity: 'error' });
+    if (s.id && ids.has(s.id)) {
+      errors.push({ path: `${path}.id`, message: `Duplicate section ID: "${s.id}".`, severity: 'error' });
+    }
+    if (s.id) ids.add(s.id);
+    if (s.groupId && groupIds.size > 0 && !groupIds.has(s.groupId)) {
+      warnings.push({ path: `${path}.groupId`, message: `Section references unknown group: "${s.groupId}".`, severity: 'warning' });
+    }
+  }
+}
+
+function validatePanelTypes(panelTypes, errors, warnings) {
+  for (let [name, pt] of Object.entries(panelTypes)) {
+    let path = `panelTypes.${name}`;
+    if (!pt.title) errors.push({ path: `${path}.title`, message: 'PanelType requires a "title".', severity: 'error' });
+    if (!pt.component) errors.push({ path: `${path}.component`, message: 'PanelType requires a "component".', severity: 'error' });
+    if (pt.component && !/^[a-z][a-z0-9]*(-[a-z0-9]+)+$/.test(pt.component)) {
+      warnings.push({ path: `${path}.component`, message: `Component tag "${pt.component}" should be a valid custom element name (lowercase with hyphens).`, severity: 'warning' });
+    }
+    if (pt.behavior) {
+      validateBehavior(pt.behavior, `${path}.behavior`, errors, warnings);
+    }
+    if (pt.menuActions) {
+      if (!Array.isArray(pt.menuActions)) {
+        errors.push({ path: `${path}.menuActions`, message: 'menuActions must be an array.', severity: 'error' });
+      } else {
+        let actionIds = new Set();
+        for (let j = 0; j < pt.menuActions.length; j++) {
+          let action = pt.menuActions[j];
+          if (!action.id) errors.push({ path: `${path}.menuActions[${j}].id`, message: 'Menu action requires an "id".', severity: 'error' });
+          if (!action.label) errors.push({ path: `${path}.menuActions[${j}].label`, message: 'Menu action requires a "label".', severity: 'error' });
+          if (action.id && actionIds.has(action.id)) {
+            errors.push({ path: `${path}.menuActions[${j}].id`, message: `Duplicate action ID: "${action.id}".`, severity: 'error' });
+          }
+          if (action.id) actionIds.add(action.id);
+        }
+      }
+    }
+  }
+}
+
+function validateEvents(events, errors, warnings) {
+  let ids = new Set();
+  for (let i = 0; i < events.length; i++) {
+    let ev = events[i];
+    let path = `events[${i}]`;
+    if (!ev.sourcePanel) errors.push({ path: `${path}.sourcePanel`, message: 'Event bridge requires a "sourcePanel".', severity: 'error' });
+    if (!ev.event) errors.push({ path: `${path}.event`, message: 'Event bridge requires an "event".', severity: 'error' });
+    if (ev.id) {
+      if (ids.has(ev.id)) {
+        errors.push({ path: `${path}.id`, message: `Duplicate event bridge ID: "${ev.id}".`, severity: 'error' });
+      }
+      ids.add(ev.id);
+    }
+  }
+}
+
+function crossReferenceLayout(node, panelTypes, path, errors, warnings) {
+  if (!isObject(node)) return;
+  if (node.type === 'panel' && node.panelType) {
+    if (!panelTypes[node.panelType] && node.panelType !== 'default') {
+      warnings.push({
+        path: `${path}.panelType`,
+        message: `Panel references unregistered type: "${node.panelType}". Register it via panelTypes.`,
+        severity: 'warning',
+      });
+    }
+  }
+  if (node.type === 'split') {
+    if (node.first) crossReferenceLayout(node.first, panelTypes, `${path}.first`, errors, warnings);
+    if (node.second) crossReferenceLayout(node.second, panelTypes, `${path}.second`, errors, warnings);
   }
 }
 

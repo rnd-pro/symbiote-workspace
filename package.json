@@ -1,6 +1,6 @@
 {
   "name": "symbiote-workspace",
-  "version": "0.2.0-alpha.1",
+  "version": "0.3.0-alpha.2",
   "type": "module",
   "description": "Agent-driven workspace orchestration with plugin system: intent → plan → build → serve. Portable workspace configs, plugin registry, and server mode.",
   "main": "index.js",
@@ -42,6 +42,18 @@
       "import": "./server/index.js",
       "default": "./server/index.js"
     },
+    "./handlers": {
+      "import": "./handlers/index.js",
+      "default": "./handlers/index.js"
+    },
+    "./mcp": {
+      "import": "./mcp/index.js",
+      "default": "./mcp/index.js"
+    },
+    "./runtime": {
+      "import": "./runtime/index.js",
+      "default": "./runtime/index.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -55,6 +67,9 @@
     "validation/",
     "plugins/",
     "server/",
+    "handlers/",
+    "mcp/",
+    "runtime/",
     "README.md",
     "LICENSE",
     "CHANGELOG.md"

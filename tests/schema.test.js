@@ -101,14 +101,14 @@ describe('validateWorkspaceConfig', () => {
 
   it('validates layout node types', () => {
     let result = validateWorkspaceConfig({
-      version: '0.1.0',
+      version: '0.2.0',
       name: 'Test',
       layout: {
         type: 'split',
-        children: [
-          { type: 'single', component: 'sn-panel' },
-          { type: 'single', component: 'sn-panel' },
-        ],
+        direction: 'horizontal',
+        ratio: 0.5,
+        first: { type: 'panel', panelType: 'a' },
+        second: { type: 'panel', panelType: 'b' },
       },
     });
     assert.equal(result.valid, true);

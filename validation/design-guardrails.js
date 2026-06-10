@@ -57,10 +57,17 @@ let REGISTER_CONSTRAINTS = {
 
 function countLeafPanels(layout) {
   if (!layout) return 0;
-  if (!Array.isArray(layout.children) || layout.children.length === 0) return 1;
-  let count = 0;
-  for (let child of layout.children) count += countLeafPanels(child);
-  return count;
+  if (layout.type === 'panel') return 1;
+  if (layout.type === 'split') {
+    return countLeafPanels(layout.first) + countLeafPanels(layout.second);
+  }
+  // Fallback: legacy children[] format
+  if (Array.isArray(layout.children)) {
+    let count = 0;
+    for (let child of layout.children) count += countLeafPanels(child);
+    return count;
+  }
+  return 1;
 }
 
 function checkRegisterDensity(config, register, issues) {
@@ -80,14 +87,38 @@ function checkRegisterDensity(config, register, issues) {
 }
 
 function checkMinRatios(layout, minRatio, register, issues) {
-  if (!layout || !Array.isArray(layout.ratio)) return;
-  for (let i = 0; i < layout.ratio.length; i++) {
-    if (layout.ratio[i] < minRatio) {
+  if (!layout) return;
+  // BSP format: ratio is a single number (0-1)
+  if (layout.type === 'split' && typeof layout.ratio === 'number') {
+    if (layout.ratio < minRatio) {
       issues.push({
         check: 'register-density',
-        message: `Register "${register}" requires minimum ratio ${minRatio}, found ${layout.ratio[i]} at index ${i}.`,
+        message: `Register "${register}" requires minimum ratio ${minRatio}, found ${layout.ratio}.`,
         severity: 'warning',
       });
+    }
+    let complementRatio = 1 - layout.ratio;
+    if (complementRatio < minRatio) {
+      issues.push({
+        check: 'register-density',
+        message: `Register "${register}" requires minimum ratio ${minRatio}, found ${complementRatio.toFixed(2)} (complement).`,
+        severity: 'warning',
+      });
+    }
+    checkMinRatios(layout.first, minRatio, register, issues);
+    checkMinRatios(layout.second, minRatio, register, issues);
+    return;
+  }
+  // Legacy children[] format
+  if (Array.isArray(layout.ratio)) {
+    for (let i = 0; i < layout.ratio.length; i++) {
+      if (layout.ratio[i] < minRatio) {
+        issues.push({
+          check: 'register-density',
+          message: `Register "${register}" requires minimum ratio ${minRatio}, found ${layout.ratio[i]} at index ${i}.`,
+          severity: 'warning',
+        });
+      }
     }
   }
   if (Array.isArray(layout.children)) {
@@ -100,13 +131,23 @@ function checkMinRatios(layout, minRatio, register, issues) {
 let MAX_LAYOUT_DEPTH = 6;
 
 function getLayoutDepth(layout, depth = 1) {
-  if (!layout || !Array.isArray(layout.children)) return depth;
-  let maxChild = depth;
-  for (let child of layout.children) {
-    let childDepth = getLayoutDepth(child, depth + 1);
-    if (childDepth > maxChild) maxChild = childDepth;
+  if (!layout) return depth;
+  // BSP format
+  if (layout.type === 'split') {
+    let firstDepth = layout.first ? getLayoutDepth(layout.first, depth + 1) : depth;
+    let secondDepth = layout.second ? getLayoutDepth(layout.second, depth + 1) : depth;
+    return Math.max(firstDepth, secondDepth);
   }
-  return maxChild;
+  // Legacy children[] format
+  if (Array.isArray(layout.children)) {
+    let maxChild = depth;
+    for (let child of layout.children) {
+      let childDepth = getLayoutDepth(child, depth + 1);
+      if (childDepth > maxChild) maxChild = childDepth;
+    }
+    return maxChild;
+  }
+  return depth;
 }
 
 function checkLayoutDepth(layout, issues) {

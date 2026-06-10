@@ -9,7 +9,7 @@ import {
 } from '../sharing/index.js';
 
 let BASE_CONFIG = {
-  version: '0.1.0',
+  version: '0.2.0',
   name: 'Test Workspace',
   register: 'tool',
   theme: {
@@ -17,10 +17,8 @@ let BASE_CONFIG = {
     overrides: { '--sn-gap': '8px' },
   },
   layout: {
-    type: 'split',
-    children: [
-      { type: 'single', component: 'sn-panel' },
-    ],
+    type: 'panel',
+    panelType: 'main',
   },
   components: {
     catalog: ['sn-panel'],
@@ -121,10 +119,10 @@ describe('mergeConfigs', () => {
   });
 
   it('replaces layout wholesale', () => {
-    let newLayout = { type: 'single', component: 'sn-editor' };
+    let newLayout = { type: 'panel', panelType: 'editor' };
     let merged = mergeConfigs(BASE_CONFIG, { layout: newLayout });
-    assert.equal(merged.layout.type, 'single');
-    assert.equal(merged.layout.children, undefined);
+    assert.equal(merged.layout.type, 'panel');
+    assert.equal(merged.layout.panelType, 'editor');
   });
 
   it('adds to component catalog', () => {

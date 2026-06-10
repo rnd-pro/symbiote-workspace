@@ -3,117 +3,128 @@ import assert from 'node:assert/strict';
 
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { writeFile, unlink } from 'node:fs/promises';
 
 let __dirname = dirname(fileURLToPath(import.meta.url));
+let CLI = resolve(__dirname, '../cli.js');
 
-describe('CLI', () => {
+async function exec(...args) {
+  let { execFile } = await import('node:child_process');
+  let { promisify } = await import('node:util');
+  return promisify(execFile)('node', [CLI, ...args]);
+}
+
+describe('CLI help', () => {
   it('prints usage on --help', async () => {
-    let { execFile } = await import('node:child_process');
-    let { promisify } = await import('node:util');
-    let exec = promisify(execFile);
-
-    let { stdout } = await exec('node', [resolve(__dirname, '../cli.js'), '--help']);
+    let { stdout } = await exec('--help');
     assert.ok(stdout.includes('symbiote-workspace CLI'));
-    assert.ok(stdout.includes('serve'));
-    assert.ok(stdout.includes('validate'));
-    assert.ok(stdout.includes('plan'));
-    assert.ok(stdout.includes('list-templates'));
+    assert.ok(stdout.includes('scaffold'));
+    assert.ok(stdout.includes('mcp'));
+    assert.ok(stdout.includes('--config'));
+  });
+});
+
+describe('CLI tool commands', () => {
+  it('list-templates returns JSON', async () => {
+    let { stdout } = await exec('list-templates');
+    let result = JSON.parse(stdout);
+    assert.ok(result.count >= 5);
+    assert.ok(result.templates.includes('chat'));
   });
 
-  it('lists templates', async () => {
-    let { execFile } = await import('node:child_process');
-    let { promisify } = await import('node:util');
-    let exec = promisify(execFile);
-
-    let { stdout } = await exec('node', [resolve(__dirname, '../cli.js'), 'list-templates']);
-    assert.ok(stdout.includes('chat'));
-    assert.ok(stdout.includes('editor'));
-    assert.ok(stdout.includes('graph'));
-    assert.ok(stdout.includes('dashboard'));
+  it('scaffold creates workspace', async () => {
+    let { stdout } = await exec('scaffold', 'chat', '--name', 'My Chat');
+    let result = JSON.parse(stdout);
+    assert.equal(result.status, 'ok');
+    assert.equal(result.config.name, 'My Chat');
   });
 
-  it('plans a workspace from intent', async () => {
-    let { execFile } = await import('node:child_process');
-    let { promisify } = await import('node:util');
-    let exec = promisify(execFile);
+  it('scaffold-from-scratch creates blank workspace', async () => {
+    let { stdout } = await exec('scaffold-from-scratch', '--name', 'Blank');
+    let result = JSON.parse(stdout);
+    assert.equal(result.status, 'ok');
+    assert.equal(result.config.name, 'Blank');
+  });
+});
 
-    let { stdout } = await exec('node', [
-      resolve(__dirname, '../cli.js'),
-      'plan',
-      'build me a chat workspace',
-    ]);
-    let config = JSON.parse(stdout);
-    assert.equal(config.name, 'Chat Workspace');
-    assert.ok(config.layout);
-    assert.ok(config.components?.catalog?.includes('sn-chat-transcript'));
+describe('CLI --config workflow', () => {
+  let tmpFile = resolve(__dirname, '../_test_cli_config.json');
+
+  it('scaffold + add-group + list-groups via --config', async () => {
+    // Scaffold
+    let r1 = await exec('scaffold', 'dashboard', '--config', tmpFile);
+    let p1 = JSON.parse(r1.stdout);
+    assert.equal(p1.status, 'ok');
+
+    // Add group
+    let r2 = await exec('add-group', '--config', tmpFile, '--id', 'test-g', '--name', 'Test Group');
+    let p2 = JSON.parse(r2.stdout);
+    assert.equal(p2.status, 'ok');
+
+    // List groups — should have dashboard group + test-g
+    let r3 = await exec('list-groups', '--config', tmpFile);
+    let p3 = JSON.parse(r3.stdout);
+    assert.ok(p3.count >= 2);
+
+    // Describe
+    let r4 = await exec('describe', tmpFile);
+    let p4 = JSON.parse(r4.stdout);
+    assert.ok(p4.panelTypes);
+
+    // Validate
+    let r5 = await exec('validate', tmpFile);
+    let p5 = JSON.parse(r5.stdout);
+    assert.equal(p5.valid, true);
+
+    // Cleanup
+    await unlink(tmpFile).catch(() => {});
   });
 
-  it('plans with --name flag', async () => {
-    let { execFile } = await import('node:child_process');
-    let { promisify } = await import('node:util');
-    let exec = promisify(execFile);
+  it('register-panel-type + mount-widget via --config', async () => {
+    // Scaffold blank
+    await exec('scaffold-from-scratch', '--name', 'Widget Test', '--config', tmpFile);
 
-    let { stdout } = await exec('node', [
-      resolve(__dirname, '../cli.js'),
-      'plan',
-      'graph editor',
-      '--name',
-      'My Graph',
-    ]);
-    let config = JSON.parse(stdout);
-    assert.equal(config.name, 'My Graph');
+    // Register panel type
+    let r1 = await exec('register-panel-type', '--config', tmpFile,
+      '--name', 'main', '--title', 'Main', '--component', 'sn-card');
+    let p1 = JSON.parse(r1.stdout);
+    assert.equal(p1.status, 'ok');
+
+    // Mount widget
+    let r2 = await exec('mount-widget', '--config', tmpFile,
+      '--panelType', 'main', '--componentTag', 'sn-data-table');
+    let p2 = JSON.parse(r2.stdout);
+    assert.equal(p2.status, 'ok');
+
+    // List panel types
+    let r3 = await exec('list-panel-types', '--config', tmpFile);
+    let p3 = JSON.parse(r3.stdout);
+    assert.equal(p3.count, 1);
+
+    // Cleanup
+    await unlink(tmpFile).catch(() => {});
   });
+});
 
-  it('validates a valid config file', async () => {
-    let { execFile } = await import('node:child_process');
-    let { promisify } = await import('node:util');
-    let { writeFile, unlink } = await import('node:fs/promises');
-    let exec = promisify(execFile);
-
-    let tmpFile = resolve(__dirname, '../_test_valid_config.json');
-    await writeFile(tmpFile, JSON.stringify({
-      version: '0.1.0',
-      name: 'Test Workspace',
-      register: 'tool',
-    }));
-
-    try {
-      let { stdout } = await exec('node', [resolve(__dirname, '../cli.js'), 'validate', tmpFile]);
-      assert.ok(stdout.includes('Valid'));
-    } finally {
-      await unlink(tmpFile).catch(() => {});
-    }
-  });
-
-  it('rejects an invalid config file', async () => {
-    let { execFile } = await import('node:child_process');
-    let { promisify } = await import('node:util');
-    let { writeFile, unlink } = await import('node:fs/promises');
-    let exec = promisify(execFile);
-
-    let tmpFile = resolve(__dirname, '../_test_invalid_config.json');
-    await writeFile(tmpFile, JSON.stringify({ invalid: true }));
-
-    try {
-      await exec('node', [resolve(__dirname, '../cli.js'), 'validate', tmpFile]);
-      assert.fail('Should have exited with error');
-    } catch (err) {
-      assert.ok(err.stderr.includes('Invalid') || err.code === 1);
-    } finally {
-      await unlink(tmpFile).catch(() => {});
-    }
-  });
-
+describe('CLI error handling', () => {
   it('exits with error on unknown command', async () => {
-    let { execFile } = await import('node:child_process');
-    let { promisify } = await import('node:util');
-    let exec = promisify(execFile);
-
     try {
-      await exec('node', [resolve(__dirname, '../cli.js'), 'unknown-command']);
+      await exec('unknown-command-xyz');
       assert.fail('Should have exited with error');
     } catch (err) {
       assert.ok(err.code === 1);
+    }
+  });
+
+  it('validates invalid config file', async () => {
+    let tmpFile = resolve(__dirname, '../_test_invalid.json');
+    await writeFile(tmpFile, JSON.stringify({ invalid: true }));
+    try {
+      let { stdout } = await exec('validate', tmpFile);
+      let result = JSON.parse(stdout);
+      assert.equal(result.valid, false);
+    } finally {
+      await unlink(tmpFile).catch(() => {});
     }
   });
 });
