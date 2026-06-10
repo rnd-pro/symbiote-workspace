@@ -1,0 +1,89 @@
+{
+  "name": "symbiote-workspace",
+  "version": "0.1.0-alpha.1",
+  "type": "module",
+  "description": "Agent-driven workspace orchestration: intent → plan → build → serialize → share. Portable workspace configs over symbiote-ui primitives.",
+  "main": "index.js",
+  "exports": {
+    ".": {
+      "import": "./index.js",
+      "default": "./index.js"
+    },
+    "./browser": {
+      "import": "./browser.js",
+      "default": "./browser.js"
+    },
+    "./schema": {
+      "import": "./schema/index.js",
+      "default": "./schema/index.js"
+    },
+    "./schema/*": "./schema/*",
+    "./loader": {
+      "import": "./loader/index.js",
+      "default": "./loader/index.js"
+    },
+    "./constructor": {
+      "import": "./constructor/index.js",
+      "default": "./constructor/index.js"
+    },
+    "./sharing": {
+      "import": "./sharing/index.js",
+      "default": "./sharing/index.js"
+    },
+    "./validation": {
+      "import": "./validation/index.js",
+      "default": "./validation/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "browser.js",
+    "schema/",
+    "loader/",
+    "constructor/",
+    "sharing/",
+    "validation/",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "sideEffects": false,
+  "bin": {
+    "symbiote-workspace": "cli.js"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.js"
+  },
+  "keywords": [
+    "workspace",
+    "orchestration",
+    "symbiote",
+    "agent",
+    "runtime-ui",
+    "portable-config",
+    "web-components"
+  ],
+  "peerDependencies": {
+    "symbiote-ui": ">=0.3.0-alpha.40"
+  },
+  "devDependencies": {
+    "symbiote-ui": "0.3.0-alpha.42"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RND-PRO/symbiote-workspace.git"
+  },
+  "homepage": "https://github.com/RND-PRO/symbiote-workspace#readme",
+  "bugs": {
+    "url": "https://github.com/RND-PRO/symbiote-workspace/issues"
+  },
+  "author": "RND-PRO <nicothin@gmail.com>",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
