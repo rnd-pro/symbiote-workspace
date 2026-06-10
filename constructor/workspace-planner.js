@@ -145,6 +145,43 @@ let WORKSPACE_TEMPLATES = {
       },
     },
   },
+
+  'video-studio': {
+    name: 'video-studio',
+    description: 'Video editing studio with viewport, timeline, node graph, and inspector.',
+    config: {
+      version: WORKSPACE_SCHEMA_VERSION,
+      name: 'Video Studio',
+      register: 'tool',
+      theme: {
+        params: { mode: 'dark', hue: 218, chroma: 30 },
+      },
+      layout: {
+        type: 'split',
+        direction: 'vertical',
+        ratio: [0.6, 0.4],
+        children: [
+          {
+            type: 'split',
+            direction: 'horizontal',
+            ratio: [0.45, 0.35, 0.2],
+            children: [
+              { type: 'single', component: 'sn-canvas-viewport', label: 'Viewport' },
+              { type: 'single', component: 'node-canvas', label: 'Node Graph' },
+              { type: 'single', component: 'inspector-panel', label: 'Properties' },
+            ],
+          },
+          { type: 'single', component: 'sn-timeline-editor', label: 'Timeline' },
+        ],
+      },
+      components: {
+        catalog: ['sn-canvas-viewport', 'node-canvas', 'inspector-panel', 'sn-timeline-editor'],
+      },
+      engine: {
+        packs: ['video-pack'],
+      },
+    },
+  },
 };
 
 /** @type {Map<string, string[]>} */
@@ -153,6 +190,7 @@ let KEYWORD_MAP = new Map([
   ['editor', ['editor', 'code', 'source', 'ide', 'edit', 'file']],
   ['graph', ['graph', 'node', 'canvas', 'visual', 'flow', 'pipeline', 'diagram']],
   ['dashboard', ['dashboard', 'grid', 'panel', 'overview', 'monitor', 'analytics']],
+  ['video-studio', ['video', 'timeline', 'viewport', 'animation', 'render', 'studio', 'nle', 'film', 'clip']],
 ]);
 
 /**
