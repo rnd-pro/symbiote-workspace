@@ -299,10 +299,16 @@ import {
   extractConstructionPlan,
 } from 'symbiote-workspace/constructor';
 
-let questions = buildConstructionQuestions('build an agent review workspace');
+let questions = buildConstructionQuestions({
+  brief: 'build an agent review workspace',
+  requiredCapabilities: ['data.table', 'admin.bulk-actions'],
+});
 questions = answerConstructionQuestion(questions, 'theme-mode', 'dark');
 
-let { config } = planWorkspaceConstruction('build an agent review workspace', {
+let { config } = planWorkspaceConstruction({
+  brief: 'build an agent review workspace',
+  requiredCapabilities: ['data.table', 'admin.bulk-actions'],
+}, {
   moduleCapabilities: [
     {
       tagName: 'sn-data-table',
@@ -326,9 +332,17 @@ console.log(extractConstructionPlan(config));
 defaults, answers, dependencies, and skipped reasons.
 `config.construction.plan` stores the normalized construction plan.
 `components.modules` stores module capability descriptors for catalog or custom
-components. The constructor copies matching descriptor capabilities, actions,
-settings, events, bindings, runtime slots, placement hints, and required host
-service IDs into `config.construction.plan.modules`.
+components. When the intent includes `requiredCapabilities` and no explicit
+`module-selection` answer is provided, the constructor derives the module
+selection from declared descriptor capabilities. Explicit answers are preserved,
+and any uncovered requirements are reported in
+`config.construction.plan.capabilities.missing`.
+
+The constructor copies matching descriptor capabilities, actions, settings,
+events, bindings, runtime slots, placement hints, and required host service IDs
+into `config.construction.plan.modules`. Selected modules also expose
+`matchedCapabilities` and `selectionReason`; aggregate coverage is stored in
+`config.construction.plan.capabilities`.
 `validation.reports` and `patches` can persist machine-readable review results
 from patch validation.
 

@@ -60,6 +60,20 @@ describe('construction questions', () => {
     assert.match(themeHue.skippedReason, /theme-mode/);
   });
 
+  it('derives module selection defaults from required capabilities', () => {
+    let questions = buildConstructionQuestions({
+      brief: 'Build a social automation review desk',
+      template: 'social-automation',
+      requiredCapabilities: ['automation.reply-template', 'data.import'],
+    });
+
+    let moduleSelection = questions.find((question) => question.id === 'module-selection');
+
+    assert.deepEqual(moduleSelection.answer, ['imports', 'reply']);
+    assert.equal(moduleSelection.answerSource, 'derived');
+    assert.deepEqual(moduleSelection.requiredCapabilities, ['automation.reply-template', 'data.import']);
+  });
+
   it('re-evaluates dependency state when answers change', () => {
     let questions = buildConstructionQuestions('Build a chat workspace');
 
@@ -138,6 +152,52 @@ describe('planWorkspaceConstruction', () => {
     assert.deepEqual(result.plan.modules[0].requiredHostServices, ['storage.project']);
     assert.deepEqual(result.plan.modules[0].actions, [{ id: 'refresh', label: 'Refresh' }]);
     assert.deepEqual(result.plan.modules[0].placement, { registers: ['admin'], regions: ['main'] });
+  });
+
+  it('places modules by required capability coverage when no explicit answer is provided', () => {
+    let result = planWorkspaceConstruction({
+      brief: 'Build a social automation reply queue with imports',
+      template: 'social-automation',
+      requiredCapabilities: ['automation.reply-template', 'data.import'],
+    });
+
+    assert.deepEqual(result.plan.answers.moduleSelection, ['imports', 'reply']);
+    assert.deepEqual(result.plan.modules.map((module) => module.panelType), ['imports', 'reply']);
+    assert.deepEqual(result.plan.capabilities.required, ['automation.reply-template', 'data.import']);
+    assert.deepEqual(result.plan.capabilities.matched, ['automation.reply-template', 'data.import']);
+    assert.deepEqual(result.plan.capabilities.missing, []);
+    assert.deepEqual(result.plan.capabilities.byModule, [
+      {
+        panelType: 'imports',
+        component: 'sn-file-upload',
+        matchedCapabilities: ['data.import'],
+      },
+      {
+        panelType: 'reply',
+        component: 'sn-rich-text-editor',
+        matchedCapabilities: ['automation.reply-template'],
+      },
+    ]);
+    assert.deepEqual(result.plan.modules[0].matchedCapabilities, ['data.import']);
+    assert.equal(result.plan.modules[0].selectionReason, 'required-capability');
+  });
+
+  it('keeps explicit module answers and reports unmatched required capabilities', () => {
+    let result = planWorkspaceConstruction({
+      brief: 'Build an admin records workspace',
+      template: 'admin',
+      requiredCapabilities: ['admin.records'],
+    }, {
+      answers: {
+        'module-selection': ['metric'],
+      },
+    });
+
+    assert.deepEqual(result.plan.answers.moduleSelection, ['metric']);
+    assert.deepEqual(result.plan.modules.map((module) => module.panelType), ['metric']);
+    assert.equal(result.plan.modules[0].selectionReason, 'user');
+    assert.deepEqual(result.plan.capabilities.matched, []);
+    assert.deepEqual(result.plan.capabilities.missing, ['admin.records']);
   });
 
   it('rejects malformed module capability option entries', () => {

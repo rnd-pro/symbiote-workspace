@@ -832,7 +832,17 @@ function applyDescriptorPlanFields(target, descriptor) {
   if (!descriptor) return target;
   target.capabilities = deepClone(descriptor.capabilities || []);
   target.requiredHostServices = deepClone(descriptor.requiredHostServices || []);
-  for (let field of ['actions', 'menus', 'toolbarItems', 'settings', 'events', 'bindings', 'slots', 'runtimeSlots', 'placement']) {
+  for (let field of [
+    'actions',
+    'menus',
+    'toolbarItems',
+    'settings',
+    'events',
+    'bindings',
+    'slots',
+    'runtimeSlots',
+    'placement',
+  ]) {
     if (descriptor[field] !== undefined) target[field] = deepClone(descriptor[field]);
   }
   return target;
@@ -849,6 +859,69 @@ function moduleOptions(config) {
     }, descriptors.get(panel.component)));
 }
 
+function matchingCapabilities(module, requiredCapabilities) {
+  if (!requiredCapabilities.length) return [];
+  let capabilities = new Set(module.capabilities || []);
+  return requiredCapabilities.filter((capability) => capabilities.has(capability));
+}
+
+function defaultModuleSelection(modules, requiredCapabilities) {
+  if (!requiredCapabilities.length) return modules.map((module) => module.value);
+
+  let remaining = new Set(requiredCapabilities);
+  let selected = new Set();
+  let ranked = modules
+    .map((module) => ({
+      module,
+      matches: matchingCapabilities(module, requiredCapabilities),
+    }))
+    .filter((entry) => entry.matches.length > 0)
+    .sort((a, b) => {
+      if (a.matches.length !== b.matches.length) return b.matches.length - a.matches.length;
+      return a.module.value.localeCompare(b.module.value);
+    });
+
+  for (let entry of ranked) {
+    if (!entry.matches.some((capability) => remaining.has(capability))) continue;
+    selected.add(entry.module.value);
+    for (let capability of entry.matches) remaining.delete(capability);
+  }
+
+  return modules
+    .filter((module) => selected.has(module.value))
+    .map((module) => module.value);
+}
+
+function moduleSelectionReason(matchedCapabilities, requiredCapabilities, selectionSource) {
+  if (selectionSource === 'user') return 'user';
+  if (matchedCapabilities.length > 0) return 'required-capability';
+  if (requiredCapabilities.length > 0) return 'selected-without-required-capability';
+  return 'template-default';
+}
+
+function capabilityCoverage(requiredCapabilities, modules) {
+  let matched = new Set();
+  let byModule = [];
+
+  for (let module of modules) {
+    let matchedCapabilities = matchingCapabilities(module, requiredCapabilities);
+    if (!matchedCapabilities.length) continue;
+    for (let capability of matchedCapabilities) matched.add(capability);
+    byModule.push({
+      panelType: module.panelType,
+      component: module.component,
+      matchedCapabilities,
+    });
+  }
+
+  return {
+    required: deepClone(requiredCapabilities),
+    matched: requiredCapabilities.filter((capability) => matched.has(capability)),
+    missing: requiredCapabilities.filter((capability) => !matched.has(capability)),
+    byModule,
+  };
+}
+
 function themeDefaults(config, register, preferredTheme = null) {
   let defaults = REGISTER_THEME_DEFAULTS[register] || REGISTER_THEME_DEFAULTS.tool;
   return {
@@ -863,6 +936,7 @@ function buildQuestionDefinitions(intent, options = {}) {
   let config = withModuleCapabilities(templateConfig(intent.template), options.moduleCapabilities);
   let modules = moduleOptions(config);
   let theme = themeDefaults(config, intent.targetRegister, intent.preferredTheme);
+  let moduleSelection = defaultModuleSelection(modules, intent.requiredCapabilities);
 
   return [
     {
@@ -897,7 +971,9 @@ function buildQuestionDefinitions(intent, options = {}) {
       group: 'modules',
       type: 'multi-select',
       options: modules,
-      default: modules.map((option) => option.value),
+      default: moduleSelection,
+      answerSource: intent.requiredCapabilities.length ? 'derived' : undefined,
+      requiredCapabilities: deepClone(intent.requiredCapabilities),
       required: true,
     },
     {
@@ -1021,7 +1097,7 @@ function evaluateQuestions(questions) {
     let answerSource = question.answerSource;
     if (answer === undefined && question.default !== undefined) {
       answer = deepClone(question.default);
-      answerSource = 'default';
+      answerSource = question.answerSource || 'default';
     }
     if (answer !== undefined) {
       question.answer = validateAnswer(question, answer);
@@ -1075,18 +1151,27 @@ function sectionLayoutPlan(config) {
     .sort((a, b) => a.sectionId.localeCompare(b.sectionId));
 }
 
-function modulePlan(config, selectedModules) {
+function modulePlan(config, selectedModules, requiredCapabilities = [], selectionSource = 'default') {
   let selected = new Set(selectedModules);
   let descriptors = moduleDescriptorMap(config);
   return Object.entries(config.panelTypes || {})
     .filter(([panelType]) => selected.has(panelType))
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([panelType, panel]) => applyDescriptorPlanFields({
-      panelType,
-      title: panel.title,
-      component: panel.component,
-      icon: panel.icon || null,
-    }, descriptors.get(panel.component)));
+    .map(([panelType, panel]) => {
+      let module = applyDescriptorPlanFields({
+        panelType,
+        title: panel.title,
+        component: panel.component,
+        icon: panel.icon || null,
+      }, descriptors.get(panel.component));
+      module.matchedCapabilities = matchingCapabilities(module, requiredCapabilities);
+      module.selectionReason = moduleSelectionReason(
+        module.matchedCapabilities,
+        requiredCapabilities,
+        selectionSource,
+      );
+      return module;
+    });
 }
 
 function verificationPlan(scope) {
@@ -1172,10 +1257,18 @@ export function planWorkspaceConstruction(intent, options = {}) {
   let register = assertRegister(answers.get('target-register') || normalized.targetRegister);
   let topology = answers.get('layout-topology') || TEMPLATE_TOPOLOGIES[normalized.template] || 'grid';
   let modules = answers.get('module-selection') || [];
+  let moduleSelectionQuestion = questions.find((question) => question.id === 'module-selection');
+  let moduleSelectionSource = moduleSelectionQuestion?.answerSource || 'default';
   let mode = answers.get('theme-mode') || themeDefaults(config, register, normalized.preferredTheme).mode;
   let defaults = themeDefaults(config, register, normalized.preferredTheme);
   let hue = mode === 'custom' ? (answers.get('theme-hue') ?? defaults.hue) : defaults.hue;
   let verificationScope = answers.get('verification-scope') || [];
+  let plannedModules = modulePlan(
+    config,
+    modules,
+    normalized.requiredCapabilities,
+    moduleSelectionSource,
+  );
 
   let plan = {
     name: workspaceName,
@@ -1191,6 +1284,7 @@ export function planWorkspaceConstruction(intent, options = {}) {
       workspaceName,
       layoutTopology: topology,
       moduleSelection: deepClone(modules),
+      moduleSelectionSource,
       themeMode: mode,
       themeHue: mode === 'custom' ? hue : null,
       verificationScope: deepClone(verificationScope),
@@ -1201,7 +1295,8 @@ export function planWorkspaceConstruction(intent, options = {}) {
       layoutIds: layoutIds(config),
       sectionLayouts: sectionLayoutPlan(config),
     },
-    modules: modulePlan(config, modules),
+    modules: plannedModules,
+    capabilities: capabilityCoverage(normalized.requiredCapabilities, plannedModules),
     theme: {
       recipe: {
         mode,
