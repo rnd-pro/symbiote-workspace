@@ -179,6 +179,32 @@ npx symbiote-workspace mcp
 | `validate` | `validate_config` |
 | `preview` | `start_preview` |
 
+## Browser Preview
+
+`start_preview` writes `index.html`, `app.js`, and `workspace.config.json`.
+The generated HTML declares an import map before loading `app.js`, so browser
+bare imports resolve through an explicit host contract:
+
+```javascript
+await startPreview(config, {
+  outputDir: '.workspace-preview',
+  imports: {
+    'symbiote-workspace/browser': './mock-workspace-browser.js',
+    'symbiote-ui': './mock-symbiote-ui.js',
+  },
+});
+```
+
+When `imports` is omitted, preview defaults to local workspace paths and the
+returned `hint` serves the repository root so `symbiote-workspace/browser` and
+`symbiote-ui` can resolve from the generated import map.
+
+The generated runtime imports `applyCascadeTheme` from `symbiote-ui`, passes it
+as `themeAdapter` to `mountWorkspace()`, renders loader warnings with
+`data-preview-warning`, and reports module-load failures separately from mount
+failures. Runtime errors include the original error message instead of a broad
+fallback.
+
 ## MCP (Model Context Protocol)
 
 Start as MCP server for AI agent integration:
@@ -353,7 +379,11 @@ from patch validation.
 
 ## Browser Theme Mounting
 
-`symbiote-workspace/browser` applies workspace theme config when mounting:
+`symbiote-workspace/browser` exports browser-safe schema, loader, constructor,
+sharing, validation, and plugin APIs plus DOM mounting helpers. Node-only
+runtime dispatch remains in `symbiote-workspace/runtime`.
+
+The browser entrypoint applies workspace theme config when mounting:
 
 ```javascript
 import { mountWorkspace } from 'symbiote-workspace/browser';

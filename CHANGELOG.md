@@ -23,13 +23,18 @@ All notable changes to this project will be documented in this file.
   a workspace wrapper, applies root and subtree theme layers, and writes
   `cascade-theme-change` params, relations, and overrides back into workspace
   config.
+- **Segmented browser preview** — `start_preview` now generates an import map,
+  passes `symbiote-ui.applyCascadeTheme` into `mountWorkspace()`, renders loader
+  warnings, and preserves separate module-load and mount error messages.
 - **Theme relations** — workspace config now carries future-compatible
   `theme.relations` and subtree relations alongside params and token overrides.
 
 ### Changed
 
-- **Unified dispatch surface** — CLI and MCP now expose 56 tools from the same
+- **Unified dispatch surface** — CLI and MCP now expose 57 tools from the same
   `runtime/dispatch.js` registry.
+- **Browser entrypoint boundary** — `symbiote-workspace/browser` now exports
+  browser-safe APIs without statically pulling Node-only runtime dispatch code.
 - **Export/import portability** — portable exports preserve construction
   metadata, validation reports, and theme relations while stripping host/local
   fields; imports reject host/local-only payloads.

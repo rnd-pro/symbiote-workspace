@@ -185,6 +185,48 @@ describe('applyWorkspaceTheme', () => {
       theme: { params: { hue: 220 } },
     }, root), /requires options\.themeAdapter\.applyCascadeTheme/);
   });
+
+  it('throws when relations require a missing theme adapter', () => {
+    let root = createContainer();
+    assert.throws(() => applyWorkspaceTheme({
+      version: '0.3.0',
+      name: 'Theme Test',
+      theme: { relations: { surfaceStep: 1.2 } },
+    }, root), /requires options\.themeAdapter\.applyCascadeTheme/);
+  });
+
+  it('throws when subtree params or relations require a missing theme adapter', () => {
+    let root = createContainer();
+    let sidebar = root.ownerDocument.createElement('aside');
+    sidebar.className = 'sidebar';
+    root.appendChild(sidebar);
+
+    assert.throws(() => applyWorkspaceTheme({
+      version: '0.3.0',
+      name: 'Theme Test',
+      theme: {
+        subtrees: [{
+          selector: '.sidebar',
+          params: { hue: 180 },
+          relations: { radiusScale: 0.8 },
+        }],
+      },
+    }, root), /requires options\.themeAdapter\.applyCascadeTheme/);
+  });
+
+  it('applies override-only themes without a cascade theme adapter', () => {
+    let root = createContainer();
+    let result = applyWorkspaceTheme({
+      version: '0.3.0',
+      name: 'Theme Test',
+      theme: {
+        overrides: { '--sn-panel-bg': 'black' },
+      },
+    }, root);
+
+    assert.equal(root.style.getPropertyValue('--sn-panel-bg'), 'black');
+    assert.deepEqual(result.warnings, []);
+  });
 });
 
 describe('mountWorkspace', () => {

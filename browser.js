@@ -1,14 +1,71 @@
 /**
  * symbiote-workspace/browser — Browser-only entry point.
  *
- * Re-exports all isomorphic APIs from the root entry
- * plus browser-specific assembly: DOM mounting, theme application,
- * runtime controller integration.
+ * Re-exports browser-safe isomorphic APIs plus browser-specific assembly:
+ * DOM mounting, theme application, runtime controller integration.
  *
  * Requires a DOM environment (document, customElements).
  */
 
-export * from './index.js';
+export {
+  WORKSPACE_SCHEMA_VERSION,
+  WORKSPACE_REGISTER_VALUES,
+  WORKSPACE_CONFIG_SCHEMA,
+  validateWorkspaceConfig,
+  isCompatibleVersion,
+} from './schema/index.js';
+
+export {
+  loadWorkspaceConfig,
+  extractThemeParams,
+  extractThemeRelations,
+  extractThemeOverrides,
+  extractThemeSubtrees,
+} from './loader/index.js';
+
+export {
+  planWorkspace,
+  matchTemplate,
+  listTemplates,
+  getTemplate,
+  normalizeConstructionIntent,
+  buildConstructionQuestions,
+  answerConstructionQuestion,
+  planWorkspaceConstruction,
+  extractConstructionPlan,
+} from './constructor/index.js';
+
+export {
+  exportConfig,
+  importConfig,
+  diffConfigs,
+  mergeConfigs,
+} from './sharing/index.js';
+
+export {
+  checkDesignGuardrails,
+  loadWorkspaceDesignPolicy,
+  normalizeWorkspacePatchReport,
+  proposeWorkspacePatch,
+  validateWorkspaceDesignPatch,
+  validateWorkspacePatch,
+  validateWorkspaceThemePatch,
+  applyWorkspacePatch,
+} from './validation/index.js';
+
+export {
+  PLUGIN_SCHEMA,
+  PLUGIN_CATEGORIES,
+  validatePluginDefinition,
+  registerPlugin,
+  activatePlugin,
+  unregisterPlugin,
+  listPlugins,
+  getPlugin,
+  getPluginStatus,
+  clearPlugins,
+  validatePlugin,
+} from './plugins/index.js';
 
 import {
   extractThemeOverrides,
