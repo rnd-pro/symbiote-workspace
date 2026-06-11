@@ -43,6 +43,12 @@ Tool Commands (all dispatch to unified API):
   list-templates      List available workspace templates
   scaffold            Create workspace from template/intent
   scaffold-from-scratch Create blank workspace
+  classify-workspace  Classify workspace intent without mutating config
+  plan-workspace      Build construction questions and plan without mutating config
+  propose-workspace-patch Preview a workspace patch without mutating config
+  validate-workspace-patch Validate a workspace patch before applying it
+  apply-workspace-patch Apply a validated workspace patch
+  export-workspace    Export current workspace through the construction workflow
   validate            Validate workspace config
   add-group           Add a project group
   remove-group        Remove a project group
@@ -103,7 +109,7 @@ Options for 'discover':
 
 Options for 'scaffold':
   --name <n>          Override workspace name
-  --register <r>      Override register (tool|brand|presentation)
+  --register <r>      Override register (tool|admin|editor|agent-workspace|media-studio|brand|presentation)
   --output <f>        Write config to file
 
 Examples:
@@ -233,6 +239,8 @@ const COMMAND_ALIASES = {
  */
 const POSITIONAL_MAP = {
   scaffold_workspace: 'template',
+  classify_workspace: 'intent',
+  plan_workspace: 'intent',
   validate_config: '_filePath',
   describe_workspace: '_filePath',
   start_preview: '_filePath',

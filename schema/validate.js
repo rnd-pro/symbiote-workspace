@@ -112,6 +112,34 @@ export function validateWorkspaceConfig(config, options = {}) {
     }
   }
 
+  if (config.intent !== undefined) {
+    validateIntent(config.intent, 'intent', errors, warnings);
+  }
+
+  if (config.construction !== undefined) {
+    validateConstruction(config.construction, errors, warnings);
+  }
+
+  if (config.patches !== undefined) {
+    validatePatches(config.patches, errors, warnings);
+  }
+
+  if (config.validation !== undefined) {
+    validateValidationReports(config.validation, errors, warnings);
+  }
+
+  if (config.runtime !== undefined && !isObject(config.runtime)) {
+    errors.push({ path: 'runtime', message: 'Field "runtime" must be an object.', severity: 'error' });
+  }
+
+  if (config.exports !== undefined && !isObject(config.exports)) {
+    errors.push({ path: 'exports', message: 'Field "exports" must be an object.', severity: 'error' });
+  }
+
+  if (config.design !== undefined && !isObject(config.design)) {
+    errors.push({ path: 'design', message: 'Field "design" must be an object.', severity: 'error' });
+  }
+
   if (config.theme !== undefined && !isObject(config.theme)) {
     errors.push({ path: 'theme', message: 'Field "theme" must be an object.', severity: 'error' });
   }
@@ -188,7 +216,8 @@ export function validateWorkspaceConfig(config, options = {}) {
 
   if (options.strict) {
     let knownKeys = new Set([
-      'version', 'name', 'register', 'theme', 'layout', 'layouts',
+      'version', 'name', 'register', 'intent', 'construction', 'patches',
+      'validation', 'runtime', 'exports', 'design', 'theme', 'layout', 'layouts',
       'components', 'data', 'engine', 'groups', 'sections', 'panelTypes',
       'events', 'rootBehavior',
     ]);
@@ -213,6 +242,120 @@ export function validateWorkspaceConfig(config, options = {}) {
 }
 
 let LAYOUT_TYPES = new Set(['panel', 'split']);
+let QUESTION_TYPES = new Set(['text', 'single-select', 'multi-select', 'number', 'boolean']);
+let QUESTION_STATUSES = new Set(['answered', 'pending', 'skipped']);
+let QUESTION_ANSWER_SOURCES = new Set(['default', 'user', 'derived']);
+
+function validateIntent(intent, path, errors, warnings) {
+  if (!isObject(intent)) {
+    errors.push({ path, message: 'Intent must be an object.', severity: 'error' });
+    return;
+  }
+  if (!intent.brief || typeof intent.brief !== 'string') {
+    errors.push({ path: `${path}.brief`, message: 'Intent requires a non-empty "brief" string.', severity: 'error' });
+  }
+  if (intent.targetRegister !== undefined && !WORKSPACE_REGISTER_VALUES.includes(intent.targetRegister)) {
+    errors.push({
+      path: `${path}.targetRegister`,
+      message: `Invalid targetRegister value: "${intent.targetRegister}". Allowed: ${WORKSPACE_REGISTER_VALUES.join(', ')}.`,
+      severity: 'error',
+    });
+  }
+  for (let field of ['audience', 'constraints', 'requiredCapabilities']) {
+    if (intent[field] !== undefined) validateStringArray(intent[field], `${path}.${field}`, errors);
+  }
+}
+
+function validateStringArray(value, path, errors) {
+  if (!Array.isArray(value)) {
+    errors.push({ path, message: `${path} must be an array.`, severity: 'error' });
+    return;
+  }
+  for (let i = 0; i < value.length; i++) {
+    if (typeof value[i] !== 'string' || !value[i].trim()) {
+      errors.push({ path: `${path}[${i}]`, message: `${path} entries must be non-empty strings.`, severity: 'error' });
+    }
+  }
+}
+
+function validateConstruction(construction, errors, warnings) {
+  if (!isObject(construction)) {
+    errors.push({ path: 'construction', message: 'Field "construction" must be an object.', severity: 'error' });
+    return;
+  }
+  if (construction.intent !== undefined) {
+    validateIntent(construction.intent, 'construction.intent', errors, warnings);
+  }
+  if (construction.questions !== undefined) {
+    if (!Array.isArray(construction.questions)) {
+      errors.push({ path: 'construction.questions', message: 'construction.questions must be an array.', severity: 'error' });
+    } else {
+      validateConstructionQuestions(construction.questions, errors, warnings);
+    }
+  }
+  if (construction.plan !== undefined && !isObject(construction.plan)) {
+    errors.push({ path: 'construction.plan', message: 'construction.plan must be an object.', severity: 'error' });
+  }
+}
+
+function validateConstructionQuestions(questions, errors, warnings) {
+  let ids = new Set();
+  for (let i = 0; i < questions.length; i++) {
+    let question = questions[i];
+    let path = `construction.questions[${i}]`;
+    if (!isObject(question)) {
+      errors.push({ path, message: 'Construction question must be an object.', severity: 'error' });
+      continue;
+    }
+    if (!question.id || typeof question.id !== 'string') {
+      errors.push({ path: `${path}.id`, message: 'Construction question requires an "id" string.', severity: 'error' });
+    } else if (ids.has(question.id)) {
+      errors.push({ path: `${path}.id`, message: `Duplicate construction question ID: "${question.id}".`, severity: 'error' });
+    } else {
+      ids.add(question.id);
+    }
+    if (!question.title || typeof question.title !== 'string') {
+      errors.push({ path: `${path}.title`, message: 'Construction question requires a "title" string.', severity: 'error' });
+    }
+    if (!QUESTION_TYPES.has(question.type)) {
+      errors.push({ path: `${path}.type`, message: `Invalid construction question type: "${question.type}".`, severity: 'error' });
+    }
+    if (!QUESTION_STATUSES.has(question.status)) {
+      errors.push({ path: `${path}.status`, message: `Invalid construction question status: "${question.status}".`, severity: 'error' });
+    }
+    if (question.answerSource !== undefined && !QUESTION_ANSWER_SOURCES.has(question.answerSource)) {
+      errors.push({ path: `${path}.answerSource`, message: `Invalid answerSource: "${question.answerSource}".`, severity: 'error' });
+    }
+    if (question.status === 'skipped' && !question.skippedReason) {
+      errors.push({ path: `${path}.skippedReason`, message: 'Skipped construction questions require skippedReason.', severity: 'error' });
+    }
+    if (question.dependsOn !== undefined && !Array.isArray(question.dependsOn)) {
+      errors.push({ path: `${path}.dependsOn`, message: 'dependsOn must be an array.', severity: 'error' });
+    }
+  }
+}
+
+function validatePatches(patches, errors, warnings) {
+  if (!Array.isArray(patches)) {
+    errors.push({ path: 'patches', message: 'Field "patches" must be an array.', severity: 'error' });
+    return;
+  }
+  for (let i = 0; i < patches.length; i++) {
+    if (!isObject(patches[i])) {
+      errors.push({ path: `patches[${i}]`, message: 'Patch entries must be objects.', severity: 'error' });
+    }
+  }
+}
+
+function validateValidationReports(validation, errors, warnings) {
+  if (!isObject(validation)) {
+    errors.push({ path: 'validation', message: 'Field "validation" must be an object.', severity: 'error' });
+    return;
+  }
+  if (validation.reports !== undefined && !Array.isArray(validation.reports)) {
+    errors.push({ path: 'validation.reports', message: 'validation.reports must be an array.', severity: 'error' });
+  }
+}
 
 function validateLayoutNode(node, path, errors, warnings) {
   if (!isObject(node)) return;

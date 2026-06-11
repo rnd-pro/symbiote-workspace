@@ -1,6 +1,7 @@
 # symbiote-workspace
 
-Agent-driven workspace orchestration with plugin system: **intent → plan → build → serve**.
+Agent-driven workspace orchestration with plugin system:
+**intent → questions → plan → validate → build → export**.
 
 Portable workspace configs over [symbiote-ui](https://github.com/RND-PRO/symbiote-ui) primitives. Optional server mode via [symbiote-engine](https://github.com/RND-PRO/symbiote-engine).
 
@@ -21,7 +22,7 @@ npm install symbiote-workspace symbiote-engine
 ```
 ┌─────────────────────────────────────────────┐
 │                  Dispatch                   │
-│            50 tools, 1 registry             │
+│            56 tools, 1 registry             │
 │             runtime/dispatch.js             │
 ├──────────────────┬──────────────────────────┤
 │   CLI (argv)     │      MCP (JSON-RPC)      │
@@ -53,27 +54,37 @@ CLI and MCP share the same dispatch layer — every tool available via MCP is al
 
 ```javascript
 import {
-  planWorkspace,
+  planWorkspaceConstruction,
+  proposeWorkspacePatch,
+  applyWorkspacePatch,
   validateWorkspaceConfig,
   exportConfig,
   checkDesignGuardrails,
 } from 'symbiote-workspace';
 
-// 1. Plan from intent
-let config = planWorkspace('build me a chat workspace', {
+// 1. Plan from intent through the construction protocol
+let construction = planWorkspaceConstruction('build me a chat workspace', {
   name: 'My Chat',
   register: 'tool',
 });
+let { config, questions, plan } = construction;
 
-// 2. Validate
+// 2. Validate the generated config and design density guardrails
 let validation = validateWorkspaceConfig(config);
 console.log(validation.valid); // true
 
-// 3. Check design guardrails
 let guardrails = checkDesignGuardrails(config);
 console.log(guardrails.pass); // true
 
-// 4. Export for sharing
+// 3. Preview and apply accepted workspace patches
+let proposal = await proposeWorkspacePatch(config, {
+  theme: { params: { mode: 'dark', hue: 220 } },
+});
+if (proposal.accepted) {
+  config = (await applyWorkspacePatch(config, proposal.overlay)).config;
+}
+
+// 4. Export for sharing after validation
 let { json } = exportConfig(config);
 console.log(json); // portable JSON, no auth/server data
 ```
@@ -85,13 +96,24 @@ import { dispatch, createSession, TOOLS } from 'symbiote-workspace/runtime';
 
 let session = createSession();
 
-// Scaffold
-await dispatch('scaffold_workspace', { template: 'chat', name: 'My Chat' }, session);
+// Plan without mutating session state
+let planned = await dispatch('plan_workspace', {
+  intent: 'chat workspace',
+  name: 'My Chat',
+}, session);
+
+// Create session config from the planned workspace
+await dispatch('import_config', { json: JSON.stringify(planned.config) }, session);
 
 // Mutate
 await dispatch('add_group', { id: 'main', name: 'Main' }, session);
 await dispatch('register_panel_type', {
   name: 'viewport', title: 'Viewport', component: 'sn-canvas-viewport',
+}, session);
+
+// Validate and apply patch proposals before mutation
+await dispatch('apply_workspace_patch', {
+  overlay: { theme: { params: { mode: 'dark', hue: 220 } } },
 }, session);
 
 // Query
@@ -108,7 +130,7 @@ await dispatch('save_config', { filePath: './workspace.json' }, session);
 
 ## CLI
 
-All 50 tools available as CLI commands:
+All 56 tools available as CLI commands:
 
 ```bash
 # Scaffold
@@ -118,6 +140,12 @@ npx symbiote-workspace list-templates
 
 # Stateful mode (--config auto-saves on mutations)
 npx symbiote-workspace scaffold dashboard --config ws.json
+npx symbiote-workspace classify-workspace "agent review workspace"
+npx symbiote-workspace plan-workspace "agent review workspace" --name "Review Desk"
+npx symbiote-workspace propose-workspace-patch --config ws.json --overlay '{"theme":{"params":{"mode":"dark","hue":220}}}'
+npx symbiote-workspace validate-workspace-patch --config ws.json --overlay '{"register":"editor"}'
+npx symbiote-workspace apply-workspace-patch --config ws.json --overlay '{"name":"Review Desk"}'
+npx symbiote-workspace export-workspace --config ws.json
 npx symbiote-workspace add-group --config ws.json --id analytics --name Analytics
 npx symbiote-workspace add-section --config ws.json --groupId analytics --id overview --label Overview
 npx symbiote-workspace register-panel-type --config ws.json --name chart --title Chart --component sn-chart
@@ -159,7 +187,9 @@ Start as MCP server for AI agent integration:
 npx symbiote-workspace mcp
 ```
 
-Exposes 50 tools via JSON-RPC over stdio. Agents can scaffold, mutate, query, and validate workspaces programmatically.
+Exposes 56 tools via JSON-RPC over stdio. Agents can classify, plan,
+propose, validate, apply, export, mutate, and query workspaces
+programmatically.
 
 ## Tools Reference
 
@@ -167,6 +197,7 @@ Exposes 50 tools via JSON-RPC over stdio. Agents can scaffold, mutate, query, an
 |----------|-------|
 | **Discovery** | `describe_workspace` `discover_components` `find_component` `list_component_tags` `list_categories` `list_used_components` |
 | **Scaffold** | `list_templates` `scaffold_workspace` `scaffold_from_scratch` |
+| **Construction** | `classify_workspace` `plan_workspace` `propose_workspace_patch` `validate_workspace_patch` `apply_workspace_patch` `export_workspace` |
 | **Groups** | `add_group` `remove_group` `update_group` `reorder_groups` `list_groups` |
 | **Sections** | `add_section` `remove_section` `update_section` `reorder_sections` `list_sections` |
 | **Layout** | `set_layout` `add_panel` `remove_panel` `resize_panel` `update_layout_behavior` |
@@ -187,6 +218,22 @@ Exposes 50 tools via JSON-RPC over stdio. Agents can scaffold, mutate, query, an
   "version": "0.2.0",
   "name": "My Workspace",
   "register": "tool",
+  "intent": {
+    "brief": "Build a media review workspace",
+    "template": "video-studio",
+    "targetRegister": "media-studio",
+    "audience": ["operators"],
+    "constraints": ["portable-config"],
+    "requiredCapabilities": ["timeline", "preview"]
+  },
+  "construction": {
+    "questions": [],
+    "plan": {
+      "name": "My Workspace",
+      "template": "video-studio",
+      "register": "media-studio"
+    }
+  },
   "theme": {
     "params": { "mode": "dark", "hue": 220 },
     "relations": { "surfaceStep": 1.15 },
@@ -232,8 +279,45 @@ Exposes 50 tools via JSON-RPC over stdio. Agents can scaffold, mutate, query, an
 | Register | Max Panels | Min Ratio | Use Case |
 |----------|-----------|-----------|----------|
 | `tool` | 12 | 0.1 | Dense professional UI (IDE, studio) |
+| `admin` | 14 | 0.08 | Operations/admin consoles |
+| `editor` | 10 | 0.1 | Code, content, and data editors |
+| `agent-workspace` | 12 | 0.1 | Agent control rooms and review desks |
+| `media-studio` | 10 | 0.08 | Timeline, preview, and media production UI |
 | `brand` | 6 | 0.2 | Marketing, landing pages |
 | `presentation` | 4 | 0.25 | Slides, demos, showcases |
+
+## Construction Protocol
+
+The constructor protocol is designed for agents that build workspaces from
+declared modules instead of editing application code directly.
+
+```javascript
+import {
+  buildConstructionQuestions,
+  answerConstructionQuestion,
+  planWorkspaceConstruction,
+  extractConstructionPlan,
+} from 'symbiote-workspace/constructor';
+
+let questions = buildConstructionQuestions('build an agent review workspace');
+questions = answerConstructionQuestion(questions, 'theme-mode', 'dark');
+
+let { config } = planWorkspaceConstruction('build an agent review workspace', {
+  answers: {
+    'workspace-name': 'Review Desk',
+    'target-register': 'agent-workspace',
+  },
+});
+
+console.log(extractConstructionPlan(config));
+```
+
+`config.intent` stores the normalized brief and target register.
+`config.construction.questions` stores the questionnaire state, including
+defaults, answers, dependencies, and skipped reasons.
+`config.construction.plan` stores the normalized construction plan.
+`validation.reports` and `patches` can persist machine-readable review results
+from patch validation.
 
 ## Browser Theme Mounting
 

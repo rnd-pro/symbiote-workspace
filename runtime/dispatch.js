@@ -108,6 +108,73 @@ export const TOOLS = [
     },
     mutates: true,
   },
+  {
+    name: 'classify_workspace',
+    description: 'Classify workspace intent and return the matched construction template.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        intent: { type: 'string', description: 'Workspace brief or intent text.' },
+      },
+      required: ['intent'],
+    },
+  },
+  {
+    name: 'plan_workspace',
+    description: 'Generate construction intent, questions, plan, and config without mutating the active session.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        intent: { type: 'string', description: 'Workspace brief or intent text.' },
+        name: { type: 'string', description: 'Workspace name override.' },
+        register: { type: 'string', enum: ['tool', 'admin', 'editor', 'agent-workspace', 'media-studio', 'brand', 'presentation'] },
+        answers: { type: 'object', description: 'Question answers keyed by question ID.' },
+      },
+      required: ['intent'],
+    },
+  },
+  {
+    name: 'propose_workspace_patch',
+    description: 'Preview a workspace overlay or construction patch without mutating the active session.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        overlay: { type: 'object', description: 'Partial config overlay.' },
+        patch: { type: 'object', description: 'Structured construction patch.' },
+      },
+    },
+  },
+  {
+    name: 'validate_workspace_patch',
+    description: 'Validate a workspace overlay or construction patch before applying it.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        overlay: { type: 'object', description: 'Partial config overlay.' },
+        patch: { type: 'object', description: 'Structured construction patch.' },
+      },
+    },
+  },
+  {
+    name: 'apply_workspace_patch',
+    description: 'Validate and apply a workspace overlay or construction patch to the active session.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        overlay: { type: 'object', description: 'Partial config overlay.' },
+        patch: { type: 'object', description: 'Structured construction patch.' },
+      },
+    },
+    mutates: true,
+  },
+  {
+    name: 'export_workspace',
+    description: 'Export the active workspace through the construction workflow alias.',
+    inputSchema: {
+      type: 'object',
+      properties: { strict: { type: 'boolean', description: 'Reject on validation warnings.' } },
+    },
+  },
 
   // ── Groups ──
   {
@@ -630,6 +697,33 @@ export async function dispatch(toolName, args, session) {
     };
   }
 
+  if (toolName === 'classify_workspace') {
+    let c = await getConstructor();
+    let templateName = c.matchTemplate(args.intent);
+    return {
+      status: 'ok',
+      templateName: templateName || 'dashboard',
+      fallback: !templateName,
+    };
+  }
+
+  if (toolName === 'plan_workspace') {
+    let c = await getConstructor();
+    let result = c.planWorkspaceConstruction(args.intent, {
+      name: args.name,
+      register: args.register,
+      answers: args.answers,
+    });
+    return {
+      status: 'ok',
+      templateName: result.intent.template,
+      intent: result.intent,
+      questions: result.questions,
+      plan: result.plan,
+      config: result.config,
+    };
+  }
+
   let h = await getHandlers();
   let config = session.ensure();
 
@@ -682,6 +776,49 @@ export async function dispatch(toolName, args, session) {
       let result = h.scaffoldFromScratch({ name: args.name, register: args.register });
       session.config = result;
       return { config: result, status: 'ok', hint: `Blank workspace "${result.name}" created.` };
+    }
+
+    case 'propose_workspace_patch': {
+      let patch = args.patch || args.overlay;
+      if (!patch) return { status: 'error', tool: toolName, hint: 'Missing required arguments: overlay or patch' };
+      let { proposeWorkspacePatch } = await import('../validation/index.js');
+      let result = await proposeWorkspacePatch(config, args.patch || { overlay: args.overlay });
+      return {
+        ...result,
+        status: result.accepted ? 'ok' : 'invalid',
+      };
+    }
+
+    case 'validate_workspace_patch': {
+      let patch = args.patch || args.overlay;
+      if (!patch) return { status: 'error', tool: toolName, hint: 'Missing required arguments: overlay or patch' };
+      let { validateWorkspacePatch } = await import('../validation/index.js');
+      let result = await validateWorkspacePatch(config, args.patch || { overlay: args.overlay });
+      return {
+        ...result,
+        valid: result.accepted,
+        status: result.accepted ? 'ok' : 'invalid',
+      };
+    }
+
+    case 'apply_workspace_patch': {
+      let patch = args.patch || args.overlay;
+      if (!patch) return { status: 'error', tool: toolName, hint: 'Missing required arguments: overlay or patch' };
+      let { applyWorkspacePatch } = await import('../validation/index.js');
+      let result = await applyWorkspacePatch(config, args.patch || { overlay: args.overlay });
+      if (!result.config) {
+        return {
+          ...result,
+          status: 'error',
+          hint: 'Patch rejected: workspace validation failed.',
+        };
+      }
+      session.config = result.config;
+      return {
+        ...result,
+        status: 'ok',
+        hint: 'Workspace patch applied.',
+      };
     }
 
     // ── Groups ──
@@ -828,6 +965,15 @@ export async function dispatch(toolName, args, session) {
         return { status: 'error', errors: result.errors, hint: 'Export failed: config has validation errors.' };
       }
       return { status: 'ok', json: result.json, hint: 'Config exported as portable JSON.' };
+    }
+
+    case 'export_workspace': {
+      let { exportConfig } = await import('../sharing/index.js');
+      let result = exportConfig(config, { strict: args.strict });
+      if (!result.json) {
+        return { status: 'error', errors: result.errors, hint: 'Export failed: config has validation errors.' };
+      }
+      return { status: 'ok', json: result.json, hint: 'Workspace exported as portable JSON.' };
     }
 
     case 'import_config': {

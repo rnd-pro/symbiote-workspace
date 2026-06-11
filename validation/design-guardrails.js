@@ -51,6 +51,10 @@ function checkThemeCompleteness(config, issues) {
 /** @type {Object<string, { maxPanels: number, minRatio: number }>} */
 let REGISTER_CONSTRAINTS = {
   tool: { maxPanels: 12, minRatio: 0.1 },
+  admin: { maxPanels: 14, minRatio: 0.08 },
+  editor: { maxPanels: 10, minRatio: 0.1 },
+  'agent-workspace': { maxPanels: 12, minRatio: 0.1 },
+  'media-studio': { maxPanels: 10, minRatio: 0.08 },
   brand: { maxPanels: 6, minRatio: 0.2 },
   presentation: { maxPanels: 4, minRatio: 0.25 },
 };

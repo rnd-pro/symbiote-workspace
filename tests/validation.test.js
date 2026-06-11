@@ -125,4 +125,37 @@ describe('checkDesignGuardrails', () => {
       i.check === 'register-density' && i.message.includes('panels')
     ));
   });
+
+  it('applies density guardrails for all workspace registers', () => {
+    let registers = [
+      'tool',
+      'admin',
+      'editor',
+      'agent-workspace',
+      'media-studio',
+      'brand',
+      'presentation',
+    ];
+    let layout = {
+      type: 'split',
+      direction: 'horizontal',
+      ratio: 0.03,
+      first: { type: 'panel', panelType: 'a' },
+      second: { type: 'panel', panelType: 'b' },
+    };
+
+    for (let register of registers) {
+      let result = checkDesignGuardrails({
+        version: '0.2.0',
+        name: `${register} guardrails`,
+        register,
+        layout,
+      });
+
+      assert.ok(
+        result.issues.some((i) => i.check === 'register-density' && i.message.includes(register)),
+        `Expected density guardrail for ${register}`,
+      );
+    }
+  });
 });

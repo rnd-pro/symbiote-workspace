@@ -1,6 +1,14 @@
 export const WORKSPACE_SCHEMA_VERSION = '0.2.0';
 
-export const WORKSPACE_REGISTER_VALUES = Object.freeze(['tool', 'brand', 'presentation']);
+export const WORKSPACE_REGISTER_VALUES = Object.freeze([
+  'tool',
+  'admin',
+  'editor',
+  'agent-workspace',
+  'media-studio',
+  'brand',
+  'presentation',
+]);
 
 /**
  * Collapse policy for panels.
@@ -177,6 +185,81 @@ const EVENT_BRIDGE_SCHEMA = Object.freeze({
   },
 });
 
+const INTENT_SCHEMA = Object.freeze({
+  type: 'object',
+  required: ['brief'],
+  properties: {
+    brief: { type: 'string', description: 'User or agent workspace brief.' },
+    template: { type: 'string', description: 'Matched workspace template.' },
+    targetRegister: { type: 'string', enum: WORKSPACE_REGISTER_VALUES },
+    audience: { type: 'array', items: { type: 'string' } },
+    constraints: { type: 'array', items: { type: 'string' } },
+    requiredCapabilities: { type: 'array', items: { type: 'string' } },
+    preferredTheme: { type: 'object' },
+  },
+});
+
+const CONSTRUCTION_QUESTION_SCHEMA = Object.freeze({
+  type: 'object',
+  required: ['id', 'title', 'type', 'status'],
+  properties: {
+    id: { type: 'string' },
+    title: { type: 'string' },
+    group: { type: 'string' },
+    type: { type: 'string', enum: ['text', 'single-select', 'multi-select', 'number', 'boolean'] },
+    prompt: { type: 'string' },
+    options: { type: 'array', items: { type: 'object' } },
+    default: {},
+    answer: {},
+    answerSource: { type: 'string', enum: ['default', 'user', 'derived'] },
+    status: { type: 'string', enum: ['answered', 'pending', 'skipped'] },
+    skippedReason: { type: 'string' },
+    dependsOn: { type: 'array', items: { type: 'object' } },
+    required: { type: 'boolean' },
+  },
+});
+
+const CONSTRUCTION_SCHEMA = Object.freeze({
+  type: 'object',
+  properties: {
+    questions: {
+      type: 'array',
+      items: CONSTRUCTION_QUESTION_SCHEMA,
+      description: 'Structured questionnaire used to construct this workspace.',
+    },
+    plan: {
+      type: 'object',
+      description: 'Normalized construction plan generated from intent and answers.',
+    },
+  },
+});
+
+const PATCH_SCHEMA = Object.freeze({
+  type: 'object',
+  properties: {
+    id: { type: 'string' },
+    surface: { type: 'string' },
+    status: { type: 'string' },
+    overlay: { type: 'object' },
+    operations: { type: 'array', items: { type: 'object' } },
+    report: { type: 'object' },
+  },
+});
+
+const VALIDATION_REPORT_SCHEMA = Object.freeze({
+  type: 'object',
+  properties: {
+    id: { type: 'string' },
+    check: { type: 'string' },
+    version: { type: 'string' },
+    status: { type: 'string' },
+    severity: { type: 'string' },
+    message: { type: 'string' },
+    diagnostics: { type: 'array', items: { type: 'object' } },
+    suggestedPatches: { type: 'array', items: { type: 'object' } },
+  },
+});
+
 /**
  * Layout node schema — BSP tree format matching LayoutTree.js.
  *
@@ -242,6 +325,11 @@ export const WORKSPACE_CONFIG_SCHEMA = Object.freeze({
     group: GROUP_SCHEMA,
     section: SECTION_SCHEMA,
     eventBridge: EVENT_BRIDGE_SCHEMA,
+    intent: INTENT_SCHEMA,
+    constructionQuestion: CONSTRUCTION_QUESTION_SCHEMA,
+    construction: CONSTRUCTION_SCHEMA,
+    patch: PATCH_SCHEMA,
+    validationReport: VALIDATION_REPORT_SCHEMA,
   },
   properties: {
     version: {
@@ -256,7 +344,45 @@ export const WORKSPACE_CONFIG_SCHEMA = Object.freeze({
       type: 'string',
       enum: WORKSPACE_REGISTER_VALUES,
       default: 'tool',
-      description: 'UX register: tool (dense professional), brand (marketing), presentation (slides/demo).',
+      description: 'UX register for density and design-policy rules.',
+    },
+    intent: {
+      ...INTENT_SCHEMA,
+      description: 'Normalized agent/user construction intent.',
+    },
+    construction: {
+      ...CONSTRUCTION_SCHEMA,
+      description: 'Questionnaire and normalized plan state for agent construction.',
+    },
+    patches: {
+      type: 'array',
+      items: PATCH_SCHEMA,
+      description: 'Proposed or applied construction patches.',
+    },
+    validation: {
+      type: 'object',
+      properties: {
+        reports: {
+          type: 'array',
+          items: VALIDATION_REPORT_SCHEMA,
+        },
+      },
+      description: 'Machine-readable validation reports produced during construction.',
+    },
+    runtime: {
+      type: 'object',
+      properties: {
+        mount: { type: 'object' },
+      },
+      description: 'Runtime mounting metadata that remains portable across hosts.',
+    },
+    exports: {
+      type: 'object',
+      description: 'Portable export metadata and package descriptors.',
+    },
+    design: {
+      type: 'object',
+      description: 'Design policy context consumed by symbiote-ui rules.',
     },
     theme: {
       type: 'object',
@@ -445,6 +571,13 @@ export const WORKSPACE_CONFIG_SCHEMA = Object.freeze({
  * @property {string} version - Schema version
  * @property {string} name - Workspace name
  * @property {string} [register] - UX register
+ * @property {Object} [intent] - Construction intent
+ * @property {Object} [construction] - Construction questionnaire and plan
+ * @property {Object[]} [patches] - Proposed or applied construction patches
+ * @property {Object} [validation] - Validation reports
+ * @property {Object} [runtime] - Runtime mount metadata
+ * @property {Object} [exports] - Portable export metadata
+ * @property {Object} [design] - Design policy context
  * @property {WorkspaceThemeConfig} [theme] - Theme config
  * @property {GroupConfig[]} [groups] - Project groups (tabs)
  * @property {SectionConfig[]} [sections] - Sidebar sections

@@ -240,4 +240,133 @@ describe('mountWorkspace', () => {
 
     assert.equal(config.theme.subtrees[0].params.hue, 90);
   });
+
+  it('preserves structured root and subtree theme writeback state', () => {
+    let container = createContainer();
+    let config = {
+      version: '0.3.0',
+      name: 'Mounted Workspace',
+      theme: {
+        params: { mode: 'dark', hue: 220 },
+        relations: { surfaceStep: 1.1 },
+        overrides: { '--sn-gap': '8px' },
+        subtrees: [{
+          selector: '.preview',
+          params: { hue: 40 },
+          relations: { radiusScale: 0.75 },
+          overrides: { '--sn-node-radius': '4px' },
+        }],
+      },
+    };
+
+    let mounted = mountWorkspace(config, container, {
+      themeAdapter: createThemeAdapter(),
+    });
+
+    mounted.element.dispatchEvent({
+      type: 'cascade-theme-change',
+      bubbles: true,
+      detail: {
+        state: {
+          params: { hue: 180, contrast: 70 },
+          relations: { surfaceStep: 1.25 },
+          overrides: { '--sn-gap': '10px' },
+        },
+        targetSelector: null,
+      },
+    });
+    mounted.element.dispatchEvent({
+      type: 'cascade-theme-change',
+      bubbles: true,
+      detail: {
+        state: {
+          params: { hue: 90, brightness: 65 },
+          relations: { radiusScale: 0.9 },
+          overrides: { '--sn-node-radius': '6px' },
+        },
+        targetSelector: '.preview',
+      },
+    });
+
+    assert.deepEqual(config.theme.params, {
+      mode: 'dark',
+      hue: 180,
+      contrast: 70,
+    });
+    assert.deepEqual(config.theme.relations, { surfaceStep: 1.25 });
+    assert.deepEqual(config.theme.overrides, { '--sn-gap': '10px' });
+    assert.deepEqual(config.theme.subtrees[0].params, {
+      hue: 90,
+      brightness: 65,
+    });
+    assert.deepEqual(config.theme.subtrees[0].relations, { radiusScale: 0.9 });
+    assert.deepEqual(config.theme.subtrees[0].overrides, {
+      '--sn-node-radius': '6px',
+    });
+  });
+
+  it('exposes missing panel components and only fails when strict components are enabled', () => {
+    let container = createContainer();
+    let config = {
+      version: '0.3.0',
+      name: 'Mounted Workspace',
+      panelTypes: {
+        editor: {
+          title: 'Editor',
+          component: 'sn-editor-panel',
+        },
+      },
+      layout: {
+        type: 'panel',
+        panelType: 'editor',
+      },
+    };
+    let emptyCatalog = { has: () => false, list: () => [] };
+
+    let mounted = mountWorkspace(config, container, {
+      catalog: emptyCatalog,
+    });
+
+    assert.deepEqual(mounted.loaderResult.missingComponents, ['sn-editor-panel']);
+    assert.ok(mounted.loaderResult.warnings.some((warning) => warning.path === 'components'));
+
+    assert.throws(() => mountWorkspace(config, createContainer(), {
+      catalog: emptyCatalog,
+      strictComponents: true,
+    }), /Missing components: sn-editor-panel/);
+  });
+
+  it('cleans up runtime handles and stops writeback after destroy', () => {
+    let container = createContainer();
+    let config = {
+      version: '0.3.0',
+      name: 'Mounted Workspace',
+      theme: { params: { hue: 220 } },
+    };
+    let destroyCalls = 0;
+
+    let mounted = mountWorkspace(config, container, {
+      themeAdapter: createThemeAdapter(),
+      runtimeController: {
+        mountWorkspace() {
+          return {
+            destroy() {
+              destroyCalls += 1;
+            },
+          };
+        },
+      },
+    });
+
+    mounted.destroy();
+    mounted.element.dispatchEvent({
+      type: 'cascade-theme-change',
+      bubbles: true,
+      detail: { state: { hue: 90 }, targetSelector: null },
+    });
+
+    assert.equal(destroyCalls, 1);
+    assert.equal(container.children.length, 0);
+    assert.equal(config.theme.params.hue, 220);
+  });
 });

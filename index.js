@@ -30,6 +30,11 @@ export {
   matchTemplate,
   listTemplates,
   getTemplate,
+  normalizeConstructionIntent,
+  buildConstructionQuestions,
+  answerConstructionQuestion,
+  planWorkspaceConstruction,
+  extractConstructionPlan,
 } from './constructor/index.js';
 
 export {
@@ -41,6 +46,13 @@ export {
 
 export {
   checkDesignGuardrails,
+  loadWorkspaceDesignPolicy,
+  normalizeWorkspacePatchReport,
+  proposeWorkspacePatch,
+  validateWorkspaceDesignPatch,
+  validateWorkspacePatch,
+  validateWorkspaceThemePatch,
+  applyWorkspacePatch,
 } from './validation/index.js';
 
 export {

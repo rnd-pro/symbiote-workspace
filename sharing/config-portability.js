@@ -10,6 +10,89 @@ function deepClone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+let EXPORT_STRIP_KEYS = new Set([
+  'host',
+  'session',
+  'sessionId',
+  'endpoint',
+  'serverUrl',
+  'serverURL',
+  'previewUrl',
+  'previewURL',
+  'localFile',
+  'localPath',
+  'absolutePath',
+  'filePath',
+  'workspaceRoot',
+  'cwd',
+  'homeDir',
+]);
+
+let NON_PORTABLE_VALUE_PATTERNS = [
+  /^file:\/\//i,
+  /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])/i,
+  /^wss?:\/\/(localhost|127\.0\.0\.1|\[::1\])/i,
+  /^\/Users\//,
+  /^\/tmp\//,
+  /^\/var\/folders\//,
+];
+
+function sanitizeForExport(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeForExport(item));
+  }
+  if (!isObject(value)) return value;
+
+  let result = {};
+  for (let [key, child] of Object.entries(value)) {
+    if (EXPORT_STRIP_KEYS.has(key)) continue;
+    if (typeof child === 'string' && isNonPortableString(child)) continue;
+    result[key] = sanitizeForExport(child);
+  }
+  return result;
+}
+
+function isNonPortableString(value) {
+  return NON_PORTABLE_VALUE_PATTERNS.some((pattern) => pattern.test(value));
+}
+
+function collectNonPortableFields(value, path = '', result = []) {
+  if (Array.isArray(value)) {
+    for (let i = 0; i < value.length; i++) {
+      collectNonPortableFields(value[i], `${path}[${i}]`, result);
+    }
+    return result;
+  }
+  if (!isObject(value)) {
+    if (typeof value === 'string' && isNonPortableString(value)) {
+      result.push({
+        path: path || '(value)',
+        message: `Non-portable local or host-bound value: "${value.slice(0, 60)}".`,
+        severity: 'error',
+      });
+    }
+    return result;
+  }
+
+  for (let [key, child] of Object.entries(value)) {
+    let childPath = path ? `${path}.${key}` : key;
+    if (EXPORT_STRIP_KEYS.has(key)) {
+      result.push({
+        path: childPath,
+        message: `Non-portable host/local field "${childPath}" is not allowed in imported configs.`,
+        severity: 'error',
+      });
+      continue;
+    }
+    collectNonPortableFields(child, childPath, result);
+  }
+  return result;
+}
+
+function hasSensitiveWarning(warnings) {
+  return warnings.some((warning) => /auth|secret|credential|cookie|token|password|apikey|api key/i.test(warning.message));
+}
+
 /**
  * @param {import('../schema/workspace-schema.js').WorkspaceConfig} config
  * @param {Object} [options]
@@ -17,14 +100,14 @@ function deepClone(value) {
  * @returns {{ json: string, config: import('../schema/workspace-schema.js').WorkspaceConfig, errors: Array }}
  */
 export function exportConfig(config, options = {}) {
-  let clean = deepClone(config);
+  let clean = sanitizeForExport(deepClone(config));
   let validation = validateWorkspaceConfig(clean, { strict: true });
 
   if (!validation.valid) {
     return { json: null, config: clean, errors: validation.errors };
   }
 
-  if (options.strict && validation.warnings.length > 0) {
+  if ((options.strict || hasSensitiveWarning(validation.warnings)) && validation.warnings.length > 0) {
     return {
       json: null,
       config: clean,
@@ -51,7 +134,12 @@ export function importConfig(json) {
     };
   }
 
-  let validation = validateWorkspaceConfig(parsed);
+  let portabilityErrors = collectNonPortableFields(parsed);
+  if (portabilityErrors.length > 0) {
+    return { config: null, errors: portabilityErrors };
+  }
+
+  let validation = validateWorkspaceConfig(parsed, { strict: true });
   if (!validation.valid) {
     return { config: null, errors: validation.errors };
   }
@@ -118,6 +206,9 @@ export function mergeConfigs(base, overlay) {
     } else if (key === 'theme' && isObject(merged.theme) && isObject(overlay.theme)) {
       if (overlay.theme.params) {
         merged.theme.params = { ...(merged.theme.params || {}), ...overlay.theme.params };
+      }
+      if (overlay.theme.relations) {
+        merged.theme.relations = { ...(merged.theme.relations || {}), ...overlay.theme.relations };
       }
       if (overlay.theme.overrides) {
         merged.theme.overrides = { ...(merged.theme.overrides || {}), ...overlay.theme.overrides };

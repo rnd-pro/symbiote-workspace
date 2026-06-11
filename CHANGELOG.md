@@ -6,11 +6,33 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **Construction protocol** — `intent`, `construction.questions`,
+  `construction.plan`, `patches`, `validation.reports`, `runtime`, `exports`,
+  and `design` are now accepted workspace config fields.
+- **6 construction workflow tools** — unified CLI/MCP dispatch now exposes
+  `classify_workspace`, `plan_workspace`, `propose_workspace_patch`,
+  `validate_workspace_patch`, `apply_workspace_patch`, and `export_workspace`
+  for agent-guided construction before mutation.
+- **Patch validation bridge** — workspace patch validation can use the
+  Node-safe `symbiote-ui/rules/design-policy.js` bridge for theme/design
+  diagnostics, hard blocks, soft warnings, and suggested patches.
+- **Expanded design registers** — `admin`, `editor`, `agent-workspace`, and
+  `media-studio` join the existing `tool`, `brand`, and `presentation`
+  registers, with density guardrails for each register.
 - **Browser theme mounting** — `mountWorkspace()` now validates config, creates
   a workspace wrapper, applies root and subtree theme layers, and writes
-  `cascade-theme-change` params back into workspace config.
+  `cascade-theme-change` params, relations, and overrides back into workspace
+  config.
 - **Theme relations** — workspace config now carries future-compatible
   `theme.relations` and subtree relations alongside params and token overrides.
+
+### Changed
+
+- **Unified dispatch surface** — CLI and MCP now expose 56 tools from the same
+  `runtime/dispatch.js` registry.
+- **Export/import portability** — portable exports preserve construction
+  metadata, validation reports, and theme relations while stripping host/local
+  fields; imports reject host/local-only payloads.
 
 ## [0.3.0-alpha.2] - 2026-06-10
 

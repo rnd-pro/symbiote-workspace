@@ -77,6 +77,32 @@ function collectScopedTargets(root, selector) {
   return targets;
 }
 
+function normalizeThemeState(state) {
+  if (!isObject(state)) return null;
+  if (isObject(state.params) || isObject(state.relations) || isObject(state.overrides)) {
+    return {
+      params: isObject(state.params) ? state.params : {},
+      relations: isObject(state.relations) ? state.relations : {},
+      overrides: isObject(state.overrides) ? state.overrides : {},
+    };
+  }
+  return { params: state, relations: {}, overrides: {} };
+}
+
+function updateThemeScope(scope, state) {
+  let normalized = normalizeThemeState(state);
+  if (!normalized) return;
+  if (hasKeys(normalized.params)) {
+    scope.params = { ...(scope.params || {}), ...normalized.params };
+  }
+  if (hasKeys(normalized.relations)) {
+    scope.relations = { ...(scope.relations || {}), ...normalized.relations };
+  }
+  if (hasKeys(normalized.overrides)) {
+    scope.overrides = { ...(scope.overrides || {}), ...normalized.overrides };
+  }
+}
+
 function updateThemeParams(config, state, targetSelector) {
   if (!isObject(state)) return;
   if (!isObject(config.theme)) config.theme = {};
@@ -87,10 +113,10 @@ function updateThemeParams(config, state, targetSelector) {
       subtree = { selector: targetSelector };
       config.theme.subtrees.push(subtree);
     }
-    subtree.params = { ...(subtree.params || {}), ...state };
+    updateThemeScope(subtree, state);
     return;
   }
-  config.theme.params = { ...(config.theme.params || {}), ...state };
+  updateThemeScope(config.theme, state);
 }
 
 /**

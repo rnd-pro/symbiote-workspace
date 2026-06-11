@@ -26,6 +26,38 @@ let BASE_CONFIG = {
   },
 };
 
+let EXTENDED_CONFIG = {
+  ...BASE_CONFIG,
+  theme: {
+    ...BASE_CONFIG.theme,
+    relations: { surfaceStep: 1.15 },
+    subtrees: [{
+      selector: '.sidebar',
+      params: { hue: 180 },
+      relations: { radiusScale: 0.8 },
+      overrides: { '--sn-node-radius': '4px' },
+    }],
+  },
+  construction: {
+    intent: {
+      brief: 'Build a media studio.',
+      targetRegister: 'tool',
+    },
+    plan: {
+      layoutTemplate: 'video-studio',
+      modules: [{ id: 'viewport', role: 'preview' }],
+    },
+  },
+  validation: {
+    reports: [{
+      id: 'theme-check',
+      check: 'theme',
+      severity: 'warning',
+      message: 'Contrast fallback required.',
+    }],
+  },
+};
+
 describe('exportConfig', () => {
   it('exports valid config as JSON', () => {
     let result = exportConfig(BASE_CONFIG);
@@ -47,6 +79,41 @@ describe('exportConfig', () => {
     assert.equal(result.json, null);
     assert.ok(result.errors.length > 0);
   });
+
+  it('preserves construction metadata, validation reports, and theme relations', () => {
+    let result = exportConfig(EXTENDED_CONFIG);
+    assert.ok(result.json);
+    let parsed = JSON.parse(result.json);
+    assert.equal(parsed.theme.relations.surfaceStep, 1.15);
+    assert.equal(parsed.theme.subtrees[0].relations.radiusScale, 0.8);
+    assert.equal(parsed.construction.plan.layoutTemplate, 'video-studio');
+    assert.equal(parsed.validation.reports[0].check, 'theme');
+  });
+
+  it('strips host-only and local data from exported packages', () => {
+    let result = exportConfig({
+      ...EXTENDED_CONFIG,
+      host: {
+        endpoint: 'https://internal.example.com',
+        sessionId: 'abc123',
+      },
+      construction: {
+        ...EXTENDED_CONFIG.construction,
+        plan: {
+          ...EXTENDED_CONFIG.construction.plan,
+          localFile: '/Users/tester/workspace/private.json',
+          previewUrl: 'file:///tmp/preview.html',
+        },
+      },
+    });
+
+    assert.ok(result.json);
+    let parsed = JSON.parse(result.json);
+    assert.equal(parsed.host, undefined);
+    assert.equal(parsed.construction.plan.localFile, undefined);
+    assert.equal(parsed.construction.plan.previewUrl, undefined);
+    assert.equal(parsed.construction.plan.layoutTemplate, 'video-studio');
+  });
 });
 
 describe('importConfig', () => {
@@ -67,6 +134,35 @@ describe('importConfig', () => {
   it('rejects structurally invalid config', () => {
     let result = importConfig(JSON.stringify({ foo: 'bar' }));
     assert.equal(result.config, null);
+  });
+
+  it('preserves construction metadata, validation reports, and theme relations on import', () => {
+    let result = importConfig(JSON.stringify(EXTENDED_CONFIG));
+    assert.ok(result.config);
+    assert.equal(result.config.theme.relations.surfaceStep, 1.15);
+    assert.equal(result.config.theme.subtrees[0].relations.radiusScale, 0.8);
+    assert.equal(result.config.construction.plan.layoutTemplate, 'video-studio');
+    assert.equal(result.config.validation.reports[0].check, 'theme');
+  });
+
+  it('rejects imported host-only or local data', () => {
+    let result = importConfig(JSON.stringify({
+      ...EXTENDED_CONFIG,
+      host: {
+        endpoint: 'https://internal.example.com',
+      },
+      construction: {
+        ...EXTENDED_CONFIG.construction,
+        plan: {
+          ...EXTENDED_CONFIG.construction.plan,
+          localFile: '/Users/tester/workspace/private.json',
+        },
+      },
+    }));
+
+    assert.equal(result.config, null);
+    assert.ok(result.errors.some((error) => error.path === 'host'));
+    assert.ok(result.errors.some((error) => error.path === 'construction.plan.localFile'));
   });
 });
 
@@ -116,6 +212,13 @@ describe('mergeConfigs', () => {
     });
     assert.equal(merged.theme.overrides['--sn-gap'], '8px');
     assert.equal(merged.theme.overrides['--sn-radius'], '4px');
+  });
+
+  it('merges theme relations', () => {
+    let merged = mergeConfigs(BASE_CONFIG, {
+      theme: { relations: { surfaceStep: 1.25 } },
+    });
+    assert.equal(merged.theme.relations.surfaceStep, 1.25);
   });
 
   it('replaces layout wholesale', () => {

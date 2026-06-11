@@ -4,6 +4,8 @@ import { spawn } from 'node:child_process';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { TOOLS } from '../runtime/index.js';
+
 let __dirname = dirname(fileURLToPath(import.meta.url));
 let MCP_SCRIPT = resolve(__dirname, '../mcp/index.js');
 
@@ -65,7 +67,7 @@ describe('MCP Protocol', () => {
     assert.ok(r.result.protocolVersion);
   });
 
-  it('lists all 50 tools', async () => {
+  it('lists all registered tools without leaking internal fields', async () => {
     let responses = await mcpSession([
       { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
       { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} },
@@ -73,7 +75,13 @@ describe('MCP Protocol', () => {
 
     let toolList = responses.find((r) => r.id === 2);
     assert.ok(toolList);
-    assert.equal(toolList.result.tools.length, 50);
+    assert.equal(toolList.result.tools.length, TOOLS.length);
+
+    let toolNames = new Set(toolList.result.tools.map((tool) => tool.name));
+    assert.equal(toolNames.has('classify_workspace'), true);
+    assert.equal(toolNames.has('plan_workspace'), true);
+    assert.equal(toolNames.has('apply_workspace_patch'), true);
+    assert.equal(toolNames.has('export_workspace'), true);
 
     // Verify no internal fields leaked
     for (let tool of toolList.result.tools) {
