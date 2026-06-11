@@ -42,6 +42,7 @@ export {
   importConfig,
   diffConfigs,
   mergeConfigs,
+  createHostIntegrationContract,
 } from './sharing/index.js';
 
 export {

@@ -43,7 +43,7 @@ CLI and MCP share the same dispatch layer — every tool available via MCP is al
 |------------|-----|---------|
 | `symbiote-workspace` | Node | Schema, loader, constructor, sharing, validation, plugins, runtime |
 | `symbiote-workspace/runtime` | Node | Dispatch, session, tool registry |
-| `symbiote-workspace/browser` | Browser | DOM mounting + isomorphic APIs |
+| `symbiote-workspace/browser` | Browser | DOM mounting + browser-safe isomorphic APIs |
 | `symbiote-workspace/plugins` | Node | Plugin schema, validation, registry |
 | `symbiote-workspace/server` | Node | Workspace server + plugin loader |
 | `symbiote-workspace/schema` | Node | Schema definitions, validators |
@@ -59,6 +59,7 @@ import {
   applyWorkspacePatch,
   validateWorkspaceConfig,
   exportConfig,
+  createHostIntegrationContract,
   checkDesignGuardrails,
 } from 'symbiote-workspace';
 
@@ -85,8 +86,12 @@ if (proposal.accepted) {
 }
 
 // 4. Export for sharing after validation
-let { json } = exportConfig(config);
+let { json } = exportConfig(config, { strict: true });
 console.log(json); // portable JSON, no auth/server data
+
+// 5. Ask the host what it must provide to relaunch the workspace
+let contract = createHostIntegrationContract(config);
+console.log(contract.contract.browser.requiredImports);
 ```
 
 ### Unified Dispatch
@@ -204,6 +209,49 @@ as `themeAdapter` to `mountWorkspace()`, renders loader warnings with
 `data-preview-warning`, and reports module-load failures separately from mount
 failures. Runtime errors include the original error message instead of a broad
 fallback.
+
+## Portable Relaunch And Host Contract
+
+Use strict export for configs that must be saved, shared, and relaunched by a
+different host:
+
+```javascript
+import {
+  createHostIntegrationContract,
+  exportConfig,
+  importConfig,
+} from 'symbiote-workspace';
+
+let exported = exportConfig(config, { strict: true });
+if (!exported.json) {
+  throw new Error(exported.errors.map((error) => error.message).join('; '));
+}
+
+let imported = importConfig(exported.json);
+let contract = createHostIntegrationContract(imported.config);
+```
+
+Default export mode strips host/local and user identity fields from the exported
+JSON. Strict mode rejects host-only state before sanitizing, so release and
+relaunch flows cannot hide local paths, sessions, endpoints, user identity, or
+host payloads.
+
+`createHostIntegrationContract(config)` returns the implemented host contract
+for a portable config:
+
+- chat construction tools: `classify_workspace`, `plan_workspace`,
+  `construct_workspace`, patch validation/application, import, and export;
+- standalone browser requirements: import-map entries for
+  `symbiote-workspace/browser` and `symbiote-ui`, `mountWorkspace()`, and
+  `symbiote-ui.applyCascadeTheme`;
+- persistence requirements: `export_config` and `import_config`, with optional
+  engine-backed `storage.project` when module descriptors require it;
+- module-required host services and runtime slots collected from
+  `components.modules` and `construction.plan.modules`, with portable ID
+  validation for those contract IDs.
+
+The contract is metadata only: it lists service IDs and import specifiers, never
+credentials, user identity, URLs, local paths, or product code.
 
 ## MCP (Model Context Protocol)
 

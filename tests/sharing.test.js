@@ -80,6 +80,35 @@ describe('exportConfig', () => {
     assert.ok(result.errors.length > 0);
   });
 
+  it('strict mode rejects generic server URLs before sanitizing output', () => {
+    let result = exportConfig({
+      ...BASE_CONFIG,
+      components: {
+        ...BASE_CONFIG.components,
+        catalog: ['https://cdn.example.com/sn-panel.js'],
+      },
+    }, { strict: true });
+
+    assert.equal(result.json, null);
+    assert.ok(result.errors.some((error) => error.path === 'components.catalog[0]'));
+  });
+
+  it('strict mode rejects user identity fields before sanitizing output', () => {
+    let result = exportConfig({
+      ...BASE_CONFIG,
+      runtime: {
+        userId: 'user-123',
+        accountId: 'account-456',
+        profile: { email: 'owner@example.com' },
+      },
+    }, { strict: true });
+
+    assert.equal(result.json, null);
+    assert.ok(result.errors.some((error) => error.path === 'runtime.userId'));
+    assert.ok(result.errors.some((error) => error.path === 'runtime.accountId'));
+    assert.ok(result.errors.some((error) => error.path === 'runtime.profile'));
+  });
+
   it('preserves construction metadata, validation reports, and theme relations', () => {
     let result = exportConfig(EXTENDED_CONFIG);
     assert.ok(result.json);
@@ -163,6 +192,40 @@ describe('importConfig', () => {
     assert.equal(result.config, null);
     assert.ok(result.errors.some((error) => error.path === 'host'));
     assert.ok(result.errors.some((error) => error.path === 'construction.plan.localFile'));
+  });
+
+  it('rejects generic server URLs and local absolute paths', () => {
+    let result = importConfig(JSON.stringify({
+      ...EXTENDED_CONFIG,
+      components: {
+        ...EXTENDED_CONFIG.components,
+        catalog: [
+          'sn-panel',
+          'https://cdn.example.com/sn-panel.js',
+          '/Users/tester/workspace/sn-panel.js',
+        ],
+      },
+    }));
+
+    assert.equal(result.config, null);
+    assert.ok(result.errors.some((error) => error.path === 'components.catalog[1]'));
+    assert.ok(result.errors.some((error) => error.path === 'components.catalog[2]'));
+  });
+
+  it('rejects user identity fields', () => {
+    let result = importConfig(JSON.stringify({
+      ...EXTENDED_CONFIG,
+      runtime: {
+        userId: 'user-123',
+        accountId: 'account-456',
+        profile: { email: 'owner@example.com' },
+      },
+    }));
+
+    assert.equal(result.config, null);
+    assert.ok(result.errors.some((error) => error.path === 'runtime.userId'));
+    assert.ok(result.errors.some((error) => error.path === 'runtime.accountId'));
+    assert.ok(result.errors.some((error) => error.path === 'runtime.profile'));
   });
 });
 

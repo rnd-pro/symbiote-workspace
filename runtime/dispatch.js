@@ -605,7 +605,7 @@ export const TOOLS = [
   },
   {
     name: 'load_config',
-    description: 'Load workspace config from a JSON file.',
+    description: 'Load a portable workspace config from a JSON file.',
     inputSchema: {
       type: 'object',
       properties: { filePath: { type: 'string' } },
@@ -833,6 +833,23 @@ export async function dispatch(toolName, args, session) {
     };
   }
 
+  if (toolName === 'load_config') {
+    let filePath = resolve(args.filePath);
+    let json = await readFile(filePath, 'utf-8');
+    let { importConfig } = await import('../sharing/index.js');
+    let result = importConfig(json);
+    if (!result.config) {
+      return {
+        status: 'error',
+        errors: result.errors,
+        hint: 'Load failed: file does not contain a portable workspace config.',
+      };
+    }
+    session.config = result.config;
+    session.configFilePath = filePath;
+    return { status: 'ok', filePath, config: session.config, hint: `Config loaded from ${filePath}.` };
+  }
+
   let h = await getHandlers();
   let config = session.ensure();
 
@@ -1056,14 +1073,6 @@ export async function dispatch(toolName, args, session) {
       await writeFile(filePath, JSON.stringify(config, null, 2));
       session.configFilePath = filePath;
       return { status: 'ok', filePath, hint: `Config saved to ${filePath}.` };
-    }
-
-    case 'load_config': {
-      let filePath = resolve(args.filePath);
-      let json = await readFile(filePath, 'utf-8');
-      session.config = JSON.parse(json);
-      session.configFilePath = filePath;
-      return { status: 'ok', filePath, config: session.config, hint: `Config loaded from ${filePath}.` };
     }
 
     // ── Sharing ──

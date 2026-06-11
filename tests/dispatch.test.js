@@ -293,6 +293,30 @@ describe('dispatch', () => {
     }
   });
 
+  it('load_config rejects non-portable relaunch files', async () => {
+    let { resolve } = await import('node:path');
+    let { writeFile, unlink } = await import('node:fs/promises');
+    let tmpFile = resolve(import.meta.dirname, '../_test_dispatch_io_host.json');
+
+    try {
+      let session = createSession();
+      await writeFile(tmpFile, JSON.stringify({
+        version: '0.2.0',
+        name: 'Host Bound',
+        host: { sessionId: 'abc123' },
+        layout: { type: 'panel', panelType: 'main' },
+      }, null, 2));
+
+      let result = await dispatch('load_config', { filePath: tmpFile }, session);
+
+      assert.equal(result.status, 'error');
+      assert.equal(session.config, null);
+      assert.ok(result.errors.some((error) => error.path === 'host'));
+    } finally {
+      await unlink(tmpFile).catch(() => {});
+    }
+  });
+
   it('multiple bridge events get unique IDs', async () => {
     let session = createSession();
     await dispatch('scaffold_from_scratch', {}, session);

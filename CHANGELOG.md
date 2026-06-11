@@ -9,10 +9,10 @@ All notable changes to this project will be documented in this file.
 - **Construction protocol** — `intent`, `construction.questions`,
   `construction.plan`, `patches`, `validation.reports`, `runtime`, `exports`,
   and `design` are now accepted workspace config fields.
-- **6 construction workflow tools** — unified CLI/MCP dispatch now exposes
+- **7 construction workflow tools** — unified CLI/MCP dispatch now exposes
   `classify_workspace`, `plan_workspace`, `propose_workspace_patch`,
-  `validate_workspace_patch`, `apply_workspace_patch`, and `export_workspace`
-  for agent-guided construction before mutation.
+  `validate_workspace_patch`, `apply_workspace_patch`, `construct_workspace`,
+  and `export_workspace` for agent-guided construction and mutation.
 - **Patch validation bridge** — workspace patch validation can use the
   Node-safe `symbiote-ui/rules/design-policy.js` bridge for theme/design
   diagnostics, hard blocks, soft warnings, and suggested patches.
@@ -26,6 +26,10 @@ All notable changes to this project will be documented in this file.
 - **Segmented browser preview** — `start_preview` now generates an import map,
   passes `symbiote-ui.applyCascadeTheme` into `mountWorkspace()`, renders loader
   warnings, and preserves separate module-load and mount error messages.
+- **Host integration contract** — `createHostIntegrationContract()` describes
+  chat construction tools, browser import-map requirements, optional
+  engine-backed persistence, module host services, and portable runtime slots
+  for a portable workspace config.
 - **Theme relations** — workspace config now carries future-compatible
   `theme.relations` and subtree relations alongside params and token overrides.
 
@@ -37,7 +41,10 @@ All notable changes to this project will be documented in this file.
   browser-safe APIs without statically pulling Node-only runtime dispatch code.
 - **Export/import portability** — portable exports preserve construction
   metadata, validation reports, and theme relations while stripping host/local
-  fields; imports reject host/local-only payloads.
+  fields by default; strict exports now reject host-only state before
+  sanitizing so relaunch flows cannot hide local paths, sessions, endpoints, or
+  user identity. Imports and file loads reject host/local-only payloads,
+  generic server URLs, and user identity fields.
 
 ## [0.3.0-alpha.2] - 2026-06-10
 

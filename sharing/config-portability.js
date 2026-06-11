@@ -28,13 +28,56 @@ let EXPORT_STRIP_KEYS = new Set([
   'homeDir',
 ]);
 
+let USER_IDENTITY_KEYS = new Set([
+  'user',
+  'userid',
+  'account',
+  'accountid',
+  'profile',
+  'email',
+  'identity',
+  'owner',
+  'ownerid',
+  'tenant',
+  'tenantid',
+  'organization',
+  'organizationid',
+  'org',
+  'orgid',
+]);
+
+const PORTABLE_ID_PATTERN = /^[a-z][a-z0-9]*(?:[./:_-][a-z0-9]+)*$/;
+
+const CHAT_CONSTRUCTION_TOOLS = Object.freeze([
+  'classify_workspace',
+  'plan_workspace',
+  'construct_workspace',
+  'validate_workspace_patch',
+  'apply_workspace_patch',
+  'export_workspace',
+  'import_config',
+]);
+
+const BROWSER_REQUIRED_IMPORTS = Object.freeze([
+  'symbiote-workspace/browser',
+  'symbiote-ui',
+]);
+
+const PERSISTENCE_TOOLS = Object.freeze([
+  'export_config',
+  'import_config',
+]);
+
 let NON_PORTABLE_VALUE_PATTERNS = [
   /^file:\/\//i,
-  /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])/i,
-  /^wss?:\/\/(localhost|127\.0\.0\.1|\[::1\])/i,
+  /^https?:\/\//i,
+  /^wss?:\/\//i,
   /^\/Users\//,
+  /^\/home\//,
   /^\/tmp\//,
   /^\/var\/folders\//,
+  /^\/private\/var\/folders\//,
+  /^[a-z]:[\\/]/i,
 ];
 
 function sanitizeForExport(value) {
@@ -45,7 +88,7 @@ function sanitizeForExport(value) {
 
   let result = {};
   for (let [key, child] of Object.entries(value)) {
-    if (EXPORT_STRIP_KEYS.has(key)) continue;
+    if (isNonPortableFieldKey(key)) continue;
     if (typeof child === 'string' && isNonPortableString(child)) continue;
     result[key] = sanitizeForExport(child);
   }
@@ -54,6 +97,14 @@ function sanitizeForExport(value) {
 
 function isNonPortableString(value) {
   return NON_PORTABLE_VALUE_PATTERNS.some((pattern) => pattern.test(value));
+}
+
+function normalizedKey(key) {
+  return key.toLowerCase().replace(/[_-]/g, '');
+}
+
+function isNonPortableFieldKey(key) {
+  return EXPORT_STRIP_KEYS.has(key) || USER_IDENTITY_KEYS.has(normalizedKey(key));
 }
 
 function collectNonPortableFields(value, path = '', result = []) {
@@ -76,7 +127,7 @@ function collectNonPortableFields(value, path = '', result = []) {
 
   for (let [key, child] of Object.entries(value)) {
     let childPath = path ? `${path}.${key}` : key;
-    if (EXPORT_STRIP_KEYS.has(key)) {
+    if (isNonPortableFieldKey(key)) {
       result.push({
         path: childPath,
         message: `Non-portable host/local field "${childPath}" is not allowed in imported configs.`,
@@ -89,8 +140,124 @@ function collectNonPortableFields(value, path = '', result = []) {
   return result;
 }
 
+function isPortabilityWarning(warning) {
+  return /auth|secret|credential|cookie|token|password|apikey|api key|non-portable|server urls|endpoints/i
+    .test(warning.message);
+}
+
+function collectPortabilityWarnings(warnings) {
+  return warnings
+    .filter(isPortabilityWarning)
+    .map((warning) => ({ ...warning, severity: 'error' }));
+}
+
 function hasSensitiveWarning(warnings) {
-  return warnings.some((warning) => /auth|secret|credential|cookie|token|password|apikey|api key/i.test(warning.message));
+  return warnings.some(isPortabilityWarning);
+}
+
+function pushUnique(list, value) {
+  if (typeof value === 'string' && value.trim() && !list.includes(value)) {
+    list.push(value);
+  }
+}
+
+function moduleDescriptorSource(kind, index) {
+  return `${kind}[${index}]`;
+}
+
+function moduleName(descriptor) {
+  return descriptor.tagName || descriptor.component || descriptor.panelType || 'workspace';
+}
+
+function collectModuleDescriptors(config) {
+  let descriptors = [];
+  for (let [index, descriptor] of (config.components?.modules || []).entries()) {
+    if (isObject(descriptor)) {
+      descriptors.push({ descriptor, source: moduleDescriptorSource('components.modules', index) });
+    }
+  }
+  for (let [index, descriptor] of (config.construction?.plan?.modules || []).entries()) {
+    if (isObject(descriptor)) {
+      descriptors.push({ descriptor, source: moduleDescriptorSource('construction.plan.modules', index) });
+    }
+  }
+  return descriptors;
+}
+
+function collectHostServices(config) {
+  let required = [];
+  let byModule = [];
+  for (let { descriptor, source } of collectModuleDescriptors(config)) {
+    let services = [];
+    for (let service of descriptor.requiredHostServices || []) {
+      pushUnique(required, service);
+      pushUnique(services, service);
+    }
+    if (services.length > 0) {
+      byModule.push({
+        module: moduleName(descriptor),
+        source,
+        required: services.sort((a, b) => a.localeCompare(b)),
+      });
+    }
+  }
+  return {
+    required: required.sort((a, b) => a.localeCompare(b)),
+    byModule,
+  };
+}
+
+function collectRuntimeSlots(config) {
+  let required = [];
+  let optional = [];
+  for (let { descriptor, source } of collectModuleDescriptors(config)) {
+    for (let [index, slot] of (descriptor.runtimeSlots || []).entries()) {
+      if (!isObject(slot)) continue;
+      let target = slot.required ? required : optional;
+      target.push({
+        id: slot.id,
+        role: slot.role || '',
+        module: moduleName(descriptor),
+        source,
+        path: `${source}.runtimeSlots[${index}]`,
+      });
+    }
+  }
+  return { required, optional };
+}
+
+function isPortableId(value) {
+  return typeof value === 'string' && PORTABLE_ID_PATTERN.test(value);
+}
+
+function validateHostServices(services) {
+  let errors = [];
+  for (let service of services.required) {
+    if (!isPortableId(service)) {
+      errors.push({
+        path: 'requiredHostServices',
+        message: `Host service "${service}" must be a portable identifier, not a URL, path, `
+          + 'or display label.',
+        severity: 'error',
+      });
+    }
+  }
+  return errors;
+}
+
+function validateRuntimeSlots(runtimeSlots) {
+  let errors = [];
+  for (let slot of [...runtimeSlots.required, ...runtimeSlots.optional]) {
+    if (!isPortableId(slot.id)) {
+      errors.push({
+        path: `${slot.path}.id`,
+        message: `Runtime slot "${slot.id}" must be a portable identifier, not a URL, path, `
+          + 'or display label.',
+        severity: 'error',
+      });
+    }
+  }
+  return errors;
 }
 
 /**
@@ -100,8 +267,13 @@ function hasSensitiveWarning(warnings) {
  * @returns {{ json: string, config: import('../schema/workspace-schema.js').WorkspaceConfig, errors: Array }}
  */
 export function exportConfig(config, options = {}) {
+  let sourcePortabilityErrors = options.strict ? collectNonPortableFields(config) : [];
   let clean = sanitizeForExport(deepClone(config));
   let validation = validateWorkspaceConfig(clean, { strict: true });
+
+  if (sourcePortabilityErrors.length > 0) {
+    return { json: null, config: clean, errors: sourcePortabilityErrors };
+  }
 
   if (!validation.valid) {
     return { json: null, config: clean, errors: validation.errors };
@@ -117,6 +289,70 @@ export function exportConfig(config, options = {}) {
 
   let json = JSON.stringify(clean, null, 2);
   return { json, config: clean, errors: [] };
+}
+
+/**
+ * @param {import('../schema/workspace-schema.js').WorkspaceConfig} config
+ * @returns {{ status: string, contract: Object|null, errors: Array }}
+ */
+export function createHostIntegrationContract(config) {
+  let exported = exportConfig(config, { strict: true });
+  if (!exported.json) {
+    return {
+      status: 'error',
+      contract: null,
+      errors: exported.errors,
+    };
+  }
+
+  let services = collectHostServices(exported.config);
+  let runtimeSlots = collectRuntimeSlots(exported.config);
+  let contractErrors = [
+    ...validateHostServices(services),
+    ...validateRuntimeSlots(runtimeSlots),
+  ];
+  if (contractErrors.length > 0) {
+    return {
+      status: 'error',
+      contract: null,
+      errors: contractErrors,
+    };
+  }
+
+  return {
+    status: 'ok',
+    contract: {
+      schemaVersion: '0.1.0',
+      workspace: {
+        name: exported.config.name,
+        version: exported.config.version,
+        register: exported.config.register || 'tool',
+        template: exported.config.intent?.template || exported.config.construction?.plan?.template || null,
+      },
+      chatConstruction: {
+        requiredTools: [...CHAT_CONSTRUCTION_TOOLS],
+        sessionOwner: 'host',
+        mutationBoundary: 'runtime/dispatch session',
+      },
+      browser: {
+        entrypoint: 'symbiote-workspace/browser',
+        requiredImports: [...BROWSER_REQUIRED_IMPORTS],
+        mountFunction: 'mountWorkspace',
+        themeAdapter: 'symbiote-ui.applyCascadeTheme',
+      },
+      persistence: {
+        portableConfig: true,
+        requiredTools: [...PERSISTENCE_TOOLS],
+        optionalEngineService: 'storage.project',
+        exportFormat: 'workspace-json',
+      },
+      services,
+      runtimeSlots,
+      prohibitedConfigFields: [...new Set([...EXPORT_STRIP_KEYS, ...USER_IDENTITY_KEYS])]
+        .sort((a, b) => a.localeCompare(b)),
+    },
+    errors: [],
+  };
 }
 
 /**
@@ -142,6 +378,10 @@ export function importConfig(json) {
   let validation = validateWorkspaceConfig(parsed, { strict: true });
   if (!validation.valid) {
     return { config: null, errors: validation.errors };
+  }
+  let portabilityWarnings = collectPortabilityWarnings(validation.warnings);
+  if (portabilityWarnings.length > 0) {
+    return { config: null, errors: portabilityWarnings };
   }
 
   return { config: parsed, errors: [] };
