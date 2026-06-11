@@ -189,7 +189,16 @@ Exposes 50 tools via JSON-RPC over stdio. Agents can scaffold, mutate, query, an
   "register": "tool",
   "theme": {
     "params": { "mode": "dark", "hue": 220 },
-    "overrides": { "--sn-gap": "8px" }
+    "relations": { "surfaceStep": 1.15 },
+    "overrides": { "--sn-gap": "8px" },
+    "subtrees": [
+      {
+        "selector": "[data-region='preview']",
+        "params": { "hue": 180 },
+        "relations": { "radiusScale": 0.8 },
+        "overrides": { "--sn-node-radius": "4px" }
+      }
+    ]
   },
   "layout": {
     "type": "split",
@@ -225,6 +234,33 @@ Exposes 50 tools via JSON-RPC over stdio. Agents can scaffold, mutate, query, an
 | `tool` | 12 | 0.1 | Dense professional UI (IDE, studio) |
 | `brand` | 6 | 0.2 | Marketing, landing pages |
 | `presentation` | 4 | 0.25 | Slides, demos, showcases |
+
+## Browser Theme Mounting
+
+`symbiote-workspace/browser` applies workspace theme config when mounting:
+
+```javascript
+import { mountWorkspace } from 'symbiote-workspace/browser';
+import { applyCascadeTheme } from 'symbiote-ui';
+
+let mounted = mountWorkspace(config, document.querySelector('#workspace'), {
+  themeAdapter: { applyCascadeTheme },
+  onThemeChange({ config }) {
+    saveConfig(config);
+  },
+});
+```
+
+`theme.params` and `theme.relations` are passed to the adapter. `theme.overrides`
+are applied as CSS custom properties on the workspace root, and `theme.subtrees`
+apply scoped params, relations, and overrides to matching descendants. If params
+or relations are present without a theme adapter, mounting throws instead of
+silently skipping the cascade.
+
+`cascade-theme-change` events from `cascade-theme-widget` or
+`cascade-theme-editor` write normalized params back into `config.theme.params`.
+Events with `detail.targetSelector` update the matching `theme.subtrees[]`
+entry so manual theme edits can survive export/import as portable config.
 
 ## Plugin System
 

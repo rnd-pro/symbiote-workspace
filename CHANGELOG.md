@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Added
+
+- **Browser theme mounting** — `mountWorkspace()` now validates config, creates
+  a workspace wrapper, applies root and subtree theme layers, and writes
+  `cascade-theme-change` params back into workspace config.
+- **Theme relations** — workspace config now carries future-compatible
+  `theme.relations` and subtree relations alongside params and token overrides.
+
 ## [0.3.0-alpha.2] - 2026-06-10
 
 ### Added

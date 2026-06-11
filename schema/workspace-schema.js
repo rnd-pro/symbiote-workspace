@@ -266,18 +266,23 @@ export const WORKSPACE_CONFIG_SCHEMA = Object.freeze({
           type: 'object',
           description: 'Parameters for createCascadeTheme(): mode, hue, chroma, brightness, contrast, etc.',
         },
+        relations: {
+          type: 'object',
+          description: 'Relative cascade formula modifiers applied by compatible theme adapters.',
+        },
         overrides: {
           type: 'object',
           description: 'Token overrides applied on top of generated cascade: { "--sn-token-name": "value" }.',
         },
         subtrees: {
           type: 'array',
-          description: 'Per-subtree theme scoping: [{ selector, params, overrides }].',
+          description: 'Per-subtree theme scoping: [{ selector, params, relations, overrides }].',
           items: {
             type: 'object',
             properties: {
               selector: { type: 'string' },
               params: { type: 'object' },
+              relations: { type: 'object' },
               overrides: { type: 'object' },
             },
             required: ['selector'],
@@ -354,6 +359,7 @@ export const WORKSPACE_CONFIG_SCHEMA = Object.freeze({
 /**
  * @typedef {Object} WorkspaceThemeConfig
  * @property {Object} [params] - Cascade theme parameters
+ * @property {Object} [relations] - Relative theme formula modifiers
  * @property {Object} [overrides] - Token overrides
  * @property {Array} [subtrees] - Per-subtree scoping
  */
@@ -451,4 +457,3 @@ export const WORKSPACE_CONFIG_SCHEMA = Object.freeze({
  * @property {Object} [data] - Data bindings
  * @property {Object} [engine] - Engine config
  */
-

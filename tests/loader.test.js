@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   loadWorkspaceConfig,
   extractThemeParams,
+  extractThemeRelations,
   extractThemeOverrides,
   extractThemeSubtrees,
 } from '../loader/index.js';
@@ -25,8 +26,9 @@ let VALID_CONFIG = {
   },
   theme: {
     params: { mode: 'dark', hue: 220 },
+    relations: { surfaceStep: 1.15 },
     overrides: { '--sn-custom-token': '10px' },
-    subtrees: [{ selector: '.sidebar', params: { hue: 180 } }],
+    subtrees: [{ selector: '.sidebar', params: { hue: 180 }, relations: { radiusScale: 0.8 } }],
   },
 };
 
@@ -86,10 +88,23 @@ describe('extractThemeOverrides', () => {
   });
 });
 
+describe('extractThemeRelations', () => {
+  it('extracts relations from config', () => {
+    let relations = extractThemeRelations(VALID_CONFIG);
+    assert.equal(relations.surfaceStep, 1.15);
+  });
+
+  it('returns empty object for missing relations', () => {
+    let relations = extractThemeRelations({ version: '0.1.0', name: 'X' });
+    assert.deepEqual(relations, {});
+  });
+});
+
 describe('extractThemeSubtrees', () => {
   it('extracts subtrees from config', () => {
     let subtrees = extractThemeSubtrees(VALID_CONFIG);
     assert.equal(subtrees.length, 1);
     assert.equal(subtrees[0].selector, '.sidebar');
+    assert.equal(subtrees[0].relations.radiusScale, 0.8);
   });
 });

@@ -20,6 +20,7 @@ export {
 export {
   loadWorkspaceConfig,
   extractThemeParams,
+  extractThemeRelations,
   extractThemeOverrides,
   extractThemeSubtrees,
 } from './loader/index.js';

@@ -150,6 +150,17 @@ export function extractThemeParams(config) {
 
 /**
  * @param {import('../schema/workspace-schema.js').WorkspaceConfig} config
+ * @returns {Object} - Relative theme relation modifiers
+ */
+export function extractThemeRelations(config) {
+  if (!isObject(config?.theme)) return {};
+  return {
+    ...(config.theme.relations || {}),
+  };
+}
+
+/**
+ * @param {import('../schema/workspace-schema.js').WorkspaceConfig} config
  * @returns {Object} - Token overrides map
  */
 export function extractThemeOverrides(config) {
