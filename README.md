@@ -449,17 +449,23 @@ Built-in workspace templates for quick start:
 
 ```bash
 npx symbiote-workspace list-templates
-# chat, editor, graph, dashboard, video-studio
+# chat, editor, graph, dashboard, admin, agent-workspace, social-automation, video-studio
 ```
 
 ```javascript
 import { listTemplates, getTemplate } from 'symbiote-workspace/constructor';
 
-listTemplates(); // ['chat', 'editor', 'graph', 'dashboard', 'video-studio']
+listTemplates();
+// ['chat', 'editor', 'graph', 'dashboard', 'admin', 'agent-workspace', 'social-automation', 'video-studio']
 
 let template = getTemplate('chat');
 console.log(template.config); // Full workspace config
 ```
+
+Canonical templates include module capability descriptors in
+`config.components.modules`, so construction plans can map selected panels to
+portable capabilities, actions, bindings, runtime slots, placement hints, and
+required host services.
 
 ## Related Packages
 

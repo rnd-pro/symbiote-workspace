@@ -10,6 +10,98 @@ import {
  * @property {import('../schema/workspace-schema.js').WorkspaceConfig} config
  */
 
+function moduleDescriptor(tagName, capabilities, options = {}) {
+  return {
+    tagName,
+    schemaVersion: '0.1.0',
+    provider: 'symbiote-ui',
+    descriptor: {
+      schemaVersion: '2.0.0',
+      package: 'symbiote-ui',
+      component: tagName,
+    },
+    capabilities,
+    ...options,
+  };
+}
+
+const MODULES = Object.freeze({
+  tree: moduleDescriptor('sn-tree-panel', ['navigation.tree', 'data.hierarchy'], {
+    events: { emits: [{ name: 'item-select' }] },
+    bindings: [{ id: 'items', direction: 'input', path: 'data.tree' }],
+  }),
+  chatTranscript: moduleDescriptor('chat-transcript', ['chat.transcript', 'agent.messages'], {
+    events: { emits: [{ name: 'message-select' }] },
+    bindings: [{ id: 'messages', direction: 'input', path: 'data.messages' }],
+  }),
+  chatComposer: moduleDescriptor('chat-composer', ['chat.compose', 'agent.command-input'], {
+    actions: [{ id: 'send', label: 'Send', event: 'message-submit' }],
+    events: { emits: [{ name: 'message-submit' }] },
+    bindings: [{ id: 'draft', direction: 'two-way', path: 'data.draft' }],
+    requiredHostServices: ['agent.runtime'],
+  }),
+  chatWorkspace: moduleDescriptor('chat-workspace', ['chat.workspace', 'agent.review'], {
+    runtimeSlots: [{ id: 'agent-runtime', role: 'provider', required: true }],
+    requiredHostServices: ['agent.runtime', 'storage.project'],
+  }),
+  sourceEditor: moduleDescriptor('source-editor', ['source.edit', 'editor.code'], {
+    actions: [{ id: 'save', label: 'Save', command: 'source.save' }],
+    events: { emits: [{ name: 'source-change' }] },
+    bindings: [{ id: 'source', direction: 'two-way', path: 'data.source' }],
+  }),
+  sourceDiff: moduleDescriptor('sn-source-diff', ['source.diff', 'review.compare'], {
+    bindings: [{ id: 'diff', direction: 'input', path: 'data.diff' }],
+  }),
+  viewport: moduleDescriptor('sn-canvas-viewport', ['canvas.preview', 'media.viewport'], {
+    actions: [{ id: 'reset-view', label: 'Reset View', command: 'viewport.reset' }],
+    bindings: [{ id: 'frame', direction: 'input', path: 'data.frame' }],
+  }),
+  nodeCanvas: moduleDescriptor('node-canvas', ['graph.canvas', 'workflow.node-editor'], {
+    actions: [{ id: 'zoom-fit', label: 'Fit to View', command: 'canvas.zoom-fit' }],
+    events: { emits: [{ name: 'node-select' }], consumes: [{ name: 'graph-update' }] },
+    bindings: [{ id: 'graph', direction: 'two-way', path: 'data.graph' }],
+    runtimeSlots: [{ id: 'graph-runtime', role: 'provider' }],
+  }),
+  inspector: moduleDescriptor('inspector-panel', ['inspector.properties', 'settings.panel'], {
+    settings: [{ id: 'selection', label: 'Selection', type: 'object' }],
+    bindings: [{ id: 'selection', direction: 'input', path: 'data.selection' }],
+  }),
+  card: moduleDescriptor('sn-card', ['dashboard.card', 'surface.summary']),
+  metric: moduleDescriptor('sn-metric', ['admin.metric', 'dashboard.metric'], {
+    bindings: [{ id: 'value', direction: 'input', path: 'data.metric' }],
+  }),
+  dataTable: moduleDescriptor('sn-data-table', ['data.table', 'admin.records', 'admin.bulk-actions'], {
+    actions: [{ id: 'refresh', label: 'Refresh', command: 'data.refresh' }],
+    toolbarItems: [{ id: 'filter', label: 'Filter', command: 'filter.open' }],
+    events: { emits: [{ name: 'row-select' }] },
+    bindings: [{ id: 'rows', direction: 'input', path: 'data.rows' }],
+    requiredHostServices: ['storage.project'],
+  }),
+  chart: moduleDescriptor('sn-chart', ['data.chart', 'dashboard.analytics'], {
+    bindings: [{ id: 'series', direction: 'input', path: 'data.series' }],
+  }),
+  eventFeed: moduleDescriptor('sn-event-feed', ['activity.feed', 'audit.events'], {
+    events: { emits: [{ name: 'event-select' }] },
+    bindings: [{ id: 'events', direction: 'input', path: 'data.events' }],
+  }),
+  timeline: moduleDescriptor('sn-timeline', ['timeline.events', 'automation.history'], {
+    events: { emits: [{ name: 'timeline-select' }] },
+    bindings: [{ id: 'items', direction: 'input', path: 'data.timeline' }],
+  }),
+  timelineEditor: moduleDescriptor('sn-timeline-editor', ['media.timeline', 'timeline.edit'], {
+    events: { emits: [{ name: 'frame-change' }, { name: 'playback-state' }] },
+    bindings: [{ id: 'clips', direction: 'two-way', path: 'data.clips' }],
+  }),
+  richTextEditor: moduleDescriptor('sn-rich-text-editor', ['content.rich-text', 'automation.reply-template'], {
+    actions: [{ id: 'insert-variable', label: 'Insert Variable', command: 'template.variable' }],
+    bindings: [{ id: 'content', direction: 'two-way', path: 'data.content' }],
+  }),
+  fileUpload: moduleDescriptor('sn-file-upload', ['input.file', 'data.import'], {
+    events: { emits: [{ name: 'file-select' }] },
+    requiredHostServices: ['storage.project'],
+  }),
+});
+
 /** @type {Object<string, WorkspaceTemplate>} */
 let WORKSPACE_TEMPLATES = {
   chat: {
@@ -60,6 +152,7 @@ let WORKSPACE_TEMPLATES = {
       },
       components: {
         catalog: ['sn-tree-panel', 'chat-transcript', 'chat-composer'],
+        modules: [MODULES.tree, MODULES.chatTranscript, MODULES.chatComposer],
       },
     },
   },
@@ -112,6 +205,7 @@ let WORKSPACE_TEMPLATES = {
       },
       components: {
         catalog: ['sn-tree-panel', 'source-editor', 'sn-canvas-viewport'],
+        modules: [MODULES.tree, MODULES.sourceEditor, MODULES.viewport],
       },
     },
   },
@@ -156,6 +250,7 @@ let WORKSPACE_TEMPLATES = {
       },
       components: {
         catalog: ['node-canvas', 'inspector-panel'],
+        modules: [MODULES.nodeCanvas, MODULES.inspector],
       },
     },
   },
@@ -204,6 +299,260 @@ let WORKSPACE_TEMPLATES = {
       },
       components: {
         catalog: ['sn-card'],
+        modules: [MODULES.card],
+      },
+    },
+  },
+
+  admin: {
+    name: 'admin',
+    description: 'Admin console workspace with metrics, records, analytics, and audit activity.',
+    config: {
+      version: WORKSPACE_SCHEMA_VERSION,
+      name: 'Admin Console',
+      register: 'admin',
+      groups: [
+        { id: 'operations', name: 'Operations', icon: 'admin_panel_settings' },
+      ],
+      sections: [
+        { id: 'overview', label: 'Overview', icon: 'dashboard', order: 0, groupId: 'operations' },
+        { id: 'records', label: 'Records', icon: 'table', order: 100, groupId: 'operations', layoutId: 'records' },
+      ],
+      panelTypes: {
+        metric: {
+          title: 'Metric',
+          icon: 'monitoring',
+          component: 'sn-metric',
+          behavior: { importance: 65, minInlineSize: 180 },
+        },
+        records: {
+          title: 'Records',
+          icon: 'table',
+          component: 'sn-data-table',
+          behavior: { importance: 90, minInlineSize: 360 },
+          menuActions: [
+            { id: 'refresh', label: 'Refresh', icon: 'refresh' },
+            { id: 'export', label: 'Export', icon: 'download' },
+          ],
+        },
+        analytics: {
+          title: 'Analytics',
+          icon: 'bar_chart',
+          component: 'sn-chart',
+          behavior: { importance: 70, minInlineSize: 300 },
+        },
+        audit: {
+          title: 'Activity',
+          icon: 'history',
+          component: 'sn-event-feed',
+          behavior: { importance: 45, minInlineSize: 260 },
+        },
+      },
+      layouts: {
+        records: {
+          type: 'split',
+          direction: 'horizontal',
+          ratio: 0.7,
+          first: { type: 'panel', panelType: 'records' },
+          second: { type: 'panel', panelType: 'audit' },
+        },
+      },
+      layout: {
+        type: 'split',
+        direction: 'vertical',
+        ratio: 0.35,
+        first: {
+          type: 'split',
+          direction: 'horizontal',
+          ratio: 0.35,
+          first: { type: 'panel', panelType: 'metric' },
+          second: { type: 'panel', panelType: 'analytics' },
+        },
+        second: {
+          type: 'split',
+          direction: 'horizontal',
+          ratio: 0.72,
+          first: { type: 'panel', panelType: 'records' },
+          second: { type: 'panel', panelType: 'audit' },
+        },
+      },
+      rootBehavior: {
+        responsiveMode: 'drawer',
+        responsiveBreakpoint: 820,
+      },
+      components: {
+        catalog: ['sn-metric', 'sn-data-table', 'sn-chart', 'sn-event-feed'],
+        modules: [MODULES.metric, MODULES.dataTable, MODULES.chart, MODULES.eventFeed],
+      },
+    },
+  },
+
+  'agent-workspace': {
+    name: 'agent-workspace',
+    description: 'Agent review workspace with chat, task activity, source diff, and workflow graph.',
+    config: {
+      version: WORKSPACE_SCHEMA_VERSION,
+      name: 'Agent Workspace',
+      register: 'agent-workspace',
+      groups: [
+        { id: 'agent', name: 'Agent', icon: 'smart_toy' },
+      ],
+      sections: [
+        { id: 'review', label: 'Review', icon: 'fact_check', order: 0, groupId: 'agent' },
+        { id: 'workflow', label: 'Workflow', icon: 'hub', order: 100, groupId: 'agent', layoutId: 'workflow' },
+      ],
+      panelTypes: {
+        chat: {
+          title: 'Chat',
+          icon: 'chat',
+          component: 'chat-workspace',
+          behavior: { importance: 90, minInlineSize: 360 },
+        },
+        activity: {
+          title: 'Activity',
+          icon: 'dynamic_feed',
+          component: 'sn-event-feed',
+          behavior: { importance: 55, minInlineSize: 260 },
+        },
+        diff: {
+          title: 'Changes',
+          icon: 'difference',
+          component: 'sn-source-diff',
+          behavior: { importance: 75, minInlineSize: 320 },
+        },
+        graph: {
+          title: 'Workflow',
+          icon: 'hub',
+          component: 'node-canvas',
+          behavior: { importance: 65, minInlineSize: 300 },
+        },
+      },
+      layouts: {
+        workflow: {
+          type: 'split',
+          direction: 'horizontal',
+          ratio: 0.65,
+          first: { type: 'panel', panelType: 'graph' },
+          second: { type: 'panel', panelType: 'activity' },
+        },
+      },
+      layout: {
+        type: 'split',
+        direction: 'horizontal',
+        ratio: 0.38,
+        first: { type: 'panel', panelType: 'chat' },
+        second: {
+          type: 'split',
+          direction: 'vertical',
+          ratio: 0.55,
+          first: { type: 'panel', panelType: 'diff' },
+          second: { type: 'panel', panelType: 'activity' },
+        },
+      },
+      events: [
+        { id: 'activity-to-diff', sourcePanel: 'activity', event: 'event-select', targetPanel: 'diff', targetProperty: 'selection' },
+        { id: 'graph-to-activity', sourcePanel: 'graph', event: 'node-select', targetPanel: 'activity', targetProperty: 'filter' },
+      ],
+      rootBehavior: {
+        responsiveMode: 'drawer',
+        responsiveBreakpoint: 780,
+      },
+      components: {
+        catalog: ['chat-workspace', 'sn-event-feed', 'sn-source-diff', 'node-canvas'],
+        modules: [MODULES.chatWorkspace, MODULES.eventFeed, MODULES.sourceDiff, MODULES.nodeCanvas],
+      },
+    },
+  },
+
+  'social-automation': {
+    name: 'social-automation',
+    description: 'Social automation workspace with queue review, reply drafting, workflow graph, and history.',
+    config: {
+      version: WORKSPACE_SCHEMA_VERSION,
+      name: 'Social Automation',
+      register: 'agent-workspace',
+      groups: [
+        { id: 'automation', name: 'Automation', icon: 'forum' },
+      ],
+      sections: [
+        { id: 'queue', label: 'Queue', icon: 'inbox', order: 0, groupId: 'automation' },
+        { id: 'workflow', label: 'Workflow', icon: 'hub', order: 100, groupId: 'automation', layoutId: 'workflow' },
+      ],
+      panelTypes: {
+        queue: {
+          title: 'Queue',
+          icon: 'table',
+          component: 'sn-data-table',
+          behavior: { importance: 85, minInlineSize: 320 },
+          menuActions: [
+            { id: 'approve', label: 'Approve', icon: 'check' },
+            { id: 'hold', label: 'Hold', icon: 'pause' },
+          ],
+        },
+        reply: {
+          title: 'Reply Draft',
+          icon: 'edit_note',
+          component: 'sn-rich-text-editor',
+          behavior: { importance: 80, minInlineSize: 320 },
+        },
+        workflow: {
+          title: 'Automation Flow',
+          icon: 'hub',
+          component: 'node-canvas',
+          behavior: { importance: 65, minInlineSize: 300 },
+        },
+        history: {
+          title: 'History',
+          icon: 'timeline',
+          component: 'sn-timeline',
+          behavior: { importance: 45, minInlineSize: 260 },
+        },
+        imports: {
+          title: 'Imports',
+          icon: 'upload_file',
+          component: 'sn-file-upload',
+          behavior: { importance: 35, minInlineSize: 220 },
+        },
+      },
+      layouts: {
+        workflow: {
+          type: 'split',
+          direction: 'horizontal',
+          ratio: 0.7,
+          first: { type: 'panel', panelType: 'workflow' },
+          second: {
+            type: 'split',
+            direction: 'vertical',
+            ratio: 0.55,
+            first: { type: 'panel', panelType: 'history' },
+            second: { type: 'panel', panelType: 'imports' },
+          },
+        },
+      },
+      layout: {
+        type: 'split',
+        direction: 'horizontal',
+        ratio: 0.42,
+        first: { type: 'panel', panelType: 'queue' },
+        second: {
+          type: 'split',
+          direction: 'vertical',
+          ratio: 0.62,
+          first: { type: 'panel', panelType: 'reply' },
+          second: { type: 'panel', panelType: 'history' },
+        },
+      },
+      events: [
+        { id: 'queue-to-reply', sourcePanel: 'queue', event: 'row-select', targetPanel: 'reply', targetProperty: 'context' },
+        { id: 'workflow-to-history', sourcePanel: 'workflow', event: 'node-select', targetPanel: 'history', targetProperty: 'filter' },
+      ],
+      rootBehavior: {
+        responsiveMode: 'drawer',
+        responsiveBreakpoint: 780,
+      },
+      components: {
+        catalog: ['sn-data-table', 'sn-rich-text-editor', 'node-canvas', 'sn-timeline', 'sn-file-upload'],
+        modules: [MODULES.dataTable, MODULES.richTextEditor, MODULES.nodeCanvas, MODULES.timeline, MODULES.fileUpload],
       },
     },
   },
@@ -308,6 +657,7 @@ let WORKSPACE_TEMPLATES = {
       },
       components: {
         catalog: ['sn-canvas-viewport', 'node-canvas', 'inspector-panel', 'sn-timeline-editor'],
+        modules: [MODULES.viewport, MODULES.nodeCanvas, MODULES.inspector, MODULES.timelineEditor],
       },
       engine: {
         packs: ['video-pack'],
@@ -321,6 +671,9 @@ let KEYWORD_MAP = new Map([
   ['chat', ['chat', 'message', 'conversation', 'messenger', 'dialog']],
   ['editor', ['editor', 'code', 'source', 'ide', 'edit', 'file']],
   ['graph', ['graph', 'node', 'canvas', 'visual', 'flow', 'pipeline', 'diagram']],
+  ['admin', ['admin', 'operations', 'records', 'table', 'audit', 'console']],
+  ['agent-workspace', ['agent', 'review', 'task', 'handoff', 'evaluation', 'control room']],
+  ['social-automation', ['social', 'reply', 'replies', 'automation', 'approval', 'queue']],
   ['dashboard', ['dashboard', 'grid', 'panel', 'overview', 'monitor', 'analytics']],
   ['video-studio', ['video', 'timeline', 'viewport', 'animation', 'render', 'studio', 'nle', 'film', 'clip']],
 ]);
@@ -330,6 +683,9 @@ let TEMPLATE_TOPOLOGIES = Object.freeze({
   editor: 'workbench',
   graph: 'focus-canvas',
   dashboard: 'grid',
+  admin: 'admin-console',
+  'agent-workspace': 'agent-review',
+  'social-automation': 'automation-desk',
   'video-studio': 'studio',
 });
 
@@ -338,6 +694,9 @@ let TOPOLOGY_OPTIONS = Object.freeze([
   'workbench',
   'focus-canvas',
   'grid',
+  'admin-console',
+  'agent-review',
+  'automation-desk',
   'studio',
 ]);
 
@@ -951,5 +1310,6 @@ export function listTemplates() {
  * @returns {WorkspaceTemplate|null}
  */
 export function getTemplate(name) {
-  return WORKSPACE_TEMPLATES[name] || null;
+  let template = WORKSPACE_TEMPLATES[name];
+  return template ? deepClone(template) : null;
 }

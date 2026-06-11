@@ -109,7 +109,10 @@ describe('planWorkspaceConstruction', () => {
   });
 
   it('carries module capability descriptors into the construction plan', () => {
-    let result = planWorkspaceConstruction('Build an admin dashboard', {
+    let result = planWorkspaceConstruction({
+      brief: 'Build a dashboard',
+      template: 'dashboard',
+    }, {
       moduleCapabilities: [{
         tagName: 'sn-card',
         provider: 'symbiote-ui',
