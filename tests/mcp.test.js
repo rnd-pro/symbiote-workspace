@@ -65,7 +65,7 @@ describe('MCP Protocol', () => {
     assert.ok(r.result.protocolVersion);
   });
 
-  it('lists all 45 tools', async () => {
+  it('lists all 50 tools', async () => {
     let responses = await mcpSession([
       { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
       { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} },

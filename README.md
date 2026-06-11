@@ -21,12 +21,12 @@ npm install symbiote-workspace symbiote-engine
 ```
 ┌─────────────────────────────────────────────┐
 │                  Dispatch                   │
-│            45 tools, 1 registry             │
-│         runtime/dispatch.js (760 LOC)       │
+│            50 tools, 1 registry             │
+│             runtime/dispatch.js             │
 ├──────────────────┬──────────────────────────┤
 │   CLI (argv)     │      MCP (JSON-RPC)      │
 │   cli.js         │      mcp/index.js        │
-│   360 lines      │      136 lines           │
+│   thin proxy     │      thin proxy          │
 ├──────────────────┴──────────────────────────┤
 │  handlers/* (12 modules)  constructor/*     │
 │  schema/*  validation/*   loader/*          │
@@ -108,7 +108,7 @@ await dispatch('save_config', { filePath: './workspace.json' }, session);
 
 ## CLI
 
-All 45 tools available as CLI commands:
+All 50 tools available as CLI commands:
 
 ```bash
 # Scaffold
