@@ -22,7 +22,7 @@ npm install symbiote-workspace symbiote-engine
 ```
 ┌─────────────────────────────────────────────┐
 │                  Dispatch                   │
-│            56 tools, 1 registry             │
+│            57 tools, 1 registry             │
 │             runtime/dispatch.js             │
 ├──────────────────┬──────────────────────────┤
 │   CLI (argv)     │      MCP (JSON-RPC)      │
@@ -130,7 +130,7 @@ await dispatch('save_config', { filePath: './workspace.json' }, session);
 
 ## CLI
 
-All 56 tools available as CLI commands:
+All 57 tools available as CLI commands:
 
 ```bash
 # Scaffold
@@ -187,7 +187,7 @@ Start as MCP server for AI agent integration:
 npx symbiote-workspace mcp
 ```
 
-Exposes 56 tools via JSON-RPC over stdio. Agents can classify, plan,
+Exposes 57 tools via JSON-RPC over stdio. Agents can classify, plan,
 propose, validate, apply, export, mutate, and query workspaces
 programmatically.
 
@@ -197,7 +197,7 @@ programmatically.
 |----------|-------|
 | **Discovery** | `describe_workspace` `discover_components` `find_component` `list_component_tags` `list_categories` `list_used_components` |
 | **Scaffold** | `list_templates` `scaffold_workspace` `scaffold_from_scratch` |
-| **Construction** | `classify_workspace` `plan_workspace` `propose_workspace_patch` `validate_workspace_patch` `apply_workspace_patch` `export_workspace` |
+| **Construction** | `classify_workspace` `plan_workspace` `construct_workspace` `propose_workspace_patch` `validate_workspace_patch` `apply_workspace_patch` `export_workspace` |
 | **Groups** | `add_group` `remove_group` `update_group` `reorder_groups` `list_groups` |
 | **Sections** | `add_section` `remove_section` `update_section` `reorder_sections` `list_sections` |
 | **Layout** | `set_layout` `add_panel` `remove_panel` `resize_panel` `update_layout_behavior` |
@@ -290,6 +290,11 @@ programmatically.
 
 The constructor protocol is designed for agents that build workspaces from
 declared modules instead of editing application code directly.
+
+The read-only `plan_workspace` tool returns the same construction plan without
+changing session state. The mutating `construct_workspace` tool writes the
+planned executable config into the active CLI/MCP session and participates in
+the same `--config` auto-save flow as other mutating tools.
 
 ```javascript
 import {

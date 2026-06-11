@@ -80,6 +80,7 @@ describe('MCP Protocol', () => {
     let toolNames = new Set(toolList.result.tools.map((tool) => tool.name));
     assert.equal(toolNames.has('classify_workspace'), true);
     assert.equal(toolNames.has('plan_workspace'), true);
+    assert.equal(toolNames.has('construct_workspace'), true);
     assert.equal(toolNames.has('apply_workspace_patch'), true);
     assert.equal(toolNames.has('export_workspace'), true);
 
@@ -127,6 +128,41 @@ describe('MCP Protocol', () => {
     let content = JSON.parse(listResult.result.content[0].text);
     assert.equal(content.count, 1);
     assert.equal(content.groups[0].id, 'g1');
+  });
+
+  it('constructs workspace state through tools/call and exports it from the same session', async () => {
+    let responses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: {
+          name: 'construct_workspace',
+          arguments: {
+            intent: 'social automation reply queue',
+            template: 'social-automation',
+            name: 'MCP Constructed',
+            requiredCapabilities: ['automation.reply-template', 'data.import'],
+          },
+        },
+      },
+      {
+        jsonrpc: '2.0', id: 3, method: 'tools/call',
+        params: { name: 'export_workspace', arguments: {} },
+      },
+    ], 1200);
+
+    let constructResult = responses.find((r) => r.id === 2);
+    assert.ok(constructResult);
+    let constructContent = JSON.parse(constructResult.result.content[0].text);
+    assert.equal(constructContent.status, 'ok');
+    assert.deepEqual(constructContent.plan.answers.moduleSelection, ['imports', 'reply']);
+
+    let exportResult = responses.find((r) => r.id === 3);
+    assert.ok(exportResult);
+    let exportContent = JSON.parse(exportResult.result.content[0].text);
+    let exportedConfig = JSON.parse(exportContent.json);
+    assert.equal(exportedConfig.name, 'MCP Constructed');
+    assert.deepEqual(exportedConfig.construction.plan.capabilities.missing, []);
   });
 
   it('returns error for unknown method', async () => {

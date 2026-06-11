@@ -45,6 +45,7 @@ Tool Commands (all dispatch to unified API):
   scaffold-from-scratch Create blank workspace
   classify-workspace  Classify workspace intent without mutating config
   plan-workspace      Build construction questions and plan without mutating config
+  construct-workspace Build construction plan and store config in active session
   propose-workspace-patch Preview a workspace patch without mutating config
   validate-workspace-patch Validate a workspace patch before applying it
   apply-workspace-patch Apply a validated workspace patch
@@ -227,6 +228,7 @@ const COMMAND_ALIASES = {
   validate: 'validate_config',
   scaffold: 'scaffold_workspace',
   plan: 'scaffold_workspace',
+  construct: 'construct_workspace',
   describe: 'describe_workspace',
   discover: 'discover_components',
   preview: 'start_preview',
@@ -241,6 +243,7 @@ const POSITIONAL_MAP = {
   scaffold_workspace: 'template',
   classify_workspace: 'intent',
   plan_workspace: 'intent',
+  construct_workspace: 'intent',
   validate_config: '_filePath',
   describe_workspace: '_filePath',
   start_preview: '_filePath',

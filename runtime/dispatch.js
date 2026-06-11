@@ -18,6 +18,16 @@ import { resolve } from 'node:path';
  * @property {boolean} [mutates] - Whether this tool modifies config
  */
 
+const WORKSPACE_REGISTER_ENUM = Object.freeze([
+  'tool',
+  'admin',
+  'editor',
+  'agent-workspace',
+  'media-studio',
+  'brand',
+  'presentation',
+]);
+
 /** @type {ToolDefinition[]} */
 export const TOOLS = [
   // ── Discovery ──
@@ -91,7 +101,7 @@ export const TOOLS = [
       properties: {
         template: { type: 'string', description: 'Template name or intent text.' },
         name: { type: 'string', description: 'Workspace name override.' },
-        register: { type: 'string', enum: ['tool', 'brand', 'presentation'] },
+        register: { type: 'string', enum: WORKSPACE_REGISTER_ENUM },
       },
     },
     mutates: true,
@@ -103,7 +113,7 @@ export const TOOLS = [
       type: 'object',
       properties: {
         name: { type: 'string', description: 'Workspace name.' },
-        register: { type: 'string', enum: ['tool', 'brand', 'presentation'] },
+        register: { type: 'string', enum: WORKSPACE_REGISTER_ENUM },
       },
     },
     mutates: true,
@@ -121,17 +131,46 @@ export const TOOLS = [
   },
   {
     name: 'plan_workspace',
-    description: 'Generate construction intent, questions, plan, and config without mutating the active session.',
+    description: 'Generate construction intent, questions, plan, and config without mutating the session.',
     inputSchema: {
       type: 'object',
       properties: {
-        intent: { type: 'string', description: 'Workspace brief or intent text.' },
+        intent: { description: 'Workspace brief string or construction intent object.' },
+        template: { type: 'string', description: 'Explicit template override.' },
         name: { type: 'string', description: 'Workspace name override.' },
-        register: { type: 'string', enum: ['tool', 'admin', 'editor', 'agent-workspace', 'media-studio', 'brand', 'presentation'] },
+        register: { type: 'string', enum: WORKSPACE_REGISTER_ENUM },
+        targetRegister: { type: 'string', enum: WORKSPACE_REGISTER_ENUM },
+        audience: { type: 'array', items: { type: 'string' } },
+        constraints: { type: 'array', items: { type: 'string' } },
+        requiredCapabilities: { type: 'array', items: { type: 'string' } },
+        preferredTheme: { type: 'object' },
+        moduleCapabilities: { type: 'array', items: { type: 'object' } },
         answers: { type: 'object', description: 'Question answers keyed by question ID.' },
       },
       required: ['intent'],
     },
+  },
+  {
+    name: 'construct_workspace',
+    description: 'Generate a construction plan and store the executable config in the active session.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        intent: { description: 'Workspace brief string or construction intent object.' },
+        template: { type: 'string', description: 'Explicit template override.' },
+        name: { type: 'string', description: 'Workspace name override.' },
+        register: { type: 'string', enum: WORKSPACE_REGISTER_ENUM },
+        targetRegister: { type: 'string', enum: WORKSPACE_REGISTER_ENUM },
+        audience: { type: 'array', items: { type: 'string' } },
+        constraints: { type: 'array', items: { type: 'string' } },
+        requiredCapabilities: { type: 'array', items: { type: 'string' } },
+        preferredTheme: { type: 'object' },
+        moduleCapabilities: { type: 'array', items: { type: 'object' } },
+        answers: { type: 'object', description: 'Question answers keyed by question ID.' },
+      },
+      required: ['intent'],
+    },
+    mutates: true,
   },
   {
     name: 'propose_workspace_patch',
@@ -678,6 +717,48 @@ async function getConstructor() {
   return _constructor;
 }
 
+function isObject(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function constructionIntentFromArgs(args) {
+  let intent = args.intent;
+  if (typeof intent !== 'string' && !isObject(intent)) return intent;
+
+  let result = typeof intent === 'string' ? { brief: intent } : { ...intent };
+  for (let field of [
+    'template',
+    'targetRegister',
+    'audience',
+    'constraints',
+    'requiredCapabilities',
+    'preferredTheme',
+  ]) {
+    if (args[field] !== undefined && result[field] === undefined) result[field] = args[field];
+  }
+  if (args.register !== undefined && result.targetRegister === undefined) {
+    result.targetRegister = args.register;
+  }
+  return result;
+}
+
+function constructionOptionsFromArgs(args, intent) {
+  let register;
+  if (args.targetRegister !== undefined) {
+    register = args.targetRegister;
+  } else if (args.register !== undefined && !intent?.targetRegister) {
+    register = args.register;
+  }
+
+  return {
+    name: args.name,
+    register,
+    answers: args.answers,
+    moduleCapabilities: args.moduleCapabilities,
+    theme: args.theme,
+  };
+}
+
 /**
  * Dispatch a tool call.
  *
@@ -709,11 +790,11 @@ export async function dispatch(toolName, args, session) {
 
   if (toolName === 'plan_workspace') {
     let c = await getConstructor();
-    let result = c.planWorkspaceConstruction(args.intent, {
-      name: args.name,
-      register: args.register,
-      answers: args.answers,
-    });
+    let constructionIntent = constructionIntentFromArgs(args);
+    let result = c.planWorkspaceConstruction(
+      constructionIntent,
+      constructionOptionsFromArgs(args, constructionIntent),
+    );
     return {
       status: 'ok',
       templateName: result.intent.template,
@@ -721,6 +802,34 @@ export async function dispatch(toolName, args, session) {
       questions: result.questions,
       plan: result.plan,
       config: result.config,
+    };
+  }
+
+  if (toolName === 'construct_workspace') {
+    let c = await getConstructor();
+    let result;
+    try {
+      let constructionIntent = constructionIntentFromArgs(args);
+      result = c.planWorkspaceConstruction(
+        constructionIntent,
+        constructionOptionsFromArgs(args, constructionIntent),
+      );
+    } catch (err) {
+      return {
+        status: 'error',
+        tool: toolName,
+        hint: err.message,
+      };
+    }
+    session.config = result.config;
+    return {
+      status: 'ok',
+      templateName: result.intent.template,
+      intent: result.intent,
+      questions: result.questions,
+      plan: result.plan,
+      config: result.config,
+      hint: `Workspace "${result.config.name}" constructed from "${result.intent.template}".`,
     };
   }
 
