@@ -1,3 +1,5 @@
+import { MODULE_CAPABILITY_DESCRIPTOR_SCHEMA } from './module-capability.js';
+
 export const WORKSPACE_SCHEMA_VERSION = '0.2.0';
 
 export const WORKSPACE_REGISTER_VALUES = Object.freeze([
@@ -330,6 +332,7 @@ export const WORKSPACE_CONFIG_SCHEMA = Object.freeze({
     construction: CONSTRUCTION_SCHEMA,
     patch: PATCH_SCHEMA,
     validationReport: VALIDATION_REPORT_SCHEMA,
+    moduleCapability: MODULE_CAPABILITY_DESCRIPTOR_SCHEMA,
   },
   properties: {
     version: {
@@ -468,6 +471,11 @@ export const WORKSPACE_CONFIG_SCHEMA = Object.freeze({
             required: ['tagName'],
           },
         },
+        modules: {
+          type: 'array',
+          description: 'Module capability descriptors for catalog or custom components.',
+          items: MODULE_CAPABILITY_DESCRIPTOR_SCHEMA,
+        },
       },
     },
     data: {
@@ -532,6 +540,25 @@ export const WORKSPACE_CONFIG_SCHEMA = Object.freeze({
  * @property {string} component
  * @property {LayoutBehavior} [behavior]
  * @property {MenuAction[]} [menuActions]
+ */
+
+/**
+ * @typedef {Object} ModuleCapabilityDescriptor
+ * @property {string} tagName
+ * @property {string} [schemaVersion]
+ * @property {string} [provider]
+ * @property {Object} [descriptor]
+ * @property {string[]} [capabilities]
+ * @property {Object[]} [actions]
+ * @property {Object[]} [menus]
+ * @property {Object[]} [toolbarItems]
+ * @property {Object[]} [settings]
+ * @property {Object} [events]
+ * @property {Object[]} [bindings]
+ * @property {Object[]} [slots]
+ * @property {Object[]} [runtimeSlots]
+ * @property {string[]} [requiredHostServices]
+ * @property {Object} [placement]
  */
 
 /**

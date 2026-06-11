@@ -431,14 +431,63 @@ function templateConfig(templateName) {
   return WORKSPACE_TEMPLATES[templateName].config;
 }
 
+function withModuleCapabilities(config, moduleCapabilities) {
+  let next = deepClone(config);
+  if (moduleCapabilities === undefined) return next;
+  if (!Array.isArray(moduleCapabilities)) {
+    throw new Error('moduleCapabilities must be an array when provided.');
+  }
+
+  next.components ||= {};
+  let existing = Array.isArray(next.components.modules) ? next.components.modules : [];
+  let byTagName = new Map();
+  for (let descriptor of [...existing, ...moduleCapabilities]) {
+    if (!isObject(descriptor)) {
+      throw new Error('moduleCapabilities entries must be objects.');
+    }
+    if (typeof descriptor.tagName !== 'string' || !descriptor.tagName.trim()) {
+      throw new Error('moduleCapabilities entries require a tagName.');
+    }
+    byTagName.set(descriptor.tagName, deepClone(descriptor));
+  }
+  next.components.modules = [...byTagName.values()].sort((a, b) => a.tagName.localeCompare(b.tagName));
+
+  let catalog = new Set(next.components.catalog || []);
+  for (let descriptor of next.components.modules) catalog.add(descriptor.tagName);
+  next.components.catalog = [...catalog].sort((a, b) => a.localeCompare(b));
+
+  return next;
+}
+
+function moduleDescriptorMap(config) {
+  let descriptors = new Map();
+  for (let descriptor of config.components?.modules || []) {
+    if (isObject(descriptor) && typeof descriptor.tagName === 'string') {
+      descriptors.set(descriptor.tagName, descriptor);
+    }
+  }
+  return descriptors;
+}
+
+function applyDescriptorPlanFields(target, descriptor) {
+  if (!descriptor) return target;
+  target.capabilities = deepClone(descriptor.capabilities || []);
+  target.requiredHostServices = deepClone(descriptor.requiredHostServices || []);
+  for (let field of ['actions', 'menus', 'toolbarItems', 'settings', 'events', 'bindings', 'slots', 'runtimeSlots', 'placement']) {
+    if (descriptor[field] !== undefined) target[field] = deepClone(descriptor[field]);
+  }
+  return target;
+}
+
 function moduleOptions(config) {
+  let descriptors = moduleDescriptorMap(config);
   return Object.entries(config.panelTypes || {})
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([panelType, panel]) => ({
+    .map(([panelType, panel]) => applyDescriptorPlanFields({
       value: panelType,
       label: panel.title,
       component: panel.component,
-    }));
+    }, descriptors.get(panel.component)));
 }
 
 function themeDefaults(config, register, preferredTheme = null) {
@@ -452,7 +501,7 @@ function themeDefaults(config, register, preferredTheme = null) {
 }
 
 function buildQuestionDefinitions(intent, options = {}) {
-  let config = templateConfig(intent.template);
+  let config = withModuleCapabilities(templateConfig(intent.template), options.moduleCapabilities);
   let modules = moduleOptions(config);
   let theme = themeDefaults(config, intent.targetRegister, intent.preferredTheme);
 
@@ -669,15 +718,16 @@ function sectionLayoutPlan(config) {
 
 function modulePlan(config, selectedModules) {
   let selected = new Set(selectedModules);
+  let descriptors = moduleDescriptorMap(config);
   return Object.entries(config.panelTypes || {})
     .filter(([panelType]) => selected.has(panelType))
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([panelType, panel]) => ({
+    .map(([panelType, panel]) => applyDescriptorPlanFields({
       panelType,
       title: panel.title,
       component: panel.component,
       icon: panel.icon || null,
-    }));
+    }, descriptors.get(panel.component)));
 }
 
 function verificationPlan(scope) {
@@ -756,7 +806,7 @@ export function answerConstructionQuestion(questions, questionId, answer) {
  */
 export function planWorkspaceConstruction(intent, options = {}) {
   let normalized = normalizeConstructionIntent(intent, options);
-  let config = deepClone(templateConfig(normalized.template));
+  let config = withModuleCapabilities(templateConfig(normalized.template), options.moduleCapabilities);
   let questions = applyAnswers(buildConstructionQuestions(normalized, options), options.answers || {});
   let answers = answerMap(questions);
   let workspaceName = answers.get('workspace-name') || config.name;

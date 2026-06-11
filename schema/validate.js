@@ -7,6 +7,7 @@ import {
   MOBILE_DOCKS,
   SWIPE_CONTROLS,
 } from './workspace-schema.js';
+import { validateModuleCapabilityDescriptor } from './module-capability.js';
 
 /** @type {Set<string>} */
 let BLOCKED_CONFIG_PATTERNS = new Set([
@@ -210,8 +211,12 @@ export function validateWorkspaceConfig(config, options = {}) {
     crossReferenceLayout(config.layout, config.panelTypes, 'layout', errors, warnings);
   }
 
-  if (config.components !== undefined && !isObject(config.components)) {
-    errors.push({ path: 'components', message: 'Field "components" must be an object.', severity: 'error' });
+  if (config.components !== undefined) {
+    if (!isObject(config.components)) {
+      errors.push({ path: 'components', message: 'Field "components" must be an object.', severity: 'error' });
+    } else {
+      validateComponents(config.components, errors, warnings);
+    }
   }
 
   if (options.strict) {
@@ -527,6 +532,52 @@ function validateEvents(events, errors, warnings) {
         errors.push({ path: `${path}.id`, message: `Duplicate event bridge ID: "${ev.id}".`, severity: 'error' });
       }
       ids.add(ev.id);
+    }
+  }
+}
+
+function validateComponents(components, errors, warnings) {
+  if (components.catalog !== undefined) {
+    validateStringArray(components.catalog, 'components.catalog', errors);
+  }
+
+  if (components.custom !== undefined) {
+    if (!Array.isArray(components.custom)) {
+      errors.push({ path: 'components.custom', message: 'components.custom must be an array.', severity: 'error' });
+    } else {
+      let customTags = new Set();
+      for (let i = 0; i < components.custom.length; i++) {
+        let item = components.custom[i];
+        let path = `components.custom[${i}]`;
+        if (!isObject(item)) {
+          errors.push({ path, message: 'Custom component entry must be an object.', severity: 'error' });
+          continue;
+        }
+        if (!item.tagName || typeof item.tagName !== 'string') {
+          errors.push({ path: `${path}.tagName`, message: 'Custom component requires a tagName.', severity: 'error' });
+        } else if (customTags.has(item.tagName)) {
+          errors.push({ path: `${path}.tagName`, message: `Duplicate custom component tag: "${item.tagName}".`, severity: 'error' });
+        } else {
+          customTags.add(item.tagName);
+        }
+      }
+    }
+  }
+
+  if (components.modules !== undefined) {
+    if (!Array.isArray(components.modules)) {
+      errors.push({ path: 'components.modules', message: 'components.modules must be an array.', severity: 'error' });
+    } else {
+      let moduleTags = new Set();
+      for (let i = 0; i < components.modules.length; i++) {
+        let descriptor = components.modules[i];
+        let path = `components.modules[${i}]`;
+        validateModuleCapabilityDescriptor(descriptor, path, errors);
+        if (descriptor?.tagName && moduleTags.has(descriptor.tagName)) {
+          errors.push({ path: `${path}.tagName`, message: `Duplicate module descriptor tag: "${descriptor.tagName}".`, severity: 'error' });
+        }
+        if (descriptor?.tagName) moduleTags.add(descriptor.tagName);
+      }
     }
   }
 }

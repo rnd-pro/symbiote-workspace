@@ -117,6 +117,50 @@ describe('validatePluginDefinition', () => {
     assert.equal(result.valid, false);
   });
 
+  it('accepts component capability descriptor entries', () => {
+    let result = validatePluginDefinition({
+      name: 'table-plugin',
+      version: '1.0.0',
+      category: 'component',
+      capabilities: ['admin.table'],
+      requiredHostServices: ['storage.project'],
+      components: [{
+        tagName: 'sn-data-table',
+        provider: 'symbiote-ui',
+        capabilities: ['data.table', 'admin.bulk-actions'],
+        actions: [{ id: 'refresh', label: 'Refresh' }],
+        toolbarItems: [{ id: 'filter', label: 'Filter' }],
+        settings: [{ id: 'density', label: 'Density', type: 'enum' }],
+        events: { emits: [{ name: 'row-select' }] },
+        bindings: [{ id: 'rows', direction: 'input' }],
+        runtimeSlots: [{ id: 'data-provider', role: 'provider' }],
+        requiredHostServices: ['storage.project'],
+      }],
+    });
+
+    assert.equal(result.valid, true);
+    assert.equal(result.errors.length, 0);
+  });
+
+  it('rejects invalid component capability descriptors', () => {
+    let result = validatePluginDefinition({
+      name: 'broken-plugin',
+      version: '1.0.0',
+      capabilities: ['admin table'],
+      requiredHostServices: ['https://api.example.com'],
+      components: [{
+        tagName: 'Broken Component',
+        actions: [{ id: 'open' }],
+      }],
+    });
+
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some((error) => error.path === 'capabilities[0]'));
+    assert.ok(result.errors.some((error) => error.path === 'requiredHostServices[0]'));
+    assert.ok(result.errors.some((error) => error.path === 'components[0].tagName'));
+    assert.ok(result.errors.some((error) => error.path === 'components[0].actions[0].label'));
+  });
+
   it('rejects non-function activate', () => {
     let result = validatePluginDefinition({
       name: 'test',

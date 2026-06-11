@@ -303,6 +303,15 @@ let questions = buildConstructionQuestions('build an agent review workspace');
 questions = answerConstructionQuestion(questions, 'theme-mode', 'dark');
 
 let { config } = planWorkspaceConstruction('build an agent review workspace', {
+  moduleCapabilities: [
+    {
+      tagName: 'sn-data-table',
+      provider: 'symbiote-ui',
+      capabilities: ['data.table', 'admin.bulk-actions'],
+      actions: [{ id: 'refresh', label: 'Refresh' }],
+      requiredHostServices: ['storage.project'],
+    },
+  ],
   answers: {
     'workspace-name': 'Review Desk',
     'target-register': 'agent-workspace',
@@ -316,6 +325,10 @@ console.log(extractConstructionPlan(config));
 `config.construction.questions` stores the questionnaire state, including
 defaults, answers, dependencies, and skipped reasons.
 `config.construction.plan` stores the normalized construction plan.
+`components.modules` stores module capability descriptors for catalog or custom
+components. The constructor copies matching descriptor capabilities, actions,
+settings, events, bindings, runtime slots, placement hints, and required host
+service IDs into `config.construction.plan.modules`.
 `validation.reports` and `patches` can persist machine-readable review results
 from patch validation.
 
@@ -373,8 +386,21 @@ export default {
     },
   ],
 
-  // UI components (tag names for symbiote-ui catalog)
-  components: ['sn-my-widget'],
+  // UI components as tag names or module capability descriptors
+  components: [
+    'sn-my-widget',
+    {
+      tagName: 'sn-data-table',
+      provider: 'symbiote-ui',
+      capabilities: ['data.table'],
+      toolbarItems: [{ id: 'filter', label: 'Filter' }],
+      requiredHostServices: ['storage.project'],
+    },
+  ],
+
+  // Plugin-level portable requirements
+  capabilities: ['admin.table'],
+  requiredHostServices: ['storage.project'],
 
   // Workspace integration
   workspace: {

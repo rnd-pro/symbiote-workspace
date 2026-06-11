@@ -10,6 +10,12 @@
  * @module symbiote-workspace/plugins/plugin-schema
  */
 
+import {
+  MODULE_CAPABILITY_DESCRIPTOR_SCHEMA,
+  validateModuleCapabilityDescriptor,
+  validatePortableStringArray,
+} from '../schema/module-capability.js';
+
 export const PLUGIN_CATEGORIES = Object.freeze([
   'handler',
   'provider',
@@ -40,7 +46,9 @@ export const PLUGIN_CATEGORIES = Object.freeze([
  * @property {string} [description] - Human-readable description
  * @property {string} [category] - Plugin category from PLUGIN_CATEGORIES
  * @property {PluginHandler[]} [handlers] - Engine handler definitions
- * @property {string[]} [components] - UI component tag names
+ * @property {(string|import('../schema/workspace-schema.js').ModuleCapabilityDescriptor)[]} [components] - UI component tags or descriptors
+ * @property {string[]} [capabilities] - Plugin-level portable capability tags
+ * @property {string[]} [requiredHostServices] - Portable host service IDs
  * @property {PluginWorkspace} [workspace] - Workspace integration config
  * @property {function} [activate] - Called when plugin is loaded, receives context
  * @property {function} [deactivate] - Called when plugin is unloaded
@@ -83,7 +91,22 @@ export const PLUGIN_SCHEMA = Object.freeze({
     },
     components: {
       type: 'array',
-      description: 'UI component tag names provided by this plugin.',
+      description: 'UI component tag names or module capability descriptors provided by this plugin.',
+      items: {
+        oneOf: [
+          { type: 'string' },
+          MODULE_CAPABILITY_DESCRIPTOR_SCHEMA,
+        ],
+      },
+    },
+    capabilities: {
+      type: 'array',
+      description: 'Portable plugin capability tags.',
+      items: { type: 'string' },
+    },
+    requiredHostServices: {
+      type: 'array',
+      description: 'Portable host service IDs required by this plugin; never credentials or endpoints.',
       items: { type: 'string' },
     },
     workspace: {
@@ -147,13 +170,25 @@ export function validatePluginDefinition(plugin) {
     }
   }
 
+  if (plugin.capabilities !== undefined) {
+    validatePortableStringArray(plugin.capabilities, 'capabilities', errors, { severity: false });
+  }
+
+  if (plugin.requiredHostServices !== undefined) {
+    validatePortableStringArray(plugin.requiredHostServices, 'requiredHostServices', errors, { severity: false });
+  }
+
   if (plugin.components !== undefined) {
     if (!Array.isArray(plugin.components)) {
-      errors.push({ path: 'components', message: 'components must be an array of strings.' });
+      errors.push({ path: 'components', message: 'components must be an array of strings or module descriptors.' });
     } else {
       for (let i = 0; i < plugin.components.length; i++) {
-        if (typeof plugin.components[i] !== 'string') {
-          errors.push({ path: `components[${i}]`, message: 'Component entry must be a string.' });
+        let component = plugin.components[i];
+        if (typeof component === 'string') continue;
+        if (component && typeof component === 'object') {
+          validateModuleCapabilityDescriptor(component, `components[${i}]`, errors, { severity: false });
+        } else {
+          errors.push({ path: `components[${i}]`, message: 'Component entry must be a string or module descriptor.' });
         }
       }
     }

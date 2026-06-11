@@ -107,6 +107,41 @@ describe('planWorkspaceConstruction', () => {
       ['theme', 'portability'],
     );
   });
+
+  it('carries module capability descriptors into the construction plan', () => {
+    let result = planWorkspaceConstruction('Build an admin dashboard', {
+      moduleCapabilities: [{
+        tagName: 'sn-card',
+        provider: 'symbiote-ui',
+        capabilities: ['admin.metric', 'dashboard.card'],
+        actions: [{ id: 'refresh', label: 'Refresh' }],
+        settings: [{ id: 'density', label: 'Density', type: 'enum' }],
+        events: { emits: [{ name: 'metric-select' }] },
+        bindings: [{ id: 'metric', direction: 'input', path: 'data.metrics' }],
+        runtimeSlots: [{ id: 'metric-provider', role: 'provider' }],
+        requiredHostServices: ['storage.project'],
+        placement: { registers: ['admin'], regions: ['main'] },
+      }],
+      answers: {
+        'module-selection': ['panel-1'],
+      },
+    });
+
+    assert.deepEqual(result.config.components.modules.map((item) => item.tagName), ['sn-card']);
+    assert.ok(result.config.components.catalog.includes('sn-card'));
+    assert.equal(result.plan.modules.length, 1);
+    assert.equal(result.plan.modules[0].component, 'sn-card');
+    assert.deepEqual(result.plan.modules[0].capabilities, ['admin.metric', 'dashboard.card']);
+    assert.deepEqual(result.plan.modules[0].requiredHostServices, ['storage.project']);
+    assert.deepEqual(result.plan.modules[0].actions, [{ id: 'refresh', label: 'Refresh' }]);
+    assert.deepEqual(result.plan.modules[0].placement, { registers: ['admin'], regions: ['main'] });
+  });
+
+  it('rejects malformed module capability option entries', () => {
+    assert.throws(() => planWorkspaceConstruction('Build a dashboard', {
+      moduleCapabilities: [{ capabilities: ['admin.metric'] }],
+    }), /require a tagName/);
+  });
 });
 
 describe('construction schema validation', () => {

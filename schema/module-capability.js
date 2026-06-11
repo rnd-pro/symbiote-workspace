@@ -1,0 +1,341 @@
+export const MODULE_CAPABILITY_SCHEMA_VERSION = '0.1.0';
+
+const PORTABLE_ID_PATTERN = /^[a-z][a-z0-9]*(?:[./:_-][a-z0-9]+)*$/;
+const CUSTOM_ELEMENT_PATTERN = /^[a-z][a-z0-9]*(-[a-z0-9]+)+$/;
+
+function stringProperty(description) {
+  return { type: 'string', description };
+}
+
+const MODULE_ACTION_SCHEMA = Object.freeze({
+  type: 'object',
+  required: ['id', 'label'],
+  properties: {
+    id: stringProperty('Portable action identifier.'),
+    label: stringProperty('Human-readable action label.'),
+    icon: stringProperty('Material Symbols icon name.'),
+    command: stringProperty('Portable command identifier handled by the host or module.'),
+    event: stringProperty('DOM event emitted when the action is invoked.'),
+    method: stringProperty('Component method to call when invoked.'),
+    binding: stringProperty('Data binding identifier affected by the action.'),
+  },
+});
+
+const MODULE_SETTING_SCHEMA = Object.freeze({
+  type: 'object',
+  required: ['id', 'label', 'type'],
+  properties: {
+    id: stringProperty('Portable setting identifier.'),
+    label: stringProperty('Human-readable setting label.'),
+    type: {
+      type: 'string',
+      enum: ['string', 'number', 'boolean', 'enum', 'object', 'array', 'color', 'token', 'json'],
+    },
+    default: {},
+    options: { type: 'array', items: { type: 'object' } },
+    binding: stringProperty('Data binding identifier updated by this setting.'),
+  },
+});
+
+const MODULE_EVENT_SCHEMA = Object.freeze({
+  type: 'object',
+  required: ['name'],
+  properties: {
+    name: stringProperty('DOM event name.'),
+    detailSchema: { type: 'object' },
+    description: stringProperty('Event description.'),
+  },
+});
+
+const MODULE_BINDING_SCHEMA = Object.freeze({
+  type: 'object',
+  required: ['id', 'direction'],
+  properties: {
+    id: stringProperty('Portable binding identifier.'),
+    direction: { type: 'string', enum: ['input', 'output', 'two-way'] },
+    path: stringProperty('Config or state path for the binding.'),
+    schema: { type: 'object' },
+  },
+});
+
+const MODULE_SLOT_SCHEMA = Object.freeze({
+  type: 'object',
+  required: ['id'],
+  properties: {
+    id: stringProperty('Portable slot identifier.'),
+    role: stringProperty('Slot role in the module.'),
+    accepts: { type: 'array', items: { type: 'string' } },
+    required: { type: 'boolean' },
+  },
+});
+
+export const MODULE_CAPABILITY_DESCRIPTOR_SCHEMA = Object.freeze({
+  type: 'object',
+  required: ['tagName'],
+  properties: {
+    tagName: stringProperty('Custom element tag name owned by the module.'),
+    schemaVersion: stringProperty('Module capability descriptor schema version.'),
+    provider: stringProperty('Provider package or registry identifier.'),
+    descriptor: {
+      type: 'object',
+      description: 'Reference to the provider descriptor without embedding host-local paths or endpoints.',
+      properties: {
+        schemaVersion: stringProperty('Provider descriptor schema version.'),
+        package: stringProperty('Provider package name.'),
+        export: stringProperty('Provider export name.'),
+        component: stringProperty('Provider component identifier.'),
+      },
+    },
+    capabilities: {
+      type: 'array',
+      items: { type: 'string' },
+      description: 'Portable capability tags used by the constructor.',
+    },
+    actions: { type: 'array', items: MODULE_ACTION_SCHEMA },
+    menus: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['id', 'label'],
+        properties: {
+          id: stringProperty('Portable menu identifier.'),
+          label: stringProperty('Human-readable menu label.'),
+          items: { type: 'array', items: MODULE_ACTION_SCHEMA },
+        },
+      },
+    },
+    toolbarItems: { type: 'array', items: MODULE_ACTION_SCHEMA },
+    settings: { type: 'array', items: MODULE_SETTING_SCHEMA },
+    events: {
+      type: 'object',
+      properties: {
+        emits: { type: 'array', items: MODULE_EVENT_SCHEMA },
+        consumes: { type: 'array', items: MODULE_EVENT_SCHEMA },
+      },
+    },
+    bindings: { type: 'array', items: MODULE_BINDING_SCHEMA },
+    slots: { type: 'array', items: MODULE_SLOT_SCHEMA },
+    runtimeSlots: { type: 'array', items: MODULE_SLOT_SCHEMA },
+    requiredHostServices: {
+      type: 'array',
+      items: { type: 'string' },
+      description: 'Portable service IDs the host must provide; never credentials or endpoints.',
+    },
+    placement: {
+      type: 'object',
+      description: 'Constructor placement hints such as regions, registers, and panel roles.',
+    },
+  },
+});
+
+function isObject(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function pushError(errors, path, message, options) {
+  let error = { path, message };
+  if (options.severity !== false) error.severity = 'error';
+  errors.push(error);
+}
+
+function validatePortableId(value, path, errors, options) {
+  if (typeof value !== 'string' || !value.trim()) {
+    pushError(errors, path, 'Value must be a non-empty string.', options);
+    return;
+  }
+  if (!PORTABLE_ID_PATTERN.test(value)) {
+    pushError(errors, path, `Value "${value}" must be a portable identifier, not a URL, path, or display label.`, options);
+  }
+}
+
+function validatePortableStringArray(value, path, errors, options = {}) {
+  if (!Array.isArray(value)) {
+    pushError(errors, path, `${path} must be an array.`, options);
+    return;
+  }
+  let seen = new Set();
+  for (let i = 0; i < value.length; i++) {
+    let itemPath = `${path}[${i}]`;
+    validatePortableId(value[i], itemPath, errors, options);
+    if (typeof value[i] === 'string') {
+      if (seen.has(value[i])) {
+        pushError(errors, itemPath, `Duplicate portable identifier "${value[i]}".`, options);
+      }
+      seen.add(value[i]);
+    }
+  }
+}
+
+function validateActionList(value, path, errors, options) {
+  if (!Array.isArray(value)) {
+    pushError(errors, path, `${path} must be an array.`, options);
+    return;
+  }
+  let ids = new Set();
+  for (let i = 0; i < value.length; i++) {
+    let action = value[i];
+    let itemPath = `${path}[${i}]`;
+    if (!isObject(action)) {
+      pushError(errors, itemPath, 'Action entry must be an object.', options);
+      continue;
+    }
+    validatePortableId(action.id, `${itemPath}.id`, errors, options);
+    if (typeof action.label !== 'string' || !action.label.trim()) {
+      pushError(errors, `${itemPath}.label`, 'Action requires a non-empty label.', options);
+    }
+    if (action.id && ids.has(action.id)) {
+      pushError(errors, `${itemPath}.id`, `Duplicate action ID "${action.id}".`, options);
+    }
+    if (action.id) ids.add(action.id);
+  }
+}
+
+function validateSettings(value, path, errors, options) {
+  if (!Array.isArray(value)) {
+    pushError(errors, path, `${path} must be an array.`, options);
+    return;
+  }
+  let types = new Set(MODULE_SETTING_SCHEMA.properties.type.enum);
+  for (let i = 0; i < value.length; i++) {
+    let setting = value[i];
+    let itemPath = `${path}[${i}]`;
+    if (!isObject(setting)) {
+      pushError(errors, itemPath, 'Setting entry must be an object.', options);
+      continue;
+    }
+    validatePortableId(setting.id, `${itemPath}.id`, errors, options);
+    if (typeof setting.label !== 'string' || !setting.label.trim()) {
+      pushError(errors, `${itemPath}.label`, 'Setting requires a non-empty label.', options);
+    }
+    if (!types.has(setting.type)) {
+      pushError(errors, `${itemPath}.type`, `Invalid setting type "${setting.type}".`, options);
+    }
+  }
+}
+
+function validateEvents(value, path, errors, options) {
+  if (!isObject(value)) {
+    pushError(errors, path, `${path} must be an object.`, options);
+    return;
+  }
+  for (let key of ['emits', 'consumes']) {
+    if (value[key] === undefined) continue;
+    if (!Array.isArray(value[key])) {
+      pushError(errors, `${path}.${key}`, `${path}.${key} must be an array.`, options);
+      continue;
+    }
+    for (let i = 0; i < value[key].length; i++) {
+      let event = value[key][i];
+      let itemPath = `${path}.${key}[${i}]`;
+      if (!isObject(event)) {
+        pushError(errors, itemPath, 'Event entry must be an object.', options);
+      } else if (typeof event.name !== 'string' || !event.name.trim()) {
+        pushError(errors, `${itemPath}.name`, 'Event requires a non-empty name.', options);
+      }
+    }
+  }
+}
+
+function validateBindings(value, path, errors, options) {
+  if (!Array.isArray(value)) {
+    pushError(errors, path, `${path} must be an array.`, options);
+    return;
+  }
+  let directions = new Set(MODULE_BINDING_SCHEMA.properties.direction.enum);
+  for (let i = 0; i < value.length; i++) {
+    let binding = value[i];
+    let itemPath = `${path}[${i}]`;
+    if (!isObject(binding)) {
+      pushError(errors, itemPath, 'Binding entry must be an object.', options);
+      continue;
+    }
+    validatePortableId(binding.id, `${itemPath}.id`, errors, options);
+    if (!directions.has(binding.direction)) {
+      pushError(errors, `${itemPath}.direction`, `Invalid binding direction "${binding.direction}".`, options);
+    }
+  }
+}
+
+function validateSlots(value, path, errors, options) {
+  if (!Array.isArray(value)) {
+    pushError(errors, path, `${path} must be an array.`, options);
+    return;
+  }
+  for (let i = 0; i < value.length; i++) {
+    let slot = value[i];
+    let itemPath = `${path}[${i}]`;
+    if (!isObject(slot)) {
+      pushError(errors, itemPath, 'Slot entry must be an object.', options);
+      continue;
+    }
+    validatePortableId(slot.id, `${itemPath}.id`, errors, options);
+    if (slot.accepts !== undefined) validatePortableStringArray(slot.accepts, `${itemPath}.accepts`, errors, options);
+  }
+}
+
+/**
+ * @param {any} descriptor
+ * @param {string} path
+ * @param {Array} errors
+ * @param {{ severity?: boolean }} [options]
+ */
+export function validateModuleCapabilityDescriptor(descriptor, path, errors, options = {}) {
+  if (!isObject(descriptor)) {
+    pushError(errors, path, 'Module capability descriptor must be an object.', options);
+    return;
+  }
+
+  if (typeof descriptor.tagName !== 'string' || !descriptor.tagName.trim()) {
+    pushError(errors, `${path}.tagName`, 'Module capability descriptor requires a tagName.', options);
+  } else if (!CUSTOM_ELEMENT_PATTERN.test(descriptor.tagName)) {
+    pushError(errors, `${path}.tagName`, `Component tag "${descriptor.tagName}" must be a valid custom element name.`, options);
+  }
+
+  if (descriptor.schemaVersion !== undefined && typeof descriptor.schemaVersion !== 'string') {
+    pushError(errors, `${path}.schemaVersion`, 'schemaVersion must be a string.', options);
+  }
+  if (descriptor.provider !== undefined && typeof descriptor.provider !== 'string') {
+    pushError(errors, `${path}.provider`, 'provider must be a string.', options);
+  }
+  if (descriptor.descriptor !== undefined && !isObject(descriptor.descriptor)) {
+    pushError(errors, `${path}.descriptor`, 'descriptor must be an object.', options);
+  }
+
+  if (descriptor.capabilities !== undefined) {
+    validatePortableStringArray(descriptor.capabilities, `${path}.capabilities`, errors, options);
+  }
+  if (descriptor.requiredHostServices !== undefined) {
+    validatePortableStringArray(descriptor.requiredHostServices, `${path}.requiredHostServices`, errors, options);
+  }
+  if (descriptor.actions !== undefined) validateActionList(descriptor.actions, `${path}.actions`, errors, options);
+  if (descriptor.toolbarItems !== undefined) validateActionList(descriptor.toolbarItems, `${path}.toolbarItems`, errors, options);
+  if (descriptor.menus !== undefined) {
+    if (!Array.isArray(descriptor.menus)) {
+      pushError(errors, `${path}.menus`, 'menus must be an array.', options);
+    } else {
+      for (let i = 0; i < descriptor.menus.length; i++) {
+        let menu = descriptor.menus[i];
+        let itemPath = `${path}.menus[${i}]`;
+        if (!isObject(menu)) {
+          pushError(errors, itemPath, 'Menu entry must be an object.', options);
+          continue;
+        }
+        validatePortableId(menu.id, `${itemPath}.id`, errors, options);
+        if (typeof menu.label !== 'string' || !menu.label.trim()) {
+          pushError(errors, `${itemPath}.label`, 'Menu requires a non-empty label.', options);
+        }
+        if (menu.items !== undefined) validateActionList(menu.items, `${itemPath}.items`, errors, options);
+      }
+    }
+  }
+  if (descriptor.settings !== undefined) validateSettings(descriptor.settings, `${path}.settings`, errors, options);
+  if (descriptor.events !== undefined) validateEvents(descriptor.events, `${path}.events`, errors, options);
+  if (descriptor.bindings !== undefined) validateBindings(descriptor.bindings, `${path}.bindings`, errors, options);
+  if (descriptor.slots !== undefined) validateSlots(descriptor.slots, `${path}.slots`, errors, options);
+  if (descriptor.runtimeSlots !== undefined) validateSlots(descriptor.runtimeSlots, `${path}.runtimeSlots`, errors, options);
+  if (descriptor.placement !== undefined && !isObject(descriptor.placement)) {
+    pushError(errors, `${path}.placement`, 'placement must be an object.', options);
+  }
+}
+
+export { validatePortableStringArray };

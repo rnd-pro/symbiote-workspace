@@ -5,6 +5,7 @@ import {
   WORKSPACE_SCHEMA_VERSION,
   WORKSPACE_REGISTER_VALUES,
   WORKSPACE_CONFIG_SCHEMA,
+  MODULE_CAPABILITY_DESCRIPTOR_SCHEMA,
   validateWorkspaceConfig,
   isCompatibleVersion,
 } from '../schema/index.js';
@@ -27,6 +28,11 @@ describe('schema', () => {
     assert.equal(WORKSPACE_CONFIG_SCHEMA.type, 'object');
     assert.ok(WORKSPACE_CONFIG_SCHEMA.required.includes('version'));
     assert.ok(WORKSPACE_CONFIG_SCHEMA.required.includes('name'));
+  });
+
+  it('exports module capability descriptor schema', () => {
+    assert.ok(Object.isFrozen(MODULE_CAPABILITY_DESCRIPTOR_SCHEMA));
+    assert.deepEqual(MODULE_CAPABILITY_DESCRIPTOR_SCHEMA.required, ['tagName']);
   });
 });
 
@@ -122,6 +128,62 @@ describe('validateWorkspaceConfig', () => {
     }, { strict: true });
     assert.equal(result.valid, false);
     assert.ok(result.errors.some((e) => e.message.includes('unknownField')));
+  });
+
+  it('accepts module capability descriptors in component metadata', () => {
+    let result = validateWorkspaceConfig({
+      version: '0.2.0',
+      name: 'Admin Workspace',
+      components: {
+        catalog: ['sn-data-table'],
+        modules: [{
+          tagName: 'sn-data-table',
+          schemaVersion: '0.1.0',
+          provider: 'symbiote-ui',
+          descriptor: {
+            schemaVersion: '2.0.0',
+            package: 'symbiote-ui',
+            export: 'display/data-table',
+            component: 'sn-data-table',
+          },
+          capabilities: ['data.table', 'admin.bulk-actions'],
+          actions: [{ id: 'refresh', label: 'Refresh', event: 'refresh' }],
+          menus: [{ id: 'row-menu', label: 'Row menu', items: [{ id: 'open', label: 'Open' }] }],
+          toolbarItems: [{ id: 'filter', label: 'Filter', command: 'filter.open' }],
+          settings: [{ id: 'page-size', label: 'Page size', type: 'number', default: 50 }],
+          events: { emits: [{ name: 'row-select' }], consumes: [{ name: 'data-update' }] },
+          bindings: [{ id: 'rows', direction: 'input', path: 'data.rows' }],
+          slots: [{ id: 'empty-state', accepts: ['sn-empty-state'] }],
+          runtimeSlots: [{ id: 'data-provider', role: 'provider', required: true }],
+          requiredHostServices: ['storage.project', 'selection'],
+          placement: { regions: ['main'], registers: ['admin'] },
+        }],
+      },
+    }, { strict: true });
+
+    assert.equal(result.valid, true);
+    assert.equal(result.errors.length, 0);
+  });
+
+  it('rejects invalid module capability descriptors', () => {
+    let result = validateWorkspaceConfig({
+      version: '0.2.0',
+      name: 'Broken Workspace',
+      components: {
+        modules: [{
+          tagName: 'Data Table',
+          capabilities: ['data table'],
+          actions: [{ id: 'refresh' }],
+          requiredHostServices: ['https://api.example.com'],
+        }],
+      },
+    }, { strict: true });
+
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some((error) => error.path === 'components.modules[0].tagName'));
+    assert.ok(result.errors.some((error) => error.path === 'components.modules[0].capabilities[0]'));
+    assert.ok(result.errors.some((error) => error.path === 'components.modules[0].actions[0].label'));
+    assert.ok(result.errors.some((error) => error.path === 'components.modules[0].requiredHostServices[0]'));
   });
 });
 
