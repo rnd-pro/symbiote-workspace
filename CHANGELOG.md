@@ -55,6 +55,10 @@ All notable changes to this project will be documented in this file.
   as strict portable workspace configs, classify by template metadata, and
   construct configs through `plan_workspace`, `construct_workspace`, and CLI
   `--workspace-templates` without importing plugin registry code.
+- **Collaboration room template verification** — tests now cover portable
+  command chat, team room, and voice/video room plugin templates through
+  strict export/import/relaunch, host integration contracts, and packed
+  consumer construction without npm publication.
 
 ### Changed
 

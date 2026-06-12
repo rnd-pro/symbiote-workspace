@@ -640,6 +640,13 @@ let { config } = planWorkspaceConstruction({
 CLI construction commands accept the same input with
 `--workspace-templates <json-array>`.
 
+External templates can model collaboration products such as command chats, team
+rooms, and voice/video rooms with neutral capability tags, for example
+`room.command`, `room.transcript`, `room.video`, `call.controls`, and
+`presence.roster`. Required services and runtime providers stay declarative in
+`requiredHostServices` and `runtimeSlots`; the host supplies actual realtime
+media, agent runtime, presence, and storage implementations.
+
 ## Related Packages
 
 - [`symbiote-ui`](https://github.com/RND-PRO/symbiote-ui) - Web Components, provider catalogs, layout metadata, and WebMCP descriptors.

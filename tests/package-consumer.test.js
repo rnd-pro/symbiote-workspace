@@ -226,15 +226,54 @@ describe('packed package consumer', () => {
             }
           ],
           workspace: {
-            templates: [{
-              name: 'sentiment-review-room',
-              description: 'Sentiment review room.',
-              config: {
-                version: '0.1.0',
-                name: 'Sentiment Review Room',
-                register: 'agent-workspace'
+            templates: [
+              {
+                name: 'sentiment-review-room',
+                description: 'Sentiment review room.',
+                config: {
+                  version: '0.1.0',
+                  name: 'Sentiment Review Room',
+                  register: 'agent-workspace'
+                }
+              },
+              {
+                name: 'voice-video-room',
+                description: 'Portable voice and video AI room.',
+                config: {
+                  version: '0.1.0',
+                  name: 'Voice Video Room',
+                  register: 'agent-workspace',
+                  panelTypes: {
+                    stage: { title: 'Stage', icon: 'video_call', component: 'room-media-stage' },
+                    command: { title: 'Command', icon: 'terminal', component: 'room-command-panel' }
+                  },
+                  layout: {
+                    type: 'split',
+                    direction: 'horizontal',
+                    ratio: 0.7,
+                    first: { type: 'panel', panelType: 'stage' },
+                    second: { type: 'panel', panelType: 'command' }
+                  },
+                  components: {
+                    catalog: ['room-media-stage', 'room-command-panel'],
+                    modules: [
+                      {
+                        tagName: 'room-media-stage',
+                        capabilities: ['room.video', 'room.audio', 'media.realtime'],
+                        runtimeSlots: [{ id: 'media-session', role: 'provider', required: true }],
+                        requiredHostServices: ['media.realtime', 'presence.session']
+                      },
+                      {
+                        tagName: 'room-command-panel',
+                        capabilities: ['room.command', 'agent.command-input'],
+                        runtimeSlots: [{ id: 'agent-runtime', role: 'provider', required: true }],
+                        requiredHostServices: ['agent.runtime']
+                      }
+                    ]
+                  }
+                }
               }
-            }]
+            ]
           }
         };
         let pluginCapabilities = collectPluginModuleCapabilities([plugin]);
@@ -260,6 +299,24 @@ describe('packed package consumer', () => {
         if (roomPlan.config.name !== 'Sentiment Review Room') {
           throw new Error('plugin workspace template config was not constructed');
         }
+        let callPlan = planWorkspaceConstruction({
+          brief: 'voice video AI room',
+          template: 'voice-video-room',
+          requiredCapabilities: ['room.video', 'room.command']
+        }, {
+          workspaceTemplates: pluginTemplates.templates
+        });
+        if (callPlan.plan.capabilities.missing.length !== 0) {
+          throw new Error('voice/video room capabilities were not covered');
+        }
+        let callContract = createHostIntegrationContract(callPlan.config);
+        if (
+          callContract.status !== 'ok' ||
+          !callContract.contract.services.required.includes('media.realtime') ||
+          !callContract.contract.runtimeSlots.required.some((slot) => slot.id === 'media-session')
+        ) {
+          throw new Error('voice/video room host contract missing media requirements');
+        }
         registerPlugin(plugin);
         registerPlugin({
           name: '@acme/inactive-pack',
@@ -278,8 +335,9 @@ describe('packed package consumer', () => {
         let activeTemplates = listPluginWorkspaceTemplates({ status: 'active' });
         if (
           !activeTemplates.ok ||
-          activeTemplates.templates.length !== 1 ||
-          activeTemplates.templates[0].name !== 'sentiment-review-room'
+          activeTemplates.templates.length !== 2 ||
+          !activeTemplates.templates.some((template) => template.name === 'sentiment-review-room') ||
+          !activeTemplates.templates.some((template) => template.name === 'voice-video-room')
         ) {
           throw new Error(JSON.stringify(activeTemplates));
         }

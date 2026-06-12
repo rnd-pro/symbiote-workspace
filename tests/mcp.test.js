@@ -22,6 +22,43 @@ let EXTERNAL_SENTIMENT_MODULE = {
     behavior: { importance: 72, minInlineSize: 260 },
   },
 };
+let EXTERNAL_ROOM_TEMPLATE = {
+  name: 'mcp-voice-video-room',
+  description: 'Portable MCP voice and video room.',
+  config: {
+    version: '0.1.0',
+    name: 'MCP Voice Video Room',
+    register: 'agent-workspace',
+    panelTypes: {
+      stage: { title: 'Stage', icon: 'video_call', component: 'mcp-room-stage' },
+      command: { title: 'Command', icon: 'terminal', component: 'mcp-room-command' },
+    },
+    layout: {
+      type: 'split',
+      direction: 'horizontal',
+      ratio: 0.7,
+      first: { type: 'panel', panelType: 'stage' },
+      second: { type: 'panel', panelType: 'command' },
+    },
+    components: {
+      catalog: ['mcp-room-stage', 'mcp-room-command'],
+      modules: [
+        {
+          tagName: 'mcp-room-stage',
+          capabilities: ['room.video', 'room.audio', 'media.realtime'],
+          runtimeSlots: [{ id: 'media-session', role: 'provider', required: true }],
+          requiredHostServices: ['media.realtime', 'presence.session'],
+        },
+        {
+          tagName: 'mcp-room-command',
+          capabilities: ['room.command', 'agent.command-input'],
+          runtimeSlots: [{ id: 'agent-runtime', role: 'provider', required: true }],
+          requiredHostServices: ['agent.runtime'],
+        },
+      ],
+    },
+  },
+};
 
 function layoutReferencesPanel(node, panelType) {
   if (!node) return false;
@@ -243,6 +280,45 @@ describe('MCP Protocol', () => {
     assert.equal(exportedConfig.panelTypes.sentiment.component, 'acme-sentiment-panel');
     assert.ok(exportedConfig.components.catalog.includes('acme-sentiment-panel'));
     assert.ok(layoutReferencesPanel(exportedConfig.layout, 'sentiment'));
+  });
+
+  it('constructs external room templates through tools/call and exports executable config', async () => {
+    let responses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: {
+          name: 'construct_workspace',
+          arguments: {
+            intent: 'voice video AI room',
+            template: 'mcp-voice-video-room',
+            requiredCapabilities: ['room.video', 'room.command'],
+            workspaceTemplates: [EXTERNAL_ROOM_TEMPLATE],
+          },
+        },
+      },
+      {
+        jsonrpc: '2.0', id: 3, method: 'tools/call',
+        params: { name: 'export_workspace', arguments: {} },
+      },
+    ], 5000);
+
+    let constructResult = responses.find((r) => r.id === 2);
+    assert.ok(constructResult);
+    let constructContent = JSON.parse(constructResult.result.content[0].text);
+    assert.equal(constructContent.status, 'ok');
+    assert.equal(constructContent.intent.template, 'mcp-voice-video-room');
+    assert.deepEqual(constructContent.plan.capabilities.missing, []);
+
+    let exportResult = responses.find((r) => r.id === 3);
+    assert.ok(exportResult);
+    let exportContent = JSON.parse(exportResult.result.content[0].text);
+    let exportedConfig = JSON.parse(exportContent.json);
+    assert.equal(exportedConfig.name, 'MCP Voice Video Room');
+    assert.equal(exportedConfig.panelTypes.stage.component, 'mcp-room-stage');
+    assert.ok(exportedConfig.components.catalog.includes('mcp-room-command'));
+    assert.ok(layoutReferencesPanel(exportedConfig.layout, 'stage'));
+    assert.ok(layoutReferencesPanel(exportedConfig.layout, 'command'));
   });
 
   it('returns error for unknown method', async () => {
