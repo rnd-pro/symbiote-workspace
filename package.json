@@ -82,7 +82,8 @@
     "access": "public"
   },
   "scripts": {
-    "test": "node --test tests/*.test.js"
+    "test": "node --test tests/*.test.js",
+    "test:package-consumer": "node --test tests/package-consumer.test.js"
   },
   "keywords": [
     "workspace",

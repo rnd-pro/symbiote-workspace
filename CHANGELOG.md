@@ -32,6 +32,10 @@ All notable changes to this project will be documented in this file.
   for a portable workspace config.
 - **Theme relations** — workspace config now carries future-compatible
   `theme.relations` and subtree relations alongside params and token overrides.
+- **Package consumer verification** — `npm run test:package-consumer` now packs
+  `symbiote-workspace` and the installed `symbiote-ui` substitute into a
+  temporary consumer, then verifies public entrypoints, CLI, construction,
+  export, host contract, and MCP stdio behavior without npm publication.
 
 ### Changed
 
@@ -45,6 +49,11 @@ All notable changes to this project will be documented in this file.
   sanitizing so relaunch flows cannot hide local paths, sessions, endpoints, or
   user identity. Imports and file loads reject host/local-only payloads,
   generic server URLs, and user identity fields.
+
+### Fixed
+
+- **MCP test timing** — MCP protocol tests now wait for expected JSON-RPC
+  responses instead of relying on short fixed timers.
 
 ## [0.3.0-alpha.2] - 2026-06-10
 

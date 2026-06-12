@@ -17,6 +17,20 @@ For server mode (optional):
 npm install symbiote-workspace symbiote-engine
 ```
 
+## Local Package Verification
+
+For pre-publication development, verify the packed package through a temporary
+consumer instead of publishing to npm:
+
+```bash
+npm run test:package-consumer
+```
+
+The test packs this workspace and the currently installed `symbiote-ui`
+substitute, installs both tarballs into a gitignored `tmp/` consumer, then
+checks public entry points, the CLI bin, construction/export/host-contract
+flow, and MCP stdio behavior. It does not publish or require registry writes.
+
 ## Architecture
 
 ```

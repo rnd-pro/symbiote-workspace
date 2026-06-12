@@ -12,14 +12,36 @@ let MCP_SCRIPT = resolve(__dirname, '../mcp/index.js');
 /**
  * Start MCP server and exchange messages.
  * @param {Object[]} messages - JSON-RPC messages to send
- * @param {number} [timeout=2000] - Max wait time in ms
+ * @param {number} [timeout=3000] - Max wait time in ms
  * @returns {Promise<Object[]>} - Responses received
  */
-function mcpSession(messages, timeout = 800) {
+function mcpSession(messages, timeout = 3000) {
   return new Promise((resolve, reject) => {
     let mcp = spawn('node', [MCP_SCRIPT], { stdio: ['pipe', 'pipe', 'pipe'] });
     let responses = [];
     let buf = '';
+    let timers = [];
+    let expectedResponses = messages.filter((message) => message.id !== undefined).length;
+    let settled = false;
+
+    function cleanup() {
+      for (let timer of timers) clearTimeout(timer);
+      if (!mcp.killed) mcp.kill();
+    }
+
+    function finish() {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(responses);
+    }
+
+    function fail(error) {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(error);
+    }
 
     mcp.stdout.on('data', (d) => {
       buf += d.toString();
@@ -32,25 +54,26 @@ function mcpSession(messages, timeout = 800) {
         let body = buf.slice(bodyStart, bodyStart + len);
         buf = buf.slice(bodyStart + len);
         responses.push(JSON.parse(body));
+        if (expectedResponses > 0 && responses.length >= expectedResponses) {
+          finish();
+          return;
+        }
       }
     });
+    mcp.on('error', fail);
 
     function send(obj) {
       let json = JSON.stringify(obj);
       mcp.stdin.write(`Content-Length: ${Buffer.byteLength(json)}\r\n\r\n${json}`);
     }
 
-    // Send messages with delays
     let delay = 0;
     for (let msg of messages) {
-      setTimeout(() => send(msg), delay);
+      timers.push(setTimeout(() => send(msg), delay));
       delay += 100;
     }
 
-    setTimeout(() => {
-      mcp.kill();
-      resolve(responses);
-    }, Math.max(timeout, delay + 500));
+    timers.push(setTimeout(finish, Math.max(timeout, delay + 500)));
   });
 }
 
