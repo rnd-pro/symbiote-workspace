@@ -70,6 +70,8 @@ export {
   validatePlugin,
   collectPluginModuleCapabilities,
   listPluginModuleCapabilities,
+  collectPluginWorkspaceTemplates,
+  listPluginWorkspaceTemplates,
 } from './plugins/index.js';
 
 export {

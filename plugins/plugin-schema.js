@@ -15,6 +15,7 @@ import {
   validateModuleCapabilityDescriptor,
   validatePortableStringArray,
 } from '../schema/module-capability.js';
+import { validateWorkspaceConfig } from '../schema/validate.js';
 
 export const PLUGIN_CATEGORIES = Object.freeze([
   'handler',
@@ -23,6 +24,8 @@ export const PLUGIN_CATEGORIES = Object.freeze([
   'theme',
   'integration',
 ]);
+
+const TEMPLATE_NAME_PATTERN = /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/;
 
 /**
  * @typedef {Object} PluginHandler
@@ -36,7 +39,14 @@ export const PLUGIN_CATEGORIES = Object.freeze([
 /**
  * @typedef {Object} PluginWorkspace
  * @property {Object} [configSchema] - JSON Schema for plugin-specific parameters
- * @property {Array<import('../schema/workspace-schema.js').WorkspaceConfig>} [templates] - Additional workspace templates
+ * @property {Array<PluginWorkspaceTemplate>} [templates] - Additional workspace templates
+ */
+
+/**
+ * @typedef {Object} PluginWorkspaceTemplate
+ * @property {string} name - Portable template identifier.
+ * @property {string} [description]
+ * @property {import('../schema/workspace-schema.js').WorkspaceConfig} config
  */
 
 /**
@@ -114,7 +124,18 @@ export const PLUGIN_SCHEMA = Object.freeze({
       description: 'Workspace integration: config schema and templates.',
       properties: {
         configSchema: { type: 'object' },
-        templates: { type: 'array' },
+        templates: {
+          type: 'array',
+          items: {
+            type: 'object',
+            required: ['name', 'config'],
+            properties: {
+              name: { type: 'string' },
+              description: { type: 'string' },
+              config: { type: 'object' },
+            },
+          },
+        },
       },
     },
     activate: {
@@ -194,8 +215,12 @@ export function validatePluginDefinition(plugin) {
     }
   }
 
-  if (plugin.workspace !== undefined && (typeof plugin.workspace !== 'object' || plugin.workspace === null)) {
-    errors.push({ path: 'workspace', message: 'workspace must be an object.' });
+  if (plugin.workspace !== undefined) {
+    if (typeof plugin.workspace !== 'object' || plugin.workspace === null) {
+      errors.push({ path: 'workspace', message: 'workspace must be an object.' });
+    } else if (plugin.workspace.templates !== undefined) {
+      validateWorkspaceTemplates(plugin.workspace.templates, errors);
+    }
   }
 
   if (plugin.activate !== undefined && typeof plugin.activate !== 'function') {
@@ -207,4 +232,43 @@ export function validatePluginDefinition(plugin) {
   }
 
   return { valid: errors.length === 0, errors };
+}
+
+function validateWorkspaceTemplates(templates, errors) {
+  if (!Array.isArray(templates)) {
+    errors.push({ path: 'workspace.templates', message: 'workspace.templates must be an array.' });
+    return;
+  }
+
+  for (let i = 0; i < templates.length; i++) {
+    validatePluginWorkspaceTemplate(templates[i], `workspace.templates[${i}]`, errors);
+  }
+}
+
+export function validatePluginWorkspaceTemplate(template, path, errors) {
+  if (!template || typeof template !== 'object' || Array.isArray(template)) {
+    errors.push({ path, message: 'Workspace template entry must be an object.' });
+    return;
+  }
+
+  if (typeof template.name !== 'string' || !template.name.trim()) {
+    errors.push({ path: `${path}.name`, message: 'Workspace template requires a name.' });
+  } else if (!TEMPLATE_NAME_PATTERN.test(template.name)) {
+    errors.push({
+      path: `${path}.name`,
+      message: `Workspace template name "${template.name}" must be a portable identifier.`,
+    });
+  }
+
+  if (template.description !== undefined && typeof template.description !== 'string') {
+    errors.push({ path: `${path}.description`, message: 'Workspace template description must be a string.' });
+  }
+
+  let validation = validateWorkspaceConfig(template.config, { strict: true });
+  for (let error of validation.errors) {
+    errors.push({
+      ...error,
+      path: error.path ? `${path}.config.${error.path}` : `${path}.config`,
+    });
+  }
 }

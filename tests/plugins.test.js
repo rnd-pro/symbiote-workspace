@@ -15,8 +15,21 @@ import {
   validatePlugin,
   collectPluginModuleCapabilities,
   listPluginModuleCapabilities,
+  collectPluginWorkspaceTemplates,
+  listPluginWorkspaceTemplates,
 } from '../plugins/index.js';
-import { validateModuleCapabilityDescriptor } from '../schema/module-capability.js';
+import {
+  validateModuleCapabilityDescriptor,
+  WORKSPACE_SCHEMA_VERSION,
+} from '../schema/index.js';
+
+function workspaceConfig(name) {
+  return {
+    version: WORKSPACE_SCHEMA_VERSION,
+    name,
+    register: 'agent-workspace',
+  };
+}
 
 describe('PLUGIN_SCHEMA', () => {
   it('exports a frozen schema object with required fields', () => {
@@ -204,6 +217,40 @@ describe('validatePluginDefinition', () => {
     assert.equal(result.valid, true);
     assert.equal(result.errors.length, 0);
   });
+
+  it('accepts workspace template entries', () => {
+    let result = validatePluginDefinition({
+      name: '@acme/rooms',
+      version: '1.0.0',
+      workspace: {
+        templates: [{
+          name: 'team-ai-room',
+          description: 'Team AI room workspace.',
+          config: workspaceConfig('Team AI Room'),
+        }],
+      },
+    });
+
+    assert.equal(result.valid, true);
+    assert.equal(result.errors.length, 0);
+  });
+
+  it('rejects invalid workspace template entries', () => {
+    let result = validatePluginDefinition({
+      name: '@acme/broken-rooms',
+      version: '1.0.0',
+      workspace: {
+        templates: [
+          { name: 'Broken Room', config: workspaceConfig('Broken Room') },
+          { name: 'missing-version', config: { name: 'Missing Version' } },
+        ],
+      },
+    });
+
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some((error) => error.path === 'workspace.templates[0].name'));
+    assert.ok(result.errors.some((error) => error.path === 'workspace.templates[1].config.version'));
+  });
 });
 
 describe('Plugin Registry', () => {
@@ -376,6 +423,115 @@ describe('plugin module capability collection', () => {
       ['acme-active-panel', 'acme-inactive-panel'],
     );
     assert.deepEqual(active.moduleCapabilities.map((item) => item.tagName), ['acme-active-panel']);
+  });
+});
+
+describe('plugin workspace template collection', () => {
+  beforeEach(() => {
+    clearPlugins();
+  });
+
+  it('collects portable workspace templates from plugin definitions', () => {
+    let plugin = {
+      name: '@acme/rooms',
+      version: '1.0.0',
+      workspace: {
+        templates: [
+          {
+            name: 'team-ai-room',
+            description: 'Team AI room workspace.',
+            config: workspaceConfig('Team AI Room'),
+          },
+        ],
+      },
+    };
+
+    let result = collectPluginWorkspaceTemplates([plugin]);
+
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.errors, []);
+    assert.deepEqual(result.templates.map((template) => template.name), ['team-ai-room']);
+    assert.equal(result.templates[0].description, 'Team AI room workspace.');
+    assert.equal(result.templates[0].config.name, 'Team AI Room');
+
+    result.templates[0].config.name = 'Mutated';
+    assert.equal(plugin.workspace.templates[0].config.name, 'Team AI Room');
+  });
+
+  it('returns prefixed validation errors for invalid workspace templates', () => {
+    let result = collectPluginWorkspaceTemplates([{
+      name: '@acme/broken-rooms',
+      version: '1.0.0',
+      workspace: {
+        templates: [
+          { name: 'broken-room', config: { name: 'Missing Version' } },
+          { description: 'Missing template name.', config: workspaceConfig('No Name') },
+        ],
+      },
+    }]);
+
+    assert.equal(result.ok, false);
+    assert.deepEqual(result.templates, []);
+    assert.ok(result.errors.some((error) => (
+      error.path === 'plugins[0].workspace.templates[0].config.version'
+    )));
+    assert.ok(result.errors.some((error) => (
+      error.path === 'plugins[0].workspace.templates[1].name'
+    )));
+  });
+
+  it('rejects duplicate workspace template names across plugin inputs', () => {
+    let result = collectPluginWorkspaceTemplates([
+      {
+        name: '@acme/rooms-a',
+        version: '1.0.0',
+        workspace: {
+          templates: [{ name: 'team-ai-room', config: workspaceConfig('Room A') }],
+        },
+      },
+      {
+        name: '@acme/rooms-b',
+        version: '1.0.0',
+        workspace: {
+          templates: [{ name: 'team-ai-room', config: workspaceConfig('Room B') }],
+        },
+      },
+    ]);
+
+    assert.equal(result.ok, false);
+    assert.deepEqual(result.templates, []);
+    assert.ok(result.errors.some((error) => (
+      error.path === 'plugins[1].workspace.templates[0].name'
+    )));
+  });
+
+  it('lists workspace templates from the plugin registry', async () => {
+    registerPlugin({
+      name: '@acme/inactive-rooms',
+      version: '1.0.0',
+      workspace: {
+        templates: [{ name: 'inactive-room', config: workspaceConfig('Inactive Room') }],
+      },
+    });
+    registerPlugin({
+      name: '@acme/active-rooms',
+      version: '1.0.0',
+      workspace: {
+        templates: [{ name: 'active-room', config: workspaceConfig('Active Room') }],
+      },
+    });
+
+    await activatePlugin('@acme/active-rooms');
+
+    let all = listPluginWorkspaceTemplates();
+    let active = listPluginWorkspaceTemplates({ status: 'active' });
+
+    assert.equal(all.ok, true);
+    assert.deepEqual(
+      all.templates.map((template) => template.name),
+      ['active-room', 'inactive-room'],
+    );
+    assert.deepEqual(active.templates.map((template) => template.name), ['active-room']);
   });
 });
 

@@ -151,12 +151,22 @@ describe('packed package consumer', () => {
 
       await runNode(consumerDir, `
         import { collectPluginModuleCapabilities as fromRoot } from 'symbiote-workspace';
+        import { collectPluginWorkspaceTemplates as templatesFromRoot } from 'symbiote-workspace';
         import { collectPluginModuleCapabilities as fromPlugins } from 'symbiote-workspace/plugins';
+        import { collectPluginWorkspaceTemplates as templatesFromPlugins } from 'symbiote-workspace/plugins';
         import { collectPluginModuleCapabilities as fromBrowser } from 'symbiote-workspace/browser';
+        import { collectPluginWorkspaceTemplates as templatesFromBrowser } from 'symbiote-workspace/browser';
 
-        for (let helper of [fromRoot, fromPlugins, fromBrowser]) {
+        for (let helper of [
+          fromRoot,
+          templatesFromRoot,
+          fromPlugins,
+          templatesFromPlugins,
+          fromBrowser,
+          templatesFromBrowser
+        ]) {
           if (typeof helper !== 'function') {
-            throw new Error('collectPluginModuleCapabilities export missing');
+            throw new Error('plugin collection export missing');
           }
         }
       `);
@@ -172,11 +182,14 @@ describe('packed package consumer', () => {
 
       await runNode(consumerDir, `
         import { createSession, dispatch } from 'symbiote-workspace/runtime';
-        import { collectPluginModuleCapabilities } from 'symbiote-workspace/plugins';
+        import {
+          collectPluginModuleCapabilities,
+          collectPluginWorkspaceTemplates
+        } from 'symbiote-workspace/plugins';
         import { createHostIntegrationContract } from 'symbiote-workspace/sharing';
 
         let session = createSession();
-        let pluginCapabilities = collectPluginModuleCapabilities([{
+        let plugin = {
           name: '@acme/review-pack',
           version: '1.0.0',
           capabilities: ['provider.analytics'],
@@ -193,10 +206,26 @@ describe('packed package consumer', () => {
                 icon: 'sentiment_satisfied'
               }
             }
-          ]
-        }]);
+          ],
+          workspace: {
+            templates: [{
+              name: 'sentiment-review-room',
+              description: 'Sentiment review room.',
+              config: {
+                version: '0.1.0',
+                name: 'Sentiment Review Room',
+                register: 'agent-workspace'
+              }
+            }]
+          }
+        };
+        let pluginCapabilities = collectPluginModuleCapabilities([plugin]);
         if (!pluginCapabilities.ok) {
           throw new Error(JSON.stringify(pluginCapabilities.errors));
+        }
+        let pluginTemplates = collectPluginWorkspaceTemplates([plugin]);
+        if (!pluginTemplates.ok || pluginTemplates.templates[0].name !== 'sentiment-review-room') {
+          throw new Error(JSON.stringify(pluginTemplates.errors));
         }
 
         let constructed = await dispatch('construct_workspace', {

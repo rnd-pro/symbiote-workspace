@@ -27,4 +27,6 @@ export {
 export {
   collectPluginModuleCapabilities,
   listPluginModuleCapabilities,
+  collectPluginWorkspaceTemplates,
+  listPluginWorkspaceTemplates,
 } from './plugin-capabilities.js';

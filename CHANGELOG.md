@@ -46,6 +46,10 @@ All notable changes to this project will be documented in this file.
   `listPluginModuleCapabilities()` expose plugin-provided module descriptors
   as portable constructor inputs through the plugins, root, and browser
   entrypoints.
+- **Plugin workspace template collection** —
+  `collectPluginWorkspaceTemplates()` and `listPluginWorkspaceTemplates()`
+  expose validated `plugin.workspace.templates` entries for plugin-provided
+  workspace template catalogs.
 
 ### Changed
 

@@ -548,6 +548,7 @@ import {
   listPlugins,
   validatePlugin,
   collectPluginModuleCapabilities,
+  collectPluginWorkspaceTemplates,
 } from 'symbiote-workspace/plugins';
 
 let result = registerPlugin(myPlugin);
@@ -565,6 +566,13 @@ if (!capabilities.ok) {
 
 // Pass plugin-provided module descriptors into constructor or dispatch APIs.
 console.log(capabilities.moduleCapabilities);
+
+let templates = collectPluginWorkspaceTemplates([myPlugin]);
+if (!templates.ok) {
+  throw new Error(JSON.stringify(templates.errors));
+}
+
+console.log(templates.templates);
 ```
 
 `collectPluginModuleCapabilities()` returns only object entries from
@@ -572,6 +580,11 @@ console.log(capabilities.moduleCapabilities);
 entries, but they are not converted into module capability descriptors.
 Plugin-level `capabilities` and `requiredHostServices` describe the plugin
 itself and are not copied onto individual components.
+
+`collectPluginWorkspaceTemplates()` returns validated entries from
+`plugin.workspace.templates`. Each entry uses `{ name, description?, config }`,
+where `name` is a portable template identifier and `config` is a strict
+workspace config.
 
 ## Portability Rules
 
