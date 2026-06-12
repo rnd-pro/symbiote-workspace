@@ -10,6 +10,8 @@ import {
   exportConfig,
   importConfig,
 } from '../sharing/index.js';
+import { collectPluginWorkspaceTemplates } from '../plugins/index.js';
+import { WORKSPACE_SCHEMA_VERSION } from '../schema/index.js';
 
 class TestStyle {
   values = new Map();
@@ -107,6 +109,208 @@ function createThemeAdapter() {
   };
 }
 
+function roomModule(tagName, capabilities, options = {}) {
+  return {
+    tagName,
+    schemaVersion: '0.1.0',
+    provider: 'portable-collaboration-room-pack',
+    descriptor: {
+      schemaVersion: '2.0.0',
+      package: 'portable-collaboration-room-pack',
+      component: tagName,
+    },
+    capabilities,
+    ...options,
+  };
+}
+
+const COLLABORATION_ROOM_PLUGIN = {
+  name: 'portable-collaboration-room-pack',
+  version: '1.0.0',
+  workspace: {
+    templates: [
+      {
+        name: 'ai-command-chat',
+        description: 'AI command chat with transcript, command input, and shared context.',
+        config: {
+          version: WORKSPACE_SCHEMA_VERSION,
+          name: 'AI Command Chat',
+          register: 'agent-workspace',
+          groups: [{ id: 'chat', name: 'Chat', icon: 'forum' }],
+          sections: [{ id: 'command', label: 'Command', icon: 'terminal', order: 0, groupId: 'chat' }],
+          panelTypes: {
+            transcript: { title: 'Transcript', icon: 'chat', component: 'ai-chat-transcript' },
+            command: { title: 'Command', icon: 'terminal', component: 'ai-command-composer' },
+            context: { title: 'Context', icon: 'fact_check', component: 'ai-room-context' },
+          },
+          layout: {
+            type: 'split',
+            direction: 'horizontal',
+            ratio: 0.68,
+            first: {
+              type: 'split',
+              direction: 'vertical',
+              ratio: 0.78,
+              first: { type: 'panel', panelType: 'transcript' },
+              second: { type: 'panel', panelType: 'command' },
+            },
+            second: { type: 'panel', panelType: 'context' },
+          },
+          components: {
+            catalog: ['ai-chat-transcript', 'ai-command-composer', 'ai-room-context'],
+            modules: [
+              roomModule('ai-chat-transcript', ['chat.transcript', 'agent.messages'], {
+                bindings: [{ id: 'messages', direction: 'input', path: 'data.messages' }],
+                events: { emits: [{ name: 'message-select' }] },
+              }),
+              roomModule('ai-command-composer', ['chat.command', 'agent.command-input'], {
+                actions: [{ id: 'send-command', label: 'Send', command: 'agent.command.send' }],
+                bindings: [{ id: 'draft', direction: 'two-way', path: 'data.commandDraft' }],
+                events: { emits: [{ name: 'command-submit' }] },
+                runtimeSlots: [{ id: 'agent-runtime', role: 'provider', required: true }],
+                requiredHostServices: ['agent.runtime'],
+              }),
+              roomModule('ai-room-context', ['room.context', 'artifact.preview'], {
+                bindings: [{ id: 'context', direction: 'input', path: 'data.context' }],
+                requiredHostServices: ['storage.project'],
+              }),
+            ],
+          },
+        },
+      },
+      {
+        name: 'ai-team-room',
+        description: 'AI team room with participants, transcript, commands, and artifacts.',
+        config: {
+          version: WORKSPACE_SCHEMA_VERSION,
+          name: 'AI Team Room',
+          register: 'agent-workspace',
+          groups: [{ id: 'room', name: 'Room', icon: 'groups' }],
+          sections: [{ id: 'session', label: 'Session', icon: 'forum', order: 0, groupId: 'room' }],
+          panelTypes: {
+            transcript: { title: 'Transcript', icon: 'chat', component: 'team-room-transcript' },
+            command: { title: 'Command', icon: 'terminal', component: 'team-room-command' },
+            artifacts: { title: 'Artifacts', icon: 'inventory_2', component: 'team-room-artifacts' },
+            participants: { title: 'Participants', icon: 'group', component: 'team-room-participants' },
+          },
+          layout: {
+            type: 'split',
+            direction: 'horizontal',
+            ratio: 0.72,
+            first: {
+              type: 'split',
+              direction: 'vertical',
+              ratio: 0.7,
+              first: { type: 'panel', panelType: 'transcript' },
+              second: { type: 'panel', panelType: 'command' },
+            },
+            second: {
+              type: 'split',
+              direction: 'vertical',
+              ratio: 0.5,
+              first: { type: 'panel', panelType: 'participants' },
+              second: { type: 'panel', panelType: 'artifacts' },
+            },
+          },
+          components: {
+            catalog: [
+              'team-room-transcript',
+              'team-room-command',
+              'team-room-artifacts',
+              'team-room-participants',
+            ],
+            modules: [
+              roomModule('team-room-transcript', ['room.transcript', 'agent.messages'], {
+                bindings: [{ id: 'messages', direction: 'input', path: 'data.messages' }],
+                events: { emits: [{ name: 'message-select' }] },
+              }),
+              roomModule('team-room-command', ['room.command', 'agent.command-input'], {
+                actions: [{ id: 'route-command', label: 'Route', command: 'agent.command.route' }],
+                bindings: [{ id: 'draft', direction: 'two-way', path: 'data.commandDraft' }],
+                runtimeSlots: [{ id: 'agent-runtime', role: 'provider', required: true }],
+                requiredHostServices: ['agent.runtime'],
+              }),
+              roomModule('team-room-artifacts', ['room.artifacts', 'artifact.preview'], {
+                bindings: [{ id: 'artifacts', direction: 'input', path: 'data.artifacts' }],
+                requiredHostServices: ['storage.project'],
+              }),
+              roomModule('team-room-participants', ['room.participants', 'presence.roster'], {
+                bindings: [{ id: 'participants', direction: 'input', path: 'data.participants' }],
+                events: { emits: [{ name: 'participant-select' }] },
+                requiredHostServices: ['presence.session'],
+              }),
+            ],
+          },
+        },
+      },
+      {
+        name: 'voice-video-room',
+        description: 'Voice and video AI room with realtime media, transcript, and command controls.',
+        config: {
+          version: WORKSPACE_SCHEMA_VERSION,
+          name: 'Voice Video Room',
+          register: 'agent-workspace',
+          groups: [{ id: 'call', name: 'Call', icon: 'video_call' }],
+          sections: [{ id: 'live', label: 'Live', icon: 'video_call', order: 0, groupId: 'call' }],
+          panelTypes: {
+            stage: { title: 'Stage', icon: 'video_call', component: 'room-media-stage' },
+            controls: { title: 'Controls', icon: 'settings_voice', component: 'room-call-controls' },
+            transcript: { title: 'Transcript', icon: 'subtitles', component: 'room-call-transcript' },
+            command: { title: 'Command', icon: 'terminal', component: 'room-call-command' },
+          },
+          layout: {
+            type: 'split',
+            direction: 'horizontal',
+            ratio: 0.68,
+            first: {
+              type: 'split',
+              direction: 'vertical',
+              ratio: 0.78,
+              first: { type: 'panel', panelType: 'stage' },
+              second: { type: 'panel', panelType: 'controls' },
+            },
+            second: {
+              type: 'split',
+              direction: 'vertical',
+              ratio: 0.58,
+              first: { type: 'panel', panelType: 'transcript' },
+              second: { type: 'panel', panelType: 'command' },
+            },
+          },
+          components: {
+            catalog: ['room-media-stage', 'room-call-controls', 'room-call-transcript', 'room-call-command'],
+            modules: [
+              roomModule('room-media-stage', ['room.video', 'room.audio', 'media.realtime'], {
+                bindings: [{ id: 'participants', direction: 'input', path: 'data.participants' }],
+                runtimeSlots: [{ id: 'media-session', role: 'provider', required: true }],
+                requiredHostServices: ['media.realtime', 'presence.session'],
+              }),
+              roomModule('room-call-controls', ['call.controls', 'room.audio'], {
+                actions: [
+                  { id: 'join-call', label: 'Join', command: 'call.join' },
+                  { id: 'leave-call', label: 'Leave', command: 'call.leave' },
+                  { id: 'toggle-mute', label: 'Mute', command: 'call.audio.toggle' },
+                ],
+                settings: [{ id: 'audio-device', label: 'Audio Device', type: 'string' }],
+                requiredHostServices: ['media.realtime'],
+              }),
+              roomModule('room-call-transcript', ['room.transcript', 'agent.messages'], {
+                bindings: [{ id: 'messages', direction: 'input', path: 'data.messages' }],
+                requiredHostServices: ['storage.project'],
+              }),
+              roomModule('room-call-command', ['room.command', 'agent.command-input'], {
+                actions: [{ id: 'send-command', label: 'Send', command: 'agent.command.send' }],
+                runtimeSlots: [{ id: 'agent-runtime', role: 'provider', required: true }],
+                requiredHostServices: ['agent.runtime'],
+              }),
+            ],
+          },
+        },
+      },
+    ],
+  },
+};
+
 function collectCatalogTags(config) {
   let tags = new Set(config.components?.catalog || []);
   for (let panelType of Object.values(config.panelTypes || {})) {
@@ -182,6 +386,67 @@ describe('portable workspace relaunch', () => {
     let reexported = await dispatch('export_workspace', { strict: true }, relaunched);
     assert.equal(reexported.status, 'ok');
     assert.equal(reexported.json, exported.json);
+  });
+
+  it('relaunches neutral collaboration room templates from plugin metadata', () => {
+    let templates = collectPluginWorkspaceTemplates([COLLABORATION_ROOM_PLUGIN]);
+    assert.equal(templates.ok, true, JSON.stringify(templates.errors));
+
+    let scenarios = [
+      {
+        template: 'ai-command-chat',
+        brief: 'AI command chat for shared work',
+        requiredCapabilities: ['chat.command', 'chat.transcript', 'room.context'],
+        services: ['agent.runtime', 'storage.project'],
+        slots: ['agent-runtime'],
+      },
+      {
+        template: 'ai-team-room',
+        brief: 'AI team room with commands and artifacts',
+        requiredCapabilities: ['room.command', 'room.transcript', 'room.artifacts', 'room.participants'],
+        services: ['agent.runtime', 'presence.session', 'storage.project'],
+        slots: ['agent-runtime'],
+      },
+      {
+        template: 'voice-video-room',
+        brief: 'voice video room with command controls',
+        requiredCapabilities: ['call.controls', 'room.audio', 'room.command', 'room.transcript', 'room.video'],
+        services: ['agent.runtime', 'media.realtime', 'presence.session', 'storage.project'],
+        slots: ['agent-runtime', 'media-session'],
+      },
+    ];
+
+    for (let scenario of scenarios) {
+      let { config, plan } = planWorkspaceConstruction({
+        brief: scenario.brief,
+        template: scenario.template,
+        requiredCapabilities: scenario.requiredCapabilities,
+      }, {
+        workspaceTemplates: templates.templates,
+      });
+
+      assert.deepEqual(plan.capabilities.missing, [], `${scenario.template} covers required capabilities`);
+      assertRelaunchable(config, scenario.template);
+
+      let contract = createHostIntegrationContract(config);
+      assert.equal(contract.status, 'ok', `${scenario.template} host contract status`);
+      assert.deepEqual(contract.errors, []);
+      for (let service of scenario.services) {
+        assert.ok(contract.contract.services.required.includes(service), `${scenario.template} requires ${service}`);
+      }
+      for (let slot of scenario.slots) {
+        assert.ok(
+          contract.contract.runtimeSlots.required.some((entry) => entry.id === slot),
+          `${scenario.template} requires runtime slot ${slot}`,
+        );
+      }
+      assert.doesNotMatch(
+        JSON.stringify(config),
+        /https?:|file:\/\/|\/Users\/|billing|subscription|organization|recording|marketplace|license|seller|purchase/i,
+        `${scenario.template} stays portable and product-neutral`,
+      );
+      assert.doesNotMatch(JSON.stringify(contract.contract), /https?:|file:\/\/|\/Users\//);
+    }
   });
 
   it('strict export rejects host-only state before sanitizing output', () => {
