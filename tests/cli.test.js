@@ -127,4 +127,24 @@ describe('CLI error handling', () => {
       await unlink(tmpFile).catch(() => {});
     }
   });
+
+  it('rejects host-only fields when loading --config', async () => {
+    let tmpFile = resolve(__dirname, '../_test_host_only.json');
+    await writeFile(tmpFile, JSON.stringify({
+      version: '0.3.0',
+      name: 'Host Only',
+      server: { url: 'https://example.test' },
+    }));
+
+    try {
+      await exec('list-groups', '--config', tmpFile);
+      assert.fail('Expected --config load to reject host-only fields');
+    } catch (err) {
+      assert.equal(err.code, 1);
+      assert.match(err.stderr, /portable workspace config/);
+      assert.match(err.stderr, /server/);
+    } finally {
+      await unlink(tmpFile).catch(() => {});
+    }
+  });
 });

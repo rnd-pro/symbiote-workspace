@@ -6,6 +6,18 @@
 import { writeFile, mkdir } from 'node:fs/promises';
 import { join, relative, resolve, sep } from 'node:path';
 
+const PREVIEW_REQUIRED_IMPORTS = [
+  'symbiote-workspace/browser',
+  'symbiote-ui',
+];
+
+const PREVIEW_ERROR_SURFACES = [
+  'import-map-support',
+  'module-load',
+  'workspace-mount',
+  'loader-warnings',
+];
+
 function isObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
@@ -39,6 +51,75 @@ function createPreviewImports(outputDir, serveRoot, imports = {}) {
   return {
     'symbiote-workspace/browser': toBrowserPath(outputDir, join(serveRoot, 'browser.js')),
     'symbiote-ui': toBrowserPath(outputDir, join(serveRoot, 'node_modules', 'symbiote-ui', 'index.js')),
+  };
+}
+
+function isImportMapAddress(value) {
+  if (typeof value !== 'string' || value.trim() === '') return false;
+  if (value.startsWith('/') || value.startsWith('./') || value.startsWith('../')) return true;
+  try {
+    new URL(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function validatePreviewImportMap(imports) {
+  let errors = [];
+  if (!isObject(imports)) {
+    return [{
+      path: 'imports',
+      message: 'Preview imports must be an object.',
+    }];
+  }
+
+  for (let specifier of PREVIEW_REQUIRED_IMPORTS) {
+    if (!Object.hasOwn(imports, specifier)) {
+      errors.push({
+        path: `imports.${specifier}`,
+        message: `Preview import map must define "${specifier}".`,
+      });
+    }
+  }
+
+  for (let [specifier, address] of Object.entries(imports)) {
+    if (!isImportMapAddress(address)) {
+      errors.push({
+        path: `imports.${specifier}`,
+        message: `Preview import "${specifier}" must map to an absolute URL or a URL starting with /, ./, or ../.`,
+      });
+    }
+    if (specifier.endsWith('/') && typeof address === 'string' && !address.endsWith('/')) {
+      errors.push({
+        path: `imports.${specifier}`,
+        message: `Preview import "${specifier}" ends with /, so its mapped URL must also end with /.`,
+      });
+    }
+  }
+
+  return errors;
+}
+
+function createPreviewContract(imports) {
+  return {
+    schemaVersion: '0.1.0',
+    browser: {
+      entrypoint: 'symbiote-workspace/browser',
+      mountFunction: 'mountWorkspace',
+      themeAdapter: 'symbiote-ui.applyCascadeTheme',
+      requiredImports: [...PREVIEW_REQUIRED_IMPORTS],
+      importMap: {
+        required: true,
+        scriptType: 'importmap',
+        featureDetection: "HTMLScriptElement.supports?.('importmap')",
+        mustLoadBeforeModuleScript: true,
+      },
+      errorSurfaces: [...PREVIEW_ERROR_SURFACES],
+    },
+    importMap: {
+      imports: { ...imports },
+    },
   };
 }
 
@@ -110,6 +191,13 @@ function renderPreviewWarnings(loaderResult) {
   document.body.appendChild(panel);
 }
 
+function assertImportMapSupport() {
+  let supported = typeof HTMLScriptElement !== 'undefined'
+    && HTMLScriptElement.supports?.('importmap') === true;
+  if (supported) return;
+  throw new Error('Import maps are not supported in this browser. Preview requires <script type="importmap"> for symbiote-workspace/browser and symbiote-ui.');
+}
+
 async function loadPreviewModules() {
   try {
     return await Promise.all([
@@ -123,6 +211,12 @@ async function loadPreviewModules() {
 }
 
 async function startPreview() {
+  try {
+    assertImportMapSupport();
+  } catch (error) {
+    renderPreviewError('Import map support check failed', error);
+    throw error;
+  }
   let [{ mountWorkspace }, { applyCascadeTheme }] = await loadPreviewModules();
   try {
     if (typeof mountWorkspace !== 'function') {
@@ -162,12 +256,27 @@ export async function startPreview(config, options = {}) {
     isObject(options.imports) ? outputDir : process.cwd()
   ));
   let imports = createPreviewImports(outputDir, serveRoot, options.imports);
+  let contract = createPreviewContract(imports);
+  let importErrors = validatePreviewImportMap(imports);
+
+  if (importErrors.length > 0) {
+    return {
+      url: '',
+      outputDir,
+      serveRoot,
+      status: 'error',
+      hint: 'Invalid preview import map.',
+      errors: importErrors,
+      contract,
+    };
+  }
 
   try {
     await mkdir(outputDir, { recursive: true });
     await writeFile(join(outputDir, 'index.html'), generateIndexHtml(config, imports));
     await writeFile(join(outputDir, 'app.js'), generateAppJs(config));
     await writeFile(join(outputDir, 'workspace.config.json'), JSON.stringify(config, null, 2));
+    await writeFile(join(outputDir, 'preview.contract.json'), JSON.stringify(contract, null, 2));
   } catch (err) {
     return {
       url: '',
@@ -184,5 +293,6 @@ export async function startPreview(config, options = {}) {
     serveRoot,
     status: 'ok',
     hint: `Preview files written to ${outputDir}. Start a dev server to view: npx serve ${serveRoot} -l ${port}`,
+    contract,
   };
 }

@@ -9,6 +9,7 @@
 
 import { readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { importConfig } from '../sharing/index.js';
 
 /**
  * @typedef {Object} Session
@@ -58,7 +59,14 @@ export function createSession(options = {}) {
     async load(filePath) {
       let absPath = resolve(filePath);
       let json = await readFile(absPath, 'utf-8');
-      session.config = JSON.parse(json);
+      let result = importConfig(json);
+      if (!result.config) {
+        let details = result.errors
+          .map((error) => error.path ? `${error.path}: ${error.message}` : error.message)
+          .join('; ');
+        throw new Error(`Load failed: file does not contain a portable workspace config. ${details}`);
+      }
+      session.config = result.config;
       session.configFilePath = absPath;
     },
 

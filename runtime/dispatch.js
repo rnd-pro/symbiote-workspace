@@ -579,7 +579,12 @@ export const TOOLS = [
     description: 'Generate preview files from current workspace config.',
     inputSchema: {
       type: 'object',
-      properties: { outputDir: { type: 'string' }, port: { type: 'number' } },
+      properties: {
+        outputDir: { type: 'string' },
+        port: { type: 'number' },
+        imports: { type: 'object' },
+        serveRoot: { type: 'string' },
+      },
     },
   },
 

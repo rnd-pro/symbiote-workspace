@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { access, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -20,6 +20,15 @@ async function withPreviewDir(run) {
     return await run(dir);
   } finally {
     await rm(dir, { recursive: true, force: true });
+  }
+}
+
+async function exists(path) {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -45,6 +54,25 @@ describe('startPreview', () => {
       assert.ok(importMapIndex < moduleScriptIndex);
       assert.match(html, /"symbiote-workspace\/browser": "\.\/mock-workspace-browser\.js"/);
       assert.match(html, /"symbiote-ui": "\.\/mock-symbiote-ui\.js"/);
+    });
+  });
+
+  it('writes a valid default import map for local preview paths', async () => {
+    await withPreviewDir(async (dir) => {
+      let result = await startPreview(PREVIEW_CONFIG, {
+        outputDir: dir,
+        serveRoot: dir,
+      });
+
+      let html = await readFile(join(dir, 'index.html'), 'utf8');
+
+      assert.equal(result.status, 'ok');
+      assert.deepEqual(result.contract.importMap.imports, {
+        'symbiote-workspace/browser': './browser.js',
+        'symbiote-ui': './node_modules/symbiote-ui/index.js',
+      });
+      assert.match(html, /"symbiote-workspace\/browser": "\.\/browser\.js"/);
+      assert.match(html, /"symbiote-ui": "\.\/node_modules\/symbiote-ui\/index\.js"/);
     });
   });
 
@@ -83,8 +111,66 @@ describe('startPreview', () => {
 
       assert.match(app, /Failed to load preview modules/);
       assert.match(app, /Failed to mount workspace/);
+      assert.match(app, /HTMLScriptElement\.supports\?\.\('importmap'\)/);
+      assert.match(app, /Import maps are not supported/);
       assert.match(app, /error\?\.message/);
       assert.match(app, /throw error/);
+    });
+  });
+
+  it('writes a preview contract with required import-map capabilities', async () => {
+    await withPreviewDir(async (dir) => {
+      let result = await startPreview(PREVIEW_CONFIG, {
+        outputDir: dir,
+        imports: {
+          'symbiote-workspace/browser': './mock-workspace-browser.js',
+          'symbiote-ui': './mock-symbiote-ui.js',
+        },
+      });
+
+      let contract = JSON.parse(await readFile(join(dir, 'preview.contract.json'), 'utf8'));
+
+      assert.equal(result.contract.browser.entrypoint, 'symbiote-workspace/browser');
+      assert.equal(result.contract.browser.importMap.required, true);
+      assert.equal(result.contract.browser.importMap.scriptType, 'importmap');
+      assert.deepEqual(result.contract.browser.requiredImports, [
+        'symbiote-workspace/browser',
+        'symbiote-ui',
+      ]);
+      assert.deepEqual(contract.browser.errorSurfaces, [
+        'import-map-support',
+        'module-load',
+        'workspace-mount',
+        'loader-warnings',
+      ]);
+    });
+  });
+
+  it('rejects incomplete or invalid preview import maps before writing runtime files', async () => {
+    await withPreviewDir(async (dir) => {
+      let missing = await startPreview(PREVIEW_CONFIG, {
+        outputDir: dir,
+        imports: {
+          'symbiote-workspace/browser': './mock-workspace-browser.js',
+        },
+      });
+
+      assert.equal(missing.status, 'error');
+      assert.ok(missing.errors.some((error) => error.path === 'imports.symbiote-ui'));
+      assert.equal(await exists(join(dir, 'index.html')), false);
+      assert.equal(await exists(join(dir, 'app.js')), false);
+      assert.equal(await exists(join(dir, 'preview.contract.json')), false);
+
+      let invalid = await startPreview(PREVIEW_CONFIG, {
+        outputDir: dir,
+        imports: {
+          'symbiote-workspace/browser': './mock-workspace-browser.js',
+          'symbiote-ui': 'symbiote-ui',
+        },
+      });
+
+      assert.equal(invalid.status, 'error');
+      assert.ok(invalid.errors.some((error) => error.path === 'imports.symbiote-ui'));
     });
   });
 

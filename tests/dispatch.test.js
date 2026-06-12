@@ -21,6 +21,13 @@ describe('TOOLS registry', () => {
     let unique = new Set(names);
     assert.equal(names.length, unique.size, 'Duplicate tool names');
   });
+
+  it('exposes preview import-map controls through the tool schema', () => {
+    let preview = TOOLS.find((tool) => tool.name === 'start_preview');
+
+    assert.equal(preview.inputSchema.properties.imports.type, 'object');
+    assert.equal(preview.inputSchema.properties.serveRoot.type, 'string');
+  });
 });
 
 describe('isMutating', () => {

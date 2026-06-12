@@ -200,9 +200,10 @@ npx symbiote-workspace mcp
 
 ## Browser Preview
 
-`start_preview` writes `index.html`, `app.js`, and `workspace.config.json`.
-The generated HTML declares an import map before loading `app.js`, so browser
-bare imports resolve through an explicit host contract:
+`start_preview` writes `index.html`, `app.js`, `workspace.config.json`, and
+`preview.contract.json`. The generated HTML declares an import map before
+loading `app.js`, so browser bare imports resolve through an explicit host
+contract:
 
 ```javascript
 await startPreview(config, {
@@ -219,10 +220,10 @@ returned `hint` serves the repository root so `symbiote-workspace/browser` and
 `symbiote-ui` can resolve from the generated import map.
 
 The generated runtime imports `applyCascadeTheme` from `symbiote-ui`, passes it
-as `themeAdapter` to `mountWorkspace()`, renders loader warnings with
-`data-preview-warning`, and reports module-load failures separately from mount
-failures. Runtime errors include the original error message instead of a broad
-fallback.
+as `themeAdapter` to `mountWorkspace()`, verifies import-map support before
+loading bare modules, renders loader warnings with `data-preview-warning`, and
+reports import-map, module-load, and mount failures separately. Runtime errors
+include the original error message instead of a broad fallback.
 
 ## Portable Relaunch And Host Contract
 

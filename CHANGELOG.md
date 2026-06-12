@@ -23,9 +23,11 @@ All notable changes to this project will be documented in this file.
   a workspace wrapper, applies root and subtree theme layers, and writes
   `cascade-theme-change` params, relations, and overrides back into workspace
   config.
-- **Segmented browser preview** — `start_preview` now generates an import map,
-  passes `symbiote-ui.applyCascadeTheme` into `mountWorkspace()`, renders loader
-  warnings, and preserves separate module-load and mount error messages.
+- **Segmented browser preview** — `start_preview` now validates import maps,
+  writes `preview.contract.json`, checks browser import-map support, passes
+  `symbiote-ui.applyCascadeTheme` into `mountWorkspace()`, renders loader
+  warnings, and preserves separate import-map, module-load, and mount error
+  messages.
 - **Host integration contract** — `createHostIntegrationContract()` describes
   chat construction tools, browser import-map requirements, optional
   engine-backed persistence, module host services, and portable runtime slots
@@ -53,6 +55,8 @@ All notable changes to this project will be documented in this file.
   sanitizing so relaunch flows cannot hide local paths, sessions, endpoints, or
   user identity. Imports and file loads reject host/local-only payloads,
   generic server URLs, and user identity fields.
+- **CLI config loading** — stateful `--config` file loads now use the same
+  strict portable import path as `load_config` before CLI tools run.
 
 ### Fixed
 
