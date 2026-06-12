@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { unlink } from 'node:fs/promises';
 
 import { dispatch, TOOLS, isMutating, createSession } from '../runtime/index.js';
+import { collectPluginModuleCapabilities } from '../plugins/index.js';
 
 let exec = promisify(execFile);
 let __dirname = dirname(fileURLToPath(import.meta.url));
@@ -159,6 +160,36 @@ describe('construction workflow dispatch', () => {
     assert.equal(session.config.panelTypes.sentiment.component, 'acme-sentiment-panel');
     assert.ok(session.config.components.catalog.includes('acme-sentiment-panel'));
     assert.ok(layoutReferencesPanel(session.config.layout, 'sentiment'));
+    assert.deepEqual(result.plan.capabilities.missing, []);
+  });
+
+  it('construct_workspace accepts module capabilities collected from plugins', async () => {
+    let pluginCapabilities = collectPluginModuleCapabilities([{
+      name: '@acme/workspace-pack',
+      version: '1.0.0',
+      capabilities: ['provider.analytics'],
+      components: [
+        'acme-legacy-widget',
+        EXTERNAL_SENTIMENT_MODULE,
+      ],
+    }]);
+    assert.equal(pluginCapabilities.ok, true);
+
+    let session = createSession();
+    let result = await dispatch('construct_workspace', {
+      intent: 'sentiment review operations dashboard',
+      template: 'dashboard',
+      requiredCapabilities: ['analysis.sentiment'],
+      moduleCapabilities: pluginCapabilities.moduleCapabilities,
+    }, session);
+
+    assert.equal(result.status, 'ok');
+    assert.deepEqual(result.plan.answers.moduleSelection, ['sentiment']);
+    assert.equal(session.config.panelTypes.sentiment.component, 'acme-sentiment-panel');
+    assert.equal(
+      result.plan.modules[0].capabilities.includes('provider.analytics'),
+      false,
+    );
     assert.deepEqual(result.plan.capabilities.missing, []);
   });
 

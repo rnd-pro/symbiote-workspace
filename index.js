@@ -68,6 +68,8 @@ export {
   getPluginStatus,
   clearPlugins,
   validatePlugin,
+  collectPluginModuleCapabilities,
+  listPluginModuleCapabilities,
 } from './plugins/index.js';
 
 export {

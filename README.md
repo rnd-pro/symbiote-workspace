@@ -547,16 +547,31 @@ import {
   unregisterPlugin,
   listPlugins,
   validatePlugin,
+  collectPluginModuleCapabilities,
 } from 'symbiote-workspace/plugins';
 
 let result = registerPlugin(myPlugin);
 console.log(result.ok); // true
 
-await activatePlugin('my-plugin', { server, graph });
+await activatePlugin('@symbiote/my-plugin', { server, graph });
 
 console.log(listPlugins());
-// [{ name: 'my-plugin', version: '1.0.0', category: 'handler', status: 'active' }]
+// [{ name: '@symbiote/my-plugin', version: '1.0.0', category: 'handler', status: 'active' }]
+
+let capabilities = collectPluginModuleCapabilities([myPlugin]);
+if (!capabilities.ok) {
+  throw new Error(JSON.stringify(capabilities.errors));
+}
+
+// Pass plugin-provided module descriptors into constructor or dispatch APIs.
+console.log(capabilities.moduleCapabilities);
 ```
+
+`collectPluginModuleCapabilities()` returns only object entries from
+`plugin.components`. String component tags remain valid registry/catalog
+entries, but they are not converted into module capability descriptors.
+Plugin-level `capabilities` and `requiredHostServices` describe the plugin
+itself and are not copied onto individual components.
 
 ## Portability Rules
 

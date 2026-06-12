@@ -149,6 +149,18 @@ describe('packed package consumer', () => {
         for (let spec of specs) await import(spec);
       `);
 
+      await runNode(consumerDir, `
+        import { collectPluginModuleCapabilities as fromRoot } from 'symbiote-workspace';
+        import { collectPluginModuleCapabilities as fromPlugins } from 'symbiote-workspace/plugins';
+        import { collectPluginModuleCapabilities as fromBrowser } from 'symbiote-workspace/browser';
+
+        for (let helper of [fromRoot, fromPlugins, fromBrowser]) {
+          if (typeof helper !== 'function') {
+            throw new Error('collectPluginModuleCapabilities export missing');
+          }
+        }
+      `);
+
       let cli = await run('npx', [
         '--no-install',
         'symbiote-workspace',
@@ -160,16 +172,47 @@ describe('packed package consumer', () => {
 
       await runNode(consumerDir, `
         import { createSession, dispatch } from 'symbiote-workspace/runtime';
+        import { collectPluginModuleCapabilities } from 'symbiote-workspace/plugins';
         import { createHostIntegrationContract } from 'symbiote-workspace/sharing';
 
         let session = createSession();
+        let pluginCapabilities = collectPluginModuleCapabilities([{
+          name: '@acme/review-pack',
+          version: '1.0.0',
+          capabilities: ['provider.analytics'],
+          components: [
+            'acme-legacy-widget',
+            {
+              tagName: 'acme-sentiment-panel',
+              provider: '@acme/review-pack',
+              capabilities: ['analysis.sentiment'],
+              requiredHostServices: ['storage.project'],
+              placement: {
+                panelType: 'sentiment',
+                title: 'Sentiment',
+                icon: 'sentiment_satisfied'
+              }
+            }
+          ]
+        }]);
+        if (!pluginCapabilities.ok) {
+          throw new Error(JSON.stringify(pluginCapabilities.errors));
+        }
+
         let constructed = await dispatch('construct_workspace', {
-          intent: 'agent review workspace',
-          template: 'agent-workspace',
-          requiredCapabilities: ['agent.review', 'workflow.node-editor'],
+          intent: 'sentiment review workspace',
+          template: 'dashboard',
+          requiredCapabilities: ['analysis.sentiment'],
+          moduleCapabilities: pluginCapabilities.moduleCapabilities,
         }, session);
         if (constructed.status !== 'ok') {
           throw new Error(constructed.hint || 'construct_workspace failed');
+        }
+        if (constructed.plan.answers.moduleSelection[0] !== 'sentiment') {
+          throw new Error('plugin-derived module was not selected');
+        }
+        if (session.config.panelTypes.sentiment.component !== 'acme-sentiment-panel') {
+          throw new Error('plugin-derived module was not materialized');
         }
         let exported = await dispatch('export_workspace', { strict: true }, session);
         if (exported.status !== 'ok') {

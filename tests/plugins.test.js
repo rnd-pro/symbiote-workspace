@@ -13,7 +13,10 @@ import {
   getPluginStatus,
   clearPlugins,
   validatePlugin,
+  collectPluginModuleCapabilities,
+  listPluginModuleCapabilities,
 } from '../plugins/index.js';
+import { validateModuleCapabilityDescriptor } from '../schema/module-capability.js';
 
 describe('PLUGIN_SCHEMA', () => {
   it('exports a frozen schema object with required fields', () => {
@@ -263,6 +266,116 @@ describe('Plugin Registry', () => {
     let list = listPlugins();
     assert.equal(list.length, 1);
     assert.equal(getPlugin('test').version, '2.0.0');
+  });
+});
+
+describe('plugin module capability collection', () => {
+  beforeEach(() => {
+    clearPlugins();
+  });
+
+  it('collects component descriptors without inventing capabilities for string tags', () => {
+    let plugin = {
+      name: '@acme/sentiment',
+      version: '1.0.0',
+      capabilities: ['plugin.analytics'],
+      components: [
+        'sn-legacy-widget',
+        {
+          tagName: 'acme-sentiment-panel',
+          provider: '@acme/sentiment',
+          capabilities: ['analysis.sentiment'],
+          toolbarItems: [{ id: 'refresh', label: 'Refresh' }],
+          requiredHostServices: ['storage.project'],
+        },
+      ],
+    };
+
+    let result = collectPluginModuleCapabilities([plugin]);
+
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.errors, []);
+    assert.deepEqual(result.moduleCapabilities.map((item) => item.tagName), ['acme-sentiment-panel']);
+    assert.deepEqual(result.moduleCapabilities[0].capabilities, ['analysis.sentiment']);
+    assert.equal(result.moduleCapabilities[0].capabilities.includes('plugin.analytics'), false);
+
+    let descriptorErrors = [];
+    validateModuleCapabilityDescriptor(result.moduleCapabilities[0], 'moduleCapabilities[0]', descriptorErrors);
+    assert.deepEqual(descriptorErrors, []);
+
+    result.moduleCapabilities[0].capabilities.push('mutated.external-state');
+    assert.deepEqual(plugin.components[1].capabilities, ['analysis.sentiment']);
+  });
+
+  it('accepts a single plugin definition without components', () => {
+    let result = collectPluginModuleCapabilities({
+      name: '@acme/empty',
+      version: '1.0.0',
+    });
+
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.errors, []);
+    assert.deepEqual(result.moduleCapabilities, []);
+  });
+
+  it('returns prefixed validation errors for invalid plugin descriptors', () => {
+    let result = collectPluginModuleCapabilities([{
+      name: 'broken-plugin',
+      version: '1.0.0',
+      components: [{
+        tagName: 'Broken Component',
+        actions: [{ id: 'open' }],
+      }],
+    }]);
+
+    assert.equal(result.ok, false);
+    assert.deepEqual(result.moduleCapabilities, []);
+    assert.ok(result.errors.some((error) => error.path === 'plugins[0].components[0].tagName'));
+    assert.ok(result.errors.some((error) => error.path === 'plugins[0].components[0].actions[0].label'));
+  });
+
+  it('rejects duplicate descriptor tag names across plugin inputs', () => {
+    let result = collectPluginModuleCapabilities([
+      {
+        name: '@acme/table-a',
+        version: '1.0.0',
+        components: [{ tagName: 'acme-data-table', capabilities: ['data.table'] }],
+      },
+      {
+        name: '@acme/table-b',
+        version: '1.0.0',
+        components: [{ tagName: 'acme-data-table', capabilities: ['admin.records'] }],
+      },
+    ]);
+
+    assert.equal(result.ok, false);
+    assert.deepEqual(result.moduleCapabilities, []);
+    assert.ok(result.errors.some((error) => error.path === 'plugins[1].components[0].tagName'));
+  });
+
+  it('lists module capabilities from the plugin registry', async () => {
+    registerPlugin({
+      name: '@acme/inactive',
+      version: '1.0.0',
+      components: [{ tagName: 'acme-inactive-panel', capabilities: ['inactive.panel'] }],
+    });
+    registerPlugin({
+      name: '@acme/active',
+      version: '1.0.0',
+      components: [{ tagName: 'acme-active-panel', capabilities: ['active.panel'] }],
+    });
+
+    await activatePlugin('@acme/active');
+
+    let all = listPluginModuleCapabilities();
+    let active = listPluginModuleCapabilities({ status: 'active' });
+
+    assert.equal(all.ok, true);
+    assert.deepEqual(
+      all.moduleCapabilities.map((item) => item.tagName),
+      ['acme-active-panel', 'acme-inactive-panel'],
+    );
+    assert.deepEqual(active.moduleCapabilities.map((item) => item.tagName), ['acme-active-panel']);
   });
 });
 

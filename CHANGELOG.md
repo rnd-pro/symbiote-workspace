@@ -42,6 +42,10 @@ All notable changes to this project will be documented in this file.
   now create missing panel types from placement metadata, place selected
   generated panels into BSP layout, validate executable placement metadata, and
   round-trip through CLI and MCP construction flows.
+- **Plugin capability collection** — `collectPluginModuleCapabilities()` and
+  `listPluginModuleCapabilities()` expose plugin-provided module descriptors
+  as portable constructor inputs through the plugins, root, and browser
+  entrypoints.
 
 ### Changed
 

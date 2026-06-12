@@ -23,3 +23,8 @@ export {
   clearPlugins,
   validatePlugin,
 } from './plugin-registry.js';
+
+export {
+  collectPluginModuleCapabilities,
+  listPluginModuleCapabilities,
+} from './plugin-capabilities.js';
