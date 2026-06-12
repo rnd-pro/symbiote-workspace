@@ -8,6 +8,7 @@ import { unlink } from 'node:fs/promises';
 
 import { dispatch, TOOLS, isMutating, createSession } from '../runtime/index.js';
 import { collectPluginModuleCapabilities } from '../plugins/index.js';
+import { WORKSPACE_SCHEMA_VERSION } from '../schema/index.js';
 
 let exec = promisify(execFile);
 let __dirname = dirname(fileURLToPath(import.meta.url));
@@ -35,6 +36,36 @@ let EXTERNAL_SENTIMENT_MODULE = {
     title: 'Sentiment',
     icon: 'sentiment_satisfied',
     behavior: { importance: 72, minInlineSize: 260 },
+  },
+};
+
+let TEAM_ROOM_TEMPLATE = {
+  name: 'team-ai-room',
+  description: 'AI team room workspace with shared transcript and command panels.',
+  config: {
+    version: WORKSPACE_SCHEMA_VERSION,
+    name: 'Team AI Room',
+    register: 'agent-workspace',
+    groups: [{ id: 'room', name: 'Room', icon: 'groups' }],
+    sections: [{ id: 'session', label: 'Session', icon: 'forum', order: 0, groupId: 'room' }],
+    panelTypes: {
+      transcript: { title: 'Transcript', icon: 'chat', component: 'team-room-transcript' },
+      command: { title: 'Command', icon: 'terminal', component: 'team-room-command' },
+    },
+    layout: {
+      type: 'split',
+      direction: 'horizontal',
+      ratio: 0.62,
+      first: { type: 'panel', panelType: 'transcript' },
+      second: { type: 'panel', panelType: 'command' },
+    },
+    components: {
+      catalog: ['team-room-transcript', 'team-room-command'],
+      modules: [
+        { tagName: 'team-room-transcript', capabilities: ['room.transcript', 'agent.messages'] },
+        { tagName: 'team-room-command', capabilities: ['room.command', 'agent.command-input'] },
+      ],
+    },
   },
 };
 
@@ -77,6 +108,30 @@ describe('construction workflow dispatch', () => {
     assert.equal(result.templateName, 'video-studio');
     assert.equal(result.fallback, false);
     assert.equal(session.config, null);
+  });
+
+  it('classify_workspace can match external workspace templates', async () => {
+    let session = createSession();
+    let result = await dispatch('classify_workspace', {
+      intent: 'team AI room',
+      workspaceTemplates: [TEAM_ROOM_TEMPLATE],
+    }, session);
+
+    assert.equal(result.status, 'ok');
+    assert.equal(result.templateName, 'team-ai-room');
+    assert.equal(result.fallback, false);
+    assert.equal(session.config, null);
+  });
+
+  it('list_templates can include external workspace templates', async () => {
+    let session = createSession();
+    let result = await dispatch('list_templates', {
+      workspaceTemplates: [TEAM_ROOM_TEMPLATE],
+    }, session);
+
+    assert.equal(result.status, undefined);
+    assert.ok(result.templates.includes('chat'));
+    assert.ok(result.templates.includes('team-ai-room'));
   });
 
   it('plan_workspace returns a plan without mutating session config', async () => {
@@ -160,6 +215,23 @@ describe('construction workflow dispatch', () => {
     assert.equal(session.config.panelTypes.sentiment.component, 'acme-sentiment-panel');
     assert.ok(session.config.components.catalog.includes('acme-sentiment-panel'));
     assert.ok(layoutReferencesPanel(session.config.layout, 'sentiment'));
+    assert.deepEqual(result.plan.capabilities.missing, []);
+  });
+
+  it('construct_workspace accepts plugin-neutral external workspace templates through dispatch', async () => {
+    let session = createSession();
+    let result = await dispatch('construct_workspace', {
+      intent: 'team AI room',
+      template: 'team-ai-room',
+      workspaceTemplates: [TEAM_ROOM_TEMPLATE],
+      requiredCapabilities: ['room.command'],
+    }, session);
+
+    assert.equal(result.status, 'ok');
+    assert.equal(result.templateName, 'team-ai-room');
+    assert.equal(session.config.name, 'Team AI Room');
+    assert.equal(session.config.intent.template, 'team-ai-room');
+    assert.deepEqual(result.plan.answers.moduleSelection, ['command']);
     assert.deepEqual(result.plan.capabilities.missing, []);
   });
 
@@ -299,6 +371,7 @@ describe('construction workflow CLI commands', () => {
     assert.ok(stdout.includes('apply-workspace-patch'));
     assert.ok(stdout.includes('export-workspace'));
     assert.ok(stdout.includes('--module-capabilities'));
+    assert.ok(stdout.includes('--workspace-templates'));
     assert.ok(stdout.includes('--required-capabilities'));
   });
 
@@ -336,6 +409,25 @@ describe('construction workflow CLI commands', () => {
     assert.equal(result.config.panelTypes.sentiment.component, 'acme-sentiment-panel');
     assert.ok(result.config.components.catalog.includes('acme-sentiment-panel'));
     assert.ok(layoutReferencesPanel(result.config.layout, 'sentiment'));
+  });
+
+  it('plan-workspace carries external workspace templates through CLI JSON args', async () => {
+    let { stdout } = await execCli(
+      'plan-workspace',
+      'team AI room',
+      '--template',
+      'team-ai-room',
+      '--workspace-templates',
+      JSON.stringify([TEAM_ROOM_TEMPLATE]),
+      '--required-capabilities',
+      '["room.command"]',
+    );
+    let result = JSON.parse(stdout);
+
+    assert.equal(result.status, 'ok');
+    assert.equal(result.templateName, 'team-ai-room');
+    assert.equal(result.config.name, 'Team AI Room');
+    assert.deepEqual(result.plan.answers.moduleSelection, ['command']);
   });
 
   it('construct-workspace writes a planned config through the shared session file flow', async () => {

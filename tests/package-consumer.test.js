@@ -203,6 +203,7 @@ describe('packed package consumer', () => {
           listPluginWorkspaceTemplates,
           registerPlugin
         } from 'symbiote-workspace/plugins';
+        import { planWorkspaceConstruction } from 'symbiote-workspace/constructor';
         import { createHostIntegrationContract } from 'symbiote-workspace/sharing';
 
         let session = createSession();
@@ -246,6 +247,18 @@ describe('packed package consumer', () => {
         }
         if (pluginTemplates.templates[0].source.plugin !== '@acme/review-pack') {
           throw new Error('workspace template source metadata missing');
+        }
+        let roomPlan = planWorkspaceConstruction({
+          brief: 'sentiment review room',
+          template: 'sentiment-review-room'
+        }, {
+          workspaceTemplates: pluginTemplates.templates
+        });
+        if (roomPlan.intent.template !== 'sentiment-review-room') {
+          throw new Error('plugin workspace template was not accepted by constructor');
+        }
+        if (roomPlan.config.name !== 'Sentiment Review Room') {
+          throw new Error('plugin workspace template config was not constructed');
         }
         registerPlugin(plugin);
         registerPlugin({

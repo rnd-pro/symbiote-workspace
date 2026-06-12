@@ -8,7 +8,37 @@ import {
   getTemplate,
   planWorkspaceConstruction,
 } from '../constructor/index.js';
-import { validateWorkspaceConfig } from '../schema/index.js';
+import { validateWorkspaceConfig, WORKSPACE_SCHEMA_VERSION } from '../schema/index.js';
+
+const TEAM_ROOM_TEMPLATE = {
+  name: 'team-ai-room',
+  description: 'AI team room workspace with shared transcript and command panels.',
+  config: {
+    version: WORKSPACE_SCHEMA_VERSION,
+    name: 'Team AI Room',
+    register: 'agent-workspace',
+    groups: [{ id: 'room', name: 'Room', icon: 'groups' }],
+    sections: [{ id: 'session', label: 'Session', icon: 'forum', order: 0, groupId: 'room' }],
+    panelTypes: {
+      transcript: { title: 'Transcript', icon: 'chat', component: 'team-room-transcript' },
+      command: { title: 'Command', icon: 'terminal', component: 'team-room-command' },
+    },
+    layout: {
+      type: 'split',
+      direction: 'horizontal',
+      ratio: 0.62,
+      first: { type: 'panel', panelType: 'transcript' },
+      second: { type: 'panel', panelType: 'command' },
+    },
+    components: {
+      catalog: ['team-room-transcript', 'team-room-command'],
+      modules: [
+        { tagName: 'team-room-transcript', capabilities: ['room.transcript', 'agent.messages'] },
+        { tagName: 'team-room-command', capabilities: ['room.command', 'agent.command-input'] },
+      ],
+    },
+  },
+};
 
 describe('matchTemplate', () => {
   it('matches chat keywords', () => {
@@ -100,6 +130,13 @@ describe('listTemplates', () => {
     assert.ok(templates.includes('agent-workspace'));
     assert.ok(templates.includes('social-automation'));
   });
+
+  it('can include plugin-neutral external workspace templates', () => {
+    let templates = listTemplates({ workspaceTemplates: [TEAM_ROOM_TEMPLATE] });
+
+    assert.ok(templates.includes('chat'));
+    assert.ok(templates.includes('team-ai-room'));
+  });
 });
 
 describe('getTemplate', () => {
@@ -112,6 +149,18 @@ describe('getTemplate', () => {
 
   it('returns null for unknown name', () => {
     assert.equal(getTemplate('nonexistent'), null);
+  });
+
+  it('returns external workspace templates without mutating stored input', () => {
+    let template = getTemplate('team-ai-room', {
+      workspaceTemplates: [TEAM_ROOM_TEMPLATE],
+    });
+
+    assert.equal(template.name, 'team-ai-room');
+    assert.equal(template.config.name, 'Team AI Room');
+    template.config.name = 'Mutated';
+
+    assert.equal(TEAM_ROOM_TEMPLATE.config.name, 'Team AI Room');
   });
 
   it('returns a deep clone that cannot mutate stored templates', () => {
@@ -158,5 +207,36 @@ describe('canonical templates', () => {
     assert.ok(result.plan.modules.some((module) => module.component === 'sn-data-table'));
     assert.ok(result.plan.modules.every((module) => Array.isArray(module.capabilities)));
     assert.ok(result.plan.modules.some((module) => module.capabilities.includes('automation.reply-template')));
+  });
+
+  it('constructs from plugin-neutral external workspace templates', () => {
+    let result = planWorkspaceConstruction({
+      brief: 'Build a team AI room',
+      template: 'team-ai-room',
+      requiredCapabilities: ['room.command'],
+    }, {
+      workspaceTemplates: [TEAM_ROOM_TEMPLATE],
+    });
+
+    assert.equal(result.intent.template, 'team-ai-room');
+    assert.equal(result.config.name, 'Team AI Room');
+    assert.equal(result.config.register, 'agent-workspace');
+    assert.deepEqual(result.plan.answers.moduleSelection, ['command']);
+    assert.deepEqual(result.plan.capabilities.missing, []);
+
+    let validation = validateWorkspaceConfig(result.config, { strict: true });
+    assert.equal(validation.valid, true, JSON.stringify(validation.errors));
+  });
+
+  it('matches external templates from name, description, and config name', () => {
+    assert.equal(matchTemplate('open the team AI room', {
+      workspaceTemplates: [TEAM_ROOM_TEMPLATE],
+    }), 'team-ai-room');
+  });
+
+  it('rejects external templates that collide with canonical names', () => {
+    assert.throws(() => planWorkspace('chat room', {
+      workspaceTemplates: [{ ...TEAM_ROOM_TEMPLATE, name: 'chat' }],
+    }), /collides with existing template "chat"/);
   });
 });

@@ -2,11 +2,13 @@ import {
   WORKSPACE_SCHEMA_VERSION,
   WORKSPACE_REGISTER_VALUES,
 } from '../schema/workspace-schema.js';
+import { validateWorkspaceConfig } from '../schema/validate.js';
 
 /**
  * @typedef {Object} WorkspaceTemplate
  * @property {string} name - Template identifier
- * @property {string} description - What this workspace does
+ * @property {string} [description] - What this workspace does
+ * @property {Object} [source] - Optional provenance metadata
  * @property {import('../schema/workspace-schema.js').WorkspaceConfig} config
  */
 
@@ -101,6 +103,8 @@ const MODULES = Object.freeze({
     requiredHostServices: ['storage.project'],
   }),
 });
+
+const TEMPLATE_NAME_PATTERN = /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/;
 
 /** @type {Object<string, WorkspaceTemplate>} */
 let WORKSPACE_TEMPLATES = {
@@ -722,6 +726,93 @@ function deepClone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function validationMessage(validation) {
+  return validation.errors
+    .map((error) => `${error.path || '<root>'}: ${error.message}`)
+    .join('; ');
+}
+
+function templateSource(template, path) {
+  if (template.source === undefined) return {};
+  if (!isObject(template.source)) {
+    throw new Error(`${path}.source must be an object when provided.`);
+  }
+  return { source: deepClone(template.source) };
+}
+
+function normalizeExternalWorkspaceTemplate(template, index) {
+  let path = `workspaceTemplates[${index}]`;
+  if (!isObject(template)) {
+    throw new Error(`${path} must be an object.`);
+  }
+  if (typeof template.name !== 'string' || !template.name.trim()) {
+    throw new Error(`${path}.name must be a non-empty string.`);
+  }
+
+  let name = template.name.trim();
+  if (!TEMPLATE_NAME_PATTERN.test(name)) {
+    throw new Error(`${path}.name "${name}" must be a portable identifier.`);
+  }
+  if (template.description !== undefined && typeof template.description !== 'string') {
+    throw new Error(`${path}.description must be a string when provided.`);
+  }
+  if (!isObject(template.config)) {
+    throw new Error(`${path}.config must be a workspace config object.`);
+  }
+
+  let validation = validateWorkspaceConfig(template.config, { strict: true });
+  if (!validation.valid) {
+    throw new Error(`${path}.config is invalid: ${validationMessage(validation)}`);
+  }
+
+  return deepClone({
+    name,
+    ...(template.description !== undefined ? { description: template.description } : {}),
+    ...templateSource(template, path),
+    config: template.config,
+  });
+}
+
+function createTemplateRegistry(workspaceTemplates) {
+  let registry = new Map(Object.entries(WORKSPACE_TEMPLATES));
+  if (workspaceTemplates === undefined) return registry;
+  if (!Array.isArray(workspaceTemplates)) {
+    throw new Error('workspaceTemplates must be an array when provided.');
+  }
+
+  let externalTemplates = workspaceTemplates
+    .map((template, index) => ({ template: normalizeExternalWorkspaceTemplate(template, index), index }))
+    .sort((a, b) => {
+      let nameOrder = a.template.name.localeCompare(b.template.name);
+      return nameOrder || a.index - b.index;
+    });
+  let externalNames = new Map();
+
+  for (let { template, index } of externalTemplates) {
+    if (externalNames.has(template.name)) {
+      throw new Error(
+        `workspaceTemplates[${index}].name duplicates workspaceTemplates[${externalNames.get(template.name)}].name.`,
+      );
+    }
+    if (registry.has(template.name)) {
+      throw new Error(`workspaceTemplates[${index}].name collides with existing template "${template.name}".`);
+    }
+    externalNames.set(template.name, index);
+    registry.set(template.name, template);
+  }
+
+  return registry;
+}
+
+function templateRegistryFromOptions(options = {}) {
+  if (options.templateRegistry instanceof Map) return options.templateRegistry;
+  return createTemplateRegistry(options.workspaceTemplates);
+}
+
+function listTemplateNames(registry) {
+  return [...registry.keys()];
+}
+
 function uniqueSortedStrings(values, fieldName) {
   if (values === undefined) return [];
   if (!Array.isArray(values)) {
@@ -743,17 +834,17 @@ function assertRegister(register, fieldName = 'register') {
   return register;
 }
 
-function resolveTemplateName(template, brief) {
+function resolveTemplateName(template, brief, registry) {
   if (template !== undefined) {
     if (typeof template !== 'string' || !template.trim()) {
       throw new Error('Construction intent field "template" must be a non-empty string.');
     }
-    if (!WORKSPACE_TEMPLATES[template]) {
-      throw new Error(`Unknown template "${template}". Supported: ${listTemplates().join(', ')}`);
+    if (!registry.has(template)) {
+      throw new Error(`Unknown template "${template}". Supported: ${listTemplateNames(registry).join(', ')}`);
     }
     return template;
   }
-  return matchTemplate(brief) || 'dashboard';
+  return matchTemplateFromRegistry(brief, registry) || 'dashboard';
 }
 
 function normalizePreferredTheme(theme) {
@@ -786,8 +877,8 @@ function makeOption(value) {
   return { value, label: value };
 }
 
-function templateConfig(templateName) {
-  return WORKSPACE_TEMPLATES[templateName].config;
+function templateConfig(templateName, registry) {
+  return registry.get(templateName).config;
 }
 
 function normalizeModuleCapabilityDescriptor(descriptor) {
@@ -1005,7 +1096,8 @@ function themeDefaults(config, register, preferredTheme = null) {
 }
 
 function buildQuestionDefinitions(intent, options = {}) {
-  let config = withModuleCapabilities(templateConfig(intent.template), options.moduleCapabilities);
+  let registry = templateRegistryFromOptions(options);
+  let config = withModuleCapabilities(templateConfig(intent.template, registry), options.moduleCapabilities);
   let modules = moduleOptions(config);
   let theme = themeDefaults(config, intent.targetRegister, intent.preferredTheme);
   let moduleSelection = defaultModuleSelection(modules, intent.requiredCapabilities);
@@ -1294,6 +1386,7 @@ function verificationPlan(scope) {
  * @returns {Object}
  */
 export function normalizeConstructionIntent(intent, options = {}) {
+  let registry = templateRegistryFromOptions(options);
   let input = typeof intent === 'string' ? { brief: intent } : intent;
   if (!isObject(input)) {
     throw new Error('Construction intent must be a string or a plain object.');
@@ -1302,8 +1395,8 @@ export function normalizeConstructionIntent(intent, options = {}) {
   if (!brief) {
     throw new Error('Construction intent requires a non-empty "brief" field.');
   }
-  let template = resolveTemplateName(input.template, brief);
-  let config = templateConfig(template);
+  let template = resolveTemplateName(input.template, brief, registry);
+  let config = templateConfig(template, registry);
   let targetRegister = options.register || input.targetRegister || input.register || config.register || 'tool';
 
   return {
@@ -1354,9 +1447,11 @@ export function answerConstructionQuestion(questions, questionId, answer) {
  * @returns {{ intent: Object, questions: Array, plan: Object, config: Object }}
  */
 export function planWorkspaceConstruction(intent, options = {}) {
-  let normalized = normalizeConstructionIntent(intent, options);
-  let config = withModuleCapabilities(templateConfig(normalized.template), options.moduleCapabilities);
-  let questions = applyAnswers(buildConstructionQuestions(normalized, options), options.answers || {});
+  let registry = templateRegistryFromOptions(options);
+  let registryOptions = { ...options, templateRegistry: registry };
+  let normalized = normalizeConstructionIntent(intent, registryOptions);
+  let config = withModuleCapabilities(templateConfig(normalized.template, registry), options.moduleCapabilities);
+  let questions = applyAnswers(buildConstructionQuestions(normalized, registryOptions), options.answers || {});
   let answers = answerMap(questions);
   let workspaceName = answers.get('workspace-name') || config.name;
   let register = assertRegister(answers.get('target-register') || normalized.targetRegister);
@@ -1459,32 +1554,75 @@ export function extractConstructionPlan(config) {
 
 /**
  * @param {string} intent - User intent text
+ * @param {Object} [options]
  * @returns {string|null} - Matched template name or null
  */
-export function matchTemplate(intent) {
+export function matchTemplate(intent, options = {}) {
+  return matchTemplateFromRegistry(intent, templateRegistryFromOptions(options));
+}
+
+function matchTemplateFromRegistry(intent, registry) {
   if (typeof intent !== 'string' || !intent.trim()) return null;
   let lower = intent.toLowerCase();
   let bestMatch = null;
   let bestScore = 0;
+  let bestOrder = Number.POSITIVE_INFINITY;
+  let entries = [...registry.entries()];
 
-  for (let [templateName, keywords] of KEYWORD_MAP) {
+  for (let order = 0; order < entries.length; order++) {
+    let [templateName, template] = entries[order];
+    let keywords = templateKeywords(templateName, template);
     let score = 0;
     for (let keyword of keywords) {
       if (matchesKeyword(lower, keyword)) score++;
     }
-    if (score > bestScore) {
+    if (score > bestScore || (score === bestScore && score > 0 && order < bestOrder)) {
       bestScore = score;
+      bestOrder = order;
       bestMatch = templateName;
     }
   }
   return bestMatch;
 }
 
-function matchesKeyword(text, keyword) {
-  if (keyword.length <= 3) {
-    return new RegExp(`(^|[^a-z0-9])${keyword}([^a-z0-9]|$)`, 'i').test(text);
+function templateKeywords(templateName, template) {
+  let canonical = KEYWORD_MAP.get(templateName);
+  if (canonical) return canonical;
+
+  let derived = [
+    templateName,
+    templateName.replace(/[._-]+/g, ' '),
+    template.description,
+    template.config?.name,
+  ];
+  let keywords = new Set();
+
+  for (let value of derived) {
+    if (typeof value !== 'string') continue;
+    let normalized = value.toLowerCase().trim();
+    if (!normalized) continue;
+    keywords.add(normalized);
+    for (let part of normalized.split(/[^a-z0-9]+/)) {
+      if (part.length > 2) keywords.add(part);
+    }
   }
-  return text.includes(keyword);
+
+  return [...keywords].sort((a, b) => a.localeCompare(b));
+}
+
+function escapeRegex(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function matchesKeyword(text, keyword) {
+  let parts = keyword
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean)
+    .map(escapeRegex);
+  if (!parts.length) return false;
+  let pattern = parts.join('[^a-z0-9]+');
+  return new RegExp(`(^|[^a-z0-9])${pattern}([^a-z0-9]|$)`, 'i').test(text);
 }
 
 /**
@@ -1500,17 +1638,19 @@ export function planWorkspace(intent, options = {}) {
 }
 
 /**
+ * @param {Object} [options]
  * @returns {string[]}
  */
-export function listTemplates() {
-  return Object.keys(WORKSPACE_TEMPLATES);
+export function listTemplates(options = {}) {
+  return listTemplateNames(templateRegistryFromOptions(options));
 }
 
 /**
  * @param {string} name
+ * @param {Object} [options]
  * @returns {WorkspaceTemplate|null}
  */
-export function getTemplate(name) {
-  let template = WORKSPACE_TEMPLATES[name];
+export function getTemplate(name, options = {}) {
+  let template = templateRegistryFromOptions(options).get(name);
   return template ? deepClone(template) : null;
 }

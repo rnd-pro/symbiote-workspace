@@ -584,7 +584,9 @@ itself and are not copied onto individual components.
 `collectPluginWorkspaceTemplates()` returns validated entries from
 `plugin.workspace.templates`. Each entry uses `{ name, description?, config }`,
 where `name` is a portable template identifier and `config` is a strict
-workspace config.
+workspace config. Pass `templates.templates` to constructor or dispatch APIs as
+`workspaceTemplates`; the constructor stays plugin-neutral and only consumes the
+plain portable entries.
 
 ## Portability Rules
 
@@ -619,6 +621,24 @@ Canonical templates include module capability descriptors in
 `config.components.modules`, so construction plans can map selected panels to
 portable capabilities, actions, bindings, runtime slots, placement hints, and
 required host services.
+
+Constructor and dispatch APIs also accept external templates as plain data:
+
+```javascript
+import { planWorkspaceConstruction } from 'symbiote-workspace/constructor';
+import { collectPluginWorkspaceTemplates } from 'symbiote-workspace/plugins';
+
+let templates = collectPluginWorkspaceTemplates([myPlugin]);
+let { config } = planWorkspaceConstruction({
+  brief: 'build a team room',
+  template: 'team-ai-room',
+}, {
+  workspaceTemplates: templates.templates,
+});
+```
+
+CLI construction commands accept the same input with
+`--workspace-templates <json-array>`.
 
 ## Related Packages
 

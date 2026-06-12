@@ -91,7 +91,12 @@ export const TOOLS = [
   {
     name: 'list_templates',
     description: 'List available workspace templates.',
-    inputSchema: { type: 'object', properties: {} },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        workspaceTemplates: { type: 'array', items: { type: 'object' } },
+      },
+    },
   },
   {
     name: 'scaffold_workspace',
@@ -125,6 +130,7 @@ export const TOOLS = [
       type: 'object',
       properties: {
         intent: { type: 'string', description: 'Workspace brief or intent text.' },
+        workspaceTemplates: { type: 'array', items: { type: 'object' } },
       },
       required: ['intent'],
     },
@@ -145,6 +151,7 @@ export const TOOLS = [
         requiredCapabilities: { type: 'array', items: { type: 'string' } },
         preferredTheme: { type: 'object' },
         moduleCapabilities: { type: 'array', items: { type: 'object' } },
+        workspaceTemplates: { type: 'array', items: { type: 'object' } },
         answers: { type: 'object', description: 'Question answers keyed by question ID.' },
       },
       required: ['intent'],
@@ -166,6 +173,7 @@ export const TOOLS = [
         requiredCapabilities: { type: 'array', items: { type: 'string' } },
         preferredTheme: { type: 'object' },
         moduleCapabilities: { type: 'array', items: { type: 'object' } },
+        workspaceTemplates: { type: 'array', items: { type: 'object' } },
         answers: { type: 'object', description: 'Question answers keyed by question ID.' },
       },
       required: ['intent'],
@@ -760,6 +768,7 @@ function constructionOptionsFromArgs(args, intent) {
     register,
     answers: args.answers,
     moduleCapabilities: args.moduleCapabilities,
+    workspaceTemplates: args.workspaceTemplates,
     theme: args.theme,
   };
 }
@@ -785,7 +794,9 @@ export async function dispatch(toolName, args, session) {
 
   if (toolName === 'classify_workspace') {
     let c = await getConstructor();
-    let templateName = c.matchTemplate(args.intent);
+    let templateName = c.matchTemplate(args.intent, {
+      workspaceTemplates: args.workspaceTemplates,
+    });
     return {
       status: 'ok',
       templateName: templateName || 'dashboard',
@@ -889,7 +900,9 @@ export async function dispatch(toolName, args, session) {
     // ── Scaffold ──
     case 'list_templates': {
       let c = await getConstructor();
-      let templates = c.listTemplates();
+      let templates = c.listTemplates({
+        workspaceTemplates: args.workspaceTemplates,
+      });
       return { templates, count: templates.length };
     }
 

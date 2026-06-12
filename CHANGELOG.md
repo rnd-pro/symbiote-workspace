@@ -50,6 +50,11 @@ All notable changes to this project will be documented in this file.
   `collectPluginWorkspaceTemplates()` and `listPluginWorkspaceTemplates()`
   expose validated `plugin.workspace.templates` entries for plugin-provided
   workspace template catalogs.
+- **External workspace template construction** — constructor APIs and unified
+  dispatch can accept plugin-neutral `workspaceTemplates` inputs, validate them
+  as strict portable workspace configs, classify by template metadata, and
+  construct configs through `plan_workspace`, `construct_workspace`, and CLI
+  `--workspace-templates` without importing plugin registry code.
 
 ### Changed
 

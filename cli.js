@@ -121,6 +121,8 @@ Options for 'plan-workspace' and 'construct-workspace':
                       Required portable capability tags
   --module-capabilities <json-array>
                       External module capability descriptors
+  --workspace-templates <json-array>
+                      External workspace templates
   --answers <json-object>
                       Construction question answers keyed by question ID
   --preferred-theme <json-object>
