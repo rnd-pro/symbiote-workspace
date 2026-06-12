@@ -22,8 +22,30 @@ let CONSTRUCTION_TOOLS = [
   'export_workspace',
 ];
 
+let EXTERNAL_SENTIMENT_MODULE = {
+  tagName: 'acme-sentiment-panel',
+  provider: '@acme/workspace-pack',
+  capabilities: ['analysis.sentiment', 'review.queue'],
+  actions: [{ id: 'refresh', label: 'Refresh', command: 'sentiment.refresh' }],
+  bindings: [{ id: 'items', direction: 'input', path: 'data.sentiment' }],
+  requiredHostServices: ['storage.project'],
+  placement: {
+    panelType: 'sentiment',
+    title: 'Sentiment',
+    icon: 'sentiment_satisfied',
+    behavior: { importance: 72, minInlineSize: 260 },
+  },
+};
+
 async function execCli(...args) {
   return exec('node', [CLI, ...args]);
+}
+
+function layoutReferencesPanel(node, panelType) {
+  if (!node) return false;
+  if (node.type === 'panel') return node.panelType === panelType;
+  return layoutReferencesPanel(node.first, panelType) ||
+    layoutReferencesPanel(node.second, panelType);
 }
 
 describe('construction workflow registry', () => {
@@ -121,6 +143,23 @@ describe('construction workflow dispatch', () => {
     assert.deepEqual(result.intent.requiredCapabilities, ['automation.reply-template']);
     assert.deepEqual(result.plan.answers.moduleSelection, ['reply']);
     assert.equal(result.plan.theme.recipe.mode, 'dark');
+  });
+
+  it('construct_workspace materializes external module descriptors through dispatch', async () => {
+    let session = createSession();
+    let result = await dispatch('construct_workspace', {
+      intent: 'sentiment review operations dashboard',
+      template: 'dashboard',
+      requiredCapabilities: ['analysis.sentiment'],
+      moduleCapabilities: [EXTERNAL_SENTIMENT_MODULE],
+    }, session);
+
+    assert.equal(result.status, 'ok');
+    assert.deepEqual(result.plan.answers.moduleSelection, ['sentiment']);
+    assert.equal(session.config.panelTypes.sentiment.component, 'acme-sentiment-panel');
+    assert.ok(session.config.components.catalog.includes('acme-sentiment-panel'));
+    assert.ok(layoutReferencesPanel(session.config.layout, 'sentiment'));
+    assert.deepEqual(result.plan.capabilities.missing, []);
   });
 
   it('construct_workspace reports invalid construction input without replacing session state', async () => {
@@ -228,6 +267,8 @@ describe('construction workflow CLI commands', () => {
     assert.ok(stdout.includes('validate-workspace-patch'));
     assert.ok(stdout.includes('apply-workspace-patch'));
     assert.ok(stdout.includes('export-workspace'));
+    assert.ok(stdout.includes('--module-capabilities'));
+    assert.ok(stdout.includes('--required-capabilities'));
   });
 
   it('classify-workspace returns the detected template', async () => {
@@ -244,6 +285,26 @@ describe('construction workflow CLI commands', () => {
 
     assert.equal(result.status, 'ok');
     assert.equal(result.plan.name, 'CLI Planned');
+  });
+
+  it('plan-workspace carries external module descriptors through CLI JSON args', async () => {
+    let { stdout } = await execCli(
+      'plan-workspace',
+      'sentiment review operations dashboard',
+      '--template',
+      'dashboard',
+      '--required-capabilities',
+      '["analysis.sentiment"]',
+      '--module-capabilities',
+      JSON.stringify([EXTERNAL_SENTIMENT_MODULE]),
+    );
+    let result = JSON.parse(stdout);
+
+    assert.equal(result.status, 'ok');
+    assert.deepEqual(result.plan.answers.moduleSelection, ['sentiment']);
+    assert.equal(result.config.panelTypes.sentiment.component, 'acme-sentiment-panel');
+    assert.ok(result.config.components.catalog.includes('acme-sentiment-panel'));
+    assert.ok(layoutReferencesPanel(result.config.layout, 'sentiment'));
   });
 
   it('construct-workspace writes a planned config through the shared session file flow', async () => {

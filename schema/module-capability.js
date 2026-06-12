@@ -69,6 +69,18 @@ const MODULE_SLOT_SCHEMA = Object.freeze({
   },
 });
 
+const MODULE_PLACEMENT_SCHEMA = Object.freeze({
+  type: 'object',
+  properties: {
+    panelType: stringProperty('Portable panel type identifier for generated workspace panels.'),
+    title: stringProperty('Panel title for generated workspace panels.'),
+    icon: stringProperty('Material Symbols icon name for generated workspace panels.'),
+    behavior: { type: 'object' },
+    regions: { type: 'array', items: { type: 'string' } },
+    registers: { type: 'array', items: { type: 'string' } },
+  },
+});
+
 export const MODULE_CAPABILITY_DESCRIPTOR_SCHEMA = Object.freeze({
   type: 'object',
   required: ['tagName'],
@@ -122,7 +134,7 @@ export const MODULE_CAPABILITY_DESCRIPTOR_SCHEMA = Object.freeze({
       description: 'Portable service IDs the host must provide; never credentials or endpoints.',
     },
     placement: {
-      type: 'object',
+      ...MODULE_PLACEMENT_SCHEMA,
       description: 'Constructor placement hints such as regions, registers, and panel roles.',
     },
   },
@@ -273,6 +285,32 @@ function validateSlots(value, path, errors, options) {
   }
 }
 
+function validatePlacement(value, path, errors, options) {
+  if (!isObject(value)) {
+    pushError(errors, path, 'placement must be an object.', options);
+    return;
+  }
+
+  if (value.panelType !== undefined) {
+    validatePortableId(value.panelType, `${path}.panelType`, errors, options);
+  }
+  if (value.title !== undefined && (typeof value.title !== 'string' || !value.title.trim())) {
+    pushError(errors, `${path}.title`, 'placement.title must be a non-empty string.', options);
+  }
+  if (value.icon !== undefined) {
+    validatePortableId(value.icon, `${path}.icon`, errors, options);
+  }
+  if (value.behavior !== undefined && !isObject(value.behavior)) {
+    pushError(errors, `${path}.behavior`, 'placement.behavior must be an object.', options);
+  }
+  if (value.regions !== undefined) {
+    validatePortableStringArray(value.regions, `${path}.regions`, errors, options);
+  }
+  if (value.registers !== undefined) {
+    validatePortableStringArray(value.registers, `${path}.registers`, errors, options);
+  }
+}
+
 /**
  * @param {any} descriptor
  * @param {string} path
@@ -333,8 +371,8 @@ export function validateModuleCapabilityDescriptor(descriptor, path, errors, opt
   if (descriptor.bindings !== undefined) validateBindings(descriptor.bindings, `${path}.bindings`, errors, options);
   if (descriptor.slots !== undefined) validateSlots(descriptor.slots, `${path}.slots`, errors, options);
   if (descriptor.runtimeSlots !== undefined) validateSlots(descriptor.runtimeSlots, `${path}.runtimeSlots`, errors, options);
-  if (descriptor.placement !== undefined && !isObject(descriptor.placement)) {
-    pushError(errors, `${path}.placement`, 'placement must be an object.', options);
+  if (descriptor.placement !== undefined) {
+    validatePlacement(descriptor.placement, `${path}.placement`, errors, options);
   }
 }
 

@@ -409,6 +409,12 @@ let { config } = planWorkspaceConstruction({
       capabilities: ['data.table', 'admin.bulk-actions'],
       actions: [{ id: 'refresh', label: 'Refresh' }],
       requiredHostServices: ['storage.project'],
+      placement: {
+        panelType: 'records',
+        title: 'Records',
+        icon: 'table',
+        behavior: { importance: 90, minInlineSize: 320 },
+      },
     },
   ],
   answers: {
@@ -430,6 +436,12 @@ components. When the intent includes `requiredCapabilities` and no explicit
 selection from declared descriptor capabilities. Explicit answers are preserved,
 and any uncovered requirements are reported in
 `config.construction.plan.capabilities.missing`.
+
+External descriptors that do not already have a matching `panelTypes` entry are
+materialized from `placement.panelType` or `tagName`. The constructor copies
+placement title, icon, and behavior into the generated panel type, and selected
+generated panels are added to the root BSP layout when they are not present in
+any existing layout.
 
 The constructor copies matching descriptor capabilities, actions, settings,
 events, bindings, runtime slots, placement hints, and required host service IDs

@@ -113,6 +113,19 @@ Options for 'scaffold':
   --register <r>      Override register (tool|admin|editor|agent-workspace|media-studio|brand|presentation)
   --output <f>        Write config to file
 
+Options for 'plan-workspace' and 'construct-workspace':
+  --template <name>   Explicit template name
+  --name <n>          Override workspace name
+  --register <r>      Override target register
+  --required-capabilities <json-array>
+                      Required portable capability tags
+  --module-capabilities <json-array>
+                      External module capability descriptors
+  --answers <json-object>
+                      Construction question answers keyed by question ID
+  --preferred-theme <json-object>
+                      Preferred theme recipe fields
+
 Examples:
   npx symbiote-workspace scaffold "chat workspace" --config ws.json
   npx symbiote-workspace add-group --config ws.json --id g1 --name "Editor"

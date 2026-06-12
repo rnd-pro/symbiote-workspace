@@ -8,6 +8,27 @@ import { TOOLS } from '../runtime/index.js';
 
 let __dirname = dirname(fileURLToPath(import.meta.url));
 let MCP_SCRIPT = resolve(__dirname, '../mcp/index.js');
+let EXTERNAL_SENTIMENT_MODULE = {
+  tagName: 'acme-sentiment-panel',
+  provider: '@acme/workspace-pack',
+  capabilities: ['analysis.sentiment', 'review.queue'],
+  actions: [{ id: 'refresh', label: 'Refresh', command: 'sentiment.refresh' }],
+  bindings: [{ id: 'items', direction: 'input', path: 'data.sentiment' }],
+  requiredHostServices: ['storage.project'],
+  placement: {
+    panelType: 'sentiment',
+    title: 'Sentiment',
+    icon: 'sentiment_satisfied',
+    behavior: { importance: 72, minInlineSize: 260 },
+  },
+};
+
+function layoutReferencesPanel(node, panelType) {
+  if (!node) return false;
+  if (node.type === 'panel') return node.panelType === panelType;
+  return layoutReferencesPanel(node.first, panelType) ||
+    layoutReferencesPanel(node.second, panelType);
+}
 
 /**
  * Start MCP server and exchange messages.
@@ -186,6 +207,42 @@ describe('MCP Protocol', () => {
     let exportedConfig = JSON.parse(exportContent.json);
     assert.equal(exportedConfig.name, 'MCP Constructed');
     assert.deepEqual(exportedConfig.construction.plan.capabilities.missing, []);
+  });
+
+  it('constructs external module descriptors through tools/call and exports executable config', async () => {
+    let responses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: {
+          name: 'construct_workspace',
+          arguments: {
+            intent: 'sentiment review operations dashboard',
+            template: 'dashboard',
+            requiredCapabilities: ['analysis.sentiment'],
+            moduleCapabilities: [EXTERNAL_SENTIMENT_MODULE],
+          },
+        },
+      },
+      {
+        jsonrpc: '2.0', id: 3, method: 'tools/call',
+        params: { name: 'export_workspace', arguments: {} },
+      },
+    ], 5000);
+
+    let constructResult = responses.find((r) => r.id === 2);
+    assert.ok(constructResult);
+    let constructContent = JSON.parse(constructResult.result.content[0].text);
+    assert.deepEqual(constructContent.plan.answers.moduleSelection, ['sentiment']);
+    assert.deepEqual(constructContent.plan.capabilities.missing, []);
+
+    let exportResult = responses.find((r) => r.id === 3);
+    assert.ok(exportResult);
+    let exportContent = JSON.parse(exportResult.result.content[0].text);
+    let exportedConfig = JSON.parse(exportContent.json);
+    assert.equal(exportedConfig.panelTypes.sentiment.component, 'acme-sentiment-panel');
+    assert.ok(exportedConfig.components.catalog.includes('acme-sentiment-panel'));
+    assert.ok(layoutReferencesPanel(exportedConfig.layout, 'sentiment'));
   });
 
   it('returns error for unknown method', async () => {

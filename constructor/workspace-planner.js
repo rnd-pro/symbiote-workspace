@@ -790,6 +790,74 @@ function templateConfig(templateName) {
   return WORKSPACE_TEMPLATES[templateName].config;
 }
 
+function normalizeModuleCapabilityDescriptor(descriptor) {
+  if (!isObject(descriptor)) {
+    throw new Error('moduleCapabilities entries must be objects.');
+  }
+  if (typeof descriptor.tagName !== 'string' || !descriptor.tagName.trim()) {
+    throw new Error('moduleCapabilities entries require a tagName.');
+  }
+  return deepClone({
+    ...descriptor,
+    tagName: descriptor.tagName.trim(),
+  });
+}
+
+function placementString(placement, field, fallback = null) {
+  if (placement[field] === undefined) return fallback;
+  if (typeof placement[field] !== 'string' || !placement[field].trim()) {
+    throw new Error(
+      `moduleCapabilities placement.${field} must be a non-empty string when provided.`,
+    );
+  }
+  return placement[field].trim();
+}
+
+function titleFromPanelType(panelType) {
+  return panelType
+    .split(/[-_]/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function panelTypeForComponent(config, tagName) {
+  for (let [panelType, panel] of Object.entries(config.panelTypes || {})) {
+    if (panel?.component === tagName) return panelType;
+  }
+  return null;
+}
+
+function materializeDescriptorPanelTypes(config, descriptors) {
+  if (!descriptors.length) return;
+  config.panelTypes ||= {};
+
+  for (let descriptor of descriptors) {
+    if (panelTypeForComponent(config, descriptor.tagName)) continue;
+
+    let placement = isObject(descriptor.placement) ? descriptor.placement : {};
+    let panelType = placementString(placement, 'panelType', descriptor.tagName);
+    if (config.panelTypes[panelType]) {
+      throw new Error(`moduleCapabilities placement.panelType "${panelType}" is already registered.`);
+    }
+
+    let panel = {
+      title: placementString(placement, 'title', titleFromPanelType(panelType)),
+      icon: placementString(placement, 'icon', 'extension'),
+      component: descriptor.tagName,
+    };
+
+    if (placement.behavior !== undefined) {
+      if (!isObject(placement.behavior)) {
+        throw new Error('moduleCapabilities placement.behavior must be an object when provided.');
+      }
+      panel.behavior = deepClone(placement.behavior);
+    }
+
+    config.panelTypes[panelType] = panel;
+  }
+}
+
 function withModuleCapabilities(config, moduleCapabilities) {
   let next = deepClone(config);
   if (moduleCapabilities === undefined) return next;
@@ -799,21 +867,25 @@ function withModuleCapabilities(config, moduleCapabilities) {
 
   next.components ||= {};
   let existing = Array.isArray(next.components.modules) ? next.components.modules : [];
+  let provided = moduleCapabilities.map(normalizeModuleCapabilityDescriptor);
   let byTagName = new Map();
-  for (let descriptor of [...existing, ...moduleCapabilities]) {
-    if (!isObject(descriptor)) {
-      throw new Error('moduleCapabilities entries must be objects.');
-    }
-    if (typeof descriptor.tagName !== 'string' || !descriptor.tagName.trim()) {
-      throw new Error('moduleCapabilities entries require a tagName.');
-    }
-    byTagName.set(descriptor.tagName, deepClone(descriptor));
+
+  for (let descriptor of existing.map(normalizeModuleCapabilityDescriptor)) {
+    byTagName.set(descriptor.tagName, descriptor);
   }
+  for (let descriptor of provided) {
+    byTagName.set(descriptor.tagName, descriptor);
+  }
+
   next.components.modules = [...byTagName.values()].sort((a, b) => a.tagName.localeCompare(b.tagName));
 
   let catalog = new Set(next.components.catalog || []);
   for (let descriptor of next.components.modules) catalog.add(descriptor.tagName);
   next.components.catalog = [...catalog].sort((a, b) => a.localeCompare(b));
+  materializeDescriptorPanelTypes(
+    next,
+    [...new Map(provided.map((item) => [item.tagName, item])).values()],
+  );
 
   return next;
 }
@@ -1151,6 +1223,39 @@ function sectionLayoutPlan(config) {
     .sort((a, b) => a.sectionId.localeCompare(b.sectionId));
 }
 
+function layoutReferencesPanelType(node, panelType) {
+  if (!node) return false;
+  if (node.type === 'panel') return node.panelType === panelType;
+  return layoutReferencesPanelType(node.first, panelType) ||
+    layoutReferencesPanelType(node.second, panelType);
+}
+
+function configReferencesPanelType(config, panelType) {
+  if (layoutReferencesPanelType(config.layout, panelType)) return true;
+  return Object.values(config.layouts || {})
+    .some((layout) => layoutReferencesPanelType(layout, panelType));
+}
+
+function appendPanelToLayout(layout, panelType) {
+  let panel = { type: 'panel', panelType };
+  if (!layout) return panel;
+  return {
+    type: 'split',
+    direction: 'horizontal',
+    ratio: 0.72,
+    first: layout,
+    second: panel,
+  };
+}
+
+function materializeSelectedModuleLayout(config, selectedModules) {
+  for (let panelType of selectedModules) {
+    if (!config.panelTypes?.[panelType]) continue;
+    if (configReferencesPanelType(config, panelType)) continue;
+    config.layout = appendPanelToLayout(config.layout, panelType);
+  }
+}
+
 function modulePlan(config, selectedModules, requiredCapabilities = [], selectionSource = 'default') {
   let selected = new Set(selectedModules);
   let descriptors = moduleDescriptorMap(config);
@@ -1263,6 +1368,7 @@ export function planWorkspaceConstruction(intent, options = {}) {
   let defaults = themeDefaults(config, register, normalized.preferredTheme);
   let hue = mode === 'custom' ? (answers.get('theme-hue') ?? defaults.hue) : defaults.hue;
   let verificationScope = answers.get('verification-scope') || [];
+  materializeSelectedModuleLayout(config, modules);
   let plannedModules = modulePlan(
     config,
     modules,

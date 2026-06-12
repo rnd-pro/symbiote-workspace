@@ -185,6 +185,33 @@ describe('validateWorkspaceConfig', () => {
     assert.ok(result.errors.some((error) => error.path === 'components.modules[0].actions[0].label'));
     assert.ok(result.errors.some((error) => error.path === 'components.modules[0].requiredHostServices[0]'));
   });
+
+  it('rejects invalid executable module placement metadata', () => {
+    let result = validateWorkspaceConfig({
+      version: '0.2.0',
+      name: 'Broken Placement Workspace',
+      components: {
+        modules: [{
+          tagName: 'acme-sentiment-panel',
+          capabilities: ['analysis.sentiment'],
+          placement: {
+            panelType: 'Bad Panel',
+            title: '',
+            icon: 'bad icon',
+            behavior: 'wide',
+            regions: ['/local/path'],
+          },
+        }],
+      },
+    }, { strict: true });
+
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some((error) => error.path === 'components.modules[0].placement.panelType'));
+    assert.ok(result.errors.some((error) => error.path === 'components.modules[0].placement.title'));
+    assert.ok(result.errors.some((error) => error.path === 'components.modules[0].placement.icon'));
+    assert.ok(result.errors.some((error) => error.path === 'components.modules[0].placement.behavior'));
+    assert.ok(result.errors.some((error) => error.path === 'components.modules[0].placement.regions[0]'));
+  });
 });
 
 describe('isCompatibleVersion', () => {

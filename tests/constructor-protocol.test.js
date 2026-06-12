@@ -10,6 +10,12 @@ import {
 } from '../constructor/index.js';
 import { validateWorkspaceConfig } from '../schema/index.js';
 
+function layoutReferencesPanel(node, panelType) {
+  if (!node) return false;
+  if (node.type === 'panel') return node.panelType === panelType;
+  return layoutReferencesPanel(node.first, panelType) || layoutReferencesPanel(node.second, panelType);
+}
+
 describe('normalizeConstructionIntent', () => {
   it('normalizes string intent into a portable construction brief', () => {
     let intent = normalizeConstructionIntent('Build a chat workspace for support teams');
@@ -154,6 +160,45 @@ describe('planWorkspaceConstruction', () => {
     assert.deepEqual(result.plan.modules[0].placement, { registers: ['admin'], regions: ['main'] });
   });
 
+  it('materializes external module capability descriptors into executable config surfaces', () => {
+    let result = planWorkspaceConstruction({
+      brief: 'Build an operations dashboard with sentiment review',
+      template: 'dashboard',
+      requiredCapabilities: ['analysis.sentiment'],
+    }, {
+      moduleCapabilities: [{
+        tagName: 'acme-sentiment-panel',
+        provider: '@acme/workspace-pack',
+        capabilities: ['analysis.sentiment', 'review.queue'],
+        actions: [{ id: 'refresh', label: 'Refresh', command: 'sentiment.refresh' }],
+        bindings: [{ id: 'items', direction: 'input', path: 'data.sentiment' }],
+        requiredHostServices: ['storage.project'],
+        placement: {
+          panelType: 'sentiment',
+          title: 'Sentiment',
+          icon: 'sentiment_satisfied',
+          behavior: { importance: 72, minInlineSize: 260 },
+        },
+      }],
+    });
+
+    assert.deepEqual(result.plan.answers.moduleSelection, ['sentiment']);
+    assert.equal(result.config.panelTypes.sentiment.component, 'acme-sentiment-panel');
+    assert.equal(result.config.panelTypes.sentiment.title, 'Sentiment');
+    assert.deepEqual(result.config.panelTypes.sentiment.behavior, { importance: 72, minInlineSize: 260 });
+    assert.ok(result.config.components.catalog.includes('acme-sentiment-panel'));
+    assert.ok(result.config.components.modules.some((item) => item.tagName === 'acme-sentiment-panel'));
+    assert.ok(layoutReferencesPanel(result.config.layout, 'sentiment'));
+    assert.deepEqual(result.plan.modules.map((module) => module.panelType), ['sentiment']);
+    assert.equal(result.plan.modules[0].component, 'acme-sentiment-panel');
+    assert.deepEqual(result.plan.modules[0].matchedCapabilities, ['analysis.sentiment']);
+    assert.equal(result.plan.modules[0].selectionReason, 'required-capability');
+    assert.deepEqual(result.plan.capabilities.missing, []);
+
+    let validation = validateWorkspaceConfig(result.config, { strict: true });
+    assert.equal(validation.valid, true, JSON.stringify(validation.errors));
+  });
+
   it('places modules by required capability coverage when no explicit answer is provided', () => {
     let result = planWorkspaceConstruction({
       brief: 'Build a social automation reply queue with imports',
@@ -204,6 +249,24 @@ describe('planWorkspaceConstruction', () => {
     assert.throws(() => planWorkspaceConstruction('Build a dashboard', {
       moduleCapabilities: [{ capabilities: ['admin.metric'] }],
     }), /require a tagName/);
+  });
+
+  it('rejects module placement metadata that cannot produce executable panels', () => {
+    assert.throws(() => planWorkspaceConstruction('Build a dashboard', {
+      moduleCapabilities: [{
+        tagName: 'acme-sentiment-panel',
+        capabilities: ['analysis.sentiment'],
+        placement: { panelType: 'panel-1' },
+      }],
+    }), /panelType "panel-1" is already registered/);
+
+    assert.throws(() => planWorkspaceConstruction('Build a dashboard', {
+      moduleCapabilities: [{
+        tagName: 'acme-review-panel',
+        capabilities: ['review.queue'],
+        placement: { behavior: 'wide' },
+      }],
+    }), /placement.behavior/);
   });
 });
 

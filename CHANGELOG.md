@@ -36,6 +36,10 @@ All notable changes to this project will be documented in this file.
   `symbiote-workspace` and the installed `symbiote-ui` substitute into a
   temporary consumer, then verifies public entrypoints, CLI, construction,
   export, host contract, and MCP stdio behavior without npm publication.
+- **External module materialization** — construction `moduleCapabilities` can
+  now create missing panel types from placement metadata, place selected
+  generated panels into BSP layout, validate executable placement metadata, and
+  round-trip through CLI and MCP construction flows.
 
 ### Changed
 
