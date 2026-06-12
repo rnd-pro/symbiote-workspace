@@ -231,15 +231,64 @@ describe('host integration contract', () => {
       'symbiote-workspace/browser',
       'symbiote-ui',
     ]);
+    assert.equal(result.contract.browser.importMap.required, true);
+    assert.equal(result.contract.browser.importMap.scriptType, 'importmap');
+    assert.equal(result.contract.browser.importMap.mustLoadBeforeModuleScript, true);
     assert.equal(result.contract.browser.mountFunction, 'mountWorkspace');
     assert.equal(result.contract.browser.themeAdapter, 'symbiote-ui.applyCascadeTheme');
     assert.ok(result.contract.persistence.requiredTools.includes('export_config'));
     assert.ok(result.contract.persistence.requiredTools.includes('import_config'));
-    assert.equal(result.contract.persistence.optionalEngineService, 'storage.project');
+    assert.deepEqual(result.contract.persistence.requiredEngineServices, ['storage.project']);
+    assert.deepEqual(result.contract.persistence.optionalEngineServices, []);
+    assert.equal(result.contract.persistence.optionalEngineService, undefined);
     assert.ok(result.contract.services.required.includes('agent.runtime'));
     assert.ok(result.contract.services.required.includes('storage.project'));
     assert.ok(result.contract.runtimeSlots.required.some((slot) => slot.id === 'agent-runtime'));
     assert.doesNotMatch(JSON.stringify(result.contract), /https?:|file:\/\/|\/Users\//);
+  });
+
+  it('does not invent engine persistence services for storage-free configs', () => {
+    let result = createHostIntegrationContract({
+      version: '0.3.0',
+      name: 'Storage Free',
+      register: 'tool',
+    });
+
+    assert.equal(result.status, 'ok');
+    assert.deepEqual(result.contract.services.required, []);
+    assert.deepEqual(result.contract.persistence.requiredEngineServices, []);
+    assert.deepEqual(result.contract.persistence.optionalEngineServices, []);
+    assert.equal(result.contract.persistence.optionalEngineService, undefined);
+  });
+
+  it('derives persistence services from module host service declarations', () => {
+    let result = createHostIntegrationContract({
+      version: '0.3.0',
+      name: 'Mixed Services',
+      register: 'tool',
+      components: {
+        modules: [{
+          tagName: 'data-panel',
+          requiredHostServices: ['storage.project', 'agent.runtime'],
+        }],
+      },
+      construction: {
+        plan: {
+          modules: [{
+            tagName: 'archive-panel',
+            requiredHostServices: ['storage.archive', 'storage.project'],
+          }],
+        },
+      },
+    });
+
+    assert.equal(result.status, 'ok');
+    assert.deepEqual(result.contract.persistence.requiredEngineServices, [
+      'storage.archive',
+      'storage.project',
+    ]);
+    assert.deepEqual(result.contract.persistence.optionalEngineServices, []);
+    assert.equal(result.contract.browser.importMap.imports, undefined);
   });
 
   it('reports invalid configs instead of fabricating a host contract', () => {

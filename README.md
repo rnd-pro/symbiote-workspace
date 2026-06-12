@@ -257,10 +257,11 @@ for a portable config:
 - chat construction tools: `classify_workspace`, `plan_workspace`,
   `construct_workspace`, patch validation/application, import, and export;
 - standalone browser requirements: import-map entries for
-  `symbiote-workspace/browser` and `symbiote-ui`, `mountWorkspace()`, and
-  `symbiote-ui.applyCascadeTheme`;
-- persistence requirements: `export_config` and `import_config`, with optional
-  engine-backed `storage.project` when module descriptors require it;
+  `symbiote-workspace/browser` and `symbiote-ui`, `<script type="importmap">`
+  ordering, `mountWorkspace()`, and `symbiote-ui.applyCascadeTheme`;
+- persistence requirements: `export_config`, `import_config`, and
+  `requiredEngineServices` derived from module-declared host services such as
+  `storage.project`;
 - module-required host services and runtime slots collected from
   `components.modules` and `construction.plan.modules`, with portable ID
   validation for those contract IDs.

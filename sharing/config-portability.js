@@ -1,5 +1,5 @@
 import { validateWorkspaceConfig } from '../schema/validate.js';
-import { WORKSPACE_SCHEMA_VERSION } from '../schema/workspace-schema.js';
+import { createBrowserRuntimeContract } from './browser-contract.js';
 
 function isObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -56,11 +56,6 @@ const CHAT_CONSTRUCTION_TOOLS = Object.freeze([
   'apply_workspace_patch',
   'export_workspace',
   'import_config',
-]);
-
-const BROWSER_REQUIRED_IMPORTS = Object.freeze([
-  'symbiote-workspace/browser',
-  'symbiote-ui',
 ]);
 
 const PERSISTENCE_TOOLS = Object.freeze([
@@ -260,6 +255,12 @@ function validateRuntimeSlots(runtimeSlots) {
   return errors;
 }
 
+function collectPersistenceEngineServices(services) {
+  return services.required
+    .filter((service) => service.startsWith('storage.'))
+    .sort((a, b) => a.localeCompare(b));
+}
+
 /**
  * @param {import('../schema/workspace-schema.js').WorkspaceConfig} config
  * @param {Object} [options]
@@ -334,16 +335,12 @@ export function createHostIntegrationContract(config) {
         sessionOwner: 'host',
         mutationBoundary: 'runtime/dispatch session',
       },
-      browser: {
-        entrypoint: 'symbiote-workspace/browser',
-        requiredImports: [...BROWSER_REQUIRED_IMPORTS],
-        mountFunction: 'mountWorkspace',
-        themeAdapter: 'symbiote-ui.applyCascadeTheme',
-      },
+      browser: createBrowserRuntimeContract(),
       persistence: {
         portableConfig: true,
         requiredTools: [...PERSISTENCE_TOOLS],
-        optionalEngineService: 'storage.project',
+        requiredEngineServices: collectPersistenceEngineServices(services),
+        optionalEngineServices: [],
         exportFormat: 'workspace-json',
       },
       services,

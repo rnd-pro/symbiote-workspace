@@ -5,11 +5,10 @@
 
 import { writeFile, mkdir } from 'node:fs/promises';
 import { join, relative, resolve, sep } from 'node:path';
-
-const PREVIEW_REQUIRED_IMPORTS = [
-  'symbiote-workspace/browser',
-  'symbiote-ui',
-];
+import {
+  BROWSER_REQUIRED_IMPORTS,
+  createBrowserRuntimeContract,
+} from '../sharing/browser-contract.js';
 
 const PREVIEW_ERROR_SURFACES = [
   'import-map-support',
@@ -74,7 +73,7 @@ function validatePreviewImportMap(imports) {
     }];
   }
 
-  for (let specifier of PREVIEW_REQUIRED_IMPORTS) {
+  for (let specifier of BROWSER_REQUIRED_IMPORTS) {
     if (!Object.hasOwn(imports, specifier)) {
       errors.push({
         path: `imports.${specifier}`,
@@ -104,19 +103,9 @@ function validatePreviewImportMap(imports) {
 function createPreviewContract(imports) {
   return {
     schemaVersion: '0.1.0',
-    browser: {
-      entrypoint: 'symbiote-workspace/browser',
-      mountFunction: 'mountWorkspace',
-      themeAdapter: 'symbiote-ui.applyCascadeTheme',
-      requiredImports: [...PREVIEW_REQUIRED_IMPORTS],
-      importMap: {
-        required: true,
-        scriptType: 'importmap',
-        featureDetection: "HTMLScriptElement.supports?.('importmap')",
-        mustLoadBeforeModuleScript: true,
-      },
+    browser: createBrowserRuntimeContract({
       errorSurfaces: [...PREVIEW_ERROR_SURFACES],
-    },
+    }),
     importMap: {
       imports: { ...imports },
     },

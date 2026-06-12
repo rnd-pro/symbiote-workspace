@@ -2,6 +2,8 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  BROWSER_REQUIRED_IMPORTS,
+  createBrowserRuntimeContract,
   exportConfig,
   importConfig,
   diffConfigs,
@@ -57,6 +59,19 @@ let EXTENDED_CONFIG = {
     }],
   },
 };
+
+describe('createBrowserRuntimeContract', () => {
+  it('returns host-neutral browser import-map metadata', () => {
+    let contract = createBrowserRuntimeContract();
+
+    assert.deepEqual(contract.requiredImports, [...BROWSER_REQUIRED_IMPORTS]);
+    assert.equal(contract.importMap.required, true);
+    assert.equal(contract.importMap.scriptType, 'importmap');
+    assert.equal(contract.importMap.mustLoadBeforeModuleScript, true);
+    assert.deepEqual(contract.importMap.unsupportedContexts, ['workers', 'worklets']);
+    assert.doesNotMatch(JSON.stringify(contract), /https?:|file:\/\/|\/Users\//);
+  });
+});
 
 describe('exportConfig', () => {
   it('exports valid config as JSON', () => {

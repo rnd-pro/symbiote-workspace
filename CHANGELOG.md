@@ -29,9 +29,9 @@ All notable changes to this project will be documented in this file.
   warnings, and preserves separate import-map, module-load, and mount error
   messages.
 - **Host integration contract** — `createHostIntegrationContract()` describes
-  chat construction tools, browser import-map requirements, optional
-  engine-backed persistence, module host services, and portable runtime slots
-  for a portable workspace config.
+  chat construction tools, browser import-map requirements, derived
+  engine-backed persistence services, module host services, and portable
+  runtime slots for a portable workspace config.
 - **Theme relations** — workspace config now carries future-compatible
   `theme.relations` and subtree relations alongside params and token overrides.
 - **Package consumer verification** — `npm run test:package-consumer` now packs
