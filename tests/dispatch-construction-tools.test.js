@@ -233,6 +233,11 @@ describe('construction workflow dispatch', () => {
     assert.equal(session.config.intent.template, 'team-ai-room');
     assert.deepEqual(result.plan.answers.moduleSelection, ['command']);
     assert.deepEqual(result.plan.capabilities.missing, []);
+
+    let exported = await dispatch('export_workspace', { strict: true }, session);
+    let exportedConfig = JSON.parse(exported.json);
+    assert.equal(exported.status, 'ok');
+    assert.equal(exportedConfig.intent.template, 'team-ai-room');
   });
 
   it('construct_workspace accepts module capabilities collected from plugins', async () => {
