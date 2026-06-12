@@ -97,7 +97,7 @@
     "server"
   ],
   "peerDependencies": {
-    "symbiote-ui": ">=0.3.0-alpha.40",
+    "symbiote-ui": ">=0.3.0-alpha.44",
     "symbiote-engine": ">=0.3.0-alpha.11"
   },
   "peerDependenciesMeta": {
@@ -106,7 +106,7 @@
     }
   },
   "devDependencies": {
-    "symbiote-ui": "0.3.0-alpha.42"
+    "symbiote-ui": "0.3.0-alpha.44"
   },
   "repository": {
     "type": "git",
