@@ -21,14 +21,14 @@ import {
 } from '../plugins/index.js';
 
 /**
- * Try to import symbiote-engine Registry.
+ * Try to import symbiote-engine public registry API.
  * Returns null if engine is not installed (optional peer dependency).
  *
  * @returns {Promise<{ registerNodeType: function } | null>}
  */
 async function tryLoadEngineRegistry() {
   try {
-    let mod = await import('symbiote-engine/Registry.js');
+    let mod = await import('symbiote-engine');
     return mod;
   } catch {
     return null;

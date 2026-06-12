@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 import { loadPluginsFromDir } from '../server/plugin-loader.js';
 import { clearPlugins, listPlugins, getPlugin } from '../plugins/index.js';
+import { clearRegistry, getNodeType } from 'symbiote-engine';
 
 let __dirname = dirname(fileURLToPath(import.meta.url));
 let FIXTURES_DIR = join(__dirname, '_test_plugins_fixtures');
@@ -13,6 +14,7 @@ let FIXTURES_DIR = join(__dirname, '_test_plugins_fixtures');
 describe('Server: Plugin Loader (from directory)', () => {
   beforeEach(async () => {
     clearPlugins();
+    clearRegistry();
     await rm(FIXTURES_DIR, { recursive: true, force: true });
     await mkdir(FIXTURES_DIR, { recursive: true });
   });
@@ -36,6 +38,34 @@ describe('Server: Plugin Loader (from directory)', () => {
     assert.ok(plugin);
     assert.equal(plugin.version, '1.0.0');
     assert.equal(plugin.handlers.length, 1);
+  });
+
+  it('registers plugin handlers through the public engine package entrypoint', async () => {
+    let pluginCode = `export default {
+      name: 'engine-registry-plugin',
+      version: '1.0.0',
+      category: 'handler',
+      handlers: [{
+        type: 'test/registry-handler',
+        category: 'test',
+        icon: 'science',
+        driver: {
+          description: 'Test handler registered through the public engine API',
+          inputs: [],
+          outputs: [],
+        },
+      }],
+    };`;
+
+    await writeFile(join(FIXTURES_DIR, 'registry.plugin.js'), pluginCode);
+
+    let results = await loadPluginsFromDir(FIXTURES_DIR);
+
+    assert.equal(results[0].status, 'registered');
+    let nodeType = getNodeType('test/registry-handler');
+    assert.equal(nodeType?.type, 'test/registry-handler');
+    assert.equal(nodeType?.category, 'test');
+    assert.equal(nodeType?.icon, 'science');
   });
 
   it('reports error for invalid plugin file', async () => {
