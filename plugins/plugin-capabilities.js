@@ -155,6 +155,10 @@ export function collectPluginWorkspaceTemplates(plugins) {
       templates.push(deepClone({
         name: template.name,
         ...(template.description !== undefined ? { description: template.description } : {}),
+        source: {
+          plugin: plugin.name,
+          version: plugin.version,
+        },
         config: template.config,
       }));
     }

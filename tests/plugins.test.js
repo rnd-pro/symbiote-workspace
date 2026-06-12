@@ -452,6 +452,10 @@ describe('plugin workspace template collection', () => {
     assert.deepEqual(result.errors, []);
     assert.deepEqual(result.templates.map((template) => template.name), ['team-ai-room']);
     assert.equal(result.templates[0].description, 'Team AI room workspace.');
+    assert.deepEqual(result.templates[0].source, {
+      plugin: '@acme/rooms',
+      version: '1.0.0',
+    });
     assert.equal(result.templates[0].config.name, 'Team AI Room');
 
     result.templates[0].config.name = 'Mutated';

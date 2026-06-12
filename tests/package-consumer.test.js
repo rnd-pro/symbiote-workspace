@@ -152,22 +152,36 @@ describe('packed package consumer', () => {
       await runNode(consumerDir, `
         import { collectPluginModuleCapabilities as fromRoot } from 'symbiote-workspace';
         import { collectPluginWorkspaceTemplates as templatesFromRoot } from 'symbiote-workspace';
+        import { listPluginWorkspaceTemplates as listTemplatesFromRoot } from 'symbiote-workspace';
         import { collectPluginModuleCapabilities as fromPlugins } from 'symbiote-workspace/plugins';
         import { collectPluginWorkspaceTemplates as templatesFromPlugins } from 'symbiote-workspace/plugins';
+        import { listPluginWorkspaceTemplates as listTemplatesFromPlugins } from 'symbiote-workspace/plugins';
         import { collectPluginModuleCapabilities as fromBrowser } from 'symbiote-workspace/browser';
         import { collectPluginWorkspaceTemplates as templatesFromBrowser } from 'symbiote-workspace/browser';
+        import { listPluginWorkspaceTemplates as listTemplatesFromBrowser } from 'symbiote-workspace/browser';
 
         for (let helper of [
           fromRoot,
           templatesFromRoot,
+          listTemplatesFromRoot,
           fromPlugins,
           templatesFromPlugins,
+          listTemplatesFromPlugins,
           fromBrowser,
-          templatesFromBrowser
+          templatesFromBrowser,
+          listTemplatesFromBrowser
         ]) {
           if (typeof helper !== 'function') {
             throw new Error('plugin collection export missing');
           }
+        }
+
+        try {
+          await import('symbiote-workspace/plugins/plugin-capabilities.js');
+          throw new Error('plugin internals should not be deep-importable');
+        } catch (error) {
+          if (error.message === 'plugin internals should not be deep-importable') throw error;
+          if (error.code !== 'ERR_PACKAGE_PATH_NOT_EXPORTED') throw error;
         }
       `);
 
@@ -183,8 +197,11 @@ describe('packed package consumer', () => {
       await runNode(consumerDir, `
         import { createSession, dispatch } from 'symbiote-workspace/runtime';
         import {
+          activatePlugin,
           collectPluginModuleCapabilities,
-          collectPluginWorkspaceTemplates
+          collectPluginWorkspaceTemplates,
+          listPluginWorkspaceTemplates,
+          registerPlugin
         } from 'symbiote-workspace/plugins';
         import { createHostIntegrationContract } from 'symbiote-workspace/sharing';
 
@@ -226,6 +243,32 @@ describe('packed package consumer', () => {
         let pluginTemplates = collectPluginWorkspaceTemplates([plugin]);
         if (!pluginTemplates.ok || pluginTemplates.templates[0].name !== 'sentiment-review-room') {
           throw new Error(JSON.stringify(pluginTemplates.errors));
+        }
+        if (pluginTemplates.templates[0].source.plugin !== '@acme/review-pack') {
+          throw new Error('workspace template source metadata missing');
+        }
+        registerPlugin(plugin);
+        registerPlugin({
+          name: '@acme/inactive-pack',
+          version: '1.0.0',
+          workspace: {
+            templates: [{
+              name: 'inactive-review-room',
+              config: {
+                version: '0.1.0',
+                name: 'Inactive Review Room'
+              }
+            }]
+          }
+        });
+        await activatePlugin('@acme/review-pack');
+        let activeTemplates = listPluginWorkspaceTemplates({ status: 'active' });
+        if (
+          !activeTemplates.ok ||
+          activeTemplates.templates.length !== 1 ||
+          activeTemplates.templates[0].name !== 'sentiment-review-room'
+        ) {
+          throw new Error(JSON.stringify(activeTemplates));
         }
 
         let constructed = await dispatch('construct_workspace', {
