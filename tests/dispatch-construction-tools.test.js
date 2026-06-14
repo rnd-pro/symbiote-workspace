@@ -1459,6 +1459,7 @@ describe('inspect workspace package dispatch', () => {
     let result = await dispatch('inspect_workspace_package', {}, session);
 
     assert.equal(result.status, 'error');
+    assert.equal(result.tool, 'inspect_workspace_package');
     assert.ok(result.hint.includes('package or json'));
   });
 
@@ -1605,6 +1606,7 @@ describe('create_workspace_package_construction_context dispatch', () => {
     let result = await dispatch('create_workspace_package_construction_context', {}, session);
 
     assert.equal(result.status, 'error');
+    assert.equal(result.tool, 'create_workspace_package_construction_context');
     assert.ok(result.hint.includes('package or json'));
   });
 });

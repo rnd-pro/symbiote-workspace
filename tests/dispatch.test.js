@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
@@ -7,6 +8,7 @@ import { dispatch, TOOLS, isMutating, createSession } from '../runtime/index.js'
 
 let ROOT = resolve(import.meta.dirname, '..');
 let TMP_ROOT = resolve(ROOT, 'tmp');
+let EXPECTED_TOOL_COUNT = 66;
 
 async function withTempPath(prefix, filename, run) {
   await mkdir(TMP_ROOT, { recursive: true });
@@ -20,7 +22,14 @@ async function withTempPath(prefix, filename, run) {
 
 describe('TOOLS registry', () => {
   it('contains all tools', () => {
-    assert.ok(TOOLS.length >= 50);
+    assert.equal(TOOLS.length, EXPECTED_TOOL_COUNT);
+  });
+
+  it('keeps public tool-count docs aligned with the runtime registry', () => {
+    for (let file of ['README.md', 'AGENTS.md', 'CHANGELOG.md']) {
+      let text = readFileSync(resolve(ROOT, file), 'utf8');
+      assert.match(text, new RegExp(`\\b${EXPECTED_TOOL_COUNT} tools\\b`), `${file} must mention ${EXPECTED_TOOL_COUNT} tools`);
+    }
   });
 
   it('all tools have name and inputSchema', () => {

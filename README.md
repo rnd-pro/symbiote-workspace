@@ -295,7 +295,8 @@ Start as MCP server for AI agent integration:
 npx symbiote-workspace mcp
 ```
 
-Exposes all registered tools via JSON-RPC over stdio. Agents can classify, plan,
+Exposes all 66 tools from the unified runtime registry via JSON-RPC over stdio.
+Agents can classify, plan,
 propose, validate, apply, export, mutate, and query workspaces
 programmatically.
 

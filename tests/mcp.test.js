@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -9,6 +10,7 @@ import { WORKSPACE_PACKAGE_KIND, WORKSPACE_PACKAGE_SCHEMA_VERSION } from '../sha
 
 let __dirname = dirname(fileURLToPath(import.meta.url));
 let MCP_SCRIPT = resolve(__dirname, '../mcp/index.js');
+let PACKAGE_VERSION = JSON.parse(readFileSync(resolve(__dirname, '../package.json'), 'utf8')).version;
 let EXTERNAL_SENTIMENT_MODULE = {
   tagName: 'acme-sentiment-panel',
   provider: '@acme/workspace-pack',
@@ -158,6 +160,7 @@ describe('MCP Protocol', () => {
     let r = responses[0];
     assert.equal(r.id, 1);
     assert.equal(r.result.serverInfo.name, 'symbiote-workspace');
+    assert.equal(r.result.serverInfo.version, PACKAGE_VERSION);
     assert.ok(r.result.protocolVersion);
   });
 
@@ -717,6 +720,26 @@ describe('Workspace Package via MCP', () => {
     assert.ok(content.missing.components.includes('mcp-missing-comp'));
     assert.ok(content.warnings.length > 0);
   });
+
+  it('inspect_workspace_package missing package/json returns an MCP tool error', async () => {
+    let responses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: {
+          name: 'inspect_workspace_package',
+          arguments: {},
+        },
+      },
+    ]);
+
+    let result = responses.find((r) => r.id === 2);
+    assert.equal(result.result.isError, true);
+    let content = JSON.parse(result.result.content[0].text);
+    assert.equal(content.status, 'error');
+    assert.equal(content.tool, 'inspect_workspace_package');
+    assert.match(content.hint, /package or json/);
+  });
 });
 
 describe('Package Construction Context via MCP', () => {
@@ -920,6 +943,26 @@ describe('Package Construction Context via MCP', () => {
     assert.ok(content.missing.plugins.includes('mcp-gap-pkg'));
     assert.ok(content.missing.components.includes('mcp-gap-comp'));
     assert.ok(content.warnings.length > 0);
+  });
+
+  it('create_workspace_package_construction_context missing package/json returns an MCP tool error', async () => {
+    let responses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: {
+          name: 'create_workspace_package_construction_context',
+          arguments: {},
+        },
+      },
+    ]);
+
+    let result = responses.find((r) => r.id === 2);
+    assert.equal(result.result.isError, true);
+    let content = JSON.parse(result.result.content[0].text);
+    assert.equal(content.status, 'error');
+    assert.equal(content.tool, 'create_workspace_package_construction_context');
+    assert.match(content.hint, /package or json/);
   });
 });
 

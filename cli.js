@@ -101,6 +101,15 @@ Tool Commands (all dispatch to unified API):
   collect-plugin-workspace-templates Collect workspace templates from plugin metadata
   check-guardrails    Check design guardrails (panel limits, ratios)
 
+Common Aliases:
+  describe            -> describe-workspace
+  discover            -> discover-components
+  scaffold            -> scaffold-workspace
+  plan                -> plan-workspace
+  construct           -> construct-workspace
+  validate            -> validate-config
+  preview             -> start-preview
+
 Global Options:
   --config <file>     Load config before command, auto-save after mutations
   --help, -h          Show this help

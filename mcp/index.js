@@ -15,11 +15,19 @@
  * @module symbiote-workspace/mcp
  */
 
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { dispatch, TOOLS } from '../runtime/dispatch.js';
 import { createSession } from '../runtime/session.js';
 
 // One session per MCP server process
 let session = createSession();
+let PACKAGE_VERSION = JSON.parse(readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), '..', 'package.json'),
+  'utf8',
+)).version;
 
 // ── JSON-RPC Protocol (stdio, Content-Length framing) ──
 
@@ -99,7 +107,7 @@ async function handleMessage(body) {
         capabilities: { tools: {} },
         serverInfo: {
           name: 'symbiote-workspace',
-          version: '0.3.0-alpha.2',
+          version: PACKAGE_VERSION,
         },
       },
     });

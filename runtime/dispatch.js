@@ -890,14 +890,29 @@ export function isMutating(toolName) {
 function validateArgs(toolName, args) {
   let tool = TOOL_MAP.get(toolName);
   if (!tool) return { valid: true }; // unknown tool handled by dispatch default case
+  let input = args || {};
 
   let required = tool.inputSchema?.required;
-  if (!required || required.length === 0) return { valid: true };
-
-  let missing = required.filter((key) => args[key] === undefined || args[key] === null);
+  let missing = (required || []).filter((key) => input[key] === undefined || input[key] === null);
   if (missing.length > 0) {
     return { valid: false, missing };
   }
+
+  let alternatives = (tool.inputSchema?.anyOf || [])
+    .map((schema) => schema?.required)
+    .filter((items) => Array.isArray(items) && items.length > 0);
+  if (alternatives.length > 0) {
+    let matched = alternatives.some((items) => items.every((key) => {
+      return input[key] !== undefined && input[key] !== null;
+    }));
+    if (!matched) {
+      return {
+        valid: false,
+        missing: [alternatives.map((items) => items.join(', ')).join(' or ')],
+      };
+    }
+  }
+
   return { valid: true };
 }
 

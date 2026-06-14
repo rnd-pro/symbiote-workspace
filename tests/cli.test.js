@@ -21,6 +21,15 @@ let HELP_ALIASES = {
   start_preview: ['preview'],
 };
 
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function helpHasCommand(stdout, command) {
+  return new RegExp(`^\\s+${escapeRegExp(command)}(?:\\s|$)`, 'm').test(stdout)
+    || new RegExp(`^\\s+${escapeRegExp(command)}\\s*->`, 'm').test(stdout);
+}
+
 async function exec(...args) {
   let { execFile } = await import('node:child_process');
   let { promisify } = await import('node:util');
@@ -55,7 +64,7 @@ describe('CLI help', () => {
     for (let [toolName, aliases] of Object.entries(HELP_ALIASES)) {
       assert.equal(toolNames.has(toolName), true, `Alias references missing tool ${toolName}`);
       assert.equal(
-        aliases.some((alias) => stdout.includes(alias)),
+        aliases.some((alias) => helpHasCommand(stdout, alias)),
         true,
         `Help missing alias for ${toolName}`,
       );
@@ -65,7 +74,7 @@ describe('CLI help', () => {
       let command = tool.name.replaceAll('_', '-');
       let aliases = HELP_ALIASES[tool.name] || [];
       assert.equal(
-        stdout.includes(command) || aliases.some((alias) => stdout.includes(alias)),
+        helpHasCommand(stdout, command) || aliases.some((alias) => helpHasCommand(stdout, alias)),
         true,
         `Help missing command for ${tool.name}`,
       );
