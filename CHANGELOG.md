@@ -6,6 +6,26 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **Workspace package format** — `exportWorkspacePackage(config, manifest)`,
+  `importWorkspacePackage(json)`, and `validateWorkspacePackage(packageObject)`
+  wrap portable workspace configs with manifest metadata, host integration
+  contracts, dependency lists, and asset references for distribution and
+  discovery. Manifest validation rejects host identity keys (token, secret,
+  session, user, credential), marketplace state (price, seller, license key or
+  server, purchase), and non-portable values (URLs, absolute paths) in
+  dependency and asset fields.
+- **Package inspection helper** — `inspectWorkspacePackage(input, options)`
+  inspects a workspace package object or JSON string and returns `valid`,
+  `ready`, structured summary, compatibility, dependency requirements, and
+  missing items. Accepts an optional host-neutral `options.available` inventory
+  for capability gap detection without marketplace or install semantics.
+  Exposed as `inspect_workspace_package` in the unified dispatch registry, CLI,
+  and MCP surface.
+- **Package construction context helper** —
+  `createWorkspacePackageConstructionContext(input, options)` projects valid
+  workspace packages into constructor-ready `workspaceTemplates`,
+  `moduleCapabilities`, required capability tags, and source metadata without
+  installing packages, activating plugins, or applying marketplace semantics.
 - **Construction protocol** — `intent`, `construction.questions`,
   `construction.plan`, `patches`, `validation.reports`, `runtime`, `exports`,
   and `design` are now accepted workspace config fields.
@@ -62,7 +82,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
-- **Unified dispatch surface** — CLI and MCP now expose 57 tools from the same
+- **Unified dispatch surface** — CLI and MCP now expose 62 tools from the same
   `runtime/dispatch.js` registry.
 - **Browser entrypoint boundary** — `symbiote-workspace/browser` now exports
   browser-safe APIs without statically pulling Node-only runtime dispatch code.

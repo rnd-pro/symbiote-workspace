@@ -333,7 +333,7 @@ export function createHostIntegrationContract(config) {
       chatConstruction: {
         requiredTools: [...CHAT_CONSTRUCTION_TOOLS],
         sessionOwner: 'host',
-        mutationBoundary: 'runtime/dispatch session',
+        mutationBoundary: 'workspace session config',
       },
       browser: createBrowserRuntimeContract(),
       persistence: {

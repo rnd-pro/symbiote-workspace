@@ -377,6 +377,254 @@ describe('packed package consumer', () => {
       let toolNames = new Set(toolList.result.tools.map((tool) => tool.name));
       assert.equal(toolNames.has('construct_workspace'), true);
       assert.equal(toolNames.has('export_workspace'), true);
+
+      // Workspace package: public export availability from sharing + root entry points
+      await runNode(consumerDir, `
+        import {
+          exportWorkspacePackage,
+          importWorkspacePackage,
+          validateWorkspacePackage,
+          createWorkspacePackageConstructionContext,
+          inspectWorkspacePackage,
+          WORKSPACE_PACKAGE_KIND,
+          WORKSPACE_PACKAGE_SCHEMA_VERSION,
+        } from 'symbiote-workspace/sharing';
+
+        if (typeof exportWorkspacePackage !== 'function') throw new Error('exportWorkspacePackage not exported');
+        if (typeof importWorkspacePackage !== 'function') throw new Error('importWorkspacePackage not exported');
+        if (typeof validateWorkspacePackage !== 'function') throw new Error('validateWorkspacePackage not exported');
+        if (typeof createWorkspacePackageConstructionContext !== 'function') {
+          throw new Error('createWorkspacePackageConstructionContext not exported from sharing');
+        }
+        if (typeof inspectWorkspacePackage !== 'function') throw new Error('inspectWorkspacePackage not exported from sharing');
+        if (WORKSPACE_PACKAGE_KIND !== 'symbiote-workspace-package') throw new Error('WORKSPACE_PACKAGE_KIND mismatch');
+        if (WORKSPACE_PACKAGE_SCHEMA_VERSION !== '0.1.0') throw new Error('WORKSPACE_PACKAGE_SCHEMA_VERSION mismatch');
+
+        let root = await import('symbiote-workspace');
+        if (typeof root.exportWorkspacePackage !== 'function') throw new Error('root exportWorkspacePackage missing');
+        if (typeof root.importWorkspacePackage !== 'function') throw new Error('root importWorkspacePackage missing');
+        if (typeof root.validateWorkspacePackage !== 'function') throw new Error('root validateWorkspacePackage missing');
+        if (typeof root.createWorkspacePackageConstructionContext !== 'function') {
+          throw new Error('root createWorkspacePackageConstructionContext missing');
+        }
+        if (typeof root.inspectWorkspacePackage !== 'function') throw new Error('root inspectWorkspacePackage missing');
+
+        let browser = await import('symbiote-workspace/browser');
+        if (typeof browser.createWorkspacePackageConstructionContext !== 'function') {
+          throw new Error('browser createWorkspacePackageConstructionContext missing');
+        }
+        if (typeof browser.inspectWorkspacePackage !== 'function') throw new Error('browser inspectWorkspacePackage missing');
+      `);
+
+      // Workspace package: round-trip export → import → validate through packed consumer
+      await runNode(consumerDir, `
+        import {
+          exportWorkspacePackage,
+          importWorkspacePackage,
+          validateWorkspacePackage,
+        } from 'symbiote-workspace/sharing';
+
+        let config = {
+          version: '0.2.0',
+          name: 'Packed Consumer Package',
+          register: 'tool',
+          theme: { params: { mode: 'dark' } },
+          layout: { type: 'panel', panelType: 'main' },
+          components: { catalog: ['sn-panel'] },
+        };
+
+        let manifest = {
+          id: 'packed-consumer-pkg',
+          version: '1.0.0',
+          description: 'Package verified from packed consumer.',
+          tags: ['test.consumer'],
+          permissions: ['agent.runtime'],
+          dependencies: { packages: ['symbiote-ui'] },
+          assets: { docs: ['docs/readme.md'] },
+        };
+
+        let exported = exportWorkspacePackage(config, manifest);
+        if (!exported.json) throw new Error(JSON.stringify(exported.errors));
+        if (exported.package.kind !== 'symbiote-workspace-package') throw new Error('kind mismatch');
+        if (exported.package.schemaVersion !== '0.1.0') throw new Error('schemaVersion mismatch');
+        if (exported.package.manifest.id !== 'packed-consumer-pkg') throw new Error('manifest id mismatch');
+        if (exported.package.manifest.version !== '1.0.0') throw new Error('manifest version mismatch');
+        if (!exported.package.host.contract) throw new Error('host contract missing');
+        if (!exported.package.manifest.dependencies.packages.includes('symbiote-ui')) {
+          throw new Error('package dependency missing');
+        }
+
+        let imported = importWorkspacePackage(exported.json);
+        if (!imported.package) throw new Error(JSON.stringify(imported.errors));
+        if (imported.package.manifest.id !== 'packed-consumer-pkg') throw new Error('imported id mismatch');
+        if (imported.config.name !== 'Packed Consumer Package') throw new Error('imported config name mismatch');
+
+        let validation = validateWorkspacePackage(imported.package);
+        if (!validation.valid) throw new Error(JSON.stringify(validation.errors));
+      `);
+
+      // Workspace package: reject marketplace and private/host manifest state
+      await runNode(consumerDir, `
+        import { exportWorkspacePackage } from 'symbiote-workspace/sharing';
+
+        let config = {
+          version: '0.2.0',
+          name: 'Rejection Test',
+          register: 'tool',
+          theme: { params: { mode: 'dark' } },
+          layout: { type: 'panel', panelType: 'main' },
+          components: { catalog: ['sn-panel'] },
+        };
+
+        let marketManifest = {
+          id: 'market-package',
+          version: '1.0.0',
+          marketplace: { price: '9.00', sellerId: 'seller-123' },
+          licenseServer: 'https://licenses.example.com',
+          purchase: { id: 'p-123', status: 'active' },
+        };
+
+        let result = exportWorkspacePackage(config, marketManifest);
+        if (result.json !== null) throw new Error('should reject marketplace state');
+        if (!result.errors.some(e => e.path === 'manifest.marketplace')) throw new Error('missing marketplace error');
+        if (!result.errors.some(e => e.path === 'manifest.licenseServer')) throw new Error('missing licenseServer error');
+        if (!result.errors.some(e => e.path === 'manifest.purchase')) throw new Error('missing purchase error');
+
+        let authManifest = {
+          id: 'auth-package',
+          version: '1.0.0',
+          token: 'redacted-token-placeholder',
+          secret: 'redacted-secret-placeholder',
+          session: 'abc-session-id',
+        };
+
+        let result2 = exportWorkspacePackage(config, authManifest);
+        if (result2.json !== null) throw new Error('should reject auth state');
+        if (!result2.errors.some(e => e.path === 'manifest.token')) throw new Error('missing token error');
+        if (!result2.errors.some(e => e.path === 'manifest.secret')) throw new Error('missing secret error');
+        if (!result2.errors.some(e => e.path === 'manifest.session')) throw new Error('missing session error');
+      `);
+
+      // Workspace package: inspect with default valid/ready and available inventory
+      await runNode(consumerDir, `
+        import {
+          createWorkspacePackageConstructionContext,
+          exportWorkspacePackage,
+          inspectWorkspacePackage,
+        } from 'symbiote-workspace/sharing';
+        import { planWorkspaceConstruction } from 'symbiote-workspace/constructor';
+
+        let config = {
+          version: '0.2.0',
+          name: 'Inspect Test',
+          register: 'tool',
+          theme: { params: { mode: 'dark' } },
+          panelTypes: {
+            main: { title: 'Main', icon: 'dashboard', component: 'sn-panel' },
+          },
+          layout: { type: 'panel', panelType: 'main' },
+          components: {
+            catalog: ['sn-panel', 'acme-legacy-widget'],
+            modules: [{
+              tagName: 'acme-legacy-widget',
+              provider: '@acme/review-pack',
+              capabilities: ['review.queue'],
+              placement: {
+                panelType: 'review',
+                title: 'Review',
+                icon: 'fact_check',
+              },
+            }],
+          },
+        };
+
+        let manifest = {
+          id: 'inspect-pkg',
+          version: '1.0.0',
+          description: 'Valid package for inspection.',
+          dependencies: {
+            components: ['sn-panel', 'acme-legacy-widget'],
+            plugins: ['@acme/review-pack'],
+            packages: ['symbiote-ui'],
+          },
+        };
+
+        let exported = exportWorkspacePackage(config, manifest);
+        if (!exported.json) throw new Error(JSON.stringify(exported.errors));
+
+        let result = inspectWorkspacePackage(exported.json);
+        if (result.valid !== true) throw new Error('valid must be true, got ' + JSON.stringify(result.errors));
+        if (result.ready !== true) throw new Error('ready must be true when no available filter is set, got ' + result.ready);
+        if (!result.summary) throw new Error('summary missing');
+        if (result.summary.id !== 'inspect-pkg') throw new Error('summary id mismatch');
+        if (!result.requirements) throw new Error('requirements missing');
+        if (!result.requirements.components.includes('sn-panel')) throw new Error('requirements components missing sn-panel');
+        if (!result.requirements.plugins.includes('@acme/review-pack')) throw new Error('requirements plugins missing @acme/review-pack');
+        if (!result.requirements.packages.includes('symbiote-ui')) throw new Error('requirements packages missing symbiote-ui');
+        if (!result.package) throw new Error('inspect result package missing');
+        if (!result.config) throw new Error('inspect result config missing');
+
+        let partial = inspectWorkspacePackage(exported.json, {
+          available: { components: ['sn-panel'] },
+        });
+        if (partial.ready !== false) throw new Error('ready must be false when dependencies are missing');
+        if (!partial.missing) throw new Error('missing object absent');
+        if (!partial.missing.components.includes('acme-legacy-widget')) {
+          throw new Error('missing components must include acme-legacy-widget');
+        }
+        if (!partial.missing.plugins.includes('@acme/review-pack')) {
+          throw new Error('missing plugins must include @acme/review-pack');
+        }
+        if (!partial.missing.packages.includes('symbiote-ui')) {
+          throw new Error('missing packages must include symbiote-ui');
+        }
+        if (partial.warnings.length === 0) throw new Error('warnings must report missing capabilities');
+        if (partial.valid !== true) throw new Error('valid must still be true even when deps are missing');
+        if (!partial.summary) throw new Error('summary still present when deps are missing');
+
+        let allAvailable = inspectWorkspacePackage(exported.json, {
+          available: {
+            components: ['sn-panel', 'acme-legacy-widget'],
+            plugins: ['@acme/review-pack'],
+            packages: ['symbiote-ui'],
+          },
+        });
+        if (allAvailable.ready !== true) {
+          throw new Error('ready must be true when all deps are available, got ' + allAvailable.ready);
+        }
+        if (allAvailable.warnings.length !== 0) {
+          throw new Error('warnings must be empty when all deps are available, got ' + JSON.stringify(allAvailable.warnings));
+        }
+
+        let context = createWorkspacePackageConstructionContext(exported.json, {
+          templateName: 'review-package',
+        });
+        if (context.valid !== true) throw new Error('package construction context must be valid');
+        if (context.workspaceTemplates[0].name !== 'review-package') {
+          throw new Error('templateName override not applied');
+        }
+        if (context.workspaceTemplates[0].source.packageId !== 'inspect-pkg') {
+          throw new Error('template source package id missing');
+        }
+        if (context.source.type !== 'workspace-package') {
+          throw new Error('context source type missing');
+        }
+        if (context.moduleCapabilities[0].tagName !== 'acme-legacy-widget') {
+          throw new Error('module capabilities missing from package context');
+        }
+
+        let plan = planWorkspaceConstruction({
+          brief: 'Review queue workspace',
+          template: 'review-package',
+          requiredCapabilities: ['review.queue'],
+        }, {
+          workspaceTemplates: context.workspaceTemplates,
+          moduleCapabilities: context.moduleCapabilities,
+        });
+        if (plan.plan.capabilities.missing.length !== 0) {
+          throw new Error('package-derived constructor context did not cover review.queue');
+        }
+      `);
     });
   });
 });

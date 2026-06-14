@@ -90,6 +90,11 @@ Tool Commands (all dispatch to unified API):
   import-config       Import workspace from JSON string
   diff-configs        Compare current config with another
   merge-configs       Merge partial overlay into current config
+  export-workspace-package  Export workspace as portable package (config + manifest + host contract)
+  import-workspace-package  Import workspace package from JSON string
+  validate-workspace-package Validate a workspace package
+  inspect-workspace-package Inspect workspace package for validity, readiness, and host-neutral capability requirements
+  create-workspace-package-construction-context Create construction context from a workspace package (object or JSON string)
   check-guardrails    Check design guardrails (panel limits, ratios)
 
 Global Options:
@@ -127,6 +132,27 @@ Options for 'plan-workspace' and 'construct-workspace':
                       Construction question answers keyed by question ID
   --preferred-theme <json-object>
                       Preferred theme recipe fields
+
+Options for 'export-workspace-package':
+  --manifest <json-object>  Package manifest with id, name, version, description, etc.
+  --strict                  Reject on validation warnings
+
+Options for 'import-workspace-package':
+  --json <string>            JSON string of the workspace package
+
+Options for 'validate-workspace-package':
+  --package <json-object>    Workspace package to validate
+
+Options for 'inspect-workspace-package':
+  --package <json-object>    Workspace package object to inspect
+  --json <string>            JSON string of the workspace package
+  --available <json-object>  Host-neutral available capabilities map
+
+Options for 'create-workspace-package-construction-context':
+  --package <json-object>          Workspace package object
+  --json <string>                  JSON string of the workspace package
+  --available <json-object>        Host-neutral available capabilities map
+  --template-name <string>         Template name override
 
 Examples:
   npx symbiote-workspace scaffold "chat workspace" --config ws.json

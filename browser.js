@@ -36,11 +36,18 @@ export {
 } from './constructor/index.js';
 
 export {
+  WORKSPACE_PACKAGE_KIND,
+  WORKSPACE_PACKAGE_SCHEMA_VERSION,
   exportConfig,
+  exportWorkspacePackage,
   importConfig,
+  importWorkspacePackage,
   diffConfigs,
   mergeConfigs,
   createHostIntegrationContract,
+  createWorkspacePackageConstructionContext,
+  inspectWorkspacePackage,
+  validateWorkspacePackage,
 } from './sharing/index.js';
 
 export {

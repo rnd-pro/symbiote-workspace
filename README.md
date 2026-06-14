@@ -5,6 +5,18 @@ Agent-driven workspace orchestration with plugin system:
 
 Portable workspace configs over [symbiote-ui](https://github.com/RND-PRO/symbiote-ui) primitives. Optional server mode via [symbiote-engine](https://github.com/RND-PRO/symbiote-engine).
 
+## Product Thesis
+
+`symbiote-workspace` turns chat intent into executable workspace configs. The
+host provides the chat surface, model routing, auth, transport, and runtime
+services; this package owns construction, module selection, validation,
+browser assembly, export, and relaunch portability.
+
+Construction uses existing `symbiote-ui` primitives, canonical templates,
+module capability descriptors, and plugin packs first. Custom components or
+new modules are fallback outputs only when discovery shows that the requested
+capability is missing from the available catalog.
+
 ## Install
 
 ```bash
@@ -36,7 +48,7 @@ flow, and MCP stdio behavior. It does not publish or require registry writes.
 ```
 ┌─────────────────────────────────────────────┐
 │                  Dispatch                   │
-│            57 tools, 1 registry             │
+│            62 tools, 1 registry             │
 │             runtime/dispatch.js             │
 ├──────────────────┬──────────────────────────┤
 │   CLI (argv)     │      MCP (JSON-RPC)      │
@@ -149,7 +161,7 @@ await dispatch('save_config', { filePath: './workspace.json' }, session);
 
 ## CLI
 
-All 57 tools available as CLI commands:
+All 62 tools available as CLI commands:
 
 ```bash
 # Scaffold
@@ -277,7 +289,7 @@ Start as MCP server for AI agent integration:
 npx symbiote-workspace mcp
 ```
 
-Exposes 57 tools via JSON-RPC over stdio. Agents can classify, plan,
+Exposes 62 tools via JSON-RPC over stdio. Agents can classify, plan,
 propose, validate, apply, export, mutate, and query workspaces
 programmatically.
 
@@ -486,7 +498,8 @@ entry so manual theme edits can survive export/import as portable config.
 
 ## Plugin System
 
-Everything beyond core libraries is a plugin: tunnel providers, handler packs, UI components, marketplace, enterprise features.
+Everything beyond core libraries is a plugin: provider bridges, handler packs,
+UI components, themes, and integrations.
 
 ### Plugin Format
 
@@ -646,6 +659,67 @@ rooms, and voice/video rooms with neutral capability tags, for example
 `presence.roster`. Required services and runtime providers stay declarative in
 `requiredHostServices` and `runtimeSlots`; the host supplies actual realtime
 media, agent runtime, presence, and storage implementations.
+
+### Workspace Package
+
+The workspace package format wraps a portable workspace config with manifest
+metadata, a host integration contract, dependency lists, and asset references
+for distribution and discovery.
+
+```javascript
+import {
+  exportWorkspacePackage,
+  importWorkspacePackage,
+  createWorkspacePackageConstructionContext,
+  inspectWorkspacePackage,
+  validateWorkspacePackage,
+  WORKSPACE_PACKAGE_KIND,
+  WORKSPACE_PACKAGE_SCHEMA_VERSION,
+} from 'symbiote-workspace';
+```
+
+`exportWorkspacePackage(config, manifest)` exports the workspace config in
+strict mode, collects host contract requirements, normalizes the manifest
+(id, version, tags, permissions, dependencies, assets), and returns a
+validated package object with JSON output. A successful package requires a
+portable manifest `id`; name, version, compatibility, tags, permissions,
+dependencies, and asset lists are normalized from the manifest and config.
+
+`importWorkspacePackage(json)` parses a workspace package JSON string,
+validates it against the package schema, and returns both the parsed package
+and its workspace config as separate objects.
+
+`validateWorkspacePackage(packageObject)` validates a workspace package object
+in isolation, checking the package kind and schema version, workspace config
+validity, manifest portability, and host contract integrity, without requiring
+JSON serialization.
+
+`inspectWorkspacePackage(input, options)` inspects a workspace package
+object or JSON string without requiring a full host. Returns `valid` (no
+structural errors), `ready` (`valid` and no missing-dependency warnings),
+`package`, `config`, `summary`, `compatibility`, `requirements`, and
+`missing`. Pass an optional `options.available` host-neutral inventory
+(`components`, `plugins`, `packages`, `hostServices`, `runtimeSlots`) to
+detect missing capabilities; missing items lower `ready` to `false` through
+warnings. No marketplace or product-install semantics are applied.
+
+`createWorkspacePackageConstructionContext(input, options)` projects a valid
+workspace package into constructor-ready data without installing or activating
+anything. It reuses package inspection and returns external `workspaceTemplates`,
+package `moduleCapabilities`, explicit `requiredCapabilities`, package
+requirements, readiness gaps, and source metadata. Pass the returned
+`workspaceTemplates` and `moduleCapabilities` to `planWorkspaceConstruction()`
+or the construction dispatch tools.
+
+The manifest rejects host, identity, and marketplace state:
+
+- **host/identity keys**: `token`, `secret`, `session`, `user`, `credential`,
+  `endpoint`, `password`, `profile`, `organization`, `tenant`, `billing`,
+  `subscription`
+- **marketplace keys**: `price`, `seller`, `marketplace`, `licenseKey`,
+  `licenseServer`, `purchase`, `rating`, `payout`, `listing`
+- **non-portable values**: `file://` URIs, absolute paths (`/Users/`,
+  `/home/`, `/tmp/`), HTTP/WS URLs in dependency and asset fields
 
 ## Related Packages
 

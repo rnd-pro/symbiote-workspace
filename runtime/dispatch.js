@@ -28,6 +28,10 @@ const WORKSPACE_REGISTER_ENUM = Object.freeze([
   'presentation',
 ]);
 
+function toJsonString(value) {
+  return typeof value === 'string' ? value : JSON.stringify(value);
+}
+
 /** @type {ToolDefinition[]} */
 export const TOOLS = [
   // ── Discovery ──
@@ -627,6 +631,96 @@ export const TOOLS = [
     mutates: true,
   },
 
+  // ── Workspace Package ──
+  {
+    name: 'export_workspace_package',
+    description: 'Export the workspace as a portable package with config, manifest, and host contract.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        manifest: { type: 'object', description: 'Package manifest with id, name, version, tags, permissions, support, and dependencies.' },
+        strict: { type: 'boolean', description: 'Reject on validation warnings.' },
+      },
+    },
+  },
+  {
+    name: 'import_workspace_package',
+    description: 'Import a portable workspace package JSON and restore the session config.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        json: { type: 'string', description: 'JSON string of the workspace package.' },
+      },
+      required: ['json'],
+    },
+    mutates: true,
+  },
+  {
+    name: 'validate_workspace_package',
+    description: 'Validate a workspace package object without mutating session state.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        package: { type: 'object', description: 'Workspace package object to validate.' },
+      },
+      required: ['package'],
+    },
+  },
+  {
+    name: 'inspect_workspace_package',
+    description: 'Inspect a workspace package object or JSON string for validity, readiness, and host-neutral capability requirements.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        package: { type: 'object', description: 'Workspace package object to inspect.' },
+        json: { type: 'string', description: 'JSON string of the workspace package to inspect.' },
+        available: {
+          type: 'object',
+          description: 'Host-neutral available capabilities map.',
+          properties: {
+            components: { type: 'array', items: { type: 'string' } },
+            plugins: { type: 'array', items: { type: 'string' } },
+            packages: { type: 'array', items: { type: 'string' } },
+            hostServices: { type: 'array', items: { type: 'string' } },
+            runtimeSlots: { type: 'array', items: { type: 'string' } },
+          },
+        },
+      },
+      anyOf: [
+        { required: ['package'] },
+        { required: ['json'] },
+      ],
+    },
+  },
+
+  {
+    name: 'create_workspace_package_construction_context',
+    description: 'Create a construction context from a workspace package for guided workspace assembly.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        package: { type: 'object', description: 'Workspace package object.' },
+        json: { type: 'string', description: 'JSON string of the workspace package.' },
+        available: {
+          type: 'object',
+          description: 'Host-neutral available capabilities map.',
+          properties: {
+            components: { type: 'array', items: { type: 'string' } },
+            plugins: { type: 'array', items: { type: 'string' } },
+            packages: { type: 'array', items: { type: 'string' } },
+            hostServices: { type: 'array', items: { type: 'string' } },
+            runtimeSlots: { type: 'array', items: { type: 'string' } },
+          },
+        },
+        templateName: { type: 'string', description: 'External template name override.' },
+      },
+      anyOf: [
+        { required: ['package'] },
+        { required: ['json'] },
+      ],
+    },
+  },
+
   // ── Sharing ──
   {
     name: 'export_config',
@@ -1091,6 +1185,85 @@ export async function dispatch(toolName, args, session) {
       await writeFile(filePath, JSON.stringify(config, null, 2));
       session.configFilePath = filePath;
       return { status: 'ok', filePath, hint: `Config saved to ${filePath}.` };
+    }
+
+    // ── Workspace Package ──
+    case 'export_workspace_package': {
+      let { exportWorkspacePackage } = await import('../sharing/index.js');
+      let result = exportWorkspacePackage(config, args.manifest || {}, { strict: args.strict });
+      if (!result.json) {
+        return { status: 'error', errors: result.errors, hint: 'Workspace package export failed: validation errors.' };
+      }
+      return { status: 'ok', json: result.json, package: result.package, hint: 'Workspace exported as portable package.' };
+    }
+
+    case 'import_workspace_package': {
+      let { importWorkspacePackage } = await import('../sharing/index.js');
+      let result = importWorkspacePackage(toJsonString(args.json));
+      if (!result.config) {
+        return { status: 'error', errors: result.errors, hint: 'Workspace package import failed: invalid package.' };
+      }
+      session.config = result.config;
+      return { status: 'ok', config: result.config, package: result.package, hint: `Imported workspace package "${result.config.name}".` };
+    }
+
+    case 'validate_workspace_package': {
+      let { validateWorkspacePackage } = await import('../sharing/index.js');
+      let result = validateWorkspacePackage(args.package);
+      return {
+        valid: result.valid,
+        errors: result.errors,
+        hint: result.valid ? 'Workspace package is valid.' : 'Workspace package has validation errors.',
+      };
+    }
+
+    case 'inspect_workspace_package': {
+      let input = args.package || args.json;
+      if (!input) {
+        return { status: 'error', tool: toolName, hint: 'Missing required arguments: package or json' };
+      }
+      let { inspectWorkspacePackage } = await import('../sharing/index.js');
+      let raw = args.available === undefined
+        ? inspectWorkspacePackage(input)
+        : inspectWorkspacePackage(input, { available: args.available });
+      return {
+        status: 'ok',
+        valid: raw.valid,
+        ready: raw.ready,
+        summary: raw.summary,
+        compatibility: raw.compatibility,
+        requirements: raw.requirements,
+        missing: raw.missing,
+        warnings: raw.warnings,
+        errors: raw.errors,
+      };
+    }
+
+    case 'create_workspace_package_construction_context': {
+      let input = args.package || args.json;
+      if (!input) {
+        return { status: 'error', tool: toolName, hint: 'Missing required arguments: package or json' };
+      }
+      let { createWorkspacePackageConstructionContext } = await import('../sharing/index.js');
+      let options = {};
+      if (args.available !== undefined) options.available = args.available;
+      if (args.templateName !== undefined) options.templateName = args.templateName;
+      let result = createWorkspacePackageConstructionContext(input, options);
+      return {
+        status: 'ok',
+        valid: result.valid,
+        ready: result.ready,
+        workspaceTemplates: result.workspaceTemplates,
+        moduleCapabilities: result.moduleCapabilities,
+        requiredCapabilities: result.requiredCapabilities,
+        requirements: result.requirements,
+        missing: result.missing,
+        source: result.source,
+        summary: result.summary,
+        compatibility: result.compatibility,
+        warnings: result.warnings,
+        errors: result.errors,
+      };
     }
 
     // ── Sharing ──

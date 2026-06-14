@@ -5,6 +5,7 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { TOOLS } from '../runtime/index.js';
+import { WORKSPACE_PACKAGE_KIND, WORKSPACE_PACKAGE_SCHEMA_VERSION } from '../sharing/index.js';
 
 let __dirname = dirname(fileURLToPath(import.meta.url));
 let MCP_SCRIPT = resolve(__dirname, '../mcp/index.js');
@@ -157,6 +158,7 @@ describe('MCP Protocol', () => {
     let toolList = responses.find((r) => r.id === 2);
     assert.ok(toolList);
     assert.equal(toolList.result.tools.length, TOOLS.length);
+    assert.equal(TOOLS.length, 62, 'expected tool count');
 
     let toolNames = new Set(toolList.result.tools.map((tool) => tool.name));
     assert.equal(toolNames.has('classify_workspace'), true);
@@ -344,5 +346,498 @@ describe('MCP Protocol', () => {
     assert.ok(result);
     let content = JSON.parse(result.result.content[0].text);
     assert.equal(content.status, 'error');
+  });
+});
+
+describe('Workspace Package via MCP', () => {
+  it('lists workspace package tools', async () => {
+    let responses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} },
+    ]);
+
+    let toolList = responses.find((r) => r.id === 2);
+    assert.ok(toolList);
+    let toolNames = new Set(toolList.result.tools.map((tool) => tool.name));
+    assert.equal(toolNames.has('export_workspace_package'), true);
+    assert.equal(toolNames.has('import_workspace_package'), true);
+    assert.equal(toolNames.has('validate_workspace_package'), true);
+  });
+
+  it('export_workspace_package produces a full package with kind and host contract', async () => {
+    let responses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: { name: 'scaffold_from_scratch', arguments: { name: 'MCP Pkg Test' } },
+      },
+      {
+        jsonrpc: '2.0', id: 3, method: 'tools/call',
+        params: {
+          name: 'export_workspace_package',
+          arguments: { manifest: { id: 'com.example.mcp-pkg' } },
+        },
+      },
+    ], 5000);
+
+    let exportResult = responses.find((r) => r.id === 3);
+    assert.ok(exportResult);
+    let content = JSON.parse(exportResult.result.content[0].text);
+    assert.equal(content.status, 'ok');
+    assert.ok(content.json);
+
+    let pkg = JSON.parse(content.json);
+    assert.equal(pkg.kind, WORKSPACE_PACKAGE_KIND);
+    assert.equal(pkg.schemaVersion, WORKSPACE_PACKAGE_SCHEMA_VERSION);
+    assert.equal(pkg.manifest.id, 'com.example.mcp-pkg');
+    assert.equal(pkg.manifest.name, 'MCP Pkg Test');
+    assert.ok(pkg.host);
+    assert.ok(pkg.host.contract);
+    assert.equal(pkg.host.contract.schemaVersion, '0.1.0');
+  });
+
+  it('import_workspace_package restores session and re-exports identical package', async () => {
+    let responses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: { name: 'construct_workspace', arguments: {
+          intent: 'chat workspace',
+          template: 'chat',
+          name: 'MCP Import Source',
+        } },
+      },
+      {
+        jsonrpc: '2.0', id: 3, method: 'tools/call',
+        params: { name: 'export_workspace_package', arguments: { manifest: { id: 'com.example.mcp-import' } } },
+      },
+    ], 5000);
+
+    let exportContent = JSON.parse(responses.find((r) => r.id === 3).result.content[0].text);
+    assert.equal(exportContent.status, 'ok');
+
+    let importResponses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: { name: 'import_workspace_package', arguments: { json: exportContent.json } },
+      },
+      {
+        jsonrpc: '2.0', id: 3, method: 'tools/call',
+        params: { name: 'export_workspace_package', arguments: { manifest: { id: 'com.example.mcp-import' } } },
+      },
+    ], 5000);
+
+    let importResult = importResponses.find((r) => r.id === 2);
+    let importContent = JSON.parse(importResult.result.content[0].text);
+    assert.equal(importContent.status, 'ok');
+    assert.equal(importContent.config.name, 'MCP Import Source');
+
+    let reExportResult = importResponses.find((r) => r.id === 3);
+    let reExportContent = JSON.parse(reExportResult.result.content[0].text);
+    assert.equal(reExportContent.status, 'ok');
+
+    let reExportedPkg = JSON.parse(reExportContent.json);
+    assert.equal(reExportedPkg.workspace.config.name, 'MCP Import Source');
+  });
+
+  it('validate_workspace_package accepts a valid package produced by export', async () => {
+    let responses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: { name: 'scaffold_from_scratch', arguments: { name: 'MCP Validate' } },
+      },
+      {
+        jsonrpc: '2.0', id: 3, method: 'tools/call',
+        params: { name: 'export_workspace_package', arguments: { manifest: { id: 'com.example.mcp-validate' } } },
+      },
+    ], 5000);
+
+    let exportContent = JSON.parse(responses.find((r) => r.id === 3).result.content[0].text);
+    let packageObj = JSON.parse(exportContent.json);
+
+    let validateResponses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: { name: 'validate_workspace_package', arguments: { package: packageObj } },
+      },
+    ]);
+
+    let validateResult = validateResponses.find((r) => r.id === 2);
+    let validateContent = JSON.parse(validateResult.result.content[0].text);
+    assert.equal(validateContent.valid, true);
+    assert.equal(validateContent.errors.length, 0);
+  });
+
+  it('validate_workspace_package rejects an invalid package', async () => {
+    let responses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: {
+          name: 'validate_workspace_package',
+          arguments: { package: { kind: 'not-a-workspace-package' } },
+        },
+      },
+    ]);
+
+    let result = responses.find((r) => r.id === 2);
+    let content = JSON.parse(result.result.content[0].text);
+    assert.equal(content.valid, false);
+    assert.ok(content.errors.length > 0);
+    assert.ok(content.errors.some((e) => e.path === 'kind'));
+  });
+
+  it('lists inspect_workspace_package in tools/list', async () => {
+    let responses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} },
+    ]);
+
+    let toolList = responses.find((r) => r.id === 2);
+    let tools = toolList.result.tools;
+    let toolNames = new Set(tools.map((tool) => tool.name));
+    assert.equal(toolNames.has('inspect_workspace_package'), true);
+    let inspectTool = tools.find((tool) => tool.name === 'inspect_workspace_package');
+    assert.ok(inspectTool.inputSchema.properties.package);
+    assert.ok(inspectTool.inputSchema.properties.json);
+    assert.ok(inspectTool.inputSchema.properties.available);
+    assert.deepEqual(inspectTool.inputSchema.anyOf, [
+      { required: ['package'] },
+      { required: ['json'] },
+    ]);
+  });
+
+  it('inspect_workspace_package via tools/call returns valid/ready plus requirements/missing', async () => {
+    let responses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: { name: 'scaffold_from_scratch', arguments: { name: 'MCP Inspect' } },
+      },
+      {
+        jsonrpc: '2.0', id: 3, method: 'tools/call',
+        params: {
+          name: 'export_workspace_package',
+          arguments: { manifest: { id: 'com.example.mcp-inspect' } },
+        },
+      },
+    ], 5000);
+
+    let exportContent = JSON.parse(responses.find((r) => r.id === 3).result.content[0].text);
+    let packageObj = JSON.parse(exportContent.json);
+
+    let inspectResponses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: {
+          name: 'inspect_workspace_package',
+          arguments: { package: packageObj },
+        },
+      },
+    ]);
+
+    let result = inspectResponses.find((r) => r.id === 2);
+    let content = JSON.parse(result.result.content[0].text);
+    assert.equal(content.status, 'ok');
+    assert.equal(content.valid, true);
+    assert.equal(content.ready, true);
+    assert.ok(content.summary);
+    assert.equal(content.summary.id, 'com.example.mcp-inspect');
+    assert.ok(content.requirements);
+    assert.ok(content.missing);
+    assert.equal(content.errors.length, 0);
+  });
+
+  it('inspect_workspace_package via tools/call accepts a JSON string', async () => {
+    let responses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: { name: 'scaffold_from_scratch', arguments: { name: 'MCP JSON Inspect' } },
+      },
+      {
+        jsonrpc: '2.0', id: 3, method: 'tools/call',
+        params: {
+          name: 'export_workspace_package',
+          arguments: { manifest: { id: 'com.example.mcp-json-inspect' } },
+        },
+      },
+    ], 5000);
+
+    let exportContent = JSON.parse(responses.find((r) => r.id === 3).result.content[0].text);
+
+    let inspectResponses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: {
+          name: 'inspect_workspace_package',
+          arguments: { json: exportContent.json },
+        },
+      },
+    ]);
+
+    let result = inspectResponses.find((r) => r.id === 2);
+    let content = JSON.parse(result.result.content[0].text);
+    assert.equal(content.status, 'ok');
+    assert.equal(content.valid, true);
+    assert.equal(content.ready, true);
+    assert.equal(content.summary.id, 'com.example.mcp-json-inspect');
+  });
+
+  it('inspect_workspace_package with unavailable deps returns missing via tools/call', async () => {
+    let responses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: { name: 'scaffold_from_scratch', arguments: { name: 'MCP Gap Inspect' } },
+      },
+      {
+        jsonrpc: '2.0', id: 3, method: 'tools/call',
+        params: {
+          name: 'export_workspace_package',
+          arguments: {
+            manifest: {
+              id: 'com.example.mcp-gap',
+              dependencies: { plugins: ['mcp-missing-plugin'], components: ['mcp-missing-comp'] },
+            },
+          },
+        },
+      },
+    ], 5000);
+
+    let exportContent = JSON.parse(responses.find((r) => r.id === 3).result.content[0].text);
+    let packageObj = JSON.parse(exportContent.json);
+
+    let inspectResponses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: {
+          name: 'inspect_workspace_package',
+          arguments: {
+            package: packageObj,
+            available: { plugins: ['present-plugin'], components: [] },
+          },
+        },
+      },
+    ]);
+
+    let result = inspectResponses.find((r) => r.id === 2);
+    let content = JSON.parse(result.result.content[0].text);
+    assert.equal(content.status, 'ok');
+    assert.equal(content.valid, true);
+    assert.equal(content.ready, false);
+    assert.ok(content.missing.plugins.includes('mcp-missing-plugin'));
+    assert.ok(content.missing.components.includes('mcp-missing-comp'));
+    assert.ok(content.warnings.length > 0);
+  });
+});
+
+describe('Package Construction Context via MCP', () => {
+  it('lists create_workspace_package_construction_context in tools/list with schema', async () => {
+    let responses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} },
+    ]);
+
+    let toolList = responses.find((r) => r.id === 2);
+    let tools = toolList.result.tools;
+    let toolNames = new Set(tools.map((tool) => tool.name));
+    assert.equal(toolNames.has('create_workspace_package_construction_context'), true);
+    let tool = tools.find((t) => t.name === 'create_workspace_package_construction_context');
+    assert.ok(tool.inputSchema.properties.package);
+    assert.ok(tool.inputSchema.properties.json);
+    assert.ok(tool.inputSchema.properties.available);
+    assert.ok(tool.inputSchema.properties.templateName);
+    assert.deepEqual(tool.inputSchema.anyOf, [
+      { required: ['package'] },
+      { required: ['json'] },
+    ]);
+  });
+
+  it('create_workspace_package_construction_context via tools/call accepts a package object', async () => {
+    let responses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: { name: 'scaffold_from_scratch', arguments: { name: 'MCP Construct Ctx Obj' } },
+      },
+      {
+        jsonrpc: '2.0', id: 3, method: 'tools/call',
+        params: {
+          name: 'export_workspace_package',
+          arguments: { manifest: { id: 'com.example.mcp-construct-obj' } },
+        },
+      },
+    ], 5000);
+
+    let exportContent = JSON.parse(responses.find((r) => r.id === 3).result.content[0].text);
+    let packageObj = JSON.parse(exportContent.json);
+
+    let ctxResponses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: {
+          name: 'create_workspace_package_construction_context',
+          arguments: { package: packageObj },
+        },
+      },
+    ]);
+
+    let result = ctxResponses.find((r) => r.id === 2);
+    let content = JSON.parse(result.result.content[0].text);
+    assert.equal(content.status, 'ok');
+    assert.equal(content.valid, true);
+    assert.ok(content.workspaceTemplates.length > 0);
+    assert.ok(content.workspaceTemplates[0].config);
+    assert.ok(content.source);
+    assert.equal(content.source.type, 'workspace-package');
+    assert.equal(content.summary.id, 'com.example.mcp-construct-obj');
+    assert.equal(content.errors.length, 0);
+  });
+
+  it('create_workspace_package_construction_context via tools/call accepts a JSON string', async () => {
+    let responses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: { name: 'scaffold_from_scratch', arguments: { name: 'MCP Construct JSON' } },
+      },
+      {
+        jsonrpc: '2.0', id: 3, method: 'tools/call',
+        params: {
+          name: 'export_workspace_package',
+          arguments: { manifest: { id: 'com.example.mcp-construct-json' } },
+        },
+      },
+    ], 5000);
+
+    let exportContent = JSON.parse(responses.find((r) => r.id === 3).result.content[0].text);
+
+    let ctxResponses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: {
+          name: 'create_workspace_package_construction_context',
+          arguments: { json: exportContent.json },
+        },
+      },
+    ]);
+
+    let result = ctxResponses.find((r) => r.id === 2);
+    let content = JSON.parse(result.result.content[0].text);
+    assert.equal(content.status, 'ok');
+    assert.equal(content.valid, true);
+    assert.equal(content.source.packageId, 'com.example.mcp-construct-json');
+    assert.ok(content.workspaceTemplates.length > 0);
+  });
+
+  it('create_workspace_package_construction_context via tools/call returns requiredCapabilities', async () => {
+    let responses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: {
+          name: 'construct_workspace',
+          arguments: {
+            intent: 'sentiment review operations dashboard',
+            template: 'dashboard',
+            requiredCapabilities: ['analysis.sentiment', 'review.queue'],
+            moduleCapabilities: [EXTERNAL_SENTIMENT_MODULE],
+          },
+        },
+      },
+      {
+        jsonrpc: '2.0', id: 3, method: 'tools/call',
+        params: {
+          name: 'export_workspace_package',
+          arguments: { manifest: { id: 'com.example.mcp-required-caps' } },
+        },
+      },
+    ], 5000);
+
+    let exportContent = JSON.parse(responses.find((r) => r.id === 3).result.content[0].text);
+    let packageObj = JSON.parse(exportContent.json);
+    packageObj.workspace.config.construction.intent = {
+      brief: 'MCP review queue workspace',
+      targetRegister: 'tool',
+      requiredCapabilities: ['agent.runtime', 'analysis.sentiment'],
+    };
+
+    let ctxResponses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: {
+          name: 'create_workspace_package_construction_context',
+          arguments: { package: packageObj },
+        },
+      },
+    ]);
+
+    let result = ctxResponses.find((r) => r.id === 2);
+    let content = JSON.parse(result.result.content[0].text);
+    assert.equal(content.status, 'ok');
+    assert.equal(content.valid, true);
+    assert.deepEqual(content.requiredCapabilities, [
+      'agent.runtime',
+      'analysis.sentiment',
+      'review.queue',
+    ]);
+  });
+
+  it('create_workspace_package_construction_context with unavailable deps reports gap via tools/call', async () => {
+    let responses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: { name: 'scaffold_from_scratch', arguments: { name: 'MCP Construct Gap' } },
+      },
+      {
+        jsonrpc: '2.0', id: 3, method: 'tools/call',
+        params: {
+          name: 'export_workspace_package',
+          arguments: {
+            manifest: {
+              id: 'com.example.mcp-construct-gap',
+              dependencies: { plugins: ['mcp-gap-pkg'], components: ['mcp-gap-comp'] },
+            },
+          },
+        },
+      },
+    ], 5000);
+
+    let exportContent = JSON.parse(responses.find((r) => r.id === 3).result.content[0].text);
+    let packageObj = JSON.parse(exportContent.json);
+
+    let ctxResponses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: {
+          name: 'create_workspace_package_construction_context',
+          arguments: {
+            package: packageObj,
+            available: { plugins: ['only-present'], components: [] },
+          },
+        },
+      },
+    ]);
+
+    let result = ctxResponses.find((r) => r.id === 2);
+    let content = JSON.parse(result.result.content[0].text);
+    assert.equal(content.status, 'ok');
+    assert.equal(content.valid, true);
+    assert.equal(content.ready, false);
+    assert.ok(content.missing.plugins.includes('mcp-gap-pkg'));
+    assert.ok(content.missing.components.includes('mcp-gap-comp'));
+    assert.ok(content.warnings.length > 0);
   });
 });
