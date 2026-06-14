@@ -24,6 +24,7 @@ let session = createSession();
 // ── JSON-RPC Protocol (stdio, Content-Length framing) ──
 
 let buffer = '';
+let messageQueue = Promise.resolve();
 
 process.stdin.setEncoding('utf-8');
 process.stdin.on('data', (chunk) => {
@@ -50,7 +51,15 @@ function processBuffer() {
     let body = buffer.slice(bodyStart, bodyStart + contentLength);
     buffer = buffer.slice(bodyStart + contentLength);
 
-    handleMessage(body);
+    messageQueue = messageQueue
+      .then(() => handleMessage(body))
+      .catch((error) => {
+        sendResponse({
+          jsonrpc: '2.0',
+          id: null,
+          error: { code: -32603, message: error.message },
+        });
+      });
   }
 }
 
@@ -117,11 +126,13 @@ async function handleMessage(body) {
 
     try {
       let result = await dispatch(toolName, args, session);
+      let isDispatchError = result?.status === 'error';
       sendResponse({
         jsonrpc: '2.0',
         id,
         result: {
           content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+          ...(isDispatchError ? { isError: true } : {}),
         },
       });
     } catch (err) {

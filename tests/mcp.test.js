@@ -72,9 +72,10 @@ function layoutReferencesPanel(node, panelType) {
  * Start MCP server and exchange messages.
  * @param {Object[]} messages - JSON-RPC messages to send
  * @param {number} [timeout=3000] - Max wait time in ms
+ * @param {number} [sendDelay=100] - Delay between sent messages in ms
  * @returns {Promise<Object[]>} - Responses received
  */
-function mcpSession(messages, timeout = 3000) {
+function mcpSession(messages, timeout = 3000, sendDelay = 100) {
   return new Promise((resolve, reject) => {
     let mcp = spawn('node', [MCP_SCRIPT], { stdio: ['pipe', 'pipe', 'pipe'] });
     let responses = [];
@@ -129,7 +130,7 @@ function mcpSession(messages, timeout = 3000) {
     let delay = 0;
     for (let msg of messages) {
       timers.push(setTimeout(() => send(msg), delay));
-      delay += 100;
+      delay += sendDelay;
     }
 
     timers.push(setTimeout(finish, Math.max(timeout, delay + 500)));
@@ -354,6 +355,7 @@ describe('MCP Protocol', () => {
 
     let result = responses.find((r) => r.id === 2);
     assert.ok(result);
+    assert.equal(result.result.isError, true);
     let content = JSON.parse(result.result.content[0].text);
     assert.equal(content.status, 'error');
   });
@@ -449,6 +451,44 @@ describe('Workspace Package via MCP', () => {
 
     let reExportedPkg = JSON.parse(reExportContent.json);
     assert.equal(reExportedPkg.workspace.config.name, 'MCP Import Source');
+  });
+
+  it('processes stateful package import and export sequentially when messages arrive together', async () => {
+    let responses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: { name: 'construct_workspace', arguments: {
+          intent: 'chat workspace',
+          template: 'chat',
+          name: 'MCP Sequential Source',
+        } },
+      },
+      {
+        jsonrpc: '2.0', id: 3, method: 'tools/call',
+        params: { name: 'export_workspace_package', arguments: { manifest: { id: 'com.example.mcp-sequential' } } },
+      },
+    ], 5000, 0);
+
+    let exportContent = JSON.parse(responses.find((r) => r.id === 3).result.content[0].text);
+    assert.equal(exportContent.status, 'ok');
+
+    let importResponses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: { name: 'import_workspace_package', arguments: { json: exportContent.json } },
+      },
+      {
+        jsonrpc: '2.0', id: 3, method: 'tools/call',
+        params: { name: 'export_workspace_package', arguments: { manifest: { id: 'com.example.mcp-sequential' } } },
+      },
+    ], 5000, 0);
+
+    let reExportContent = JSON.parse(importResponses.find((r) => r.id === 3).result.content[0].text);
+    assert.equal(reExportContent.status, 'ok');
+    let reExportedPkg = JSON.parse(reExportContent.json);
+    assert.equal(reExportedPkg.workspace.config.name, 'MCP Sequential Source');
   });
 
   it('validate_workspace_package accepts a valid package produced by export', async () => {
