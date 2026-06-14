@@ -284,7 +284,7 @@ async function cmdMcp() {
 const COMMAND_ALIASES = {
   validate: 'validate_config',
   scaffold: 'scaffold_workspace',
-  plan: 'scaffold_workspace',
+  plan: 'plan_workspace',
   construct: 'construct_workspace',
   describe: 'describe_workspace',
   discover: 'discover_components',
@@ -377,9 +377,10 @@ async function runToolCommand() {
     console.error(`Error: ${err.message}`);
     process.exit(1);
   }
+  let isDispatchError = result?.status === 'error';
 
   // Auto-save on mutations
-  if (configFile && isMutating(toolName) && session.configFilePath) {
+  if (!isDispatchError && configFile && isMutating(toolName) && session.configFilePath) {
     try {
       await session.save();
     } catch (err) {
@@ -389,6 +390,7 @@ async function runToolCommand() {
 
   // Output
   console.log(JSON.stringify(result, null, 2));
+  if (isDispatchError) process.exitCode = 1;
 }
 
 /**

@@ -5,8 +5,19 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { writeFile, unlink } from 'node:fs/promises';
 
+import { TOOLS } from '../runtime/index.js';
+
 let __dirname = dirname(fileURLToPath(import.meta.url));
 let CLI = resolve(__dirname, '../cli.js');
+let HELP_ALIASES = {
+  describe_workspace: ['describe'],
+  discover_components: ['discover'],
+  scaffold_workspace: ['scaffold'],
+  plan_workspace: ['plan'],
+  validate_config: ['validate'],
+  construct_workspace: ['construct'],
+  start_preview: ['preview'],
+};
 
 async function exec(...args) {
   let { execFile } = await import('node:child_process');
@@ -23,6 +34,30 @@ describe('CLI help', () => {
     assert.ok(stdout.includes('--config'));
     assert.equal(stdout.includes('Force JSON output'), false);
     assert.ok(stdout.includes('--json <string>'));
+  });
+
+  it('lists every tool command or documented CLI alias in help', async () => {
+    let { stdout } = await exec('--help');
+    let toolNames = new Set(TOOLS.map((tool) => tool.name));
+
+    for (let [toolName, aliases] of Object.entries(HELP_ALIASES)) {
+      assert.equal(toolNames.has(toolName), true, `Alias references missing tool ${toolName}`);
+      assert.equal(
+        aliases.some((alias) => stdout.includes(alias)),
+        true,
+        `Help missing alias for ${toolName}`,
+      );
+    }
+
+    for (let tool of TOOLS) {
+      let command = tool.name.replaceAll('_', '-');
+      let aliases = HELP_ALIASES[tool.name] || [];
+      assert.equal(
+        stdout.includes(command) || aliases.some((alias) => stdout.includes(alias)),
+        true,
+        `Help missing command for ${tool.name}`,
+      );
+    }
   });
 });
 
@@ -46,6 +81,16 @@ describe('CLI tool commands', () => {
     let result = JSON.parse(stdout);
     assert.equal(result.status, 'ok');
     assert.equal(result.config.name, 'Blank');
+  });
+
+  it('plan alias returns a construction plan without scaffolding the session', async () => {
+    let { stdout } = await exec('plan', 'chat workspace');
+    let result = JSON.parse(stdout);
+    assert.equal(result.status, 'ok');
+    assert.equal(result.intent.brief, 'chat workspace');
+    assert.ok(Array.isArray(result.questions));
+    assert.ok(Array.isArray(result.plan.modules));
+    assert.ok(Array.isArray(result.plan.verification.targets));
   });
 });
 
@@ -147,6 +192,19 @@ describe('CLI error handling', () => {
       assert.match(err.stderr, /server/);
     } finally {
       await unlink(tmpFile).catch(() => {});
+    }
+  });
+
+  it('exits nonzero when dispatch returns a structured error', async () => {
+    try {
+      await exec('add-group');
+      assert.fail('Expected missing args to exit with error');
+    } catch (err) {
+      assert.equal(err.code, 1);
+      let result = JSON.parse(err.stdout);
+      assert.equal(result.status, 'error');
+      assert.equal(result.tool, 'add_group');
+      assert.match(result.hint, /Missing required arguments/);
     }
   });
 });

@@ -204,7 +204,8 @@ npx symbiote-workspace mcp
 | Alias | Tool |
 |-------|------|
 | `scaffold` | `scaffold_workspace` |
-| `plan` | `scaffold_workspace` |
+| `plan` | `plan_workspace` |
+| `construct` | `construct_workspace` |
 | `describe` | `describe_workspace` |
 | `discover` | `discover_components` |
 | `validate` | `validate_config` |
