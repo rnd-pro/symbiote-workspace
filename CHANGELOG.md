@@ -101,6 +101,11 @@ All notable changes to this project will be documented in this file.
 
 - **Unified dispatch surface** — CLI and MCP now expose 66 tools from the same
   `runtime/dispatch.js` registry.
+- **Construction handoff dispatch** — `plan_workspace` and
+  `construct_workspace` now accept the full `{ intent, options }` handoff
+  object returned by `create_workspace_construction_handoff`; CLI
+  `plan-workspace` and `construct-workspace` also accept constructor
+  `--options`.
 - **Browser entrypoint boundary** — `symbiote-workspace/browser` now exports
   browser-safe APIs without statically pulling Node-only runtime dispatch code.
 - **Export/import portability** — portable exports preserve construction
@@ -121,6 +126,9 @@ All notable changes to this project will be documented in this file.
   while keeping internal `mutates` and file-writing flags private.
 - **CLI help** — removed the misleading global `--json` output flag from help;
   package commands keep their command-specific `--json <string>` input option.
+- **Planning error surface** — `plan_workspace` now returns structured
+  dispatch errors for invalid constructor input instead of leaking planner
+  exceptions to CLI/MCP callers.
 - **Construction module validation** — direct `moduleCapabilities` constructor
   inputs now use the shared module descriptor validator and reject duplicate
   direct descriptors before materialization.

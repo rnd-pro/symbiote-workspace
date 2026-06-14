@@ -222,6 +222,50 @@ describe('construction workflow dispatch', () => {
     assert.equal(result.plan.theme.recipe.mode, 'dark');
   });
 
+  it('plan_workspace treats nested construction options as defaults', async () => {
+    let session = createSession();
+    let result = await dispatch('plan_workspace', {
+      intent: {
+        brief: 'agent review workspace',
+        targetRegister: 'agent-workspace',
+      },
+      options: {
+        register: 'brand',
+      },
+    }, session);
+
+    assert.equal(result.status, 'ok');
+    assert.equal(result.intent.targetRegister, 'agent-workspace');
+    assert.equal(session.config, null);
+  });
+
+  it('plan_workspace lets top-level construction fields replace nested options', async () => {
+    let session = createSession();
+    let nestedTemplate = {
+      ...TEAM_ROOM_TEMPLATE,
+      config: {
+        ...TEAM_ROOM_TEMPLATE.config,
+        name: 'Nested Option Room',
+      },
+    };
+    let result = await dispatch('plan_workspace', {
+      intent: 'team AI room',
+      template: 'team-ai-room',
+      requiredCapabilities: ['room.command'],
+      options: {
+        workspaceTemplates: [nestedTemplate],
+        moduleCapabilities: [{ capabilities: ['broken.descriptor'] }],
+      },
+      workspaceTemplates: [TEAM_ROOM_TEMPLATE],
+      moduleCapabilities: [],
+    }, session);
+
+    assert.equal(result.status, 'ok');
+    assert.equal(result.config.name, 'Team AI Room');
+    assert.deepEqual(result.plan.answers.moduleSelection, ['command']);
+    assert.equal(session.config, null);
+  });
+
   it('construct_workspace materializes external module descriptors through dispatch', async () => {
     let session = createSession();
     let result = await dispatch('construct_workspace', {
@@ -261,6 +305,54 @@ describe('construction workflow dispatch', () => {
     assert.equal(exportedConfig.intent.template, 'team-ai-room');
   });
 
+  it('plan_workspace accepts a construction handoff object without mutating', async () => {
+    let session = createSession();
+    let handoff = await dispatch('create_workspace_construction_handoff', {
+      context: {
+        valid: true,
+        ready: true,
+        workspaceTemplates: [TEAM_ROOM_TEMPLATE],
+        moduleCapabilities: [],
+        requiredCapabilities: ['room.command'],
+        errors: [],
+        warnings: [],
+      },
+      intent: { brief: 'team AI room', template: 'team-ai-room' },
+    }, session);
+
+    let result = await dispatch('plan_workspace', handoff, session);
+
+    assert.equal(result.status, 'ok');
+    assert.equal(result.templateName, 'team-ai-room');
+    assert.deepEqual(result.plan.answers.moduleSelection, ['command']);
+    assert.equal(result.config.name, 'Team AI Room');
+    assert.equal(session.config, null);
+  });
+
+  it('construct_workspace accepts a construction handoff object and stores config', async () => {
+    let session = createSession();
+    let handoff = await dispatch('create_workspace_construction_handoff', {
+      context: {
+        valid: true,
+        ready: true,
+        workspaceTemplates: [TEAM_ROOM_TEMPLATE],
+        moduleCapabilities: [],
+        requiredCapabilities: ['room.command'],
+        errors: [],
+        warnings: [],
+      },
+      intent: { brief: 'team AI room', template: 'team-ai-room' },
+    }, session);
+
+    let result = await dispatch('construct_workspace', handoff, session);
+
+    assert.equal(result.status, 'ok');
+    assert.equal(result.templateName, 'team-ai-room');
+    assert.deepEqual(result.plan.answers.moduleSelection, ['command']);
+    assert.equal(session.config.name, 'Team AI Room');
+    assert.equal(session.config.intent.template, 'team-ai-room');
+  });
+
   it('construct_workspace accepts module capabilities collected from plugins', async () => {
     let pluginCapabilities = collectPluginModuleCapabilities([PLUGIN_PACK]);
     assert.equal(pluginCapabilities.ok, true);
@@ -295,6 +387,49 @@ describe('construction workflow dispatch', () => {
     assert.equal(result.status, 'error');
     assert.equal(result.tool, 'construct_workspace');
     assert.match(result.hint, /tagName/);
+    assert.equal(session.config.name, 'Existing Config');
+  });
+
+  it('plan_workspace reports invalid construction input without mutating session state', async () => {
+    let session = createSession();
+    await dispatch('scaffold_from_scratch', { name: 'Existing Config' }, session);
+
+    let result = await dispatch('plan_workspace', {
+      intent: { template: 'chat' },
+    }, session);
+
+    assert.equal(result.status, 'error');
+    assert.equal(result.tool, 'plan_workspace');
+    assert.match(result.hint, /brief/);
+    assert.equal(session.config.name, 'Existing Config');
+  });
+
+  it('plan_workspace rejects non-object construction options without mutating session state', async () => {
+    let session = createSession();
+    await dispatch('scaffold_from_scratch', { name: 'Existing Config' }, session);
+
+    let result = await dispatch('plan_workspace', {
+      intent: 'chat workspace',
+      options: 'not options',
+    }, session);
+
+    assert.equal(result.status, 'error');
+    assert.equal(result.tool, 'plan_workspace');
+    assert.match(result.hint, /plain object/);
+    assert.equal(session.config.name, 'Existing Config');
+  });
+
+  it('construct_workspace rejects missing intent brief without replacing session state', async () => {
+    let session = createSession();
+    await dispatch('scaffold_from_scratch', { name: 'Existing Config' }, session);
+
+    let result = await dispatch('construct_workspace', {
+      intent: { template: 'chat' },
+    }, session);
+
+    assert.equal(result.status, 'error');
+    assert.equal(result.tool, 'construct_workspace');
+    assert.match(result.hint, /brief/);
     assert.equal(session.config.name, 'Existing Config');
   });
 
@@ -496,6 +631,24 @@ describe('construction workflow CLI commands', () => {
     assert.equal(result.status, 'ok');
     assert.equal(result.templateName, 'team-ai-room');
     assert.equal(result.config.name, 'Team AI Room');
+    assert.deepEqual(result.plan.answers.moduleSelection, ['command']);
+  });
+
+  it('plan-workspace accepts construction options through CLI JSON args', async () => {
+    let { stdout } = await execCli(
+      'plan-workspace',
+      'team AI room',
+      '--template',
+      'team-ai-room',
+      '--required-capabilities',
+      '["room.command"]',
+      '--options',
+      JSON.stringify({ workspaceTemplates: [TEAM_ROOM_TEMPLATE] }),
+    );
+    let result = JSON.parse(stdout);
+
+    assert.equal(result.status, 'ok');
+    assert.equal(result.templateName, 'team-ai-room');
     assert.deepEqual(result.plan.answers.moduleSelection, ['command']);
   });
 

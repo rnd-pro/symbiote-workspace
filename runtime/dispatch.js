@@ -155,6 +155,7 @@ export const TOOLS = [
         constraints: { type: 'array', items: { type: 'string' } },
         requiredCapabilities: { type: 'array', items: { type: 'string' } },
         preferredTheme: { type: 'object' },
+        options: { type: 'object', description: 'Constructor options, such as handoff.options.' },
         moduleCapabilities: { type: 'array', items: { type: 'object' } },
         workspaceTemplates: { type: 'array', items: { type: 'object' } },
         answers: { type: 'object', description: 'Question answers keyed by question ID.' },
@@ -177,6 +178,7 @@ export const TOOLS = [
         constraints: { type: 'array', items: { type: 'string' } },
         requiredCapabilities: { type: 'array', items: { type: 'string' } },
         preferredTheme: { type: 'object' },
+        options: { type: 'object', description: 'Constructor options, such as handoff.options.' },
         moduleCapabilities: { type: 'array', items: { type: 'object' } },
         workspaceTemplates: { type: 'array', items: { type: 'object' } },
         answers: { type: 'object', description: 'Question answers keyed by question ID.' },
@@ -942,20 +944,34 @@ function constructionIntentFromArgs(args) {
 }
 
 function constructionOptionsFromArgs(args, intent) {
-  let register;
-  if (args.targetRegister !== undefined) {
-    register = args.targetRegister;
-  } else if (args.register !== undefined && !intent?.targetRegister) {
-    register = args.register;
+  if (args.options !== undefined && !isObject(args.options)) {
+    throw new Error('Construction options must be a plain object when provided.');
   }
 
+  let options = args.options ? { ...args.options } : {};
+  let optionRegister = options.register;
+  delete options.register;
+
+  if (args.targetRegister !== undefined) {
+    options.register = args.targetRegister;
+  } else if (args.register !== undefined && !intent?.targetRegister) {
+    options.register = args.register;
+  } else if (optionRegister !== undefined && !intent?.targetRegister) {
+    options.register = optionRegister;
+  }
+
+  for (let field of ['name', 'answers', 'moduleCapabilities', 'workspaceTemplates', 'theme']) {
+    if (args[field] !== undefined) options[field] = args[field];
+  }
+
+  return options;
+}
+
+function constructionError(toolName, err) {
   return {
-    name: args.name,
-    register,
-    answers: args.answers,
-    moduleCapabilities: args.moduleCapabilities,
-    workspaceTemplates: args.workspaceTemplates,
-    theme: args.theme,
+    status: 'error',
+    tool: toolName,
+    hint: err.message,
   };
 }
 
@@ -992,11 +1008,16 @@ export async function dispatch(toolName, args, session) {
 
   if (toolName === 'plan_workspace') {
     let c = await getConstructor();
-    let constructionIntent = constructionIntentFromArgs(args);
-    let result = c.planWorkspaceConstruction(
-      constructionIntent,
-      constructionOptionsFromArgs(args, constructionIntent),
-    );
+    let result;
+    try {
+      let constructionIntent = constructionIntentFromArgs(args);
+      result = c.planWorkspaceConstruction(
+        constructionIntent,
+        constructionOptionsFromArgs(args, constructionIntent),
+      );
+    } catch (err) {
+      return constructionError(toolName, err);
+    }
     return {
       status: 'ok',
       templateName: result.intent.template,
@@ -1017,11 +1038,7 @@ export async function dispatch(toolName, args, session) {
         constructionOptionsFromArgs(args, constructionIntent),
       );
     } catch (err) {
-      return {
-        status: 'error',
-        tool: toolName,
-        hint: err.message,
-      };
+      return constructionError(toolName, err);
     }
     session.config = result.config;
     return {

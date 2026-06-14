@@ -135,6 +135,8 @@ Options for 'plan-workspace' and 'construct-workspace':
                       Construction question answers keyed by question ID
   --preferred-theme <json-object>
                       Preferred theme recipe fields
+  --options <json-object>
+                      Constructor options, including construction handoff options
 
 Options for 'export-workspace-package':
   --manifest <json-object>  Package manifest with id, name, version, description, etc.

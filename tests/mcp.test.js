@@ -1090,6 +1090,11 @@ describe('Construction Handoff via MCP', () => {
     assert.ok(tool.inputSchema.properties.intent);
     assert.deepEqual(tool.inputSchema.required, ['context']);
     assert.equal(tool.annotations.readOnlyHint, true);
+
+    let planTool = tools.find((t) => t.name === 'plan_workspace');
+    let constructTool = tools.find((t) => t.name === 'construct_workspace');
+    assert.ok(planTool.inputSchema.properties.options);
+    assert.ok(constructTool.inputSchema.properties.options);
   });
 
   it('create_workspace_construction_handoff via tools/call returns intent and options', async () => {
@@ -1149,6 +1154,64 @@ describe('Construction Handoff via MCP', () => {
     assert.ok(content.options);
     assert.ok(content.options.workspaceTemplates.length > 0);
     assert.equal(content.errors.length, 0);
+  });
+
+  it('plan_workspace and construct_workspace accept handoff objects via tools/call', async () => {
+    let handoffResponses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: {
+          name: 'create_workspace_construction_handoff',
+          arguments: {
+            context: {
+              valid: true,
+              ready: true,
+              workspaceTemplates: [EXTERNAL_ROOM_TEMPLATE],
+              moduleCapabilities: [],
+              requiredCapabilities: ['room.command'],
+              errors: [],
+              warnings: [],
+            },
+            intent: { brief: 'MCP voice room', template: 'mcp-voice-video-room' },
+          },
+        },
+      },
+    ]);
+    let handoff = JSON.parse(handoffResponses.find((r) => r.id === 2).result.content[0].text);
+    assert.equal(handoff.status, 'ok');
+
+    let planResponses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: { name: 'plan_workspace', arguments: handoff },
+      },
+    ]);
+    let plan = JSON.parse(planResponses.find((r) => r.id === 2).result.content[0].text);
+    assert.equal(plan.status, 'ok');
+    assert.equal(plan.templateName, 'mcp-voice-video-room');
+    assert.equal(plan.config.name, 'MCP Voice Video Room');
+
+    let constructResponses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: { name: 'construct_workspace', arguments: handoff },
+      },
+      {
+        jsonrpc: '2.0', id: 3, method: 'tools/call',
+        params: { name: 'export_workspace', arguments: {} },
+      },
+    ], 5000);
+    let construct = JSON.parse(constructResponses.find((r) => r.id === 2).result.content[0].text);
+    let exported = JSON.parse(constructResponses.find((r) => r.id === 3).result.content[0].text);
+    let exportedConfig = JSON.parse(exported.json);
+
+    assert.equal(construct.status, 'ok');
+    assert.equal(construct.templateName, 'mcp-voice-video-room');
+    assert.equal(exported.status, 'ok');
+    assert.equal(exportedConfig.intent.template, 'mcp-voice-video-room');
   });
 
   it('create_workspace_construction_handoff with invalid context returns errors via tools/call', async () => {

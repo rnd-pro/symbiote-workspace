@@ -398,7 +398,9 @@ declared modules instead of editing application code directly.
 The read-only `plan_workspace` tool returns the same construction plan without
 changing session state. The mutating `construct_workspace` tool writes the
 planned executable config into the active CLI/MCP session and participates in
-the same `--config` auto-save flow as other mutating tools.
+the same `--config` auto-save flow as other mutating tools. Both tools accept
+constructor `options` directly, including the `{ intent, options }` object
+returned by `create_workspace_construction_handoff`.
 
 ```javascript
 import {
@@ -749,6 +751,16 @@ let handoff = createWorkspaceConstructionHandoff(context, {
 
 let { config, plan } = planWorkspaceConstruction(handoff.intent, handoff.options);
 ```
+
+The dispatch/MCP tools accept the same handoff object directly:
+
+```javascript
+await dispatch('plan_workspace', handoff, session);
+await dispatch('construct_workspace', handoff, session);
+```
+
+The CLI exposes constructor options with `--options <json-object>` for cases
+where agents pass a handoff options object through shell arguments.
 
 The manifest rejects host, identity, and marketplace state:
 
