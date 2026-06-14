@@ -309,6 +309,7 @@ programmatically.
 | **Widgets** | `mount_widget` `unmount_widget` `swap_widget` |
 | **Events** | `bridge_event` `unbridge_event` `list_bridges` |
 | **Sharing** | `export_config` `import_config` `diff_configs` `merge_configs` |
+| **Workspace Package** | `export_workspace_package` `import_workspace_package` `validate_workspace_package` `inspect_workspace_package` `create_workspace_package_construction_context` `create_workspace_packages_construction_context` |
 | **Preview** | `start_preview` |
 | **Validation** | `validate_config` `check_guardrails` |
 | **File I/O** | `save_config` `load_config` |
