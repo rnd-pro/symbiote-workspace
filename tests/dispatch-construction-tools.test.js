@@ -353,6 +353,81 @@ describe('construction workflow dispatch', () => {
     assert.equal(session.config.intent.template, 'team-ai-room');
   });
 
+  it('plan_workspace rejects invalid construction handoff diagnostics', async () => {
+    let session = createSession();
+    let handoff = await dispatch('create_workspace_construction_handoff', {
+      context: {
+        valid: false,
+        ready: false,
+        workspaceTemplates: [],
+        moduleCapabilities: [],
+        requiredCapabilities: [],
+        errors: [{ path: 'kind', message: 'Invalid package kind.', severity: 'error' }],
+        warnings: [],
+      },
+      intent: { brief: 'chat workspace', template: 'chat' },
+    }, session);
+
+    let result = await dispatch('plan_workspace', handoff, session);
+
+    assert.equal(handoff.valid, false);
+    assert.equal(result.status, 'error');
+    assert.equal(result.tool, 'plan_workspace');
+    assert.match(result.hint, /Construction handoff is invalid/);
+    assert.match(result.hint, /Invalid package kind/);
+    assert.equal(session.config, null);
+  });
+
+  it('construct_workspace rejects invalid construction handoff diagnostics without replacing session state', async () => {
+    let session = createSession();
+    await dispatch('scaffold_from_scratch', { name: 'Existing Config' }, session);
+    let handoff = await dispatch('create_workspace_construction_handoff', {
+      context: {
+        valid: false,
+        ready: false,
+        workspaceTemplates: [],
+        moduleCapabilities: [],
+        requiredCapabilities: [],
+        errors: [{ path: 'kind', message: 'Invalid package kind.', severity: 'error' }],
+        warnings: [],
+      },
+      intent: { brief: 'chat workspace', template: 'chat' },
+    }, session);
+
+    let result = await dispatch('construct_workspace', handoff, session);
+
+    assert.equal(handoff.valid, false);
+    assert.equal(result.status, 'error');
+    assert.equal(result.tool, 'construct_workspace');
+    assert.match(result.hint, /Construction handoff is invalid/);
+    assert.match(result.hint, /Invalid package kind/);
+    assert.equal(session.config.name, 'Existing Config');
+  });
+
+  it('construct_workspace rejects contradictory handoff diagnostics even when valid is true', async () => {
+    let session = createSession();
+    await dispatch('scaffold_from_scratch', { name: 'Existing Config' }, session);
+    let handoff = {
+      valid: true,
+      ready: true,
+      intent: { brief: 'chat workspace', template: 'chat' },
+      options: {},
+      errors: [{ path: 'context', message: 'Contradictory handoff error.', severity: 'error' }],
+      warnings: [],
+    };
+
+    let plan = await dispatch('plan_workspace', handoff, session);
+    let construct = await dispatch('construct_workspace', handoff, session);
+
+    assert.equal(plan.status, 'error');
+    assert.equal(plan.tool, 'plan_workspace');
+    assert.match(plan.hint, /Contradictory handoff error/);
+    assert.equal(construct.status, 'error');
+    assert.equal(construct.tool, 'construct_workspace');
+    assert.match(construct.hint, /Contradictory handoff error/);
+    assert.equal(session.config.name, 'Existing Config');
+  });
+
   it('construct_workspace accepts module capabilities collected from plugins', async () => {
     let pluginCapabilities = collectPluginModuleCapabilities([PLUGIN_PACK]);
     assert.equal(pluginCapabilities.ok, true);

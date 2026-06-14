@@ -119,6 +119,10 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **Construction handoff validation** — `plan_workspace` and
+  `construct_workspace` now reject invalid diagnostic handoff envelopes before
+  planning, preserving session state and returning structured dispatch errors
+  through both direct dispatch and MCP.
 - **Package public surface metadata** — package metadata now marks executable
   CLI and MCP entrypoints as side-effectful while keeping library modules
   tree-shakeable; packed-consumer coverage verifies the handlers subpath and

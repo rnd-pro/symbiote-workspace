@@ -1237,4 +1237,50 @@ describe('Construction Handoff via MCP', () => {
     assert.ok(content.errors.length > 0);
     assert.deepEqual(content.options.workspaceTemplates, []);
   });
+
+  it('plan_workspace and construct_workspace reject invalid handoff objects via tools/call', async () => {
+    let handoffResponses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: {
+          name: 'create_workspace_construction_handoff',
+          arguments: {
+            context: {
+              valid: false,
+              ready: false,
+              errors: [{ path: 'kind', message: 'Invalid package kind.', severity: 'error' }],
+              warnings: [],
+            },
+            intent: { brief: 'MCP invalid chat handoff', template: 'chat' },
+          },
+        },
+      },
+    ]);
+    let handoff = JSON.parse(handoffResponses.find((r) => r.id === 2).result.content[0].text);
+    assert.equal(handoff.valid, false);
+
+    let responses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: { name: 'plan_workspace', arguments: handoff },
+      },
+      {
+        jsonrpc: '2.0', id: 3, method: 'tools/call',
+        params: { name: 'construct_workspace', arguments: handoff },
+      },
+    ]);
+
+    let plan = JSON.parse(responses.find((r) => r.id === 2).result.content[0].text);
+    let construct = JSON.parse(responses.find((r) => r.id === 3).result.content[0].text);
+    assert.equal(plan.status, 'error');
+    assert.equal(plan.tool, 'plan_workspace');
+    assert.match(plan.hint, /Construction handoff is invalid/);
+    assert.match(plan.hint, /Invalid package kind/);
+    assert.equal(construct.status, 'error');
+    assert.equal(construct.tool, 'construct_workspace');
+    assert.match(construct.hint, /Construction handoff is invalid/);
+    assert.match(construct.hint, /Invalid package kind/);
+  });
 });

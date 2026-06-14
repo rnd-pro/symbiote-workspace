@@ -967,6 +967,34 @@ function constructionOptionsFromArgs(args, intent) {
   return options;
 }
 
+function isConstructionHandoffArgs(args) {
+  return isObject(args)
+    && isObject(args.intent)
+    && isObject(args.options)
+    && (
+      args.valid !== undefined
+      || args.ready !== undefined
+      || Array.isArray(args.errors)
+      || Array.isArray(args.warnings)
+      || args.source !== undefined
+      || args.sources !== undefined
+    );
+}
+
+function assertUsableConstructionHandoff(args) {
+  if (!isConstructionHandoffArgs(args)) return;
+  let errors = Array.isArray(args.errors) ? args.errors : [];
+  if (args.valid === false || errors.length > 0) {
+    let detail = errors
+      .map((error) => error?.message || error?.path)
+      .filter(Boolean)
+      .join('; ');
+    throw new Error(
+      `Construction handoff is invalid${detail ? `: ${detail}` : '.'}`,
+    );
+  }
+}
+
 function constructionError(toolName, err) {
   return {
     status: 'error',
@@ -1010,6 +1038,7 @@ export async function dispatch(toolName, args, session) {
     let c = await getConstructor();
     let result;
     try {
+      assertUsableConstructionHandoff(args);
       let constructionIntent = constructionIntentFromArgs(args);
       result = c.planWorkspaceConstruction(
         constructionIntent,
@@ -1032,6 +1061,7 @@ export async function dispatch(toolName, args, session) {
     let c = await getConstructor();
     let result;
     try {
+      assertUsableConstructionHandoff(args);
       let constructionIntent = constructionIntentFromArgs(args);
       result = c.planWorkspaceConstruction(
         constructionIntent,
