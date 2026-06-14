@@ -38,6 +38,11 @@ All notable changes to this project will be documented in this file.
   `planWorkspaceConstruction()`, including required capability handoff.
   Exposed as `create_workspace_construction_handoff` in dispatch/MCP and
   `create-workspace-construction-handoff` in the CLI.
+- **Plugin metadata dispatch tools** —
+  `collect_plugin_module_capabilities` and
+  `collect_plugin_workspace_templates` expose existing plugin metadata
+  collectors through dispatch, CLI, and MCP without activating plugins or
+  initializing workspace session state.
 - **Construction protocol** — `intent`, `construction.questions`,
   `construction.plan`, `patches`, `validation.reports`, `runtime`, `exports`,
   and `design` are now accepted workspace config fields.
@@ -94,7 +99,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
-- **Unified dispatch surface** — CLI and MCP now expose 64 tools from the same
+- **Unified dispatch surface** — CLI and MCP now expose 66 tools from the same
   `runtime/dispatch.js` registry.
 - **Browser entrypoint boundary** — `symbiote-workspace/browser` now exports
   browser-safe APIs without statically pulling Node-only runtime dispatch code.
@@ -114,6 +119,8 @@ All notable changes to this project will be documented in this file.
   equivalent host contracts independently of object key order.
 - **MCP tool metadata** — `tools/list` now exposes `annotations.readOnlyHint`
   while keeping internal `mutates` and file-writing flags private.
+- **CLI help** — removed the misleading global `--json` output flag from help;
+  package commands keep their command-specific `--json <string>` input option.
 - **Construction module validation** — direct `moduleCapabilities` constructor
   inputs now use the shared module descriptor validator and reject duplicate
   direct descriptors before materialization.

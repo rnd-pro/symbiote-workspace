@@ -97,11 +97,12 @@ Tool Commands (all dispatch to unified API):
   create-workspace-package-construction-context Create construction context from a workspace package (object or JSON string)
   create-workspace-packages-construction-context Create construction context from multiple workspace packages
   create-workspace-construction-handoff Create construction handoff from package context and intent
+  collect-plugin-module-capabilities Collect module capability descriptors from plugin metadata
+  collect-plugin-workspace-templates Collect workspace templates from plugin metadata
   check-guardrails    Check design guardrails (panel limits, ratios)
 
 Global Options:
   --config <file>     Load config before command, auto-save after mutations
-  --json              Force JSON output
   --help, -h          Show this help
 
 Options for 'serve':
@@ -163,6 +164,9 @@ Options for 'create-workspace-packages-construction-context':
 Options for 'create-workspace-construction-handoff':
   --context <json-object>           Package construction context object
   --intent <string-or-json-object>  Construction intent to enrich with package capabilities
+
+Options for 'collect-plugin-module-capabilities' and 'collect-plugin-workspace-templates':
+  --plugins <json-object-or-array>  Plugin definition object or array of plugin definitions
 
 Examples:
   npx symbiote-workspace scaffold "chat workspace" --config ws.json

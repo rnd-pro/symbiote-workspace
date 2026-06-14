@@ -7,7 +7,10 @@ import { fileURLToPath } from 'node:url';
 import { unlink } from 'node:fs/promises';
 
 import { dispatch, TOOLS, isMutating, createSession } from '../runtime/index.js';
-import { collectPluginModuleCapabilities } from '../plugins/index.js';
+import {
+  collectPluginModuleCapabilities,
+  collectPluginWorkspaceTemplates,
+} from '../plugins/index.js';
 import { WORKSPACE_SCHEMA_VERSION } from '../schema/index.js';
 import { WORKSPACE_PACKAGE_KIND, WORKSPACE_PACKAGE_SCHEMA_VERSION as PACKAGE_SCHEMA_VERSION } from '../sharing/index.js';
 
@@ -71,6 +74,19 @@ let TEAM_ROOM_TEMPLATE = {
   },
 };
 
+let PLUGIN_PACK = {
+  name: '@acme/workspace-pack',
+  version: '1.0.0',
+  capabilities: ['provider.analytics'],
+  components: [
+    'acme-legacy-widget',
+    EXTERNAL_SENTIMENT_MODULE,
+  ],
+  workspace: {
+    templates: [TEAM_ROOM_TEMPLATE],
+  },
+};
+
 async function execCli(...args) {
   return exec('node', [CLI, ...args]);
 }
@@ -99,6 +115,8 @@ describe('construction workflow registry', () => {
     assert.equal(isMutating('apply_workspace_patch'), true);
     assert.equal(isMutating('export_workspace'), false);
     assert.equal(isMutating('create_workspace_construction_handoff'), false);
+    assert.equal(isMutating('collect_plugin_module_capabilities'), false);
+    assert.equal(isMutating('collect_plugin_workspace_templates'), false);
   });
 });
 
@@ -244,15 +262,7 @@ describe('construction workflow dispatch', () => {
   });
 
   it('construct_workspace accepts module capabilities collected from plugins', async () => {
-    let pluginCapabilities = collectPluginModuleCapabilities([{
-      name: '@acme/workspace-pack',
-      version: '1.0.0',
-      capabilities: ['provider.analytics'],
-      components: [
-        'acme-legacy-widget',
-        EXTERNAL_SENTIMENT_MODULE,
-      ],
-    }]);
+    let pluginCapabilities = collectPluginModuleCapabilities([PLUGIN_PACK]);
     assert.equal(pluginCapabilities.ok, true);
 
     let session = createSession();
@@ -286,6 +296,56 @@ describe('construction workflow dispatch', () => {
     assert.equal(result.tool, 'construct_workspace');
     assert.match(result.hint, /tagName/);
     assert.equal(session.config.name, 'Existing Config');
+  });
+
+  it('collect_plugin_module_capabilities exposes plugin metadata without mutating session', async () => {
+    let session = createSession();
+    let result = await dispatch('collect_plugin_module_capabilities', {
+      plugins: [PLUGIN_PACK],
+    }, session);
+
+    assert.equal(result.status, 'ok');
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.moduleCapabilities.map((item) => item.tagName), [
+      'acme-sentiment-panel',
+    ]);
+    assert.equal(result.errors.length, 0);
+    assert.equal(session.config, null);
+  });
+
+  it('collect_plugin_workspace_templates exposes plugin templates without mutating session', async () => {
+    let session = createSession();
+    let direct = collectPluginWorkspaceTemplates([PLUGIN_PACK]);
+    let result = await dispatch('collect_plugin_workspace_templates', {
+      plugins: [PLUGIN_PACK],
+    }, session);
+
+    assert.equal(result.status, 'ok');
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.templates.map((template) => template.name), ['team-ai-room']);
+    assert.deepEqual(result.templates[0].source, {
+      plugin: '@acme/workspace-pack',
+      version: '1.0.0',
+    });
+    assert.deepEqual(result.templates, direct.templates);
+    assert.equal(session.config, null);
+  });
+
+  it('plugin collector tools return prefixed validation errors', async () => {
+    let session = createSession();
+    let result = await dispatch('collect_plugin_module_capabilities', {
+      plugins: [{
+        name: 'broken-plugin',
+        version: '1.0.0',
+        components: [{ tagName: 'Broken Component', actions: [{ id: 'open' }] }],
+      }],
+    }, session);
+
+    assert.equal(result.status, 'error');
+    assert.equal(result.ok, false);
+    assert.deepEqual(result.moduleCapabilities, []);
+    assert.ok(result.errors.some((error) => error.path === 'plugins[0].components[0].tagName'));
+    assert.equal(session.config, null);
   });
 
   it('propose_workspace_patch previews overlay changes without mutating session', async () => {
@@ -437,6 +497,26 @@ describe('construction workflow CLI commands', () => {
     assert.equal(result.templateName, 'team-ai-room');
     assert.equal(result.config.name, 'Team AI Room');
     assert.deepEqual(result.plan.answers.moduleSelection, ['command']);
+  });
+
+  it('collect-plugin tools work through CLI JSON args', async () => {
+    let modules = await execCli('collect-plugin-module-capabilities', '--plugins', JSON.stringify([
+      PLUGIN_PACK,
+    ]));
+    let moduleResult = JSON.parse(modules.stdout);
+
+    assert.equal(moduleResult.status, 'ok');
+    assert.deepEqual(moduleResult.moduleCapabilities.map((item) => item.tagName), [
+      'acme-sentiment-panel',
+    ]);
+
+    let templates = await execCli('collect-plugin-workspace-templates', '--plugins', JSON.stringify([
+      PLUGIN_PACK,
+    ]));
+    let templateResult = JSON.parse(templates.stdout);
+
+    assert.equal(templateResult.status, 'ok');
+    assert.deepEqual(templateResult.templates.map((template) => template.name), ['team-ai-room']);
   });
 
   it('construct-workspace writes a planned config through the shared session file flow', async () => {

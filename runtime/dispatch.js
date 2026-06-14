@@ -778,6 +778,40 @@ export const TOOLS = [
       required: ['context'],
     },
   },
+  {
+    name: 'collect_plugin_module_capabilities',
+    description: 'Collect portable module capability descriptors from plugin definitions without activating plugins.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        plugins: {
+          description: 'Plugin definition object or array of plugin definitions.',
+          anyOf: [
+            { type: 'object' },
+            { type: 'array', items: { type: 'object' } },
+          ],
+        },
+      },
+      required: ['plugins'],
+    },
+  },
+  {
+    name: 'collect_plugin_workspace_templates',
+    description: 'Collect portable workspace templates from plugin definitions without activating plugins.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        plugins: {
+          description: 'Plugin definition object or array of plugin definitions.',
+          anyOf: [
+            { type: 'object' },
+            { type: 'array', items: { type: 'object' } },
+          ],
+        },
+      },
+      required: ['plugins'],
+    },
+  },
 
   // ── Sharing ──
   {
@@ -1122,6 +1156,28 @@ export async function dispatch(toolName, args, session) {
       compatibility: raw.compatibility,
       warnings: raw.warnings,
       errors: raw.errors,
+    };
+  }
+
+  if (toolName === 'collect_plugin_module_capabilities') {
+    let { collectPluginModuleCapabilities } = await import('../plugins/index.js');
+    let result = collectPluginModuleCapabilities(args.plugins);
+    return {
+      status: result.ok ? 'ok' : 'error',
+      ok: result.ok,
+      moduleCapabilities: result.moduleCapabilities,
+      errors: result.errors,
+    };
+  }
+
+  if (toolName === 'collect_plugin_workspace_templates') {
+    let { collectPluginWorkspaceTemplates } = await import('../plugins/index.js');
+    let result = collectPluginWorkspaceTemplates(args.plugins);
+    return {
+      status: result.ok ? 'ok' : 'error',
+      ok: result.ok,
+      templates: result.templates,
+      errors: result.errors,
     };
   }
 

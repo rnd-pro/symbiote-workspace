@@ -60,6 +60,17 @@ let EXTERNAL_ROOM_TEMPLATE = {
     },
   },
 };
+let MCP_PLUGIN_PACK = {
+  name: '@acme/mcp-workspace-pack',
+  version: '1.0.0',
+  components: [
+    'mcp-legacy-widget',
+    EXTERNAL_SENTIMENT_MODULE,
+  ],
+  workspace: {
+    templates: [EXTERNAL_ROOM_TEMPLATE],
+  },
+};
 
 function layoutReferencesPanel(node, panelType) {
   if (!node) return false;
@@ -159,29 +170,49 @@ describe('MCP Protocol', () => {
     let toolList = responses.find((r) => r.id === 2);
     assert.ok(toolList);
     assert.equal(toolList.result.tools.length, TOOLS.length);
-    assert.equal(TOOLS.length, 64, 'expected tool count');
 
+    let expectedTools = new Map(TOOLS.map((tool) => [tool.name, tool]));
     let toolNames = new Set(toolList.result.tools.map((tool) => tool.name));
+    assert.deepEqual(
+      [...toolNames].sort(),
+      [...expectedTools.keys()].sort(),
+    );
     assert.equal(toolNames.has('classify_workspace'), true);
     assert.equal(toolNames.has('plan_workspace'), true);
     assert.equal(toolNames.has('construct_workspace'), true);
     assert.equal(toolNames.has('apply_workspace_patch'), true);
     assert.equal(toolNames.has('export_workspace'), true);
     assert.equal(toolNames.has('create_workspace_construction_handoff'), true);
+    assert.equal(toolNames.has('collect_plugin_module_capabilities'), true);
+    assert.equal(toolNames.has('collect_plugin_workspace_templates'), true);
 
     // Verify no internal fields leaked
     for (let tool of toolList.result.tools) {
       assert.equal(tool.mutates, undefined, `Tool ${tool.name} leaked 'mutates' field`);
       assert.equal(tool.writesFiles, undefined, `Tool ${tool.name} leaked 'writesFiles' field`);
       assert.equal(typeof tool.annotations?.readOnlyHint, 'boolean');
+      let expected = expectedTools.get(tool.name);
+      assert.equal(
+        tool.annotations.readOnlyHint,
+        expected.mutates !== true && expected.writesFiles !== true,
+        `Tool ${tool.name} readOnlyHint mismatch`,
+      );
     }
 
     let saveConfig = toolList.result.tools.find((tool) => tool.name === 'save_config');
     let startPreview = toolList.result.tools.find((tool) => tool.name === 'start_preview');
     let listGroups = toolList.result.tools.find((tool) => tool.name === 'list_groups');
+    let pluginModules = toolList.result.tools.find((tool) => (
+      tool.name === 'collect_plugin_module_capabilities'
+    ));
+    let pluginTemplates = toolList.result.tools.find((tool) => (
+      tool.name === 'collect_plugin_workspace_templates'
+    ));
     assert.equal(saveConfig.annotations.readOnlyHint, false);
     assert.equal(startPreview.annotations.readOnlyHint, false);
     assert.equal(listGroups.annotations.readOnlyHint, true);
+    assert.equal(pluginModules.annotations.readOnlyHint, true);
+    assert.equal(pluginTemplates.annotations.readOnlyHint, true);
   });
 
   it('dispatches scaffold_from_scratch via tools/call', async () => {
@@ -889,6 +920,54 @@ describe('Package Construction Context via MCP', () => {
     assert.ok(content.missing.plugins.includes('mcp-gap-pkg'));
     assert.ok(content.missing.components.includes('mcp-gap-comp'));
     assert.ok(content.warnings.length > 0);
+  });
+});
+
+describe('Plugin Metadata Collection via MCP', () => {
+  it('collect_plugin_module_capabilities via tools/call returns validated module descriptors', async () => {
+    let responses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: {
+          name: 'collect_plugin_module_capabilities',
+          arguments: { plugins: [MCP_PLUGIN_PACK] },
+        },
+      },
+    ]);
+
+    let result = responses.find((r) => r.id === 2);
+    assert.ok(result);
+    let content = JSON.parse(result.result.content[0].text);
+    assert.equal(content.status, 'ok');
+    assert.deepEqual(content.moduleCapabilities.map((item) => item.tagName), [
+      'acme-sentiment-panel',
+    ]);
+  });
+
+  it('collect_plugin_workspace_templates via tools/call returns portable templates', async () => {
+    let responses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: {
+          name: 'collect_plugin_workspace_templates',
+          arguments: { plugins: [MCP_PLUGIN_PACK] },
+        },
+      },
+    ]);
+
+    let result = responses.find((r) => r.id === 2);
+    assert.ok(result);
+    let content = JSON.parse(result.result.content[0].text);
+    assert.equal(content.status, 'ok');
+    assert.deepEqual(content.templates.map((template) => template.name), [
+      'mcp-voice-video-room',
+    ]);
+    assert.deepEqual(content.templates[0].source, {
+      plugin: '@acme/mcp-workspace-pack',
+      version: '1.0.0',
+    });
   });
 });
 

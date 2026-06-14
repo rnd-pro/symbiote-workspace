@@ -21,6 +21,8 @@ describe('CLI help', () => {
     assert.ok(stdout.includes('scaffold'));
     assert.ok(stdout.includes('mcp'));
     assert.ok(stdout.includes('--config'));
+    assert.equal(stdout.includes('Force JSON output'), false);
+    assert.ok(stdout.includes('--json <string>'));
   });
 });
 

@@ -48,7 +48,7 @@ flow, and MCP stdio behavior. It does not publish or require registry writes.
 ```
 ┌─────────────────────────────────────────────┐
 │                  Dispatch                   │
-│            64 tools, 1 registry             │
+│          registered tools, 1 registry       │
 │             runtime/dispatch.js             │
 ├──────────────────┬──────────────────────────┤
 │   CLI (argv)     │      MCP (JSON-RPC)      │
@@ -161,7 +161,7 @@ await dispatch('save_config', { filePath: './workspace.json' }, session);
 
 ## CLI
 
-All 64 tools available as CLI commands:
+All registered tools are available as CLI commands:
 
 ```bash
 # Scaffold
@@ -289,7 +289,7 @@ Start as MCP server for AI agent integration:
 npx symbiote-workspace mcp
 ```
 
-Exposes 64 tools via JSON-RPC over stdio. Agents can classify, plan,
+Exposes all registered tools via JSON-RPC over stdio. Agents can classify, plan,
 propose, validate, apply, export, mutate, and query workspaces
 programmatically.
 
@@ -310,6 +310,7 @@ programmatically.
 | **Events** | `bridge_event` `unbridge_event` `list_bridges` |
 | **Sharing** | `export_config` `import_config` `diff_configs` `merge_configs` |
 | **Workspace Package** | `export_workspace_package` `import_workspace_package` `validate_workspace_package` `inspect_workspace_package` `create_workspace_package_construction_context` `create_workspace_packages_construction_context` `create_workspace_construction_handoff` |
+| **Plugin Metadata** | `collect_plugin_module_capabilities` `collect_plugin_workspace_templates` |
 | **Preview** | `start_preview` |
 | **Validation** | `validate_config` `check_guardrails` |
 | **File I/O** | `save_config` `load_config` |
@@ -601,6 +602,12 @@ where `name` is a portable template identifier and `config` is a strict
 workspace config. Pass `templates.templates` to constructor or dispatch APIs as
 `workspaceTemplates`; the constructor stays plugin-neutral and only consumes the
 plain portable entries.
+
+The same metadata collectors are exposed through dispatch/MCP as
+`collect_plugin_module_capabilities` and `collect_plugin_workspace_templates`,
+and through the CLI as `collect-plugin-module-capabilities` and
+`collect-plugin-workspace-templates`. These tools validate and collect metadata
+only; they do not activate plugins or initialize workspace session state.
 
 ## Portability Rules
 
