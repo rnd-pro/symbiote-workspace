@@ -757,6 +757,27 @@ export const TOOLS = [
       required: ['packages'],
     },
   },
+  {
+    name: 'create_workspace_construction_handoff',
+    description: 'Create a workspace construction handoff from a package construction context and intent for guided workspace assembly.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        context: {
+          type: 'object',
+          description: 'Package construction context object from create_workspace_package_construction_context or create_workspace_packages_construction_context.',
+        },
+        intent: {
+          anyOf: [
+            { type: 'string' },
+            { type: 'object' },
+          ],
+          description: 'Construction intent (string or object) to enrich with package-required capabilities.',
+        },
+      },
+      required: ['context'],
+    },
+  },
 
   // ── Sharing ──
   {
@@ -995,6 +1016,113 @@ export async function dispatch(toolName, args, session) {
     session.config = result.config;
     session.configFilePath = filePath;
     return { status: 'ok', filePath, config: session.config, hint: `Config loaded from ${filePath}.` };
+  }
+
+  if (toolName === 'validate_workspace_package') {
+    let { validateWorkspacePackage } = await import('../sharing/index.js');
+    let result = validateWorkspacePackage(args.package);
+    return {
+      valid: result.valid,
+      errors: result.errors,
+      hint: result.valid ? 'Workspace package is valid.' : 'Workspace package has validation errors.',
+    };
+  }
+
+  if (toolName === 'inspect_workspace_package') {
+    let input = args.package || args.json;
+    if (!input) {
+      return { status: 'error', tool: toolName, hint: 'Missing required arguments: package or json' };
+    }
+    let { inspectWorkspacePackage } = await import('../sharing/index.js');
+    let raw = args.available === undefined
+      ? inspectWorkspacePackage(input)
+      : inspectWorkspacePackage(input, { available: args.available });
+    return {
+      status: 'ok',
+      valid: raw.valid,
+      ready: raw.ready,
+      summary: raw.summary,
+      compatibility: raw.compatibility,
+      requirements: raw.requirements,
+      missing: raw.missing,
+      warnings: raw.warnings,
+      errors: raw.errors,
+    };
+  }
+
+  if (toolName === 'create_workspace_package_construction_context') {
+    let input = args.package || args.json;
+    if (!input) {
+      return { status: 'error', tool: toolName, hint: 'Missing required arguments: package or json' };
+    }
+    let { createWorkspacePackageConstructionContext } = await import('../sharing/index.js');
+    let options = {};
+    if (args.available !== undefined) options.available = args.available;
+    if (args.templateName !== undefined) options.templateName = args.templateName;
+    let result = createWorkspacePackageConstructionContext(input, options);
+    return {
+      status: 'ok',
+      valid: result.valid,
+      ready: result.ready,
+      workspaceTemplates: result.workspaceTemplates,
+      moduleCapabilities: result.moduleCapabilities,
+      requiredCapabilities: result.requiredCapabilities,
+      requirements: result.requirements,
+      missing: result.missing,
+      source: result.source,
+      summary: result.summary,
+      compatibility: result.compatibility,
+      warnings: result.warnings,
+      errors: result.errors,
+    };
+  }
+
+  if (toolName === 'create_workspace_packages_construction_context') {
+    let { createWorkspacePackagesConstructionContext } = await import('../sharing/index.js');
+    let input = { packages: args.packages };
+    if (args.available !== undefined) input.available = args.available;
+    let result = createWorkspacePackagesConstructionContext(input);
+    return {
+      status: 'ok',
+      valid: result.valid,
+      ready: result.ready,
+      workspaceTemplates: result.workspaceTemplates,
+      moduleCapabilities: result.moduleCapabilities,
+      requiredCapabilities: result.requiredCapabilities,
+      requirements: result.requirements,
+      missing: result.missing,
+      source: result.source,
+      sources: result.sources,
+      summary: result.summary,
+      compatibility: result.compatibility,
+      packageResults: result.packageResults,
+      conflicts: result.conflicts,
+      warnings: result.warnings,
+      errors: result.errors,
+    };
+  }
+
+  if (toolName === 'create_workspace_construction_handoff') {
+    if (!args.context) {
+      return { status: 'error', tool: toolName, hint: 'Missing required arguments: context' };
+    }
+    let { createWorkspaceConstructionHandoff } = await import('../sharing/index.js');
+    let raw = createWorkspaceConstructionHandoff(args.context, args.intent);
+    return {
+      status: 'ok',
+      intent: raw.intent,
+      options: raw.options,
+      valid: raw.valid,
+      ready: raw.ready,
+      requirements: raw.requirements,
+      missing: raw.missing,
+      source: raw.source,
+      sources: raw.sources,
+      summary: raw.summary,
+      compatibility: raw.compatibility,
+      warnings: raw.warnings,
+      errors: raw.errors,
+    };
   }
 
   let h = await getHandlers();
@@ -1242,90 +1370,6 @@ export async function dispatch(toolName, args, session) {
       }
       session.config = result.config;
       return { status: 'ok', config: result.config, package: result.package, hint: `Imported workspace package "${result.config.name}".` };
-    }
-
-    case 'validate_workspace_package': {
-      let { validateWorkspacePackage } = await import('../sharing/index.js');
-      let result = validateWorkspacePackage(args.package);
-      return {
-        valid: result.valid,
-        errors: result.errors,
-        hint: result.valid ? 'Workspace package is valid.' : 'Workspace package has validation errors.',
-      };
-    }
-
-    case 'inspect_workspace_package': {
-      let input = args.package || args.json;
-      if (!input) {
-        return { status: 'error', tool: toolName, hint: 'Missing required arguments: package or json' };
-      }
-      let { inspectWorkspacePackage } = await import('../sharing/index.js');
-      let raw = args.available === undefined
-        ? inspectWorkspacePackage(input)
-        : inspectWorkspacePackage(input, { available: args.available });
-      return {
-        status: 'ok',
-        valid: raw.valid,
-        ready: raw.ready,
-        summary: raw.summary,
-        compatibility: raw.compatibility,
-        requirements: raw.requirements,
-        missing: raw.missing,
-        warnings: raw.warnings,
-        errors: raw.errors,
-      };
-    }
-
-    case 'create_workspace_package_construction_context': {
-      let input = args.package || args.json;
-      if (!input) {
-        return { status: 'error', tool: toolName, hint: 'Missing required arguments: package or json' };
-      }
-      let { createWorkspacePackageConstructionContext } = await import('../sharing/index.js');
-      let options = {};
-      if (args.available !== undefined) options.available = args.available;
-      if (args.templateName !== undefined) options.templateName = args.templateName;
-      let result = createWorkspacePackageConstructionContext(input, options);
-      return {
-        status: 'ok',
-        valid: result.valid,
-        ready: result.ready,
-        workspaceTemplates: result.workspaceTemplates,
-        moduleCapabilities: result.moduleCapabilities,
-        requiredCapabilities: result.requiredCapabilities,
-        requirements: result.requirements,
-        missing: result.missing,
-        source: result.source,
-        summary: result.summary,
-        compatibility: result.compatibility,
-        warnings: result.warnings,
-        errors: result.errors,
-      };
-    }
-
-    case 'create_workspace_packages_construction_context': {
-      let { createWorkspacePackagesConstructionContext } = await import('../sharing/index.js');
-      let input = { packages: args.packages };
-      if (args.available !== undefined) input.available = args.available;
-      let result = createWorkspacePackagesConstructionContext(input);
-      return {
-        status: 'ok',
-        valid: result.valid,
-        ready: result.ready,
-        workspaceTemplates: result.workspaceTemplates,
-        moduleCapabilities: result.moduleCapabilities,
-        requiredCapabilities: result.requiredCapabilities,
-        requirements: result.requirements,
-        missing: result.missing,
-        source: result.source,
-        sources: result.sources,
-        summary: result.summary,
-        compatibility: result.compatibility,
-        packageResults: result.packageResults,
-        conflicts: result.conflicts,
-        warnings: result.warnings,
-        errors: result.errors,
-      };
     }
 
     // ── Sharing ──

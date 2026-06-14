@@ -96,6 +96,7 @@ Tool Commands (all dispatch to unified API):
   inspect-workspace-package Inspect workspace package for validity, readiness, and host-neutral capability requirements
   create-workspace-package-construction-context Create construction context from a workspace package (object or JSON string)
   create-workspace-packages-construction-context Create construction context from multiple workspace packages
+  create-workspace-construction-handoff Create construction handoff from package context and intent
   check-guardrails    Check design guardrails (panel limits, ratios)
 
 Global Options:
@@ -158,6 +159,10 @@ Options for 'create-workspace-package-construction-context':
 Options for 'create-workspace-packages-construction-context':
   --packages <json-array>          Package entries: [{ package, json, templateName }]
   --available <json-object>        Host-neutral available capabilities map
+
+Options for 'create-workspace-construction-handoff':
+  --context <json-object>           Package construction context object
+  --intent <string-or-json-object>  Construction intent to enrich with package capabilities
 
 Examples:
   npx symbiote-workspace scaffold "chat workspace" --config ws.json

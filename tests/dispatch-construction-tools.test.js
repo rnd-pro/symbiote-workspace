@@ -23,6 +23,7 @@ let CONSTRUCTION_TOOLS = [
   'validate_workspace_patch',
   'apply_workspace_patch',
   'export_workspace',
+  'create_workspace_construction_handoff',
 ];
 
 let EXTERNAL_SENTIMENT_MODULE = {
@@ -97,6 +98,7 @@ describe('construction workflow registry', () => {
     assert.equal(isMutating('validate_workspace_patch'), false);
     assert.equal(isMutating('apply_workspace_patch'), true);
     assert.equal(isMutating('export_workspace'), false);
+    assert.equal(isMutating('create_workspace_construction_handoff'), false);
   });
 });
 
@@ -376,6 +378,7 @@ describe('construction workflow CLI commands', () => {
     assert.ok(stdout.includes('validate-workspace-patch'));
     assert.ok(stdout.includes('apply-workspace-patch'));
     assert.ok(stdout.includes('export-workspace'));
+    assert.ok(stdout.includes('create-workspace-construction-handoff'));
     assert.ok(stdout.includes('--module-capabilities'));
     assert.ok(stdout.includes('--workspace-templates'));
     assert.ok(stdout.includes('--required-capabilities'));
@@ -636,6 +639,25 @@ describe('workspace package dispatch', () => {
     let validateResult = await dispatch('validate_workspace_package', {}, session);
     assert.equal(validateResult.status, 'error');
     assert.ok(validateResult.hint.includes('package'));
+  });
+
+  it('package-only read tools do not initialize a fresh session config', async () => {
+    let tools = [
+      'validate_workspace_package',
+      'inspect_workspace_package',
+      'create_workspace_package_construction_context',
+      'create_workspace_packages_construction_context',
+      'create_workspace_construction_handoff',
+    ];
+
+    for (let toolName of tools) {
+      let session = createSession();
+      assert.equal(session.config, null, `${toolName}: session should start with null config`);
+
+      await dispatch(toolName, {}, session);
+
+      assert.equal(session.config, null, `${toolName}: session.config must remain null`);
+    }
   });
 
   it('marks workspace package mutating tools correctly', () => {
@@ -962,6 +984,67 @@ describe('workspace package CLI commands', () => {
     } finally {
       await unlink(alphaFile).catch(() => {});
       await unlink(betaFile).catch(() => {});
+    }
+  });
+
+  it('create-workspace-construction-handoff listed in help with options', async () => {
+    let { stdout } = await execCli('--help');
+    assert.ok(stdout.includes('create-workspace-construction-handoff'));
+    assert.ok(stdout.includes('--context'));
+    assert.ok(stdout.includes('--intent'));
+  });
+
+  it('create-workspace-construction-handoff works with --context and --intent args', async () => {
+    let tmpFile = resolve(__dirname, '../_test_handoff_cli.json');
+
+    try {
+      await execCli('scaffold', '--config', tmpFile, '--name', 'CLI Handoff', 'chat workspace');
+      let exportOut = await execCli(
+        'export-workspace-package',
+        '--config',
+        tmpFile,
+        '--manifest',
+        JSON.stringify({
+          id: 'com.example.cli-handoff',
+          dependencies: {
+            components: ['cli-handoff-component'],
+            plugins: ['cli-handoff-plugin'],
+          },
+        }),
+      );
+      let exportResult = JSON.parse(exportOut.stdout);
+      assert.equal(exportResult.status, 'ok');
+      let packageObject = JSON.parse(exportResult.json);
+
+      let contextOut = await execCli(
+        'create-workspace-package-construction-context',
+        '--package',
+        JSON.stringify(packageObject),
+        '--template-name',
+        'cli-handoff-template',
+      );
+      let contextResult = JSON.parse(contextOut.stdout);
+      assert.equal(contextResult.status, 'ok');
+
+      let handoffOut = await execCli(
+        'create-workspace-construction-handoff',
+        '--context',
+        JSON.stringify(contextResult),
+        '--intent',
+        JSON.stringify({ brief: 'CLI Handoff Workspace', template: 'review-package' }),
+      );
+      let handoffResult = JSON.parse(handoffOut.stdout);
+
+      assert.equal(handoffResult.status, 'ok');
+      assert.equal(handoffResult.valid, true);
+      assert.equal(handoffResult.ready, true);
+      assert.ok(handoffResult.intent);
+      assert.equal(handoffResult.intent.template, 'review-package');
+      assert.ok(handoffResult.options);
+      assert.ok(handoffResult.options.workspaceTemplates.length > 0);
+      assert.equal(handoffResult.errors.length, 0);
+    } finally {
+      await unlink(tmpFile).catch(() => {});
     }
   });
 });
@@ -1307,5 +1390,124 @@ describe('create_workspace_packages_construction_context dispatch', () => {
 
     assert.equal(result.status, 'error');
     assert.ok(result.hint.includes('packages'));
+  });
+});
+
+describe('create_workspace_construction_handoff dispatch', () => {
+  it('marked non-mutating in TOOLS registry', () => {
+    assert.equal(isMutating('create_workspace_construction_handoff'), false);
+    let tool = TOOLS.find((t) => t.name === 'create_workspace_construction_handoff');
+    assert.ok(tool);
+    assert.equal(tool.mutates, undefined);
+    assert.ok(tool.inputSchema.properties.context);
+    assert.ok(tool.inputSchema.properties.intent);
+    assert.deepEqual(tool.inputSchema.required, ['context']);
+  });
+
+  it('composes create_workspace_package_construction_context + handoff and preserves session config', async () => {
+    let session = createSession();
+    await dispatch('scaffold_workspace', { template: 'chat', name: 'Handoff Compose' }, session);
+
+    let exportResult = await dispatch('export_workspace_package', {
+      manifest: { id: 'com.example.handoff-compose' },
+    }, session);
+    assert.equal(exportResult.status, 'ok');
+
+    let freshSession = createSession();
+    assert.equal(freshSession.config, null);
+
+    let packageObj = JSON.parse(exportResult.json);
+    let contextResult = await dispatch('create_workspace_package_construction_context', {
+      package: packageObj,
+    }, freshSession);
+
+    assert.equal(contextResult.status, 'ok');
+    assert.equal(contextResult.valid, true);
+    assert.equal(freshSession.config, null);
+
+    let handoffResult = await dispatch('create_workspace_construction_handoff', {
+      context: contextResult,
+      intent: { brief: 'Review queue workspace', template: 'review-package' },
+    }, freshSession);
+
+    assert.equal(handoffResult.status, 'ok');
+    assert.equal(handoffResult.valid, true);
+    assert.equal(handoffResult.ready, true);
+    assert.ok(handoffResult.intent);
+    assert.ok(handoffResult.intent.requiredCapabilities);
+    assert.ok(handoffResult.options);
+    assert.ok(handoffResult.options.workspaceTemplates.length > 0);
+    assert.ok(handoffResult.options.moduleCapabilities);
+    assert.equal(handoffResult.errors.length, 0);
+    assert.equal(freshSession.config, null);
+  });
+
+  it('handoff with invalid context returns valid: false and preserves session config', async () => {
+    let session = createSession();
+    assert.equal(session.config, null);
+
+    let result = await dispatch('create_workspace_construction_handoff', {
+      context: { valid: false, errors: [{ path: 'kind', message: 'Invalid kind', severity: 'error' }] },
+      intent: 'test workspace',
+    }, session);
+
+    assert.equal(result.status, 'ok');
+    assert.equal(result.valid, false);
+    assert.equal(result.ready, false);
+    assert.deepEqual(result.options.workspaceTemplates, []);
+    assert.deepEqual(result.options.moduleCapabilities, []);
+    assert.ok(result.errors.length > 0);
+    assert.equal(session.config, null);
+  });
+
+  it('handoff merges intent requiredCapabilities with context requiredCapabilities', async () => {
+    let session = createSession();
+    await dispatch('construct_workspace', {
+      intent: 'sentiment review operations dashboard',
+      template: 'dashboard',
+      requiredCapabilities: ['analysis.sentiment', 'review.queue'],
+      moduleCapabilities: [EXTERNAL_SENTIMENT_MODULE],
+    }, session);
+
+    let exportResult = await dispatch('export_workspace_package', {
+      manifest: { id: 'com.example.handoff-caps' },
+    }, session);
+    assert.equal(exportResult.status, 'ok');
+
+    let packageObj = JSON.parse(exportResult.json);
+    packageObj.workspace.config.construction.intent = {
+      brief: 'Handoff caps workspace',
+      targetRegister: 'tool',
+      requiredCapabilities: ['agent.runtime'],
+    };
+
+    let freshSession = createSession();
+    let contextResult = await dispatch('create_workspace_package_construction_context', {
+      package: packageObj,
+    }, freshSession);
+
+    let handoffResult = await dispatch('create_workspace_construction_handoff', {
+      context: contextResult,
+      intent: { requiredCapabilities: ['custom.reporting'] },
+    }, freshSession);
+
+    assert.equal(handoffResult.status, 'ok');
+    assert.equal(handoffResult.valid, true);
+    assert.deepEqual(handoffResult.intent.requiredCapabilities, [
+      'agent.runtime',
+      'analysis.sentiment',
+      'custom.reporting',
+      'review.queue',
+    ]);
+    assert.equal(freshSession.config, null);
+  });
+
+  it('rejects missing context with validateArgs-style error', async () => {
+    let session = createSession();
+    let result = await dispatch('create_workspace_construction_handoff', {}, session);
+
+    assert.equal(result.status, 'error');
+    assert.ok(result.hint.includes('context'));
+    assert.equal(session.config, null);
   });
 });

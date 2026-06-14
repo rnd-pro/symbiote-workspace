@@ -158,7 +158,7 @@ describe('MCP Protocol', () => {
     let toolList = responses.find((r) => r.id === 2);
     assert.ok(toolList);
     assert.equal(toolList.result.tools.length, TOOLS.length);
-    assert.equal(TOOLS.length, 63, 'expected tool count');
+    assert.equal(TOOLS.length, 64, 'expected tool count');
 
     let toolNames = new Set(toolList.result.tools.map((tool) => tool.name));
     assert.equal(toolNames.has('classify_workspace'), true);
@@ -166,6 +166,7 @@ describe('MCP Protocol', () => {
     assert.equal(toolNames.has('construct_workspace'), true);
     assert.equal(toolNames.has('apply_workspace_patch'), true);
     assert.equal(toolNames.has('export_workspace'), true);
+    assert.equal(toolNames.has('create_workspace_construction_handoff'), true);
 
     // Verify no internal fields leaked
     for (let tool of toolList.result.tools) {
@@ -951,5 +952,107 @@ describe('Package Collection Construction Context via MCP', () => {
     assert.ok(content.missing.components.includes('mcp-collection-alpha-component'));
     assert.ok(content.missing.plugins.includes('mcp-collection-beta-plugin'));
     assert.ok(content.warnings.length > 0);
+  });
+});
+
+describe('Construction Handoff via MCP', () => {
+  it('lists create_workspace_construction_handoff in tools/list with schema and readOnlyHint', async () => {
+    let responses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} },
+    ]);
+
+    let toolList = responses.find((r) => r.id === 2);
+    let tools = toolList.result.tools;
+    let toolNames = new Set(tools.map((tool) => tool.name));
+    assert.equal(toolNames.has('create_workspace_construction_handoff'), true);
+    let tool = tools.find((t) => t.name === 'create_workspace_construction_handoff');
+    assert.ok(tool.inputSchema.properties.context);
+    assert.ok(tool.inputSchema.properties.intent);
+    assert.deepEqual(tool.inputSchema.required, ['context']);
+    assert.equal(tool.annotations.readOnlyHint, true);
+  });
+
+  it('create_workspace_construction_handoff via tools/call returns intent and options', async () => {
+    let prepResponses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: { name: 'scaffold_from_scratch', arguments: { name: 'MCP Handoff Prep' } },
+      },
+      {
+        jsonrpc: '2.0', id: 3, method: 'tools/call',
+        params: {
+          name: 'export_workspace_package',
+          arguments: { manifest: { id: 'com.example.mcp-handoff' } },
+        },
+      },
+    ], 5000);
+
+    let exportContent = JSON.parse(prepResponses.find((r) => r.id === 3).result.content[0].text);
+    let packageObj = JSON.parse(exportContent.json);
+
+    let contextResponses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: {
+          name: 'create_workspace_package_construction_context',
+          arguments: { package: packageObj },
+        },
+      },
+    ]);
+
+    let contextContent = JSON.parse(contextResponses.find((r) => r.id === 2).result.content[0].text);
+    assert.equal(contextContent.status, 'ok');
+
+    let handoffResponses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: {
+          name: 'create_workspace_construction_handoff',
+          arguments: {
+            context: contextContent,
+            intent: { brief: 'MCP Handoff Workspace', template: 'review-package' },
+          },
+        },
+      },
+    ]);
+
+    let result = handoffResponses.find((r) => r.id === 2);
+    let content = JSON.parse(result.result.content[0].text);
+    assert.equal(content.status, 'ok');
+    assert.equal(content.valid, true);
+    assert.equal(content.ready, true);
+    assert.ok(content.intent);
+    assert.equal(content.intent.template, 'review-package');
+    assert.ok(content.options);
+    assert.ok(content.options.workspaceTemplates.length > 0);
+    assert.equal(content.errors.length, 0);
+  });
+
+  it('create_workspace_construction_handoff with invalid context returns errors via tools/call', async () => {
+    let responses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: {
+          name: 'create_workspace_construction_handoff',
+          arguments: {
+            context: { valid: false, errors: [{ path: 'kind', message: 'Invalid', severity: 'error' }] },
+            intent: 'test',
+          },
+        },
+      },
+    ]);
+
+    let result = responses.find((r) => r.id === 2);
+    let content = JSON.parse(result.result.content[0].text);
+    assert.equal(content.status, 'ok');
+    assert.equal(content.valid, false);
+    assert.equal(content.ready, false);
+    assert.ok(content.errors.length > 0);
+    assert.deepEqual(content.options.workspaceTemplates, []);
   });
 });

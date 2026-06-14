@@ -36,6 +36,8 @@ All notable changes to this project will be documented in this file.
   `createWorkspaceConstructionHandoff(context, intent)` converts package
   construction contexts into the `{ intent, options }` pair consumed by
   `planWorkspaceConstruction()`, including required capability handoff.
+  Exposed as `create_workspace_construction_handoff` in dispatch/MCP and
+  `create-workspace-construction-handoff` in the CLI.
 - **Construction protocol** — `intent`, `construction.questions`,
   `construction.plan`, `patches`, `validation.reports`, `runtime`, `exports`,
   and `design` are now accepted workspace config fields.
@@ -92,7 +94,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
-- **Unified dispatch surface** — CLI and MCP now expose 63 tools from the same
+- **Unified dispatch surface** — CLI and MCP now expose 64 tools from the same
   `runtime/dispatch.js` registry.
 - **Browser entrypoint boundary** — `symbiote-workspace/browser` now exports
   browser-safe APIs without statically pulling Node-only runtime dispatch code.
