@@ -10,7 +10,7 @@
 ## Architecture
 
 Unified dispatch layer: `runtime/dispatch.js` is the single entry point for all
-50 tools. Both CLI (`cli.js`) and MCP (`mcp/index.js`) are thin proxies —
+66 tools. Both CLI (`cli.js`) and MCP (`mcp/index.js`) are thin proxies —
 they parse input and call `dispatch(toolName, args, session)`.
 
 ## Code Quality
@@ -31,7 +31,7 @@ Project-specific rules documented in:
 npm test    # node --test tests/*.test.js
 ```
 
-All 191 tests must pass before commit. No Jest, Mocha, or Vitest.
+All 440 tests must pass before commit. No Jest, Mocha, or Vitest.
 Use Node.js built-in test runner (`node:test`).
 
 ## Boundary Rules
