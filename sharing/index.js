@@ -20,4 +20,7 @@ export {
   validateWorkspacePackage,
 } from './workspace-package.js';
 
-export { createWorkspacePackageConstructionContext } from './package-construction-context.js';
+export {
+  createWorkspacePackageConstructionContext,
+  createWorkspacePackagesConstructionContext,
+} from './package-construction-context.js';

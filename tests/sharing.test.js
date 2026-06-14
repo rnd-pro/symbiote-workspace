@@ -5,6 +5,7 @@ import {
   BROWSER_REQUIRED_IMPORTS,
   createBrowserRuntimeContract,
   createWorkspacePackageConstructionContext,
+  createWorkspacePackagesConstructionContext,
   exportWorkspacePackage,
   exportConfig,
   importWorkspacePackage,
@@ -1063,5 +1064,276 @@ describe('createWorkspacePackageConstructionContext', () => {
     assert.ok(plan);
     assert.ok(plan.config);
     assert.equal(typeof plan.config.name, 'string');
+  });
+});
+
+describe('createWorkspacePackagesConstructionContext', () => {
+  function createPackagedWorkspace({
+    id,
+    name,
+    tagName,
+    capabilities,
+    requiredCapabilities = [],
+    dependencies = {},
+  }) {
+    let config = {
+      ...EXTENDED_CONFIG,
+      name,
+      intent: {
+        brief: `${name} brief.`,
+        targetRegister: 'tool',
+        requiredCapabilities,
+      },
+      components: {
+        catalog: ['sn-panel', tagName],
+        modules: [{
+          tagName,
+          provider: `${id}-provider`,
+          capabilities,
+          requiredHostServices: ['storage.project'],
+          placement: {
+            panelType: `${tagName}-panel`,
+            title: name,
+            icon: 'extension',
+          },
+        }],
+      },
+    };
+
+    return exportWorkspacePackage(config, {
+      id,
+      version: '1.0.0',
+      description: `${name} package.`,
+      dependencies: {
+        components: [tagName],
+        plugins: [`${id}-plugin`],
+        packages: [`${id}-runtime`],
+        ...dependencies,
+      },
+    });
+  }
+
+  it('aggregates object and JSON package entries into constructor-ready arrays', () => {
+    let beta = createPackagedWorkspace({
+      id: 'beta-package',
+      name: 'Beta Workspace',
+      tagName: 'beta-widget',
+      capabilities: ['beta.capability'],
+      requiredCapabilities: ['beta.capability'],
+    });
+    let alpha = createPackagedWorkspace({
+      id: 'alpha-package',
+      name: 'Alpha Workspace',
+      tagName: 'alpha-widget',
+      capabilities: ['alpha.capability'],
+      requiredCapabilities: ['alpha.capability'],
+    });
+
+    let ctx = createWorkspacePackagesConstructionContext({
+      packages: [
+        { package: beta.package, templateName: 'beta-room' },
+        { json: alpha.json, templateName: 'alpha-room' },
+      ],
+    });
+
+    assert.equal(ctx.valid, true);
+    assert.equal(ctx.ready, true);
+    assert.deepEqual(ctx.source, {
+      type: 'workspace-package-collection',
+      packageCount: 2,
+      validPackageCount: 2,
+    });
+    assert.deepEqual(ctx.workspaceTemplates.map((template) => template.name), [
+      'alpha-room',
+      'beta-room',
+    ]);
+    assert.deepEqual(ctx.moduleCapabilities.map((descriptor) => descriptor.tagName), [
+      'alpha-widget',
+      'beta-widget',
+    ]);
+    assert.deepEqual(ctx.requiredCapabilities, ['alpha.capability', 'beta.capability']);
+    assert.equal(ctx.sources.length, 2);
+    assert.equal(ctx.packageResults.length, 2);
+    assert.equal(ctx.packageResults[0].source.packageId, 'beta-package');
+    assert.equal(ctx.packageResults[1].source.packageId, 'alpha-package');
+    assert.deepEqual(ctx.errors, []);
+    assert.deepEqual(ctx.conflicts, []);
+  });
+
+  it('reports partial invalid package diagnostics without exposing constructor arrays', () => {
+    let valid = createPackagedWorkspace({
+      id: 'valid-package',
+      name: 'Valid Workspace',
+      tagName: 'valid-widget',
+      capabilities: ['valid.capability'],
+    });
+
+    let ctx = createWorkspacePackagesConstructionContext({
+      packages: [
+        { package: valid.package, templateName: 'valid-room' },
+        { package: { kind: 'not-a-package', schemaVersion: '0.1.0', workspace: { config: {} } } },
+      ],
+    });
+
+    assert.equal(ctx.valid, false);
+    assert.equal(ctx.ready, false);
+    assert.equal(ctx.source.packageCount, 2);
+    assert.equal(ctx.source.validPackageCount, 1);
+    assert.equal(ctx.packageResults.length, 2);
+    assert.equal(ctx.packageResults[0].valid, true);
+    assert.equal(ctx.packageResults[1].valid, false);
+    assert.ok(ctx.errors.some((error) => error.path === 'packages[1].kind'));
+    assert.deepEqual(ctx.workspaceTemplates, []);
+    assert.deepEqual(ctx.moduleCapabilities, []);
+    assert.deepEqual(ctx.requiredCapabilities, []);
+  });
+
+  it('keeps valid aggregation when availability gaps only produce warnings', () => {
+    let alpha = createPackagedWorkspace({
+      id: 'gap-alpha-package',
+      name: 'Gap Alpha Workspace',
+      tagName: 'gap-alpha-widget',
+      capabilities: ['gap.alpha'],
+    });
+    let beta = createPackagedWorkspace({
+      id: 'gap-beta-package',
+      name: 'Gap Beta Workspace',
+      tagName: 'gap-beta-widget',
+      capabilities: ['gap.beta'],
+    });
+
+    let ctx = createWorkspacePackagesConstructionContext({
+      packages: [
+        { package: alpha.package, templateName: 'gap-alpha-room' },
+        { package: beta.package, templateName: 'gap-beta-room' },
+      ],
+      available: {
+        components: ['sn-panel'],
+        plugins: [],
+        packages: [],
+        hostServices: [],
+        runtimeSlots: [],
+      },
+    });
+
+    assert.equal(ctx.valid, true);
+    assert.equal(ctx.ready, false);
+    assert.ok(ctx.workspaceTemplates.length > 0);
+    assert.ok(ctx.moduleCapabilities.length > 0);
+    assert.ok(ctx.warnings.length > 0);
+    assert.ok(ctx.missing.components.includes('gap-alpha-widget'));
+    assert.ok(ctx.missing.components.includes('gap-beta-widget'));
+    assert.ok(ctx.missing.plugins.includes('gap-alpha-package-plugin'));
+    assert.ok(ctx.missing.plugins.includes('gap-beta-package-plugin'));
+    assert.ok(ctx.missing.hostServices.includes('storage.project'));
+  });
+
+  it('blocks duplicate template names as aggregate conflicts', () => {
+    let first = createPackagedWorkspace({
+      id: 'template-first-package',
+      name: 'Template First Workspace',
+      tagName: 'template-first-widget',
+      capabilities: ['template.first'],
+    });
+    let second = createPackagedWorkspace({
+      id: 'template-second-package',
+      name: 'Template Second Workspace',
+      tagName: 'template-second-widget',
+      capabilities: ['template.second'],
+    });
+
+    let ctx = createWorkspacePackagesConstructionContext({
+      packages: [
+        { package: first.package, templateName: 'duplicate-room' },
+        { package: second.package, templateName: 'duplicate-room' },
+      ],
+    });
+
+    assert.equal(ctx.valid, false);
+    assert.equal(ctx.ready, false);
+    assert.ok(ctx.conflicts.some((conflict) => conflict.type === 'workspace-template'));
+    assert.ok(ctx.errors.some((error) => error.path === 'packages[1].workspaceTemplates[0].name'));
+    assert.deepEqual(ctx.workspaceTemplates, []);
+    assert.deepEqual(ctx.moduleCapabilities, []);
+  });
+
+  it('blocks duplicate module tagName descriptors as aggregate conflicts', () => {
+    let first = createPackagedWorkspace({
+      id: 'module-first-package',
+      name: 'Module First Workspace',
+      tagName: 'shared-widget',
+      capabilities: ['module.first'],
+    });
+    let second = createPackagedWorkspace({
+      id: 'module-second-package',
+      name: 'Module Second Workspace',
+      tagName: 'shared-widget',
+      capabilities: ['module.second'],
+    });
+
+    let ctx = createWorkspacePackagesConstructionContext({
+      packages: [
+        { package: first.package, templateName: 'module-first-room' },
+        { package: second.package, templateName: 'module-second-room' },
+      ],
+    });
+
+    assert.equal(ctx.valid, false);
+    assert.equal(ctx.ready, false);
+    assert.ok(ctx.conflicts.some((conflict) => conflict.type === 'module-capability'));
+    assert.ok(ctx.errors.some((error) => error.path === 'packages[1].moduleCapabilities[0].tagName'));
+    assert.deepEqual(ctx.workspaceTemplates, []);
+    assert.deepEqual(ctx.moduleCapabilities, []);
+  });
+
+  it('is deterministic, mutation-safe, and consumable by the constructor', () => {
+    let zeta = createPackagedWorkspace({
+      id: 'zeta-package',
+      name: 'Zeta Workspace',
+      tagName: 'zeta-widget',
+      capabilities: ['zeta.capability'],
+    });
+    let alpha = createPackagedWorkspace({
+      id: 'constructor-alpha-package',
+      name: 'Constructor Alpha Workspace',
+      tagName: 'constructor-alpha-widget',
+      capabilities: ['alpha.construct'],
+    });
+
+    let input = {
+      packages: [
+        { package: zeta.package, templateName: 'zeta-room' },
+        { package: alpha.package, templateName: 'alpha-room' },
+      ],
+    };
+    let ctx = createWorkspacePackagesConstructionContext(input);
+
+    assert.deepEqual(ctx.workspaceTemplates.map((template) => template.name), [
+      'alpha-room',
+      'zeta-room',
+    ]);
+    assert.deepEqual(ctx.moduleCapabilities.map((descriptor) => descriptor.tagName), [
+      'constructor-alpha-widget',
+      'zeta-widget',
+    ]);
+
+    ctx.workspaceTemplates[0].config.name = 'Mutated';
+    ctx.moduleCapabilities[0].tagName = 'mutated-widget';
+
+    let fresh = createWorkspacePackagesConstructionContext(input);
+    assert.equal(fresh.workspaceTemplates[0].config.name, 'Constructor Alpha Workspace');
+    assert.equal(fresh.moduleCapabilities[0].tagName, 'constructor-alpha-widget');
+
+    let plan = planWorkspaceConstruction({
+      brief: 'Construct an alpha workspace.',
+      template: 'alpha-room',
+      requiredCapabilities: ['alpha.construct'],
+    }, {
+      workspaceTemplates: fresh.workspaceTemplates,
+      moduleCapabilities: fresh.moduleCapabilities,
+    });
+
+    assert.ok(plan.config);
+    assert.deepEqual(plan.plan.capabilities.missing, []);
   });
 });

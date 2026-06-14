@@ -385,6 +385,7 @@ describe('packed package consumer', () => {
           importWorkspacePackage,
           validateWorkspacePackage,
           createWorkspacePackageConstructionContext,
+          createWorkspacePackagesConstructionContext,
           inspectWorkspacePackage,
           WORKSPACE_PACKAGE_KIND,
           WORKSPACE_PACKAGE_SCHEMA_VERSION,
@@ -395,6 +396,9 @@ describe('packed package consumer', () => {
         if (typeof validateWorkspacePackage !== 'function') throw new Error('validateWorkspacePackage not exported');
         if (typeof createWorkspacePackageConstructionContext !== 'function') {
           throw new Error('createWorkspacePackageConstructionContext not exported from sharing');
+        }
+        if (typeof createWorkspacePackagesConstructionContext !== 'function') {
+          throw new Error('createWorkspacePackagesConstructionContext not exported from sharing');
         }
         if (typeof inspectWorkspacePackage !== 'function') throw new Error('inspectWorkspacePackage not exported from sharing');
         if (WORKSPACE_PACKAGE_KIND !== 'symbiote-workspace-package') throw new Error('WORKSPACE_PACKAGE_KIND mismatch');
@@ -407,11 +411,17 @@ describe('packed package consumer', () => {
         if (typeof root.createWorkspacePackageConstructionContext !== 'function') {
           throw new Error('root createWorkspacePackageConstructionContext missing');
         }
+        if (typeof root.createWorkspacePackagesConstructionContext !== 'function') {
+          throw new Error('root createWorkspacePackagesConstructionContext missing');
+        }
         if (typeof root.inspectWorkspacePackage !== 'function') throw new Error('root inspectWorkspacePackage missing');
 
         let browser = await import('symbiote-workspace/browser');
         if (typeof browser.createWorkspacePackageConstructionContext !== 'function') {
           throw new Error('browser createWorkspacePackageConstructionContext missing');
+        }
+        if (typeof browser.createWorkspacePackagesConstructionContext !== 'function') {
+          throw new Error('browser createWorkspacePackagesConstructionContext missing');
         }
         if (typeof browser.inspectWorkspacePackage !== 'function') throw new Error('browser inspectWorkspacePackage missing');
       `);

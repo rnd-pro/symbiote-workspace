@@ -46,6 +46,7 @@ export {
   mergeConfigs,
   createHostIntegrationContract,
   createWorkspacePackageConstructionContext,
+  createWorkspacePackagesConstructionContext,
   inspectWorkspacePackage,
   validateWorkspacePackage,
 } from './sharing/index.js';

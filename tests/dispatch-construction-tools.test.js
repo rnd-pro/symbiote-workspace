@@ -653,6 +653,9 @@ describe('workspace package CLI commands', () => {
     assert.ok(stdout.includes('export-workspace-package'));
     assert.ok(stdout.includes('import-workspace-package'));
     assert.ok(stdout.includes('validate-workspace-package'));
+    assert.ok(stdout.includes('inspect-workspace-package'));
+    assert.ok(stdout.includes('create-workspace-package-construction-context'));
+    assert.ok(stdout.includes('create-workspace-packages-construction-context'));
     assert.ok(stdout.includes('--manifest'));
   });
 
@@ -886,6 +889,79 @@ describe('workspace package CLI commands', () => {
       assert.ok(jsonResult.warnings.length > 0);
     } finally {
       await unlink(tmpFile).catch(() => {});
+    }
+  });
+
+  it('create-workspace-packages-construction-context accepts --packages and --available args', async () => {
+    let alphaFile = resolve(__dirname, '../_test_pkg_collection_alpha_cli.json');
+    let betaFile = resolve(__dirname, '../_test_pkg_collection_beta_cli.json');
+
+    try {
+      await execCli('scaffold', '--config', alphaFile, '--name', 'CLI Collection Alpha', 'chat workspace');
+      let alphaExport = await execCli(
+        'export-workspace-package',
+        '--config',
+        alphaFile,
+        '--manifest',
+        JSON.stringify({
+          id: 'com.example.cli-collection-alpha',
+          dependencies: {
+            components: ['cli-collection-alpha-component'],
+            plugins: ['cli-collection-alpha-plugin'],
+          },
+        }),
+      );
+      let alphaResult = JSON.parse(alphaExport.stdout);
+      assert.equal(alphaResult.status, 'ok');
+
+      await execCli('scaffold', '--config', betaFile, '--name', 'CLI Collection Beta', 'dashboard workspace');
+      let betaExport = await execCli(
+        'export-workspace-package',
+        '--config',
+        betaFile,
+        '--manifest',
+        JSON.stringify({
+          id: 'com.example.cli-collection-beta',
+          dependencies: {
+            components: ['cli-collection-beta-component'],
+            plugins: ['cli-collection-beta-plugin'],
+          },
+        }),
+      );
+      let betaResult = JSON.parse(betaExport.stdout);
+      assert.equal(betaResult.status, 'ok');
+
+      let collectionContext = await execCli(
+        'create-workspace-packages-construction-context',
+        '--packages',
+        JSON.stringify([
+          { json: alphaResult.json, templateName: 'cli-collection-alpha-room' },
+          { package: JSON.parse(betaResult.json), templateName: 'cli-collection-beta-room' },
+        ]),
+        '--available',
+        JSON.stringify({
+          components: [],
+          plugins: [],
+          packages: [],
+          hostServices: [],
+          runtimeSlots: [],
+        }),
+      );
+
+      let result = JSON.parse(collectionContext.stdout);
+      assert.equal(result.status, 'ok');
+      assert.equal(result.valid, true);
+      assert.equal(result.ready, false);
+      assert.deepEqual(result.workspaceTemplates.map((template) => template.name), [
+        'cli-collection-alpha-room',
+        'cli-collection-beta-room',
+      ]);
+      assert.equal(result.packageResults.length, 2);
+      assert.ok(result.missing.components.includes('cli-collection-alpha-component'));
+      assert.ok(result.missing.plugins.includes('cli-collection-beta-plugin'));
+    } finally {
+      await unlink(alphaFile).catch(() => {});
+      await unlink(betaFile).catch(() => {});
     }
   });
 });
@@ -1157,5 +1233,79 @@ describe('create_workspace_package_construction_context dispatch', () => {
 
     assert.equal(result.status, 'error');
     assert.ok(result.hint.includes('package or json'));
+  });
+});
+
+describe('create_workspace_packages_construction_context dispatch', () => {
+  it('marked non-mutating in TOOLS registry', () => {
+    assert.equal(isMutating('create_workspace_packages_construction_context'), false);
+    let tool = TOOLS.find((t) => t.name === 'create_workspace_packages_construction_context');
+    assert.ok(tool);
+    assert.equal(tool.mutates, undefined);
+    assert.ok(tool.inputSchema.properties.packages);
+    assert.ok(tool.inputSchema.properties.available);
+    assert.deepEqual(tool.inputSchema.required, ['packages']);
+  });
+
+  it('aggregates package object and JSON entries with availability gaps', async () => {
+    let session = createSession();
+    await dispatch('scaffold_workspace', { template: 'chat', name: 'Aggregate Alpha' }, session);
+    let alphaExport = await dispatch('export_workspace_package', {
+      manifest: {
+        id: 'com.example.aggregate-alpha',
+        dependencies: { components: ['aggregate-alpha-widget'], plugins: ['aggregate-alpha-plugin'] },
+      },
+    }, session);
+    assert.equal(alphaExport.status, 'ok');
+
+    await dispatch('scaffold_workspace', { template: 'dashboard', name: 'Aggregate Beta' }, session);
+    let betaExport = await dispatch('export_workspace_package', {
+      manifest: {
+        id: 'com.example.aggregate-beta',
+        dependencies: { components: ['aggregate-beta-widget'], plugins: ['aggregate-beta-plugin'] },
+      },
+    }, session);
+    assert.equal(betaExport.status, 'ok');
+
+    let result = await dispatch('create_workspace_packages_construction_context', {
+      packages: [
+        { package: JSON.parse(alphaExport.json), templateName: 'aggregate-alpha-room' },
+        { json: betaExport.json, templateName: 'aggregate-beta-room' },
+      ],
+      available: {
+        components: [],
+        plugins: [],
+        packages: [],
+        hostServices: [],
+        runtimeSlots: [],
+      },
+    }, session);
+
+    assert.equal(result.status, 'ok');
+    assert.equal(result.valid, true);
+    assert.equal(result.ready, false);
+    assert.deepEqual(result.source, {
+      type: 'workspace-package-collection',
+      packageCount: 2,
+      validPackageCount: 2,
+    });
+    assert.deepEqual(result.workspaceTemplates.map((template) => template.name), [
+      'aggregate-alpha-room',
+      'aggregate-beta-room',
+    ]);
+    assert.equal(result.packageResults.length, 2);
+    assert.equal(result.sources.length, 2);
+    assert.deepEqual(result.conflicts, []);
+    assert.ok(result.missing.components.includes('aggregate-alpha-widget'));
+    assert.ok(result.missing.plugins.includes('aggregate-beta-plugin'));
+    assert.ok(result.warnings.length > 0);
+  });
+
+  it('rejects missing packages with validateArgs-style error', async () => {
+    let session = createSession();
+    let result = await dispatch('create_workspace_packages_construction_context', {}, session);
+
+    assert.equal(result.status, 'error');
+    assert.ok(result.hint.includes('packages'));
   });
 });

@@ -720,6 +720,39 @@ export const TOOLS = [
       ],
     },
   },
+  {
+    name: 'create_workspace_packages_construction_context',
+    description: 'Create a construction context from multiple workspace packages for guided workspace assembly.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        packages: {
+          type: 'array',
+          description: 'Workspace package entries: [{ package, json, templateName }].',
+          items: {
+            type: 'object',
+            properties: {
+              package: { type: 'object', description: 'Workspace package object.' },
+              json: { type: 'string', description: 'JSON string of the workspace package.' },
+              templateName: { type: 'string', description: 'External template name override.' },
+            },
+          },
+        },
+        available: {
+          type: 'object',
+          description: 'Host-neutral available capabilities map.',
+          properties: {
+            components: { type: 'array', items: { type: 'string' } },
+            plugins: { type: 'array', items: { type: 'string' } },
+            packages: { type: 'array', items: { type: 'string' } },
+            hostServices: { type: 'array', items: { type: 'string' } },
+            runtimeSlots: { type: 'array', items: { type: 'string' } },
+          },
+        },
+      },
+      required: ['packages'],
+    },
+  },
 
   // ── Sharing ──
   {
@@ -1261,6 +1294,31 @@ export async function dispatch(toolName, args, session) {
         source: result.source,
         summary: result.summary,
         compatibility: result.compatibility,
+        warnings: result.warnings,
+        errors: result.errors,
+      };
+    }
+
+    case 'create_workspace_packages_construction_context': {
+      let { createWorkspacePackagesConstructionContext } = await import('../sharing/index.js');
+      let input = { packages: args.packages };
+      if (args.available !== undefined) input.available = args.available;
+      let result = createWorkspacePackagesConstructionContext(input);
+      return {
+        status: 'ok',
+        valid: result.valid,
+        ready: result.ready,
+        workspaceTemplates: result.workspaceTemplates,
+        moduleCapabilities: result.moduleCapabilities,
+        requiredCapabilities: result.requiredCapabilities,
+        requirements: result.requirements,
+        missing: result.missing,
+        source: result.source,
+        sources: result.sources,
+        summary: result.summary,
+        compatibility: result.compatibility,
+        packageResults: result.packageResults,
+        conflicts: result.conflicts,
         warnings: result.warnings,
         errors: result.errors,
       };

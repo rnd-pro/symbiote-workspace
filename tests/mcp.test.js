@@ -158,7 +158,7 @@ describe('MCP Protocol', () => {
     let toolList = responses.find((r) => r.id === 2);
     assert.ok(toolList);
     assert.equal(toolList.result.tools.length, TOOLS.length);
-    assert.equal(TOOLS.length, 62, 'expected tool count');
+    assert.equal(TOOLS.length, 63, 'expected tool count');
 
     let toolNames = new Set(toolList.result.tools.map((tool) => tool.name));
     assert.equal(toolNames.has('classify_workspace'), true);
@@ -838,6 +838,109 @@ describe('Package Construction Context via MCP', () => {
     assert.equal(content.ready, false);
     assert.ok(content.missing.plugins.includes('mcp-gap-pkg'));
     assert.ok(content.missing.components.includes('mcp-gap-comp'));
+    assert.ok(content.warnings.length > 0);
+  });
+});
+
+describe('Package Collection Construction Context via MCP', () => {
+  it('lists create_workspace_packages_construction_context in tools/list with schema', async () => {
+    let responses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} },
+    ]);
+
+    let toolList = responses.find((r) => r.id === 2);
+    let tools = toolList.result.tools;
+    let toolNames = new Set(tools.map((tool) => tool.name));
+    assert.equal(toolNames.has('create_workspace_packages_construction_context'), true);
+    let tool = tools.find((t) => t.name === 'create_workspace_packages_construction_context');
+    assert.ok(tool.inputSchema.properties.packages);
+    assert.ok(tool.inputSchema.properties.available);
+    assert.deepEqual(tool.inputSchema.required, ['packages']);
+  });
+
+  it('create_workspace_packages_construction_context via tools/call aggregates package entries', async () => {
+    let responses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: { name: 'scaffold_from_scratch', arguments: { name: 'MCP Collection Alpha' } },
+      },
+      {
+        jsonrpc: '2.0', id: 3, method: 'tools/call',
+        params: {
+          name: 'export_workspace_package',
+          arguments: {
+            manifest: {
+              id: 'com.example.mcp-collection-alpha',
+              dependencies: { plugins: ['mcp-collection-alpha-plugin'], components: ['mcp-collection-alpha-component'] },
+            },
+          },
+        },
+      },
+      {
+        jsonrpc: '2.0', id: 4, method: 'tools/call',
+        params: { name: 'scaffold_from_scratch', arguments: { name: 'MCP Collection Beta' } },
+      },
+      {
+        jsonrpc: '2.0', id: 5, method: 'tools/call',
+        params: {
+          name: 'export_workspace_package',
+          arguments: {
+            manifest: {
+              id: 'com.example.mcp-collection-beta',
+              dependencies: { plugins: ['mcp-collection-beta-plugin'], components: ['mcp-collection-beta-component'] },
+            },
+          },
+        },
+      },
+    ], 5000);
+
+    let alphaContent = JSON.parse(responses.find((r) => r.id === 3).result.content[0].text);
+    let betaContent = JSON.parse(responses.find((r) => r.id === 5).result.content[0].text);
+    let alphaPackage = JSON.parse(alphaContent.json);
+
+    let ctxResponses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: {
+          name: 'create_workspace_packages_construction_context',
+          arguments: {
+            packages: [
+              { package: alphaPackage, templateName: 'mcp-collection-alpha-room' },
+              { json: betaContent.json, templateName: 'mcp-collection-beta-room' },
+            ],
+            available: {
+              components: [],
+              plugins: [],
+              packages: [],
+              hostServices: [],
+              runtimeSlots: [],
+            },
+          },
+        },
+      },
+    ]);
+
+    let result = ctxResponses.find((r) => r.id === 2);
+    let content = JSON.parse(result.result.content[0].text);
+    assert.equal(content.status, 'ok');
+    assert.equal(content.valid, true);
+    assert.equal(content.ready, false);
+    assert.deepEqual(content.source, {
+      type: 'workspace-package-collection',
+      packageCount: 2,
+      validPackageCount: 2,
+    });
+    assert.deepEqual(content.workspaceTemplates.map((template) => template.name), [
+      'mcp-collection-alpha-room',
+      'mcp-collection-beta-room',
+    ]);
+    assert.equal(content.packageResults.length, 2);
+    assert.equal(content.sources.length, 2);
+    assert.ok(content.missing.components.includes('mcp-collection-alpha-component'));
+    assert.ok(content.missing.plugins.includes('mcp-collection-beta-plugin'));
     assert.ok(content.warnings.length > 0);
   });
 });

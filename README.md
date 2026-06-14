@@ -671,6 +671,7 @@ import {
   exportWorkspacePackage,
   importWorkspacePackage,
   createWorkspacePackageConstructionContext,
+  createWorkspacePackagesConstructionContext,
   inspectWorkspacePackage,
   validateWorkspacePackage,
   WORKSPACE_PACKAGE_KIND,
@@ -710,6 +711,14 @@ package `moduleCapabilities`, explicit `requiredCapabilities`, package
 requirements, readiness gaps, and source metadata. Pass the returned
 `workspaceTemplates` and `moduleCapabilities` to `planWorkspaceConstruction()`
 or the construction dispatch tools.
+
+`createWorkspacePackagesConstructionContext({ packages, available })` aggregates
+multiple package entries (`{ package, templateName }` or `{ json, templateName }`)
+into one constructor-ready context. Duplicate workspace template names or module
+`tagName` descriptors are blocking conflicts; host availability gaps remain
+warnings and keep the context structurally valid but not ready. The same helper
+is exposed through dispatch/MCP as `create_workspace_packages_construction_context`
+and through the CLI as `create-workspace-packages-construction-context`.
 
 The manifest rejects host, identity, and marketplace state:
 
