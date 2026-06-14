@@ -31,7 +31,7 @@ Project-specific rules documented in:
 npm test    # node --test tests/*.test.js
 ```
 
-All 447 tests must pass before commit. No Jest, Mocha, or Vitest.
+All 450 tests must pass before commit. No Jest, Mocha, or Vitest.
 Use Node.js built-in test runner (`node:test`).
 
 ## Boundary Rules
@@ -63,6 +63,6 @@ Use Node.js built-in test runner (`node:test`).
 2. Export from `handlers/index.js` barrel
 3. Add tool definition to `TOOLS` array in `runtime/dispatch.js`
 4. Add dispatch case in `dispatch()` function
-5. Add CLI help line in `cli.js`
+5. Ensure the `TOOLS` description is suitable for generated CLI/MCP help
 6. Add test in `tests/dispatch.test.js`
 7. Update CHANGELOG.md

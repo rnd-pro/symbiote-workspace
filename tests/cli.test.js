@@ -72,11 +72,15 @@ describe('CLI help', () => {
 
     for (let tool of TOOLS) {
       let command = tool.name.replaceAll('_', '-');
-      let aliases = HELP_ALIASES[tool.name] || [];
       assert.equal(
-        helpHasCommand(stdout, command) || aliases.some((alias) => helpHasCommand(stdout, alias)),
+        helpHasCommand(stdout, command),
         true,
         `Help missing command for ${tool.name}`,
+      );
+      assert.equal(
+        stdout.includes(tool.description),
+        true,
+        `Help missing TOOLS description for ${tool.name}`,
       );
     }
   });

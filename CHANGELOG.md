@@ -101,6 +101,12 @@ All notable changes to this project will be documented in this file.
 
 - **Unified dispatch surface** — CLI and MCP now expose 66 tools from the same
   `runtime/dispatch.js` registry.
+- **CLI help source** — CLI tool-command help is now generated from the
+  unified `TOOLS` registry descriptions, with CLI-only aliases documented from
+  the command alias map.
+- **Package consumer verification** — packed-consumer tests now assert the
+  actual npm pack file list before install, including exported entrypoints and
+  exclusion of tests, team memory, cache, temp, and tarball artifacts.
 - **Construction handoff dispatch** — `plan_workspace` and
   `construct_workspace` now accept the full `{ intent, options }` handoff
   object returned by `create_workspace_construction_handoff`; CLI

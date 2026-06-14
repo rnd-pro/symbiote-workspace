@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { execFile } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,6 +11,7 @@ import { promisify } from 'node:util';
 let exec = promisify(execFile);
 let ROOT = resolve(import.meta.dirname, '..');
 let TMP_ROOT = resolve(ROOT, 'tmp');
+let PACKAGE_META = JSON.parse(readFileSync(resolve(ROOT, 'package.json'), 'utf8'));
 
 async function withTempConsumer(run) {
   await mkdir(TMP_ROOT, { recursive: true });
@@ -59,7 +61,61 @@ async function packPackage(packagePath, artifactsDir, npmEnv) {
     '--json',
   ], withNpmEnv({ cwd: ROOT }, npmEnv));
   let [pack] = JSON.parse(stdout);
-  return join(artifactsDir, pack.filename);
+  return {
+    pack,
+    tarball: join(artifactsDir, pack.filename),
+  };
+}
+
+function packedPaths(pack) {
+  return new Set(pack.files.map((file) => file.path));
+}
+
+function assertNoForbiddenPackEntries(pack) {
+  for (let file of pack.files) {
+    assert.equal(file.path.startsWith('tmp/'), false, `${file.path} must not be packed`);
+    assert.equal(file.path.startsWith('.agent-portal/'), false, `${file.path} must not be packed`);
+    assert.equal(file.path.startsWith('tests/'), false, `${file.path} must not be packed`);
+    assert.equal(file.path.includes('npm-cache'), false, `${file.path} must not be packed`);
+    assert.equal(file.path.endsWith('.tgz'), false, `${file.path} must not be packed`);
+  }
+}
+
+function assertPackIncludesTarget(paths, target) {
+  let normalized = target.replace(/^\.\//, '');
+  if (normalized.includes('*')) {
+    let prefix = normalized.slice(0, normalized.indexOf('*'));
+    assert.equal(
+      [...paths].some((path) => path.startsWith(prefix)),
+      true,
+      `Package export pattern ${target} must include files`,
+    );
+    return;
+  }
+  assert.equal(paths.has(normalized), true, `Package must include ${normalized}`);
+}
+
+function assertWorkspacePackList(pack) {
+  let paths = packedPaths(pack);
+  assertNoForbiddenPackEntries(pack);
+
+  for (let target of ['package.json', 'README.md', 'LICENSE', 'CHANGELOG.md']) {
+    assert.equal(paths.has(target), true, `Package must include ${target}`);
+  }
+
+  for (let value of Object.values(PACKAGE_META.exports)) {
+    if (typeof value === 'string') {
+      assertPackIncludesTarget(paths, value);
+      continue;
+    }
+    for (let target of Object.values(value)) {
+      assertPackIncludesTarget(paths, target);
+    }
+  }
+
+  for (let target of Object.values(PACKAGE_META.bin)) {
+    assertPackIncludesTarget(paths, target);
+  }
 }
 
 async function runNode(consumerDir, source) {
@@ -134,12 +190,16 @@ describe('packed package consumer', () => {
       await mkdir(artifactsDir, { recursive: true });
       await mkdir(consumerDir, { recursive: true });
 
-      let workspaceTarball = await packPackage(ROOT, artifactsDir, npmEnv);
-      let symbioteUiTarball = await packPackage(
+      let workspacePack = await packPackage(ROOT, artifactsDir, npmEnv);
+      assertWorkspacePackList(workspacePack.pack);
+
+      let symbioteUiPack = await packPackage(
         await packageRoot('symbiote-ui'),
         artifactsDir,
         npmEnv,
       );
+      let workspaceTarball = workspacePack.tarball;
+      let symbioteUiTarball = symbioteUiPack.tarball;
 
       await run('npm', ['init', '-y'], withNpmEnv({ cwd: consumerDir }, npmEnv));
       await run('npm', [

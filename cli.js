@@ -20,10 +20,33 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
+import { TOOLS } from './runtime/index.js';
+
 let argv = process.argv.slice(2);
 let command = argv[0];
 
 // ── Help ──
+
+function commandForTool(toolName) {
+  return toolName.replaceAll('_', '-');
+}
+
+function formatHelpRows(rows) {
+  let width = rows.reduce((max, [name]) => Math.max(max, name.length), 0) + 2;
+  return rows.map(([name, description]) => {
+    return `  ${name.padEnd(width)}${description}`;
+  }).join('\n');
+}
+
+function getToolCommandRows() {
+  return TOOLS.map((tool) => [commandForTool(tool.name), tool.description]);
+}
+
+function getAliasRows() {
+  return Object.entries(COMMAND_ALIASES)
+    .filter(([alias, toolName]) => alias !== commandForTool(toolName))
+    .map(([alias, toolName]) => [alias, `-> ${commandForTool(toolName)}`]);
+}
 
 function printUsage() {
   console.log(`
@@ -34,81 +57,10 @@ Special Commands:
   mcp                 Start MCP server (stdio transport, for AI agents)
 
 Tool Commands (all dispatch to unified API):
-  describe            Describe current workspace config
-  discover            Discover components in symbiote-ui
-  find-component      Find a specific component by tag name
-  list-component-tags List all component tag names
-  list-categories     List component categories
-  list-used-components List components used in workspace
-  list-templates      List available workspace templates
-  scaffold            Create workspace from template/intent
-  scaffold-from-scratch Create blank workspace
-  classify-workspace  Classify workspace intent without mutating config
-  plan-workspace      Build construction questions and plan without mutating config
-  construct-workspace Build construction plan and store config in active session
-  propose-workspace-patch Preview a workspace patch without mutating config
-  validate-workspace-patch Validate a workspace patch before applying it
-  apply-workspace-patch Apply a validated workspace patch
-  export-workspace    Export current workspace through the construction workflow
-  validate            Validate workspace config
-  add-group           Add a project group
-  remove-group        Remove a project group
-  update-group        Update group properties
-  reorder-groups      Reorder groups
-  list-groups         List all groups
-  add-section         Add a sidebar section
-  remove-section      Remove a section
-  update-section      Update section properties
-  reorder-sections    Reorder sections in a group
-  list-sections       List sections
-  set-layout          Set BSP layout tree
-  add-panel           Add panel by splitting existing
-  remove-panel        Remove panel from layout
-  resize-panel        Resize a split
-  update-layout-behavior Update root layout behavior
-  register-panel-type Register a panel type
-  update-panel-type   Update panel type
-  unregister-panel-type Remove panel type
-  list-panel-types    List panel types
-  add-menu-action     Add menu action to panel
-  remove-menu-action  Remove menu action
-  toggle-menu-action  Toggle menu action state
-  list-menu-actions   List menu actions
-  set-behavior        Set panel/root behavior
-  get-behavior        Get panel/root behavior
-  update-behavior     Update behavior
-  mount-widget        Mount component in panel
-  unmount-widget      Unmount component
-  swap-widget         Swap component in panel
-  bridge-event        Create event bridge
-  unbridge-event      Remove event bridge
-  list-bridges        List event bridges
-  start-preview       Generate preview files
-  save-config         Save config to file
-  load-config         Load config from file
-  export-config       Export portable JSON (strips auth/server data)
-  import-config       Import workspace from JSON string
-  diff-configs        Compare current config with another
-  merge-configs       Merge partial overlay into current config
-  export-workspace-package  Export workspace as portable package (config + manifest + host contract)
-  import-workspace-package  Import workspace package from JSON string
-  validate-workspace-package Validate a workspace package
-  inspect-workspace-package Inspect workspace package for validity, readiness, and host-neutral capability requirements
-  create-workspace-package-construction-context Create construction context from a workspace package (object or JSON string)
-  create-workspace-packages-construction-context Create construction context from multiple workspace packages
-  create-workspace-construction-handoff Create construction handoff from package context and intent
-  collect-plugin-module-capabilities Collect module capability descriptors from plugin metadata
-  collect-plugin-workspace-templates Collect workspace templates from plugin metadata
-  check-guardrails    Check design guardrails (panel limits, ratios)
+${formatHelpRows(getToolCommandRows())}
 
 Common Aliases:
-  describe            -> describe-workspace
-  discover            -> discover-components
-  scaffold            -> scaffold-workspace
-  plan                -> plan-workspace
-  construct           -> construct-workspace
-  validate            -> validate-config
-  preview             -> start-preview
+${formatHelpRows(getAliasRows())}
 
 Global Options:
   --config <file>     Load config before command, auto-save after mutations
