@@ -74,7 +74,10 @@
     "LICENSE",
     "CHANGELOG.md"
   ],
-  "sideEffects": false,
+  "sideEffects": [
+    "./cli.js",
+    "./mcp/index.js"
+  ],
   "bin": {
     "symbiote-workspace": "cli.js"
   },

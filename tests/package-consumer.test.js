@@ -142,11 +142,24 @@ describe('packed package consumer', () => {
           'symbiote-workspace/sharing',
           'symbiote-workspace/validation',
           'symbiote-workspace/plugins',
+          'symbiote-workspace/handlers',
           'symbiote-workspace/server',
           'symbiote-workspace/browser',
           'symbiote-ui/rules/design-policy.js',
         ];
         for (let spec of specs) await import(spec);
+      `);
+
+      await runNode(consumerDir, `
+        import packageMeta from 'symbiote-workspace/package.json' with { type: 'json' };
+        import { describeWorkspace, setLayout } from 'symbiote-workspace/handlers';
+
+        let sideEffects = packageMeta.sideEffects;
+        if (!Array.isArray(sideEffects)) throw new Error('sideEffects metadata must be explicit');
+        if (!sideEffects.includes('./cli.js')) throw new Error('cli.js side effect metadata missing');
+        if (!sideEffects.includes('./mcp/index.js')) throw new Error('mcp/index.js side effect metadata missing');
+        if (typeof describeWorkspace !== 'function') throw new Error('handlers describeWorkspace export missing');
+        if (typeof setLayout !== 'function') throw new Error('handlers setLayout export missing');
       `);
 
       await runNode(consumerDir, `

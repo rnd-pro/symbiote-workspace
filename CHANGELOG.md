@@ -119,6 +119,11 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **Package public surface metadata** — package metadata now marks executable
+  CLI and MCP entrypoints as side-effectful while keeping library modules
+  tree-shakeable; packed-consumer coverage verifies the handlers subpath and
+  side-effect metadata, and README entrypoint docs now list all public subpath
+  exports.
 - **Workspace package validation** — `validateWorkspacePackage()` now returns
   structured `host.contract` errors when the contract is missing and compares
   equivalent host contracts independently of object key order.
