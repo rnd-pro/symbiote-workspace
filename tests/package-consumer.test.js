@@ -18,6 +18,13 @@ async function withTempConsumer(run) {
     return await run({
       artifactsDir: join(dir, 'artifacts'),
       consumerDir: join(dir, 'consumer'),
+      npmEnv: {
+        ...process.env,
+        HOME: join(dir, 'npm-home'),
+        XDG_CACHE_HOME: join(dir, 'xdg-cache'),
+        npm_config_cache: join(dir, 'npm-cache'),
+        npm_config_userconfig: join(dir, 'npmrc'),
+      },
     });
   } finally {
     await rm(dir, { recursive: true, force: true });
@@ -36,14 +43,21 @@ async function run(command, args, options = {}) {
   });
 }
 
-async function packPackage(packagePath, artifactsDir) {
+function withNpmEnv(options, npmEnv) {
+  return {
+    ...options,
+    env: { ...npmEnv, ...options.env },
+  };
+}
+
+async function packPackage(packagePath, artifactsDir, npmEnv) {
   let { stdout } = await run('npm', [
     'pack',
     packagePath,
     '--pack-destination',
     artifactsDir,
     '--json',
-  ], { cwd: ROOT });
+  ], withNpmEnv({ cwd: ROOT }, npmEnv));
   let [pack] = JSON.parse(stdout);
   return join(artifactsDir, pack.filename);
 }
@@ -116,14 +130,18 @@ function mcpSession(command, args, messages, timeout = 5000) {
 
 describe('packed package consumer', () => {
   it('installs packed workspace with a packed symbiote-ui substitute', async () => {
-    await withTempConsumer(async ({ artifactsDir, consumerDir }) => {
+    await withTempConsumer(async ({ artifactsDir, consumerDir, npmEnv }) => {
       await mkdir(artifactsDir, { recursive: true });
       await mkdir(consumerDir, { recursive: true });
 
-      let workspaceTarball = await packPackage(ROOT, artifactsDir);
-      let symbioteUiTarball = await packPackage(await packageRoot('symbiote-ui'), artifactsDir);
+      let workspaceTarball = await packPackage(ROOT, artifactsDir, npmEnv);
+      let symbioteUiTarball = await packPackage(
+        await packageRoot('symbiote-ui'),
+        artifactsDir,
+        npmEnv,
+      );
 
-      await run('npm', ['init', '-y'], { cwd: consumerDir });
+      await run('npm', ['init', '-y'], withNpmEnv({ cwd: consumerDir }, npmEnv));
       await run('npm', [
         'install',
         symbioteUiTarball,
@@ -131,7 +149,7 @@ describe('packed package consumer', () => {
         '--ignore-scripts',
         '--no-audit',
         '--no-fund',
-      ], { cwd: consumerDir });
+      ], withNpmEnv({ cwd: consumerDir }, npmEnv));
 
       await runNode(consumerDir, `
         let specs = [
@@ -202,7 +220,7 @@ describe('packed package consumer', () => {
         '--no-install',
         'symbiote-workspace',
         'list-templates',
-      ], { cwd: consumerDir });
+      ], withNpmEnv({ cwd: consumerDir }, npmEnv));
       let templates = JSON.parse(cli.stdout);
       assert.ok(templates.templates.includes('agent-workspace'));
       assert.ok(templates.templates.includes('social-automation'));

@@ -1,7 +1,22 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
 
 import { dispatch, TOOLS, isMutating, createSession } from '../runtime/index.js';
+
+let ROOT = resolve(import.meta.dirname, '..');
+let TMP_ROOT = resolve(ROOT, 'tmp');
+
+async function withTempPath(prefix, filename, run) {
+  await mkdir(TMP_ROOT, { recursive: true });
+  let dir = await mkdtemp(join(TMP_ROOT, `${prefix}-`));
+  try {
+    return await run(join(dir, filename));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
 
 describe('TOOLS registry', () => {
   it('contains all tools', () => {
@@ -281,33 +296,21 @@ describe('dispatch', () => {
   });
 
   it('save_config and load_config', async () => {
-    let { resolve } = await import('node:path');
-    let { unlink } = await import('node:fs/promises');
-    let tmpFile = resolve(import.meta.dirname, '../_test_dispatch_io.json');
-
-    try {
-      // Create and save
+    await withTempPath('dispatch-io', 'workspace.json', async (tmpFile) => {
       let session1 = createSession();
       await dispatch('scaffold_from_scratch', { name: 'IO Test' }, session1);
       let r1 = await dispatch('save_config', { filePath: tmpFile }, session1);
       assert.equal(r1.status, 'ok');
 
-      // Load into new session
       let session2 = createSession();
       let r2 = await dispatch('load_config', { filePath: tmpFile }, session2);
       assert.equal(r2.status, 'ok');
       assert.equal(session2.config.name, 'IO Test');
-    } finally {
-      await unlink(tmpFile).catch(() => {});
-    }
+    });
   });
 
   it('load_config rejects non-portable relaunch files', async () => {
-    let { resolve } = await import('node:path');
-    let { writeFile, unlink } = await import('node:fs/promises');
-    let tmpFile = resolve(import.meta.dirname, '../_test_dispatch_io_host.json');
-
-    try {
+    await withTempPath('dispatch-host-only', 'host-only.json', async (tmpFile) => {
       let session = createSession();
       await writeFile(tmpFile, JSON.stringify({
         version: '0.2.0',
@@ -321,9 +324,7 @@ describe('dispatch', () => {
       assert.equal(result.status, 'error');
       assert.equal(session.config, null);
       assert.ok(result.errors.some((error) => error.path === 'host'));
-    } finally {
-      await unlink(tmpFile).catch(() => {});
-    }
+    });
   });
 
   it('multiple bridge events get unique IDs', async () => {

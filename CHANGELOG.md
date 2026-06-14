@@ -119,6 +119,9 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **Test artifact hygiene** — package-consumer tests now isolate npm cache
+  inside ignored per-test `tmp` directories, and CLI/dispatch file I/O tests
+  no longer write scratch JSON files at the repository root.
 - **Construction handoff validation** — `plan_workspace` and
   `construct_workspace` now reject invalid diagnostic handoff envelopes before
   planning, preserving session state and returning structured dispatch errors

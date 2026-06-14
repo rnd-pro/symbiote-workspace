@@ -2,9 +2,9 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { resolve, dirname } from 'node:path';
+import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { unlink } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 
 import { dispatch, TOOLS, isMutating, createSession } from '../runtime/index.js';
 import {
@@ -17,6 +17,18 @@ import { WORKSPACE_PACKAGE_KIND, WORKSPACE_PACKAGE_SCHEMA_VERSION as PACKAGE_SCH
 let exec = promisify(execFile);
 let __dirname = dirname(fileURLToPath(import.meta.url));
 let CLI = resolve(__dirname, '../cli.js');
+let ROOT = resolve(__dirname, '..');
+let TMP_ROOT = resolve(ROOT, 'tmp');
+
+async function withTempDir(prefix, run) {
+  await mkdir(TMP_ROOT, { recursive: true });
+  let dir = await mkdtemp(join(TMP_ROOT, `${prefix}-`));
+  try {
+    return await run(dir);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
 
 let CONSTRUCTION_TOOLS = [
   'classify_workspace',
@@ -748,9 +760,8 @@ describe('construction workflow CLI commands', () => {
   });
 
   it('construct-workspace writes a planned config through the shared session file flow', async () => {
-    let tmpFile = resolve(__dirname, '../_test_construct_cli.json');
-
-    try {
+    await withTempDir('construct-cli', async (dir) => {
+      let tmpFile = join(dir, 'workspace.json');
       let { stdout } = await execCli(
         'construct-workspace',
         '--config',
@@ -773,15 +784,12 @@ describe('construction workflow CLI commands', () => {
       assert.equal(exportedConfig.name, 'CLI Constructed');
       assert.equal(exportedConfig.intent.template, 'social-automation');
       assert.deepEqual(exportedConfig.construction.plan.capabilities.missing, []);
-    } finally {
-      await unlink(tmpFile).catch(() => {});
-    }
+    });
   });
 
   it('apply-workspace-patch uses the same session file flow as other mutating tools', async () => {
-    let tmpFile = resolve(__dirname, '../_test_construction_cli.json');
-
-    try {
+    await withTempDir('construction-cli', async (dir) => {
+      let tmpFile = join(dir, 'workspace.json');
       await execCli('scaffold-from-scratch', '--config', tmpFile, '--name', 'CLI Patch Base');
 
       let patchResult = await execCli(
@@ -798,9 +806,7 @@ describe('construction workflow CLI commands', () => {
       let parsedExport = JSON.parse(exportResult.stdout);
       let exportedConfig = JSON.parse(parsedExport.json);
       assert.equal(exportedConfig.name, 'CLI Patched');
-    } finally {
-      await unlink(tmpFile).catch(() => {});
-    }
+    });
   });
 });
 
@@ -990,9 +996,8 @@ describe('workspace package CLI commands', () => {
   });
 
   it('export-workspace-package produces portable JSON with manifest', async () => {
-    let tmpFile = resolve(__dirname, '../_test_pkg_export.json');
-
-    try {
+    await withTempDir('pkg-export-cli', async (dir) => {
+      let tmpFile = join(dir, 'workspace.json');
       await execCli('scaffold', '--config', tmpFile, '--name', 'CLI Pkg Export', 'chat workspace');
 
       let { stdout } = await execCli(
@@ -1010,16 +1015,13 @@ describe('workspace package CLI commands', () => {
       assert.equal(pkg.manifest.id, 'com.example.cli-export');
       assert.equal(pkg.manifest.name, 'CLI Pkg Export');
       assert.ok(pkg.host.contract);
-    } finally {
-      await unlink(tmpFile).catch(() => {});
-    }
+    });
   });
 
   it('import-workspace-package restores session from a package', async () => {
-    let exportFile = resolve(__dirname, '../_test_pkg_export_source.json');
-    let importFile = resolve(__dirname, '../_test_pkg_import_target.json');
-
-    try {
+    await withTempDir('pkg-import-cli', async (dir) => {
+      let exportFile = join(dir, 'export-source.json');
+      let importFile = join(dir, 'import-target.json');
       await execCli('scaffold', '--config', exportFile, '--name', 'CLI Import Source', 'chat workspace');
       let exportOut = await execCli(
         'export-workspace-package',
@@ -1041,17 +1043,13 @@ describe('workspace package CLI commands', () => {
       let importResult = JSON.parse(stdout);
       assert.equal(importResult.status, 'ok');
       assert.equal(importResult.config.name, 'CLI Import Source');
-    } finally {
-      await unlink(exportFile).catch(() => {});
-      await unlink(importFile).catch(() => {});
-    }
+    });
   });
 
   it('round-trip export-workspace-package -> import-workspace-package preserves config', async () => {
-    let fileA = resolve(__dirname, '../_test_pkg_roundtrip_a.json');
-    let fileB = resolve(__dirname, '../_test_pkg_roundtrip_b.json');
-
-    try {
+    await withTempDir('pkg-roundtrip-cli', async (dir) => {
+      let fileA = join(dir, 'roundtrip-a.json');
+      let fileB = join(dir, 'roundtrip-b.json');
       await execCli('scaffold', '--config', fileA, '--name', 'Roundtrip', 'chat workspace');
 
       let exportOut = await execCli(
@@ -1084,10 +1082,7 @@ describe('workspace package CLI commands', () => {
       assert.equal(roundtripPkg.workspace.config.name, 'Roundtrip');
       assert.deepEqual(roundtripPkg.workspace.config, originalPkg.workspace.config);
       assert.equal(roundtripPkg.host.contract.schemaVersion, '0.1.0');
-    } finally {
-      await unlink(fileA).catch(() => {});
-      await unlink(fileB).catch(() => {});
-    }
+    });
   });
 
   it('inspect-workspace-package is listed in help', async () => {
@@ -1097,9 +1092,8 @@ describe('workspace package CLI commands', () => {
   });
 
   it('inspect-workspace-package accepts --package, --json, and --available args', async () => {
-    let tmpFile = resolve(__dirname, '../_test_pkg_inspect_cli.json');
-
-    try {
+    await withTempDir('pkg-inspect-cli', async (dir) => {
+      let tmpFile = join(dir, 'workspace.json');
       await execCli('scaffold', '--config', tmpFile, '--name', 'CLI Inspect', 'chat workspace');
       let exportOut = await execCli(
         'export-workspace-package',
@@ -1155,15 +1149,12 @@ describe('workspace package CLI commands', () => {
       assert.ok(availableResult.missing.components.includes('cli-missing-component'));
       assert.ok(availableResult.missing.plugins.includes('cli-missing-plugin'));
       assert.ok(availableResult.warnings.length > 0);
-    } finally {
-      await unlink(tmpFile).catch(() => {});
-    }
+    });
   });
 
   it('create-workspace-package-construction-context accepts --package, --json, and --available args', async () => {
-    let tmpFile = resolve(__dirname, '../_test_pkg_construction_context_cli.json');
-
-    try {
+    await withTempDir('pkg-construction-context-cli', async (dir) => {
+      let tmpFile = join(dir, 'workspace.json');
       await execCli('scaffold', '--config', tmpFile, '--name', 'CLI Construction Context', 'chat workspace');
       let exportOut = await execCli(
         'export-workspace-package',
@@ -1217,16 +1208,13 @@ describe('workspace package CLI commands', () => {
       assert.ok(jsonResult.missing.components.includes('cli-construction-component'));
       assert.ok(jsonResult.missing.plugins.includes('cli-construction-plugin'));
       assert.ok(jsonResult.warnings.length > 0);
-    } finally {
-      await unlink(tmpFile).catch(() => {});
-    }
+    });
   });
 
   it('create-workspace-packages-construction-context accepts --packages and --available args', async () => {
-    let alphaFile = resolve(__dirname, '../_test_pkg_collection_alpha_cli.json');
-    let betaFile = resolve(__dirname, '../_test_pkg_collection_beta_cli.json');
-
-    try {
+    await withTempDir('pkg-collection-cli', async (dir) => {
+      let alphaFile = join(dir, 'collection-alpha.json');
+      let betaFile = join(dir, 'collection-beta.json');
       await execCli('scaffold', '--config', alphaFile, '--name', 'CLI Collection Alpha', 'chat workspace');
       let alphaExport = await execCli(
         'export-workspace-package',
@@ -1289,10 +1277,7 @@ describe('workspace package CLI commands', () => {
       assert.equal(result.packageResults.length, 2);
       assert.ok(result.missing.components.includes('cli-collection-alpha-component'));
       assert.ok(result.missing.plugins.includes('cli-collection-beta-plugin'));
-    } finally {
-      await unlink(alphaFile).catch(() => {});
-      await unlink(betaFile).catch(() => {});
-    }
+    });
   });
 
   it('create-workspace-construction-handoff listed in help with options', async () => {
@@ -1303,9 +1288,8 @@ describe('workspace package CLI commands', () => {
   });
 
   it('create-workspace-construction-handoff works with --context and --intent args', async () => {
-    let tmpFile = resolve(__dirname, '../_test_handoff_cli.json');
-
-    try {
+    await withTempDir('handoff-cli', async (dir) => {
+      let tmpFile = join(dir, 'workspace.json');
       await execCli('scaffold', '--config', tmpFile, '--name', 'CLI Handoff', 'chat workspace');
       let exportOut = await execCli(
         'export-workspace-package',
@@ -1351,9 +1335,7 @@ describe('workspace package CLI commands', () => {
       assert.ok(handoffResult.options);
       assert.ok(handoffResult.options.workspaceTemplates.length > 0);
       assert.equal(handoffResult.errors.length, 0);
-    } finally {
-      await unlink(tmpFile).catch(() => {});
-    }
+    });
   });
 });
 
