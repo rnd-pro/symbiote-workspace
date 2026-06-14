@@ -384,6 +384,7 @@ describe('packed package consumer', () => {
           exportWorkspacePackage,
           importWorkspacePackage,
           validateWorkspacePackage,
+          createWorkspaceConstructionHandoff,
           createWorkspacePackageConstructionContext,
           createWorkspacePackagesConstructionContext,
           inspectWorkspacePackage,
@@ -394,6 +395,9 @@ describe('packed package consumer', () => {
         if (typeof exportWorkspacePackage !== 'function') throw new Error('exportWorkspacePackage not exported');
         if (typeof importWorkspacePackage !== 'function') throw new Error('importWorkspacePackage not exported');
         if (typeof validateWorkspacePackage !== 'function') throw new Error('validateWorkspacePackage not exported');
+        if (typeof createWorkspaceConstructionHandoff !== 'function') {
+          throw new Error('createWorkspaceConstructionHandoff not exported from sharing');
+        }
         if (typeof createWorkspacePackageConstructionContext !== 'function') {
           throw new Error('createWorkspacePackageConstructionContext not exported from sharing');
         }
@@ -408,6 +412,9 @@ describe('packed package consumer', () => {
         if (typeof root.exportWorkspacePackage !== 'function') throw new Error('root exportWorkspacePackage missing');
         if (typeof root.importWorkspacePackage !== 'function') throw new Error('root importWorkspacePackage missing');
         if (typeof root.validateWorkspacePackage !== 'function') throw new Error('root validateWorkspacePackage missing');
+        if (typeof root.createWorkspaceConstructionHandoff !== 'function') {
+          throw new Error('root createWorkspaceConstructionHandoff missing');
+        }
         if (typeof root.createWorkspacePackageConstructionContext !== 'function') {
           throw new Error('root createWorkspacePackageConstructionContext missing');
         }
@@ -417,6 +424,9 @@ describe('packed package consumer', () => {
         if (typeof root.inspectWorkspacePackage !== 'function') throw new Error('root inspectWorkspacePackage missing');
 
         let browser = await import('symbiote-workspace/browser');
+        if (typeof browser.createWorkspaceConstructionHandoff !== 'function') {
+          throw new Error('browser createWorkspaceConstructionHandoff missing');
+        }
         if (typeof browser.createWorkspacePackageConstructionContext !== 'function') {
           throw new Error('browser createWorkspacePackageConstructionContext missing');
         }
@@ -518,6 +528,7 @@ describe('packed package consumer', () => {
       // Workspace package: inspect with default valid/ready and available inventory
       await runNode(consumerDir, `
         import {
+          createWorkspaceConstructionHandoff,
           createWorkspacePackageConstructionContext,
           exportWorkspacePackage,
           inspectWorkspacePackage,
@@ -528,6 +539,11 @@ describe('packed package consumer', () => {
           version: '0.2.0',
           name: 'Inspect Test',
           register: 'tool',
+          intent: {
+            brief: 'Review queue workspace',
+            targetRegister: 'tool',
+            requiredCapabilities: ['review.queue'],
+          },
           theme: { params: { mode: 'dark' } },
           panelTypes: {
             main: { title: 'Main', icon: 'dashboard', component: 'sn-panel' },
@@ -623,14 +639,11 @@ describe('packed package consumer', () => {
           throw new Error('module capabilities missing from package context');
         }
 
-        let plan = planWorkspaceConstruction({
+        let handoff = createWorkspaceConstructionHandoff(context, {
           brief: 'Review queue workspace',
           template: 'review-package',
-          requiredCapabilities: ['review.queue'],
-        }, {
-          workspaceTemplates: context.workspaceTemplates,
-          moduleCapabilities: context.moduleCapabilities,
         });
+        let plan = planWorkspaceConstruction(handoff.intent, handoff.options);
         if (plan.plan.capabilities.missing.length !== 0) {
           throw new Error('package-derived constructor context did not cover review.queue');
         }

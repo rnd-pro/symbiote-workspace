@@ -21,6 +21,7 @@ export {
 } from './workspace-package.js';
 
 export {
+  createWorkspaceConstructionHandoff,
   createWorkspacePackageConstructionContext,
   createWorkspacePackagesConstructionContext,
 } from './package-construction-context.js';

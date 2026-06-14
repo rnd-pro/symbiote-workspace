@@ -60,6 +60,17 @@ function sendResponse(response) {
   process.stdout.write(message);
 }
 
+function publicToolDefinition(tool) {
+  let { mutates, writesFiles, annotations, ...rest } = tool;
+  return {
+    ...rest,
+    annotations: {
+      ...annotations,
+      readOnlyHint: mutates !== true && writesFiles !== true,
+    },
+  };
+}
+
 async function handleMessage(body) {
   let request;
   try {
@@ -91,8 +102,7 @@ async function handleMessage(body) {
   }
 
   if (method === 'tools/list') {
-    // Strip internal 'mutates' field from tool definitions
-    let tools = TOOLS.map(({ mutates, ...rest }) => rest);
+    let tools = TOOLS.map(publicToolDefinition);
     sendResponse({
       jsonrpc: '2.0',
       id,

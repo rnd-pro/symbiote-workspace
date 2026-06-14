@@ -45,6 +45,7 @@ export {
   diffConfigs,
   mergeConfigs,
   createHostIntegrationContract,
+  createWorkspaceConstructionHandoff,
   createWorkspacePackageConstructionContext,
   createWorkspacePackagesConstructionContext,
   inspectWorkspacePackage,

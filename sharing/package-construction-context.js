@@ -33,6 +33,29 @@ function sortedStrings(values = []) {
     .sort((a, b) => a.localeCompare(b));
 }
 
+function requiredIntentCapabilities(intent) {
+  if (intent.requiredCapabilities === undefined) return [];
+  if (!Array.isArray(intent.requiredCapabilities)) {
+    throw new Error('Workspace construction handoff intent.requiredCapabilities must be an array of strings.');
+  }
+
+  return intent.requiredCapabilities.map((value) => {
+    if (typeof value !== 'string' || !value.trim()) {
+      throw new Error('Workspace construction handoff intent.requiredCapabilities must contain non-empty strings.');
+    }
+    return value.trim();
+  });
+}
+
+function normalizeHandoffIntent(intent) {
+  if (intent === undefined || intent === null) return {};
+  if (typeof intent === 'string') return { brief: intent };
+  if (!isObject(intent)) {
+    throw new Error('Workspace construction handoff intent must be a string or object.');
+  }
+  return deepClone(intent);
+}
+
 function appendStrings(target, values) {
   if (!Array.isArray(values)) return;
   for (let value of values) target.push(value);
@@ -284,6 +307,42 @@ function finalizeCollectionResult(result, templates, modules, requiredCapabiliti
   return result;
 }
 
+function contextDiagnostics(context) {
+  if (!isObject(context)) {
+    return [{
+      path: 'context',
+      message: 'Workspace construction handoff requires a package construction context object.',
+      severity: 'error',
+    }];
+  }
+
+  if (Array.isArray(context.errors) && context.errors.length > 0) {
+    return deepClone(context.errors);
+  }
+
+  if (context.valid !== true) {
+    return [{
+      path: 'context.valid',
+      message: 'Workspace construction handoff requires a valid package construction context.',
+      severity: 'error',
+    }];
+  }
+
+  return [];
+}
+
+function optionalClone(context, key, fallback = null) {
+  if (!isObject(context) || context[key] === undefined || context[key] === null) return fallback;
+  return deepClone(context[key]);
+}
+
+function handoffSources(context) {
+  if (!isObject(context)) return [];
+  if (Array.isArray(context.sources)) return deepClone(context.sources);
+  if (context.source) return [deepClone(context.source)];
+  return [];
+}
+
 /**
  * @param {Object|string} input - Workspace package object or JSON string
  * @param {Object} [options]
@@ -361,6 +420,59 @@ export function createWorkspacePackageConstructionContext(input, options = {}) {
   result.requiredCapabilities = collectRequiredCapabilities(config);
 
   return result;
+}
+
+/**
+ * @param {Object} context - Result from createWorkspacePackageConstructionContext() or createWorkspacePackagesConstructionContext()
+ * @param {string|Object} [intent] - Construction intent to enrich with package-required capabilities
+ * @returns {{
+ *   valid: boolean,
+ *   ready: boolean,
+ *   intent: Object,
+ *   options: { workspaceTemplates: Array, moduleCapabilities: Array },
+ *   requirements: Object|null,
+ *   missing: Object|null,
+ *   source: Object|null,
+ *   sources: Array,
+ *   summary: Object|null,
+ *   compatibility: Object|null,
+ *   warnings: Array,
+ *   errors: Array,
+ * }}
+ */
+export function createWorkspaceConstructionHandoff(context, intent = {}) {
+  let baseIntent = normalizeHandoffIntent(intent);
+  let valid = isObject(context) && context.valid === true;
+  let contextRequired = valid ? context.requiredCapabilities : [];
+  let requiredCapabilities = sortedStrings([
+    ...requiredIntentCapabilities(baseIntent),
+    ...(Array.isArray(contextRequired) ? contextRequired : []),
+  ]);
+
+  return {
+    valid,
+    ready: valid && context.ready === true,
+    intent: {
+      ...baseIntent,
+      requiredCapabilities,
+    },
+    options: {
+      workspaceTemplates: valid && Array.isArray(context.workspaceTemplates)
+        ? deepClone(context.workspaceTemplates)
+        : [],
+      moduleCapabilities: valid && Array.isArray(context.moduleCapabilities)
+        ? deepClone(context.moduleCapabilities)
+        : [],
+    },
+    requirements: optionalClone(context, 'requirements'),
+    missing: optionalClone(context, 'missing'),
+    source: optionalClone(context, 'source'),
+    sources: handoffSources(context),
+    summary: optionalClone(context, 'summary'),
+    compatibility: optionalClone(context, 'compatibility'),
+    warnings: isObject(context) && Array.isArray(context.warnings) ? deepClone(context.warnings) : [],
+    errors: contextDiagnostics(context),
+  };
 }
 
 /**

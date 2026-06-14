@@ -170,7 +170,16 @@ describe('MCP Protocol', () => {
     // Verify no internal fields leaked
     for (let tool of toolList.result.tools) {
       assert.equal(tool.mutates, undefined, `Tool ${tool.name} leaked 'mutates' field`);
+      assert.equal(tool.writesFiles, undefined, `Tool ${tool.name} leaked 'writesFiles' field`);
+      assert.equal(typeof tool.annotations?.readOnlyHint, 'boolean');
     }
+
+    let saveConfig = toolList.result.tools.find((tool) => tool.name === 'save_config');
+    let startPreview = toolList.result.tools.find((tool) => tool.name === 'start_preview');
+    let listGroups = toolList.result.tools.find((tool) => tool.name === 'list_groups');
+    assert.equal(saveConfig.annotations.readOnlyHint, false);
+    assert.equal(startPreview.annotations.readOnlyHint, false);
+    assert.equal(listGroups.annotations.readOnlyHint, true);
   });
 
   it('dispatches scaffold_from_scratch via tools/call', async () => {

@@ -372,7 +372,10 @@ export function validateWorkspacePackage(workspacePackage) {
       ...error,
       path: error.path ? `host.contract.${error.path}` : 'host.contract',
     })));
-  } else if (JSON.stringify(workspacePackage.host.contract) !== JSON.stringify(contract.contract)) {
+  } else if (
+    isObject(workspacePackage.host?.contract)
+    && !semanticHostContractMatch(workspacePackage.host.contract, contract.contract)
+  ) {
     pushError(errors, 'host.contract', 'Workspace package host.contract does not match workspace.config.');
   }
 

@@ -248,7 +248,24 @@ describe('planWorkspaceConstruction', () => {
   it('rejects malformed module capability option entries', () => {
     assert.throws(() => planWorkspaceConstruction('Build a dashboard', {
       moduleCapabilities: [{ capabilities: ['admin.metric'] }],
-    }), /require a tagName/);
+    }), /requires a tagName/);
+
+    assert.throws(() => planWorkspaceConstruction('Build a dashboard', {
+      moduleCapabilities: [{
+        tagName: 'Widget',
+        capabilities: ['Display Label'],
+        actions: [{ id: 'refresh', label: '' }],
+      }],
+    }), /moduleCapabilities\[0\]\.tagName/);
+  });
+
+  it('rejects duplicate direct module capability descriptors', () => {
+    assert.throws(() => planWorkspaceConstruction('Build a dashboard', {
+      moduleCapabilities: [
+        { tagName: 'acme-review-panel', capabilities: ['review.queue'] },
+        { tagName: 'acme-review-panel', capabilities: ['review.detail'] },
+      ],
+    }), /duplicates moduleCapabilities\[0\]\.tagName/);
   });
 
   it('rejects module placement metadata that cannot produce executable panels', () => {

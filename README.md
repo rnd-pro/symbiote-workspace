@@ -48,7 +48,7 @@ flow, and MCP stdio behavior. It does not publish or require registry writes.
 ```
 ┌─────────────────────────────────────────────┐
 │                  Dispatch                   │
-│            62 tools, 1 registry             │
+│            63 tools, 1 registry             │
 │             runtime/dispatch.js             │
 ├──────────────────┬──────────────────────────┤
 │   CLI (argv)     │      MCP (JSON-RPC)      │
@@ -161,7 +161,7 @@ await dispatch('save_config', { filePath: './workspace.json' }, session);
 
 ## CLI
 
-All 62 tools available as CLI commands:
+All 63 tools available as CLI commands:
 
 ```bash
 # Scaffold
@@ -289,7 +289,7 @@ Start as MCP server for AI agent integration:
 npx symbiote-workspace mcp
 ```
 
-Exposes 62 tools via JSON-RPC over stdio. Agents can classify, plan,
+Exposes 63 tools via JSON-RPC over stdio. Agents can classify, plan,
 propose, validate, apply, export, mutate, and query workspaces
 programmatically.
 
@@ -670,6 +670,7 @@ for distribution and discovery.
 import {
   exportWorkspacePackage,
   importWorkspacePackage,
+  createWorkspaceConstructionHandoff,
   createWorkspacePackageConstructionContext,
   createWorkspacePackagesConstructionContext,
   inspectWorkspacePackage,
@@ -709,8 +710,8 @@ workspace package into constructor-ready data without installing or activating
 anything. It reuses package inspection and returns external `workspaceTemplates`,
 package `moduleCapabilities`, explicit `requiredCapabilities`, package
 requirements, readiness gaps, and source metadata. Pass the returned
-`workspaceTemplates` and `moduleCapabilities` to `planWorkspaceConstruction()`
-or the construction dispatch tools.
+`workspaceTemplates`, `moduleCapabilities`, and `requiredCapabilities` to
+`planWorkspaceConstruction()` or the construction dispatch tools.
 
 `createWorkspacePackagesConstructionContext({ packages, available })` aggregates
 multiple package entries (`{ package, templateName }` or `{ json, templateName }`)
@@ -719,6 +720,25 @@ into one constructor-ready context. Duplicate workspace template names or module
 warnings and keep the context structurally valid but not ready. The same helper
 is exposed through dispatch/MCP as `create_workspace_packages_construction_context`
 and through the CLI as `create-workspace-packages-construction-context`.
+
+`createWorkspaceConstructionHandoff(context, intent)` converts a single-package
+or package-collection construction context into the exact `{ intent, options }`
+shape consumed by `planWorkspaceConstruction(handoff.intent, handoff.options)`.
+It merges package `requiredCapabilities` into the supplied construction intent
+and passes only valid package templates and module descriptors through.
+
+```javascript
+let context = createWorkspacePackageConstructionContext(packageJson, {
+  templateName: 'review-package',
+});
+
+let handoff = createWorkspaceConstructionHandoff(context, {
+  brief: 'Build a review queue workspace',
+  template: 'review-package',
+});
+
+let { config, plan } = planWorkspaceConstruction(handoff.intent, handoff.options);
+```
 
 The manifest rejects host, identity, and marketplace state:
 

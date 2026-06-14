@@ -35,12 +35,14 @@ describe('isMutating', () => {
     assert.equal(isMutating('add_group'), true);
     assert.equal(isMutating('scaffold_workspace'), true);
     assert.equal(isMutating('mount_widget'), true);
+    assert.equal(isMutating('save_config'), true);
   });
 
   it('identifies read-only tools', () => {
     assert.equal(isMutating('list_groups'), false);
     assert.equal(isMutating('describe_workspace'), false);
     assert.equal(isMutating('list_templates'), false);
+    assert.equal(isMutating('start_preview'), false);
   });
 });
 

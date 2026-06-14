@@ -2,6 +2,7 @@ import {
   WORKSPACE_SCHEMA_VERSION,
   WORKSPACE_REGISTER_VALUES,
 } from '../schema/workspace-schema.js';
+import { validateModuleCapabilityDescriptor } from '../schema/module-capability.js';
 import { validateWorkspaceConfig } from '../schema/validate.js';
 
 /**
@@ -881,17 +882,33 @@ function templateConfig(templateName, registry) {
   return registry.get(templateName).config;
 }
 
-function normalizeModuleCapabilityDescriptor(descriptor) {
-  if (!isObject(descriptor)) {
-    throw new Error('moduleCapabilities entries must be objects.');
+function validateModuleCapabilityOption(descriptor, path) {
+  let errors = [];
+  validateModuleCapabilityDescriptor(descriptor, path, errors);
+  if (errors.length > 0) {
+    throw new Error(errors.map((error) => `${error.path}: ${error.message}`).join('; '));
   }
-  if (typeof descriptor.tagName !== 'string' || !descriptor.tagName.trim()) {
-    throw new Error('moduleCapabilities entries require a tagName.');
-  }
+}
+
+function normalizeModuleCapabilityDescriptor(descriptor, path) {
+  validateModuleCapabilityOption(descriptor, path);
   return deepClone({
     ...descriptor,
     tagName: descriptor.tagName.trim(),
   });
+}
+
+function assertUniqueModuleCapabilities(descriptors) {
+  let seen = new Map();
+  for (let i = 0; i < descriptors.length; i++) {
+    let tagName = descriptors[i].tagName;
+    if (seen.has(tagName)) {
+      throw new Error(
+        `moduleCapabilities[${i}].tagName duplicates moduleCapabilities[${seen.get(tagName)}].tagName.`,
+      );
+    }
+    seen.set(tagName, i);
+  }
 }
 
 function placementString(placement, field, fallback = null) {
@@ -958,10 +975,15 @@ function withModuleCapabilities(config, moduleCapabilities) {
 
   next.components ||= {};
   let existing = Array.isArray(next.components.modules) ? next.components.modules : [];
-  let provided = moduleCapabilities.map(normalizeModuleCapabilityDescriptor);
+  let provided = moduleCapabilities.map((descriptor, index) => (
+    normalizeModuleCapabilityDescriptor(descriptor, `moduleCapabilities[${index}]`)
+  ));
+  assertUniqueModuleCapabilities(provided);
   let byTagName = new Map();
 
-  for (let descriptor of existing.map(normalizeModuleCapabilityDescriptor)) {
+  for (let descriptor of existing.map((item, index) => (
+    normalizeModuleCapabilityDescriptor(item, `components.modules[${index}]`)
+  ))) {
     byTagName.set(descriptor.tagName, descriptor);
   }
   for (let descriptor of provided) {

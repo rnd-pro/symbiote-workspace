@@ -32,6 +32,10 @@ All notable changes to this project will be documented in this file.
   with duplicate template/module conflict detection. Exposed as
   `create_workspace_packages_construction_context` in dispatch/MCP and
   `create-workspace-packages-construction-context` in the CLI.
+- **Package construction handoff helper** —
+  `createWorkspaceConstructionHandoff(context, intent)` converts package
+  construction contexts into the `{ intent, options }` pair consumed by
+  `planWorkspaceConstruction()`, including required capability handoff.
 - **Construction protocol** — `intent`, `construction.questions`,
   `construction.plan`, `patches`, `validation.reports`, `runtime`, `exports`,
   and `design` are now accepted workspace config fields.
@@ -88,7 +92,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
-- **Unified dispatch surface** — CLI and MCP now expose 62 tools from the same
+- **Unified dispatch surface** — CLI and MCP now expose 63 tools from the same
   `runtime/dispatch.js` registry.
 - **Browser entrypoint boundary** — `symbiote-workspace/browser` now exports
   browser-safe APIs without statically pulling Node-only runtime dispatch code.
@@ -103,6 +107,14 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **Workspace package validation** — `validateWorkspacePackage()` now returns
+  structured `host.contract` errors when the contract is missing and compares
+  equivalent host contracts independently of object key order.
+- **MCP tool metadata** — `tools/list` now exposes `annotations.readOnlyHint`
+  while keeping internal `mutates` and file-writing flags private.
+- **Construction module validation** — direct `moduleCapabilities` constructor
+  inputs now use the shared module descriptor validator and reject duplicate
+  direct descriptors before materialization.
 - **MCP test timing** — MCP protocol tests now wait for expected JSON-RPC
   responses instead of relying on short fixed timers.
 

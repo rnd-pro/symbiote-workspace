@@ -16,6 +16,7 @@ import { resolve } from 'node:path';
  * @property {string} description
  * @property {Object} inputSchema
  * @property {boolean} [mutates] - Whether this tool modifies config
+ * @property {boolean} [writesFiles] - Whether this tool writes outside session state
  */
 
 const WORKSPACE_REGISTER_ENUM = Object.freeze([
@@ -598,6 +599,7 @@ export const TOOLS = [
         serveRoot: { type: 'string' },
       },
     },
+    writesFiles: true,
   },
 
   // ── Validate ──
@@ -619,6 +621,8 @@ export const TOOLS = [
       properties: { filePath: { type: 'string' } },
       required: ['filePath'],
     },
+    mutates: true,
+    writesFiles: true,
   },
   {
     name: 'load_config',

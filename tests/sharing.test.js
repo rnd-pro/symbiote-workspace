@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   BROWSER_REQUIRED_IMPORTS,
   createBrowserRuntimeContract,
+  createWorkspaceConstructionHandoff,
   createWorkspacePackageConstructionContext,
   createWorkspacePackagesConstructionContext,
   exportWorkspacePackage,
@@ -87,6 +88,18 @@ let PACKAGE_CONFIG = {
     }],
   },
 };
+
+function reverseObjectKeys(value) {
+  if (Array.isArray(value)) return value.map((item) => reverseObjectKeys(item));
+  if (value && typeof value === 'object') {
+    let reversed = {};
+    for (let [key, nested] of Object.entries(value).reverse()) {
+      reversed[key] = reverseObjectKeys(nested);
+    }
+    return reversed;
+  }
+  return value;
+}
 
 describe('createBrowserRuntimeContract', () => {
   it('returns host-neutral browser import-map metadata', () => {
@@ -294,6 +307,38 @@ describe('workspace package portability', () => {
 
     assert.equal(invalid.valid, false);
     assert.ok(invalid.errors.some((error) => error.path === 'manifest.id'));
+  });
+
+  it('returns structured errors when package host contract is missing', () => {
+    let exported = exportWorkspacePackage(PACKAGE_CONFIG, {
+      id: 'missing-host-package',
+      version: '1.2.3',
+    });
+    let pkg = { ...exported.package };
+    delete pkg.host;
+
+    let validation = validateWorkspacePackage(pkg);
+
+    assert.equal(validation.valid, false);
+    assert.ok(validation.errors.some((error) => error.path === 'host.contract'));
+  });
+
+  it('validates semantically equivalent host contracts with different key order', () => {
+    let exported = exportWorkspacePackage(PACKAGE_CONFIG, {
+      id: 'key-order-package',
+      version: '1.2.3',
+    });
+    let pkg = {
+      ...exported.package,
+      host: {
+        contract: reverseObjectKeys(exported.package.host.contract),
+      },
+    };
+
+    let validation = validateWorkspacePackage(pkg);
+
+    assert.equal(validation.valid, true);
+    assert.deepEqual(validation.errors, []);
   });
 });
 
@@ -1067,6 +1112,90 @@ describe('createWorkspacePackageConstructionContext', () => {
   });
 });
 
+describe('createWorkspaceConstructionHandoff', () => {
+  it('merges package-required capabilities into constructor intent', () => {
+    let configWithCaps = {
+      ...PACKAGE_CONFIG,
+      intent: {
+        brief: 'Build a command workspace.',
+        targetRegister: 'tool',
+        requiredCapabilities: ['room.command'],
+      },
+    };
+    let exported = exportWorkspacePackage(configWithCaps, {
+      id: 'handoff-command-package',
+      version: '1.0.0',
+    });
+    let ctx = createWorkspacePackageConstructionContext(exported.package, {
+      templateName: 'handoff-command-room',
+    });
+
+    let handoff = createWorkspaceConstructionHandoff(ctx, {
+      brief: 'Build a command workspace from a package.',
+      targetRegister: 'tool',
+      template: 'handoff-command-room',
+      requiredCapabilities: ['agent.runtime'],
+    });
+
+    assert.equal(handoff.valid, true);
+    assert.equal(handoff.ready, true);
+    assert.deepEqual(handoff.intent.requiredCapabilities, ['agent.runtime', 'room.command']);
+    assert.deepEqual(handoff.options.workspaceTemplates.map((template) => template.name), [
+      'handoff-command-room',
+    ]);
+    assert.deepEqual(handoff.options.moduleCapabilities.map((module) => module.tagName), [
+      'ai-command-composer',
+    ]);
+    assert.equal(handoff.sources.length, 1);
+    assert.equal(handoff.sources[0].packageId, 'handoff-command-package');
+
+    let plan = planWorkspaceConstruction(handoff.intent, handoff.options);
+    assert.deepEqual(plan.plan.capabilities.required, ['agent.runtime', 'room.command']);
+    assert.ok(plan.plan.capabilities.matched.includes('room.command'));
+    assert.ok(plan.plan.capabilities.missing.includes('agent.runtime'));
+
+    handoff.options.workspaceTemplates[0].config.name = 'Mutated';
+    assert.equal(ctx.workspaceTemplates[0].config.name, 'Test Workspace');
+  });
+
+  it('does not pass constructor arrays from invalid package contexts', () => {
+    let handoff = createWorkspaceConstructionHandoff({
+      valid: false,
+      ready: false,
+      workspaceTemplates: [{ name: 'bad-template' }],
+      moduleCapabilities: [{ tagName: 'bad-widget' }],
+      requiredCapabilities: ['bad.capability'],
+      errors: [{ path: 'kind', message: 'Invalid package kind.', severity: 'error' }],
+      warnings: [],
+    }, {
+      brief: 'Build a fallback workspace.',
+      requiredCapabilities: ['host.capability'],
+    });
+
+    assert.equal(handoff.valid, false);
+    assert.equal(handoff.ready, false);
+    assert.deepEqual(handoff.intent.requiredCapabilities, ['host.capability']);
+    assert.deepEqual(handoff.options.workspaceTemplates, []);
+    assert.deepEqual(handoff.options.moduleCapabilities, []);
+    assert.deepEqual(handoff.errors, [
+      { path: 'kind', message: 'Invalid package kind.', severity: 'error' },
+    ]);
+  });
+
+  it('rejects invalid handoff intent capability values', () => {
+    let exported = exportWorkspacePackage(PACKAGE_CONFIG, {
+      id: 'handoff-invalid-intent-package',
+      version: '1.0.0',
+    });
+    let ctx = createWorkspacePackageConstructionContext(exported.package);
+
+    assert.throws(
+      () => createWorkspaceConstructionHandoff(ctx, { requiredCapabilities: ['valid', ''] }),
+      /requiredCapabilities must contain non-empty strings/,
+    );
+  });
+});
+
 describe('createWorkspacePackagesConstructionContext', () => {
   function createPackagedWorkspace({
     id,
@@ -1334,6 +1463,50 @@ describe('createWorkspacePackagesConstructionContext', () => {
     });
 
     assert.ok(plan.config);
+    assert.deepEqual(plan.plan.capabilities.missing, []);
+  });
+
+  it('creates constructor handoff from aggregate package context', () => {
+    let alpha = createPackagedWorkspace({
+      id: 'handoff-alpha-package',
+      name: 'Handoff Alpha Workspace',
+      tagName: 'handoff-alpha-widget',
+      capabilities: ['handoff.alpha'],
+      requiredCapabilities: ['handoff.alpha'],
+    });
+    let beta = createPackagedWorkspace({
+      id: 'handoff-beta-package',
+      name: 'Handoff Beta Workspace',
+      tagName: 'handoff-beta-widget',
+      capabilities: ['handoff.beta'],
+      requiredCapabilities: ['handoff.beta'],
+    });
+
+    let ctx = createWorkspacePackagesConstructionContext({
+      packages: [
+        { package: beta.package, templateName: 'handoff-beta-room' },
+        { package: alpha.package, templateName: 'handoff-alpha-room' },
+      ],
+    });
+    let handoff = createWorkspaceConstructionHandoff(ctx, {
+      brief: 'Construct an alpha package workspace.',
+      template: 'handoff-alpha-room',
+    });
+
+    assert.equal(handoff.valid, true);
+    assert.equal(handoff.ready, true);
+    assert.deepEqual(handoff.intent.requiredCapabilities, ['handoff.alpha', 'handoff.beta']);
+    assert.deepEqual(handoff.options.workspaceTemplates.map((template) => template.name), [
+      'handoff-alpha-room',
+      'handoff-beta-room',
+    ]);
+    assert.deepEqual(handoff.options.moduleCapabilities.map((descriptor) => descriptor.tagName), [
+      'handoff-alpha-widget',
+      'handoff-beta-widget',
+    ]);
+    assert.equal(handoff.sources.length, 2);
+
+    let plan = planWorkspaceConstruction(handoff.intent, handoff.options);
     assert.deepEqual(plan.plan.capabilities.missing, []);
   });
 });
