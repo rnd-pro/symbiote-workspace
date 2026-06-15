@@ -94,7 +94,7 @@ function mcpSession(messages, timeout = 3000, sendDelay = 100) {
   return new Promise((resolve, reject) => {
     let mcp = spawn('node', [MCP_SCRIPT], { stdio: ['pipe', 'pipe', 'pipe'] });
     let responses = [];
-    let buf = '';
+    let buf = Buffer.alloc(0);
     let timers = [];
     let expectedResponses = messages.filter((message) => message.id !== undefined).length;
     let settled = false;
@@ -119,15 +119,19 @@ function mcpSession(messages, timeout = 3000, sendDelay = 100) {
     }
 
     mcp.stdout.on('data', (d) => {
-      buf += d.toString();
+      buf = Buffer.concat([buf, d]);
       while (true) {
-        let m = buf.match(/Content-Length: (\d+)\r\n\r\n/);
-        if (!m) break;
-        let len = parseInt(m[1]);
-        let bodyStart = m[0].length;
-        if (buf.length < bodyStart + len) break;
-        let body = buf.slice(bodyStart, bodyStart + len);
-        buf = buf.slice(bodyStart + len);
+        let headerEnd = buf.indexOf('\r\n\r\n');
+        if (headerEnd < 0) break;
+        let header = buf.subarray(0, headerEnd).toString('utf8');
+        let match = header.match(/Content-Length: (\d+)/);
+        if (!match) break;
+        let len = parseInt(match[1], 10);
+        let bodyStart = headerEnd + 4;
+        let bodyEnd = bodyStart + len;
+        if (buf.length < bodyEnd) break;
+        let body = buf.subarray(bodyStart, bodyEnd).toString('utf8');
+        buf = buf.subarray(bodyEnd);
         responses.push(JSON.parse(body));
         if (expectedResponses > 0 && responses.length >= expectedResponses) {
           finish();
@@ -164,6 +168,26 @@ describe('MCP Protocol', () => {
     assert.equal(r.result.serverInfo.name, 'symbiote-workspace');
     assert.equal(r.result.serverInfo.version, PACKAGE_VERSION);
     assert.ok(r.result.protocolVersion);
+  });
+
+  it('parses UTF-8 request bodies using byte content length', async () => {
+    let responses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'tools/call',
+        params: {
+          name: 'classify_workspace',
+          arguments: { intent: 'рабочее пространство аналитики' },
+        },
+      },
+    ]);
+
+    assert.equal(responses.length, 2);
+    let classification = JSON.parse(responses[1].result.content[0].text);
+    assert.equal(classification.status, 'ok');
+    assert.equal(classification.intent.brief, 'рабочее пространство аналитики');
   });
 
   it('lists all registered tools without leaking internal fields', async () => {

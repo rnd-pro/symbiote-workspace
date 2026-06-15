@@ -31,12 +31,11 @@ let PACKAGE_VERSION = JSON.parse(readFileSync(
 
 // ── JSON-RPC Protocol (stdio, Content-Length framing) ──
 
-let buffer = '';
+let buffer = Buffer.alloc(0);
 let messageQueue = Promise.resolve();
 
-process.stdin.setEncoding('utf-8');
 process.stdin.on('data', (chunk) => {
-  buffer += chunk;
+  buffer = Buffer.concat([buffer, chunk]);
   processBuffer();
 });
 
@@ -45,19 +44,20 @@ function processBuffer() {
     let headerEnd = buffer.indexOf('\r\n\r\n');
     if (headerEnd < 0) return;
 
-    let header = buffer.slice(0, headerEnd);
+    let header = buffer.subarray(0, headerEnd).toString('utf8');
     let contentLengthMatch = header.match(/Content-Length:\s*(\d+)/i);
     if (!contentLengthMatch) {
-      buffer = buffer.slice(headerEnd + 4);
+      buffer = buffer.subarray(headerEnd + 4);
       continue;
     }
 
     let contentLength = parseInt(contentLengthMatch[1], 10);
     let bodyStart = headerEnd + 4;
-    if (buffer.length < bodyStart + contentLength) return;
+    let bodyEnd = bodyStart + contentLength;
+    if (buffer.length < bodyEnd) return;
 
-    let body = buffer.slice(bodyStart, bodyStart + contentLength);
-    buffer = buffer.slice(bodyStart + contentLength);
+    let body = buffer.subarray(bodyStart, bodyEnd).toString('utf8');
+    buffer = buffer.subarray(bodyEnd);
 
     messageQueue = messageQueue
       .then(() => handleMessage(body))

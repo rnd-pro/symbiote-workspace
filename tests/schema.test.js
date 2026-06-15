@@ -607,6 +607,27 @@ describe('validateWorkspaceConfig', () => {
     assert.ok(result.errors.some((error) => error.path === 'layout.children'));
   });
 
+  it('warns when named layouts reference unregistered panel types', () => {
+    let result = validateWorkspaceConfig({
+      version: '0.2.0',
+      name: 'Named Layout References',
+      panelTypes: {
+        editor: { title: 'Editor', component: 'sw-editor-panel' },
+      },
+      layouts: {
+        secondary: {
+          type: 'split',
+          direction: 'horizontal',
+          first: { type: 'panel', panelType: 'editor' },
+          second: { type: 'panel', panelType: 'missing' },
+        },
+      },
+    }, { strict: true });
+
+    assert.equal(result.valid, true);
+    assert.ok(result.warnings.some((error) => error.path === 'layouts.secondary.second.panelType'));
+  });
+
   it('rejects unknown keys in strict mode', () => {
     let result = validateWorkspaceConfig({
       version: '0.1.0',

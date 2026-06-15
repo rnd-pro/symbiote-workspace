@@ -63,6 +63,9 @@ All notable changes to this project will be documented in this file.
 - **Layout topology materialization** — constructor `layout-topology` answers
   now shape the executable BSP `config.layout` for selected module panels
   instead of living only in construction plan metadata.
+- **Named layout cross-reference validation** — `validateWorkspaceConfig()`
+  now applies panel type cross-reference warnings to every `layouts.*` BSP tree,
+  matching the root `layout` validation contract.
 - **Module slot shell materialization** — workspace configs now define and
   validate `panelTypes.*.slots`; selected constructor module descriptors
   materialize portable `slots[]` onto generated and selected existing panel
@@ -117,6 +120,9 @@ All notable changes to this project will be documented in this file.
   `construct-workspace` now accept a full `{ intent, options }` construction
   handoff object as a single positional JSON argument, matching dispatch and
   MCP behavior.
+- **MCP UTF-8 framing** — the stdio MCP server now parses incoming
+  `Content-Length` frames by byte length, preserving non-ASCII JSON-RPC
+  payloads across tool calls.
 - **Construction handoff sentinel and ready gate** —
   `create_workspace_construction_handoff` now returns
   `_type: "workspace-construction-handoff"` and `construct_workspace` rejects

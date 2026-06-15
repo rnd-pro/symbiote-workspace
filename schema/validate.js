@@ -250,6 +250,11 @@ export function validateWorkspaceConfig(config, options = {}) {
   if (config.panelTypes && config.layout) {
     crossReferenceLayout(config.layout, config.panelTypes, 'layout', errors, warnings);
   }
+  if (config.panelTypes && config.layouts) {
+    for (let [layoutId, layoutNode] of Object.entries(config.layouts)) {
+      crossReferenceLayout(layoutNode, config.panelTypes, `layouts.${layoutId}`, errors, warnings);
+    }
+  }
 
   if (config.components !== undefined) {
     if (!isObject(config.components)) {
