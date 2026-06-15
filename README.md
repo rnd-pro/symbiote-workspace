@@ -480,7 +480,13 @@ External descriptors that do not already have a matching `panelTypes` entry are
 materialized from `placement.panelType` or `tagName`. The constructor copies
 placement title, icon, and behavior into the generated panel type, and selected
 generated panels are added to the root BSP layout when they are not present in
-any existing layout.
+any existing layout. Generated panel types that are not selected are removed
+from the executable `config.panelTypes` surface; their descriptors can remain
+in `components.modules` as catalog metadata and capability alternatives.
+When module selection prunes a named layout, section `layoutId` references are
+normalized back to the surviving root layout. Existing event bridges, data
+bindings, state fields, and engine bindings that reference unselected panels
+are pruned from the executable config in the same cleanup pass.
 
 Generated panel types also receive shell `menuActions` from descriptor
 `actions`, `toolbarItems`, and `menus[].items`, plus portable `settings` from
@@ -852,11 +858,17 @@ next action (`construct`, `review-package-readiness`, or
 `fix-package-context`). Dispatch/MCP responses also expose that package summary
 as top-level `readiness` when package context exists, so agents can read the
 same recovery contract on success and error paths.
+Package readiness is only `ready` when the package context is valid, explicitly
+ready, and has no missing requirements, warnings, or errors. When no package
+context exists, `plan_workspace` exposes top-level blocked readiness for missing
+required module capabilities so agents can recover before calling
+`construct_workspace`.
 `plan_workspace` accepts not-ready handoffs for diagnostics, but
 `construct_workspace` rejects `ready: false` handoffs so agents cannot
 materialize a degraded package workspace without resolving readiness gaps first.
 The construct gate also rejects stale handoffs that omit `ready` while still
-carrying missing capabilities or warning diagnostics.
+carrying missing capabilities or warning diagnostics, and rejects contradictory
+`ready: true` handoffs that still carry missing capabilities or warnings.
 Invalid handoff errors include `code: "construction_handoff_invalid"` and
 `nextAction: "fix-package-context"`; not-ready errors include
 `code: "construction_handoff_not_ready"` and

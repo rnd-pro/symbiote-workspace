@@ -1128,6 +1128,7 @@ function constructionReadinessFromPlan(plan, overrides = {}) {
     ready: missing.length === 0,
     valid: true,
     status: missing.length > 0 ? 'blocked' : 'ready',
+    nextAction: missing.length > 0 ? 'provide-module-capabilities' : 'construct',
     missingCount: missing.length,
     warningCount: 0,
     errorCount: 0,
@@ -1143,6 +1144,15 @@ function constructionReadinessFromPlan(plan, overrides = {}) {
     matchedCapabilities: cloneJson(capabilities.matched),
     ...overrides,
   });
+}
+
+function topLevelConstructionReadiness(plan) {
+  let packageReadiness = cloneJson(plan?.readiness?.package);
+  let capabilityReadiness = constructionReadinessFromPlan(plan);
+  if (!packageReadiness) return capabilityReadiness.ready ? undefined : capabilityReadiness;
+  if (!packageReadiness.ready) return packageReadiness;
+  if (capabilityReadiness.ready) return packageReadiness;
+  return capabilityReadiness;
 }
 
 function assertUsableConstructionHandoff(args, { requireReady = false } = {}) {
@@ -1165,7 +1175,7 @@ function assertUsableConstructionHandoff(args, { requireReady = false } = {}) {
     });
     throw err;
   }
-  if (requireReady && (context.ready === false || (context.ready !== true && (missing.length > 0 || warnings.length > 0)))) {
+  if (requireReady && (context.ready !== true || missing.length > 0 || warnings.length > 0)) {
     let detail = [
       ...missing,
       ...warnings.map((warning) => warning?.message || warning?.path).filter(Boolean),
@@ -1253,7 +1263,7 @@ export async function dispatch(toolName, args, session) {
       intent: result.intent,
       questions: result.questions,
       plan: result.plan,
-      readiness: cloneJson(result.plan.readiness?.package),
+      readiness: topLevelConstructionReadiness(result.plan),
       verification: cloneJson(result.plan.verification),
       config: result.config,
     });
@@ -1280,7 +1290,7 @@ export async function dispatch(toolName, args, session) {
       intent: result.intent,
       questions: result.questions,
       plan: result.plan,
-      readiness: cloneJson(result.plan.readiness?.package),
+      readiness: topLevelConstructionReadiness(result.plan),
       verification: cloneJson(result.plan.verification),
       config: result.config,
       hint: `Workspace "${result.config.name}" constructed from "${result.intent.template}".`,

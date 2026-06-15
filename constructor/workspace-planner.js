@@ -1771,6 +1771,37 @@ function configReferencesPanelType(config, panelType) {
     .some((layout) => layoutReferencesPanelType(layout, panelType));
 }
 
+function recordReferencesOnlySelectedPanels(record, selectedPanelTypes, fields) {
+  for (let field of fields) {
+    let panelType = record?.[field];
+    if (panelType && !selectedPanelTypes.has(panelType)) return false;
+  }
+  return true;
+}
+
+function pruneSelectedModuleSurfaces(config, selectedPanelTypes) {
+  if (Array.isArray(config.events)) {
+    config.events = config.events.filter((bridge) => (
+      recordReferencesOnlySelectedPanels(bridge, selectedPanelTypes, ['sourcePanel', 'targetPanel'])
+    ));
+  }
+  if (Array.isArray(config.data?.bindings)) {
+    config.data.bindings = config.data.bindings.filter((binding) => (
+      recordReferencesOnlySelectedPanels(binding, selectedPanelTypes, ['panelType'])
+    ));
+  }
+  if (Array.isArray(config.state?.fields)) {
+    config.state.fields = config.state.fields.filter((field) => (
+      recordReferencesOnlySelectedPanels(field, selectedPanelTypes, ['panelType'])
+    ));
+  }
+  if (Array.isArray(config.engine?.bindings)) {
+    config.engine.bindings = config.engine.bindings.filter((binding) => (
+      recordReferencesOnlySelectedPanels(binding, selectedPanelTypes, ['panelType'])
+    ));
+  }
+}
+
 function appendPanelToLayout(layout, panelType) {
   let panel = { type: 'panel', panelType };
   if (!layout) return panel;
@@ -1803,7 +1834,7 @@ function pruneLayoutToPanelTypes(node, selectedPanelTypes) {
   return first || second;
 }
 
-function materializeSelectedModuleLayout(config, selectedModules) {
+function materializeSelectedModuleLayout(config, selectedModules, generatedPanelTypes = new Set()) {
   let selectedPanelTypes = new Set(selectedModules);
   let prunedLayout = pruneLayoutToPanelTypes(config.layout, selectedPanelTypes);
   if (prunedLayout) {
@@ -1820,6 +1851,20 @@ function materializeSelectedModuleLayout(config, selectedModules) {
       delete config.layouts[layoutId];
     }
   }
+
+  for (let section of config.sections || []) {
+    if (!section.layoutId) continue;
+    if (section.layoutId === 'layout') {
+      if (!config.layout) delete section.layoutId;
+      continue;
+    }
+    if (!config.layouts?.[section.layoutId]) delete section.layoutId;
+  }
+
+  for (let panelType of generatedPanelTypes) {
+    if (!selectedPanelTypes.has(panelType)) delete config.panelTypes?.[panelType];
+  }
+  pruneSelectedModuleSurfaces(config, selectedPanelTypes);
 
   for (let panelType of selectedModules) {
     if (!config.panelTypes?.[panelType]) continue;
@@ -2044,7 +2089,11 @@ function packageReadinessSummary(packageContext) {
   let warningCount = diagnosticCount(packageContext.warnings);
   let errorCount = diagnosticCount(packageContext.errors);
   let missingCount = countCapabilityMapItems(packageContext.missing);
-  let ready = packageContext.valid === true && packageContext.ready === true;
+  let ready = packageContext.valid === true &&
+    packageContext.ready === true &&
+    missingCount === 0 &&
+    warningCount === 0 &&
+    errorCount === 0;
 
   return {
     ready,
@@ -2133,7 +2182,12 @@ export function planWorkspaceConstruction(intent, options = {}) {
   let registry = templateRegistryFromOptions(options);
   let registryOptions = { ...options, templateRegistry: registry };
   let normalized = normalizeConstructionIntent(intent, registryOptions);
-  let config = withModuleCapabilities(templateConfig(normalized.template, registry), options.moduleCapabilities);
+  let baseConfig = templateConfig(normalized.template, registry);
+  let basePanelTypes = new Set(Object.keys(baseConfig.panelTypes || {}));
+  let config = withModuleCapabilities(baseConfig, options.moduleCapabilities);
+  let generatedPanelTypes = new Set(
+    Object.keys(config.panelTypes || {}).filter((panelType) => !basePanelTypes.has(panelType)),
+  );
   let questions = applyAnswers(buildConstructionQuestions(normalized, registryOptions), options.answers);
   let answers = answerMap(questions);
   let workspaceName = answers.get('workspace-name') || config.name;
@@ -2146,7 +2200,7 @@ export function planWorkspaceConstruction(intent, options = {}) {
   let defaults = themeDefaults(config, register, normalized.preferredTheme);
   let hue = mode === 'custom' ? (answers.get('theme-hue') ?? defaults.hue) : defaults.hue;
   let verificationScope = answers.get('verification-scope') || [];
-  materializeSelectedModuleLayout(config, modules);
+  materializeSelectedModuleLayout(config, modules, generatedPanelTypes);
   materializeSelectedDescriptorPanelMenuActions(config, modules);
   materializeSelectedDescriptorPanelSettings(config, modules);
   materializeSelectedDescriptorEventBridges(config, modules);

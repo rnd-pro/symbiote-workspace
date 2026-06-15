@@ -735,6 +735,135 @@ describe('planWorkspaceConstruction', () => {
     assert.deepEqual(validation.errors, []);
   });
 
+  it('removes stale section layout ids after module selection prunes layouts', () => {
+    let result = planWorkspaceConstruction({
+      brief: 'Build an admin metrics workspace',
+      template: 'admin',
+    }, {
+      answers: {
+        'module-selection': ['metric'],
+      },
+    });
+
+    assert.deepEqual(result.plan.layout.layoutIds, ['layout']);
+    assert.deepEqual(result.plan.layout.sectionLayouts, [
+      { sectionId: 'overview', groupId: 'operations', layoutId: 'layout' },
+      { sectionId: 'records', groupId: 'operations', layoutId: 'layout' },
+    ]);
+    assert.equal(result.config.sections.find((section) => section.id === 'records').layoutId, undefined);
+    assert.deepEqual(Object.keys(result.config.layouts || {}), []);
+
+    let validation = validateWorkspaceConfig(result.config, { strict: true });
+    assert.deepEqual(validation.errors, []);
+  });
+
+  it('removes unselected generated external panel types from executable config', () => {
+    let result = planWorkspaceConstruction({
+      brief: 'Build a review desk',
+      template: 'dashboard',
+      requiredCapabilities: ['review.sentiment'],
+    }, {
+      moduleCapabilities: [
+        {
+          tagName: 'acme-sentiment-panel',
+          provider: '@acme/workspace-pack',
+          capabilities: ['review.sentiment'],
+          placement: { panelType: 'sentiment', title: 'Sentiment' },
+        },
+        {
+          tagName: 'acme-risk-panel',
+          provider: '@acme/workspace-pack',
+          capabilities: ['review.risk'],
+          placement: { panelType: 'risk', title: 'Risk' },
+        },
+      ],
+    });
+
+    assert.deepEqual(result.plan.answers.moduleSelection, ['sentiment']);
+    assert.deepEqual(result.plan.modules.map((module) => module.panelType), ['sentiment']);
+    assert.equal(result.config.panelTypes.sentiment.component, 'acme-sentiment-panel');
+    assert.equal(result.config.panelTypes.risk, undefined);
+    assert.equal(layoutReferencesPanel(result.config.layout, 'sentiment'), true);
+    assert.equal(layoutReferencesPanel(result.config.layout, 'risk'), false);
+
+    let validation = validateWorkspaceConfig(result.config, { strict: true });
+    assert.deepEqual(validation.errors, []);
+  });
+
+  it('removes executable wiring that references unselected panels', () => {
+    let result = planWorkspaceConstruction({
+      brief: 'Build selected review workspace',
+      template: 'review-routing',
+    }, {
+      workspaceTemplates: [{
+        name: 'review-routing',
+        config: {
+          version: '0.3.0',
+          name: 'Review Routing',
+          register: 'tool',
+          groups: [{ id: 'review', name: 'Review' }],
+          sections: [{ id: 'queue', label: 'Queue', groupId: 'review' }],
+          panelTypes: {
+            review: { title: 'Review', component: 'acme-review-panel' },
+            archive: { title: 'Archive', component: 'acme-archive-panel' },
+          },
+          layout: {
+            type: 'split',
+            direction: 'horizontal',
+            ratio: 0.5,
+            first: { type: 'panel', panelType: 'review' },
+            second: { type: 'panel', panelType: 'archive' },
+          },
+          events: [
+            { id: 'review-select', sourcePanel: 'review', event: 'select' },
+            { id: 'archive-select', sourcePanel: 'archive', event: 'select' },
+            { id: 'review-to-archive', sourcePanel: 'review', event: 'select', targetPanel: 'archive' },
+          ],
+          data: {
+            bindings: [
+              { panelType: 'review', component: 'acme-review-panel', id: 'items', direction: 'input', path: 'data.review' },
+              { panelType: 'archive', component: 'acme-archive-panel', id: 'items', direction: 'input', path: 'data.archive' },
+            ],
+          },
+          state: {
+            fields: [
+              { panelType: 'review', component: 'acme-review-panel', id: 'selection', type: 'object' },
+              { panelType: 'archive', component: 'acme-archive-panel', id: 'selection', type: 'object' },
+            ],
+          },
+          engine: {
+            graphs: [{ id: 'review-flow', nodes: [{ id: 'normalize', type: 'task' }, { id: 'archive', type: 'task' }] }],
+            bindings: [
+              { id: 'review-binding', panelType: 'review', surface: 'binding', sourceId: 'items', graphId: 'review-flow', nodeId: 'normalize' },
+              { id: 'archive-binding', panelType: 'archive', surface: 'binding', sourceId: 'items', graphId: 'review-flow', nodeId: 'archive' },
+            ],
+          },
+          components: {
+            catalog: ['acme-review-panel', 'acme-archive-panel'],
+            modules: [
+              { tagName: 'acme-review-panel', capabilities: ['review.queue'] },
+              { tagName: 'acme-archive-panel', capabilities: ['review.archive'] },
+            ],
+          },
+        },
+      }],
+      answers: {
+        'module-selection': ['review'],
+      },
+    });
+
+    assert.deepEqual(result.plan.modules.map((module) => module.panelType), ['review']);
+    assert.equal(layoutReferencesPanel(result.config.layout, 'review'), true);
+    assert.equal(layoutReferencesPanel(result.config.layout, 'archive'), false);
+    assert.deepEqual(result.config.events.map((bridge) => bridge.id), ['review-select']);
+    assert.deepEqual(result.config.data.bindings.map((binding) => binding.panelType), ['review']);
+    assert.deepEqual(result.config.state.fields.map((field) => field.panelType), ['review']);
+    assert.deepEqual(result.config.engine.bindings.map((binding) => binding.panelType), ['review']);
+
+    let validation = validateWorkspaceConfig(result.config, { strict: true });
+    assert.deepEqual(validation.errors, []);
+  });
+
   it('removes executable layouts when module selection is empty', () => {
     let result = planWorkspaceConstruction({
       brief: 'Build an admin records workspace',

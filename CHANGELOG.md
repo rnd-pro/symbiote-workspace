@@ -112,6 +112,15 @@ All notable changes to this project will be documented in this file.
 - **Top-level package readiness** — successful `plan_workspace` and
   `construct_workspace` responses now expose package readiness as top-level
   `readiness` when package context exists, matching the error recovery surface.
+- **Construction readiness hardening** — package readiness is no longer marked
+  ready when missing requirements, warnings, or errors are still present, and
+  `plan_workspace` now exposes blocked top-level readiness for missing required
+  module capabilities when no package context owns the recovery route.
+- **Selected-module materialization cleanup** — construction now removes
+  unselected generated external panel types from executable `config.panelTypes`
+  and normalizes section layout references after module selection prunes named
+  layouts. It also prunes existing event bridges, data bindings, state fields,
+  and engine bindings that reference unselected panels.
 - **Top-level construction verification** — successful `plan_workspace` and
   `construct_workspace` dispatch, CLI, and MCP responses now expose
   `verification` as a top-level mirror of `plan.verification`.

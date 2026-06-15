@@ -217,6 +217,29 @@ describe('construction workflow dispatch', () => {
     assert.equal(session.config, null);
   });
 
+  it('plan_workspace exposes blocked readiness for missing required capabilities', async () => {
+    let session = createSession();
+    let result = await dispatch('plan_workspace', {
+      intent: 'dashboard with unknown module requirement',
+      template: 'dashboard',
+      requiredCapabilities: ['capability.that.does.not.exist'],
+    }, session);
+
+    assert.equal(result.status, 'ok');
+    assert.equal(result.readiness.ready, false);
+    assert.equal(result.readiness.status, 'blocked');
+    assert.equal(result.readiness.nextAction, 'provide-module-capabilities');
+    assert.deepEqual(
+      result.readiness.missing.moduleCapabilities,
+      ['capability.that.does.not.exist'],
+    );
+    assert.deepEqual(
+      result.plan.capabilities.missing,
+      ['capability.that.does.not.exist'],
+    );
+    assert.equal(session.config, null);
+  });
+
   it('construct_workspace plans and stores the executable config in session state', async () => {
     let session = createSession();
     let result = await dispatch('construct_workspace', {
