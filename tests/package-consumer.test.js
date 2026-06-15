@@ -454,7 +454,9 @@ describe('packed package consumer', () => {
         } from 'symbiote-workspace/plugins';
         import { planWorkspaceConstruction } from 'symbiote-workspace/constructor';
         import {
+          createWorkspaceConstructionHandoff,
           createHostIntegrationContract,
+          createWorkspacePackageConstructionContext,
           exportWorkspacePackage,
           importWorkspacePackage,
         } from 'symbiote-workspace/sharing';
@@ -595,6 +597,28 @@ describe('packed package consumer', () => {
           throw new Error(JSON.stringify(activeTemplates));
         }
 
+        let planned = await dispatch('plan_workspace', {
+          intent: 'sentiment review workspace',
+          template: 'dashboard',
+          requiredCapabilities: ['analysis.sentiment'],
+          moduleCapabilities: pluginCapabilities.moduleCapabilities,
+        }, session);
+        if (planned.status !== 'ok') {
+          throw new Error(planned.hint || 'plan_workspace failed');
+        }
+        if (session.config !== null) {
+          throw new Error('plan_workspace mutated consumer session config');
+        }
+        if (planned.plan.answers.moduleSelection[0] !== 'sentiment') {
+          throw new Error('plan_workspace did not select plugin-derived module');
+        }
+        if (JSON.stringify(planned.verification) !== JSON.stringify(planned.plan.verification)) {
+          throw new Error('plan_workspace did not expose top-level verification');
+        }
+        if (!Array.isArray(planned.verification.reports) || planned.verification.reports.length === 0) {
+          throw new Error('plan_workspace did not expose verification reports');
+        }
+
         let constructed = await dispatch('construct_workspace', {
           intent: 'sentiment review workspace',
           template: 'dashboard',
@@ -606,6 +630,9 @@ describe('packed package consumer', () => {
         }
         if (constructed.plan.answers.moduleSelection[0] !== 'sentiment') {
           throw new Error('plugin-derived module was not selected');
+        }
+        if (JSON.stringify(constructed.verification) !== JSON.stringify(constructed.plan.verification)) {
+          throw new Error('construct_workspace did not expose top-level verification');
         }
         if (session.config.panelTypes.sentiment.component !== 'acme-sentiment-panel') {
           throw new Error('plugin-derived module was not materialized');
@@ -626,6 +653,32 @@ describe('packed package consumer', () => {
           version: '1.0.0',
         });
         if (!packageExport.json) throw new Error(JSON.stringify(packageExport.errors));
+        let packageContext = createWorkspacePackageConstructionContext(packageExport.json, {
+          templateName: 'constructed-report-package',
+        });
+        if (!packageContext.ready) throw new Error(JSON.stringify(packageContext.readiness));
+        let packageHandoff = createWorkspaceConstructionHandoff(packageContext, {
+          brief: 'Build from the packed consumer package.',
+          template: packageContext.workspaceTemplates[0].name,
+        });
+        if (!packageHandoff.ready) throw new Error(JSON.stringify(packageHandoff.readiness));
+        let handoffSession = createSession();
+        let handoffPlan = await dispatch('plan_workspace', packageHandoff, handoffSession);
+        if (handoffPlan.status !== 'ok') throw new Error(handoffPlan.hint || 'package handoff plan failed');
+        if (handoffSession.config !== null) throw new Error('package handoff plan mutated session config');
+        if (!handoffPlan.readiness?.ready) throw new Error('package handoff plan did not expose ready top-level readiness');
+        if (handoffPlan.readiness.source.packageId !== 'constructed-report-package') {
+          throw new Error('package handoff plan readiness source missing package id');
+        }
+        if (JSON.stringify(handoffPlan.verification) !== JSON.stringify(handoffPlan.plan.verification)) {
+          throw new Error('package handoff plan did not expose top-level verification');
+        }
+        let handoffConstruct = await dispatch('construct_workspace', packageHandoff, handoffSession);
+        if (handoffConstruct.status !== 'ok') throw new Error(handoffConstruct.hint || 'package handoff construct failed');
+        if (!handoffConstruct.readiness?.ready) throw new Error('package handoff construct did not expose ready top-level readiness');
+        if (JSON.stringify(handoffConstruct.verification) !== JSON.stringify(handoffConstruct.plan.verification)) {
+          throw new Error('package handoff construct did not expose top-level verification');
+        }
         let packageImport = importWorkspacePackage(packageExport.json);
         if (!packageImport.config) throw new Error(JSON.stringify(packageImport.errors));
         if (JSON.stringify(packageImport.config.construction.plan.verification.reports) !== JSON.stringify(generatedReports)) {
