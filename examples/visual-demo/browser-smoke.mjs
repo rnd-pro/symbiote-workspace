@@ -102,13 +102,26 @@ function killProcess(child) {
   }, 2000).unref();
 }
 
-async function waitForPreview(child, timeout) {
+function demoCommand(demo) {
+  if (demo === 'realtime-builder') {
+    return {
+      script: 'realtime-builder.js',
+      readyText: 'Symbiote realtime builder demo:',
+    };
+  }
+  return {
+    script: 'preview.mjs',
+    readyText: 'Symbiote visual demo:',
+  };
+}
+
+async function waitForPreview(child, timeout, readyText) {
   let deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
     if (child.exitCode !== null) {
       throw new Error(`Visual demo server exited early: ${child.output.stderr || child.output.stdout}`);
     }
-    if (child.output.stdout.includes('Symbiote visual demo:')) return;
+    if (child.output.stdout.includes(readyText)) return;
     await delay(POLL_INTERVAL);
   }
   throw new Error(`Timed out waiting for visual demo server. stderr: ${child.output.stderr}`);
@@ -384,11 +397,65 @@ new Promise((resolve, reject) => {
 })
 `;
 
+let realtimeExpression = `
+new Promise((resolve, reject) => {
+  let deadline = Date.now() + 14000;
+  let play = document.querySelector('[data-action="play"]');
+  if (!play) {
+    reject(new Error('Realtime builder Play button is missing.'));
+    return;
+  }
+  play.click();
+  let check = () => {
+    let error = document.querySelector('[data-preview-error]');
+    if (error) {
+      reject(new Error(error.textContent || 'Realtime builder rendered data-preview-error.'));
+      return;
+    }
+    let shell = document.querySelector('.demo-shell');
+    let activeSteps = [...document.querySelectorAll('.demo-build-step[data-status="active"]')];
+    let doneSteps = [...document.querySelectorAll('.demo-build-step[data-status="done"]')];
+    let finalStage = shell?.dataset.stage === 'validation';
+    let finalKind = shell?.dataset.buildKind === 'rank-layout-behavior';
+    let progress = document.querySelector('.demo-build-progress span')?.textContent || '';
+    let themeEditor = document.body.textContent.includes('theme-editor');
+    let contractSections = [
+      'Service blueprint',
+      'Layout roles',
+      'Widget registry',
+      'Adaptive and theme state',
+    ].every((text) => document.body.textContent.includes(text));
+    if (finalStage && finalKind && progress.includes('100%') && doneSteps.length >= 3 && activeSteps.length === 1 && themeEditor && contractSections) {
+      resolve({
+        title: document.title,
+        stage: shell.dataset.stage,
+        buildKind: shell.dataset.buildKind,
+        progress,
+        activeStep: activeSteps[0].textContent,
+        doneStepCount: doneSteps.length,
+      });
+      return;
+    }
+    if (Date.now() > deadline) {
+      reject(new Error('Realtime builder Play did not reach final operation state.'));
+      return;
+    }
+    setTimeout(check, 100);
+  };
+  check();
+})
+`;
+
 async function run() {
   let timeout = timeoutMs();
   let browser = await findBrowser();
   let previewPort = Number(readArg('--port', await freePort()));
   let cdpPort = Number(readArg('--cdp-port', await freePort()));
+  let demo = readArg('--demo', 'visual');
+  if (!['visual', 'realtime-builder'].includes(demo)) {
+    throw new Error(`Unknown browser smoke demo: ${demo}`);
+  }
+  let command = demoCommand(demo);
   let keepOutput = hasArg('--keep-output') || process.env.SYMBIOTE_BROWSER_SMOKE_KEEP === '1';
   let outputDir = resolve(readArg('--output-dir', await mkdtemp(join(tmpdir(), 'symbiote-visual-demo-'))));
   let profileDir = await mkdtemp(join(tmpdir(), 'symbiote-browser-profile-'));
@@ -398,7 +465,7 @@ async function run() {
 
   try {
     preview = spawnProcess(process.execPath, [
-      join(scriptDir(), 'preview.mjs'),
+      join(scriptDir(), command.script),
       '--port',
       String(previewPort),
       '--output-dir',
@@ -406,7 +473,7 @@ async function run() {
     ], {
       cwd: resolve(scriptDir(), '../..'),
     });
-    await waitForPreview(preview, timeout);
+    await waitForPreview(preview, timeout, command.readyText);
 
     browserProcess = spawnProcess(browser, [
       '--headless=new',
@@ -437,8 +504,9 @@ async function run() {
     await cdp.send('Runtime.enable', {}, timeout);
     await cdp.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/` }, timeout);
     await cdp.waitEvent('Page.loadEventFired', timeout);
+    let expression = demo === 'realtime-builder' ? realtimeExpression : mountExpression;
     let result = await cdp.send('Runtime.evaluate', {
-      expression: mountExpression,
+      expression,
       awaitPromise: true,
       returnByValue: true,
     }, timeout);
@@ -449,6 +517,7 @@ async function run() {
 
     console.log(JSON.stringify({
       status: 'ok',
+      demo,
       url: `http://127.0.0.1:${previewPort}/`,
       browser,
       outputDir,

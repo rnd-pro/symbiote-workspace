@@ -90,4 +90,13 @@ describe('realtime builder demo', () => {
       assert.equal(config.panelTypes['theme-editor'].component, 'sn-theme-editor-widget');
     });
   });
+
+  it('exposes realtime builder browser smoke mode', async () => {
+    let smoke = await readFile('examples/visual-demo/browser-smoke.mjs', 'utf8');
+
+    assert.match(smoke, /--demo/);
+    assert.match(smoke, /realtime-builder/);
+    assert.match(smoke, /Realtime builder Play/);
+    assert.match(smoke, /data-action="play"/);
+  });
 });

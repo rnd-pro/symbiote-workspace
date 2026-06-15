@@ -40,5 +40,11 @@ asserts that the mounted workspace DOM has no preview error:
 npm run test:visual-demo-browser
 ```
 
+To verify the realtime builder Play flow specifically:
+
+```bash
+npm run test:visual-demo-browser -- --demo realtime-builder
+```
+
 Set `SYMBIOTE_BROWSER_BIN` or pass `--browser` when Chrome is not installed in
 the standard macOS application locations.
