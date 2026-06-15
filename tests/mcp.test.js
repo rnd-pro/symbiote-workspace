@@ -1326,16 +1326,28 @@ describe('Construction Handoff via MCP', () => {
       },
     ]);
 
-    let plan = JSON.parse(responses.find((r) => r.id === 2).result.content[0].text);
-    let construct = JSON.parse(responses.find((r) => r.id === 3).result.content[0].text);
+    let planResponse = responses.find((r) => r.id === 2);
+    let constructResponse = responses.find((r) => r.id === 3);
+    let plan = JSON.parse(planResponse.result.content[0].text);
+    let construct = JSON.parse(constructResponse.result.content[0].text);
+    assert.equal(planResponse.result.isError, true);
     assert.equal(plan.status, 'error');
     assert.equal(plan.tool, 'plan_workspace');
+    assert.equal(plan.code, 'construction_handoff_invalid');
+    assert.equal(plan.nextAction, 'fix-package-context');
     assert.match(plan.hint, /Construction handoff is invalid/);
     assert.match(plan.hint, /Invalid package kind/);
+    assert.equal(plan.readiness.status, 'blocked');
+    assert.equal(plan.readiness.errorCount, 1);
+    assert.equal(constructResponse.result.isError, true);
     assert.equal(construct.status, 'error');
     assert.equal(construct.tool, 'construct_workspace');
+    assert.equal(construct.code, 'construction_handoff_invalid');
+    assert.equal(construct.nextAction, 'fix-package-context');
     assert.match(construct.hint, /Construction handoff is invalid/);
     assert.match(construct.hint, /Invalid package kind/);
+    assert.equal(construct.readiness.status, 'blocked');
+    assert.equal(construct.readiness.errorCount, 1);
   });
 
   it('construct_workspace rejects not-ready handoff objects via tools/call', async () => {
@@ -1382,6 +1394,7 @@ describe('Construction Handoff via MCP', () => {
     let construct = JSON.parse(constructResponse.result.content[0].text);
     assert.equal(plan.status, 'ok');
     assert.equal(plan.plan.readiness.package.status, 'warning');
+    assert.deepEqual(plan.readiness, plan.plan.readiness.package);
     assert.equal(constructResponse.result.isError, true);
     assert.equal(construct.status, 'error');
     assert.equal(construct.tool, 'construct_workspace');
@@ -1396,5 +1409,10 @@ describe('Construction Handoff via MCP', () => {
     assert.equal(construct.readiness.warningCount, 1);
     assert.equal(construct.readiness.errorCount, 0);
     assert.deepEqual(construct.readiness.missing.components, ['sn-room-shell']);
+    assert.deepEqual(construct.readiness.recovery, [{
+      kind: 'components',
+      item: 'sn-room-shell',
+      action: 'register-component',
+    }]);
   });
 });

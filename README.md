@@ -753,13 +753,22 @@ without re-inspecting the package.
 Plans also include `plan.readiness.package`, a compact summary with package
 validity, readiness status, source count, missing/warning/error counts, and the
 next action (`construct`, `review-package-readiness`, or
-`fix-package-context`).
+`fix-package-context`). Dispatch/MCP responses also expose that package summary
+as top-level `readiness` when package context exists, so agents can read the
+same recovery contract on success and error paths.
 `plan_workspace` accepts not-ready handoffs for diagnostics, but
 `construct_workspace` rejects `ready: false` handoffs so agents cannot
 materialize a degraded package workspace without resolving readiness gaps first.
-The not-ready error includes `code: "construction_handoff_not_ready"`,
-`nextAction: "review-package-readiness"`, and a `readiness` payload with missing
-capabilities, warning/error counts, status, and package source metadata.
+The construct gate also rejects stale handoffs that omit `ready` while still
+carrying missing capabilities or warning diagnostics.
+Invalid handoff errors include `code: "construction_handoff_invalid"` and
+`nextAction: "fix-package-context"`; not-ready errors include
+`code: "construction_handoff_not_ready"` and
+`nextAction: "review-package-readiness"`. Both error paths return a structured
+`readiness` payload with missing capabilities, diagnostics, counts, status, and
+package source metadata. Missing capability entries also include `recovery`
+steps such as `register-component`, `install-plugin`, or `provide-host-service`
+so agents can route the next action without parsing prose.
 It is exposed through dispatch/MCP as `create_workspace_construction_handoff`
 and through the CLI as `create-workspace-construction-handoff`.
 

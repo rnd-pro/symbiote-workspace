@@ -47,6 +47,18 @@ All notable changes to this project will be documented in this file.
   `ready: false` handoffs while `plan_workspace` still returns diagnostics.
 - **Ready-gate diagnostics** — not-ready construction handoff errors now include
   `code`, `nextAction`, and a structured `readiness` payload for agent recovery.
+- **Stale handoff ready gate** — `construct_workspace` now rejects older
+  handoff payloads that omit `ready` but still carry missing capabilities or
+  warning diagnostics.
+- **Invalid handoff diagnostics** — invalid construction handoff errors now
+  include `code`, `nextAction`, and a blocked `readiness` payload so agents can
+  route recovery to package-context fixes instead of readiness review.
+- **Top-level package readiness** — successful `plan_workspace` and
+  `construct_workspace` responses now expose package readiness as top-level
+  `readiness` when package context exists, matching the error recovery surface.
+- **Missing-capability recovery hints** — readiness diagnostics now include
+  deterministic `recovery` steps for missing package capabilities so agents can
+  choose component, plugin, package, host-service, or runtime-slot remediation.
 - **Package collection construction context helper** —
   `createWorkspacePackagesConstructionContext({ packages, available })`
   aggregates package objects and JSON entries into one constructor-ready context

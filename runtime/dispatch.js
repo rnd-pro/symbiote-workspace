@@ -1042,25 +1042,79 @@ function isConstructionHandoffArgs(args) {
     );
 }
 
+function flatMissingCapabilities(missing) {
+  if (!isObject(missing)) return [];
+  return Object.values(missing)
+    .filter(Array.isArray)
+    .flat();
+}
+
+const MISSING_RECOVERY_ACTIONS = {
+  components: 'register-component',
+  plugins: 'install-plugin',
+  packages: 'import-package',
+  hostServices: 'provide-host-service',
+  runtimeSlots: 'provide-runtime-slot',
+};
+
+function missingRecoverySteps(missing) {
+  if (!isObject(missing)) return [];
+  let steps = [];
+  for (let [kind, items] of Object.entries(missing)) {
+    if (!Array.isArray(items)) continue;
+    let action = MISSING_RECOVERY_ACTIONS[kind] || 'provide-capability';
+    for (let item of items) {
+      steps.push({ kind, item, action });
+    }
+  }
+  return steps;
+}
+
+function constructionReadinessFromHandoff(args, overrides = {}) {
+  let warnings = Array.isArray(args.warnings) ? args.warnings : [];
+  let errors = Array.isArray(args.errors) ? args.errors : [];
+  let missing = flatMissingCapabilities(args.missing);
+  let recovery = missingRecoverySteps(args.missing);
+  let errorCount = errors.length;
+  let ready = args.valid === true && args.ready === true && missing.length === 0 && errorCount === 0;
+
+  return compactObject({
+    ready,
+    valid: args.valid === true,
+    status: ready ? 'ready' : (errorCount > 0 ? 'blocked' : 'warning'),
+    missingCount: missing.length,
+    warningCount: warnings.length,
+    errorCount,
+    missing: cloneJson(args.missing),
+    recovery: recovery.length > 0 ? recovery : undefined,
+    warnings: cloneJson(warnings),
+    errors: cloneJson(errors),
+    source: cloneJson(args.source),
+    sources: cloneJson(args.sources),
+    ...overrides,
+  });
+}
+
 function assertUsableConstructionHandoff(args, { requireReady = false } = {}) {
   if (!isConstructionHandoffArgs(args)) return;
   let errors = Array.isArray(args.errors) ? args.errors : [];
+  let warnings = Array.isArray(args.warnings) ? args.warnings : [];
+  let missing = flatMissingCapabilities(args.missing);
   if (args.valid === false || errors.length > 0) {
     let detail = errors
       .map((error) => error?.message || error?.path)
       .filter(Boolean)
       .join('; ');
-    throw new Error(
-      `Construction handoff is invalid${detail ? `: ${detail}` : '.'}`,
-    );
+    let err = new Error(`Construction handoff is invalid${detail ? `: ${detail}` : '.'}`);
+    err.code = 'construction_handoff_invalid';
+    err.nextAction = 'fix-package-context';
+    err.readiness = constructionReadinessFromHandoff(args, {
+      ready: false,
+      status: 'blocked',
+    });
+    throw err;
   }
-  if (requireReady && args.ready === false) {
-    let warnings = Array.isArray(args.warnings) ? args.warnings : [];
-    let missing = isObject(args.missing)
-      ? Object.values(args.missing)
-        .filter(Array.isArray)
-        .flat()
-      : [];
+  if (requireReady && (args.ready === false || (args.ready !== true && (missing.length > 0 || warnings.length > 0)))) {
     let detail = [
       ...missing,
       ...warnings.map((warning) => warning?.message || warning?.path).filter(Boolean),
@@ -1068,18 +1122,11 @@ function assertUsableConstructionHandoff(args, { requireReady = false } = {}) {
     let err = new Error(`Construction handoff is not ready${detail ? `: ${detail}` : '.'}`);
     err.code = 'construction_handoff_not_ready';
     err.nextAction = 'review-package-readiness';
-    err.readiness = {
+    err.readiness = constructionReadinessFromHandoff(args, {
       ready: false,
-      valid: args.valid === true,
       status: 'warning',
-      missingCount: missing.length,
-      warningCount: warnings.length,
       errorCount: 0,
-      missing: cloneJson(args.missing),
-      warnings: cloneJson(warnings),
-      source: cloneJson(args.source),
-      sources: cloneJson(args.sources),
-    };
+    });
     throw err;
   }
 }
@@ -1139,14 +1186,15 @@ export async function dispatch(toolName, args, session) {
     } catch (err) {
       return constructionError(toolName, err);
     }
-    return {
+    return compactObject({
       status: 'ok',
       templateName: result.intent.template,
       intent: result.intent,
       questions: result.questions,
       plan: result.plan,
+      readiness: cloneJson(result.plan.readiness?.package),
       config: result.config,
-    };
+    });
   }
 
   if (toolName === 'construct_workspace') {
@@ -1163,15 +1211,16 @@ export async function dispatch(toolName, args, session) {
       return constructionError(toolName, err);
     }
     session.config = result.config;
-    return {
+    return compactObject({
       status: 'ok',
       templateName: result.intent.template,
       intent: result.intent,
       questions: result.questions,
       plan: result.plan,
+      readiness: cloneJson(result.plan.readiness?.package),
       config: result.config,
       hint: `Workspace "${result.config.name}" constructed from "${result.intent.template}".`,
-    };
+    });
   }
 
   if (toolName === 'load_config') {

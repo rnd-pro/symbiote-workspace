@@ -403,7 +403,7 @@ describe('construction workflow dispatch', () => {
         }],
         errors: [],
       },
-      intent: { brief: 'team AI room', template: 'team-ai-room' },
+      intent: { brief: 'chat workspace', template: 'chat' },
     }, session);
 
     assert.equal(handoff.valid, true);
@@ -416,6 +416,7 @@ describe('construction workflow dispatch', () => {
     assert.equal(planResult.plan.packageContext.ready, false);
     assert.equal(planResult.plan.packageContext.source.packageId, 'gapped-team-room');
     assert.deepEqual(planResult.plan.packageContext.missing.components, ['sn-team-room']);
+    assert.deepEqual(planResult.readiness, planResult.plan.readiness.package);
     assert.deepEqual(planResult.plan.readiness.package, {
       ready: false,
       valid: true,
@@ -444,8 +445,23 @@ describe('construction workflow dispatch', () => {
     assert.equal(constructResult.readiness.warningCount, 1);
     assert.equal(constructResult.readiness.errorCount, 0);
     assert.deepEqual(constructResult.readiness.missing.components, ['sn-team-room']);
+    assert.deepEqual(constructResult.readiness.recovery, [{
+      kind: 'components',
+      item: 'sn-team-room',
+      action: 'register-component',
+    }]);
     assert.equal(constructResult.readiness.source.packageId, 'gapped-team-room');
     assert.equal(session.config, null);
+
+    handoff.ready = true;
+    handoff.missing = {};
+    handoff.warnings = [];
+    handoff.options.packageContext.ready = true;
+    handoff.options.packageContext.missing = {};
+    handoff.options.packageContext.warnings = [];
+    let readyConstructResult = await dispatch('construct_workspace', handoff, session);
+    assert.equal(readyConstructResult.status, 'ok');
+    assert.deepEqual(readyConstructResult.readiness, readyConstructResult.plan.readiness.package);
   });
 
   it('plan_workspace rejects invalid construction handoff diagnostics', async () => {
@@ -468,8 +484,16 @@ describe('construction workflow dispatch', () => {
     assert.equal(handoff.valid, false);
     assert.equal(result.status, 'error');
     assert.equal(result.tool, 'plan_workspace');
+    assert.equal(result.code, 'construction_handoff_invalid');
+    assert.equal(result.nextAction, 'fix-package-context');
     assert.match(result.hint, /Construction handoff is invalid/);
     assert.match(result.hint, /Invalid package kind/);
+    assert.equal(result.readiness.ready, false);
+    assert.equal(result.readiness.valid, false);
+    assert.equal(result.readiness.status, 'blocked');
+    assert.equal(result.readiness.errorCount, 1);
+    assert.equal(result.readiness.warningCount, 0);
+    assert.deepEqual(result.readiness.errors, [{ path: 'kind', message: 'Invalid package kind.', severity: 'error' }]);
     assert.equal(session.config, null);
   });
 
@@ -494,8 +518,15 @@ describe('construction workflow dispatch', () => {
     assert.equal(handoff.valid, false);
     assert.equal(result.status, 'error');
     assert.equal(result.tool, 'construct_workspace');
+    assert.equal(result.code, 'construction_handoff_invalid');
+    assert.equal(result.nextAction, 'fix-package-context');
     assert.match(result.hint, /Construction handoff is invalid/);
     assert.match(result.hint, /Invalid package kind/);
+    assert.equal(result.readiness.ready, false);
+    assert.equal(result.readiness.valid, false);
+    assert.equal(result.readiness.status, 'blocked');
+    assert.equal(result.readiness.errorCount, 1);
+    assert.equal(result.readiness.warningCount, 0);
     assert.equal(session.config.name, 'Existing Config');
   });
 
@@ -516,10 +547,55 @@ describe('construction workflow dispatch', () => {
 
     assert.equal(plan.status, 'error');
     assert.equal(plan.tool, 'plan_workspace');
+    assert.equal(plan.code, 'construction_handoff_invalid');
+    assert.equal(plan.nextAction, 'fix-package-context');
     assert.match(plan.hint, /Contradictory handoff error/);
+    assert.equal(plan.readiness.status, 'blocked');
+    assert.equal(plan.readiness.errorCount, 1);
     assert.equal(construct.status, 'error');
     assert.equal(construct.tool, 'construct_workspace');
+    assert.equal(construct.code, 'construction_handoff_invalid');
+    assert.equal(construct.nextAction, 'fix-package-context');
     assert.match(construct.hint, /Contradictory handoff error/);
+    assert.equal(construct.readiness.status, 'blocked');
+    assert.equal(construct.readiness.errorCount, 1);
+    assert.equal(session.config.name, 'Existing Config');
+  });
+
+  it('construct_workspace rejects stale handoffs with missing readiness details', async () => {
+    let session = createSession();
+    await dispatch('scaffold_from_scratch', { name: 'Existing Config' }, session);
+    let handoff = {
+      _type: 'workspace-construction-handoff',
+      valid: true,
+      intent: { brief: 'chat workspace', template: 'chat' },
+      options: {
+        packageContext: {
+          valid: true,
+          missing: { components: ['sn-team-room'] },
+          warnings: [{ path: 'available.components', message: 'Package missing available components.', severity: 'warning' }],
+        },
+      },
+      missing: { components: ['sn-team-room'] },
+      warnings: [{ path: 'available.components', message: 'Package missing available components.', severity: 'warning' }],
+    };
+
+    let plan = await dispatch('plan_workspace', handoff, session);
+    let construct = await dispatch('construct_workspace', handoff, session);
+
+    assert.equal(plan.status, 'ok');
+    assert.equal(plan.readiness.nextAction, 'review-package-readiness');
+    assert.equal(construct.status, 'error');
+    assert.equal(construct.tool, 'construct_workspace');
+    assert.equal(construct.code, 'construction_handoff_not_ready');
+    assert.equal(construct.nextAction, 'review-package-readiness');
+    assert.equal(construct.readiness.ready, false);
+    assert.equal(construct.readiness.missingCount, 1);
+    assert.deepEqual(construct.readiness.recovery, [{
+      kind: 'components',
+      item: 'sn-team-room',
+      action: 'register-component',
+    }]);
     assert.equal(session.config.name, 'Existing Config');
   });
 
