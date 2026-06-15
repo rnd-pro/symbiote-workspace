@@ -730,6 +730,7 @@ describe('packed package consumer', () => {
           createWorkspacePackageConstructionContext,
           createWorkspacePackagesConstructionContext,
           inspectWorkspacePackage,
+          prepareConstructionIntentWithPackageContext,
           WORKSPACE_PACKAGE_KIND,
           WORKSPACE_PACKAGE_SCHEMA_VERSION,
         } from 'symbiote-workspace/sharing';
@@ -757,6 +758,9 @@ describe('packed package consumer', () => {
           throw new Error('createWorkspacePackagesConstructionContext not exported from sharing');
         }
         if (typeof inspectWorkspacePackage !== 'function') throw new Error('inspectWorkspacePackage not exported from sharing');
+        if (typeof prepareConstructionIntentWithPackageContext !== 'function') {
+          throw new Error('prepareConstructionIntentWithPackageContext not exported from sharing');
+        }
         if (WORKSPACE_PACKAGE_KIND !== 'symbiote-workspace-package') throw new Error('WORKSPACE_PACKAGE_KIND mismatch');
         if (WORKSPACE_PACKAGE_SCHEMA_VERSION !== '0.1.0') throw new Error('WORKSPACE_PACKAGE_SCHEMA_VERSION mismatch');
 
@@ -778,6 +782,9 @@ describe('packed package consumer', () => {
           throw new Error('root createWorkspacePackagesConstructionContext missing');
         }
         if (typeof root.inspectWorkspacePackage !== 'function') throw new Error('root inspectWorkspacePackage missing');
+        if (typeof root.prepareConstructionIntentWithPackageContext !== 'function') {
+          throw new Error('root prepareConstructionIntentWithPackageContext missing');
+        }
 
         let browser = await import('symbiote-workspace/browser');
         if (!Array.isArray(browser.BROWSER_REQUIRED_IMPORTS)) throw new Error('browser BROWSER_REQUIRED_IMPORTS missing');
@@ -794,6 +801,19 @@ describe('packed package consumer', () => {
           throw new Error('browser createWorkspacePackagesConstructionContext missing');
         }
         if (typeof browser.inspectWorkspacePackage !== 'function') throw new Error('browser inspectWorkspacePackage missing');
+        if (typeof browser.prepareConstructionIntentWithPackageContext !== 'function') {
+          throw new Error('browser prepareConstructionIntentWithPackageContext missing');
+        }
+
+        let prepared = prepareConstructionIntentWithPackageContext({
+          requiredCapabilities: ['room.command']
+        }, {
+          valid: true,
+          requiredCapabilities: ['agent.runtime', 'room.command']
+        });
+        if (JSON.stringify(prepared.requiredCapabilities) !== JSON.stringify(['agent.runtime', 'room.command'])) {
+          throw new Error('prepareConstructionIntentWithPackageContext capability merge drifted');
+        }
       `);
 
       // Workspace package: round-trip export → import → validate through packed consumer

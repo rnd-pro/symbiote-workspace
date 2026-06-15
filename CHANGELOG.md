@@ -28,6 +28,11 @@ All notable changes to this project will be documented in this file.
   `moduleCapabilities`, required capability tags, source metadata, and compact
   readiness diagnostics without installing packages, activating plugins, or
   applying marketplace semantics.
+- **Package intent preparation helper** —
+  `prepareConstructionIntentWithPackageContext(intent, context)` is now part of
+  the root, sharing, and browser entrypoints so hosts can inspect the cloned
+  constructor intent with package-required capabilities merged before creating a
+  handoff.
 - **Constructor capability diagnostics** — construction plans now include
   `capabilities.byCapability` with selected coverage and ranked unselected
   module alternatives for unmet required capabilities.

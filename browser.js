@@ -56,6 +56,7 @@ export {
   createWorkspacePackageConstructionContext,
   createWorkspacePackagesConstructionContext,
   inspectWorkspacePackage,
+  prepareConstructionIntentWithPackageContext,
   validateWorkspacePackage,
 } from './sharing/index.js';
 

@@ -24,4 +24,5 @@ export {
   createWorkspaceConstructionHandoff,
   createWorkspacePackageConstructionContext,
   createWorkspacePackagesConstructionContext,
+  prepareConstructionIntentWithPackageContext,
 } from './package-construction-context.js';

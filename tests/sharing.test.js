@@ -14,6 +14,7 @@ import {
   inspectWorkspacePackage,
   diffConfigs,
   mergeConfigs,
+  prepareConstructionIntentWithPackageContext,
   validateWorkspacePackage,
 } from '../sharing/index.js';
 
@@ -1275,6 +1276,27 @@ describe('createWorkspacePackageConstructionContext', () => {
 });
 
 describe('createWorkspaceConstructionHandoff', () => {
+  it('prepares constructor intent with package context required capabilities', () => {
+    let context = {
+      valid: true,
+      requiredCapabilities: ['room.command', 'agent.runtime'],
+    };
+    let intent = {
+      brief: 'Build a command workspace.',
+      targetRegister: 'tool',
+      requiredCapabilities: ['room.command', 'custom.reporting'],
+    };
+
+    let prepared = prepareConstructionIntentWithPackageContext(intent, context);
+
+    assert.deepEqual(prepared, {
+      brief: 'Build a command workspace.',
+      targetRegister: 'tool',
+      requiredCapabilities: ['agent.runtime', 'custom.reporting', 'room.command'],
+    });
+    assert.deepEqual(intent.requiredCapabilities, ['room.command', 'custom.reporting']);
+  });
+
   it('merges package-required capabilities into constructor intent', () => {
     let configWithCaps = {
       ...PACKAGE_CONFIG,

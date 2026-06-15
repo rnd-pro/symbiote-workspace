@@ -448,6 +448,26 @@ export function createWorkspacePackageConstructionContext(input, options = {}) {
 }
 
 /**
+ * @param {string|Object} [intent] - Construction intent to enrich with package-required capabilities
+ * @param {Object} [context] - Result from createWorkspacePackageConstructionContext() or createWorkspacePackagesConstructionContext()
+ * @returns {Object}
+ */
+export function prepareConstructionIntentWithPackageContext(intent = {}, context = {}) {
+  let baseIntent = normalizeHandoffIntent(intent);
+  let valid = isObject(context) && context.valid === true;
+  let contextRequired = valid ? context.requiredCapabilities : [];
+  let requiredCapabilities = sortedStrings([
+    ...requiredIntentCapabilities(baseIntent),
+    ...(Array.isArray(contextRequired) ? contextRequired : []),
+  ]);
+
+  return {
+    ...baseIntent,
+    requiredCapabilities,
+  };
+}
+
+/**
  * @param {Object} context - Result from createWorkspacePackageConstructionContext() or createWorkspacePackagesConstructionContext()
  * @param {string|Object} [intent] - Construction intent to enrich with package-required capabilities
  * @returns {{
@@ -467,13 +487,8 @@ export function createWorkspacePackageConstructionContext(input, options = {}) {
  * }}
  */
 export function createWorkspaceConstructionHandoff(context, intent = {}) {
-  let baseIntent = normalizeHandoffIntent(intent);
   let valid = isObject(context) && context.valid === true;
-  let contextRequired = valid ? context.requiredCapabilities : [];
-  let requiredCapabilities = sortedStrings([
-    ...requiredIntentCapabilities(baseIntent),
-    ...(Array.isArray(contextRequired) ? contextRequired : []),
-  ]);
+  let preparedIntent = prepareConstructionIntentWithPackageContext(intent, context);
   let source = optionalClone(context, 'source');
   let sources = handoffSources(context);
   let requirements = optionalClone(context, 'requirements');
@@ -511,10 +526,7 @@ export function createWorkspaceConstructionHandoff(context, intent = {}) {
     _type: WORKSPACE_CONSTRUCTION_HANDOFF_TYPE,
     valid,
     ready,
-    intent: {
-      ...baseIntent,
-      requiredCapabilities,
-    },
+    intent: preparedIntent,
     options: {
       workspaceTemplates: valid && Array.isArray(context.workspaceTemplates)
         ? deepClone(context.workspaceTemplates)

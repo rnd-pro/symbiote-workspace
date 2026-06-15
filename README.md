@@ -790,6 +790,7 @@ import {
   createWorkspacePackageConstructionContext,
   createWorkspacePackagesConstructionContext,
   inspectWorkspacePackage,
+  prepareConstructionIntentWithPackageContext,
   validateWorkspacePackage,
   WORKSPACE_PACKAGE_KIND,
   WORKSPACE_PACKAGE_SCHEMA_VERSION,
@@ -851,12 +852,18 @@ or fix flows before creating a handoff. The same helper is exposed through
 dispatch/MCP as `create_workspace_packages_construction_context` and through the
 CLI as `create-workspace-packages-construction-context`.
 
+`prepareConstructionIntentWithPackageContext(intent, context)` returns a cloned
+constructor intent with package-required capabilities merged and sorted into
+`requiredCapabilities`. Use it when a host wants to inspect or route the prepared
+intent before creating a handoff.
+
 `createWorkspaceConstructionHandoff(context, intent)` converts a single-package
 or package-collection construction context into a handoff envelope with
 `_type: "workspace-construction-handoff"` plus the exact `{ intent, options }`
 shape consumed by `planWorkspaceConstruction(handoff.intent, handoff.options)`.
-It merges package `requiredCapabilities` into the supplied construction intent
-and passes only valid package templates and module descriptors through. The
+It uses `prepareConstructionIntentWithPackageContext()` to merge package
+`requiredCapabilities` into the supplied construction intent and passes only
+valid package templates and module descriptors through. The
 handoff also carries `options.packageContext`, which construction plans copy to
 `plan.packageContext` and `config.construction.packageContext` so agents can see
 package source, requirements, missing capability gaps, warnings, and readiness
