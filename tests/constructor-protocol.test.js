@@ -243,6 +243,23 @@ describe('planWorkspaceConstruction', () => {
     assert.equal(result.plan.modules[0].selectionReason, 'user');
     assert.deepEqual(result.plan.capabilities.matched, []);
     assert.deepEqual(result.plan.capabilities.missing, ['admin.records']);
+    assert.deepEqual(result.plan.capabilities.byCapability, [
+      {
+        capability: 'admin.records',
+        status: 'missing',
+        selected: [],
+        alternatives: [
+          {
+            panelType: 'records',
+            component: 'sn-data-table',
+            title: 'Records',
+            score: 110,
+            matchedCapabilities: ['admin.records'],
+            relatedCapabilities: ['admin.bulk-actions'],
+          },
+        ],
+      },
+    ]);
   });
 
   it('rejects malformed module capability option entries', () => {

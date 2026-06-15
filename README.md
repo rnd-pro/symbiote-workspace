@@ -460,7 +460,9 @@ components. When the intent includes `requiredCapabilities` and no explicit
 `module-selection` answer is provided, the constructor derives the module
 selection from declared descriptor capabilities. Explicit answers are preserved,
 and any uncovered requirements are reported in
-`config.construction.plan.capabilities.missing`.
+`config.construction.plan.capabilities.missing`. The plan also records
+`capabilities.byCapability` so agents can see which selected modules cover each
+requirement and which ranked unselected modules are available as alternatives.
 
 External descriptors that do not already have a matching `panelTypes` entry are
 materialized from `placement.panelType` or `tagName`. The constructor copies

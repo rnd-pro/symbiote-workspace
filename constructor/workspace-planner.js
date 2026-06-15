@@ -1050,6 +1050,61 @@ function matchingCapabilities(module, requiredCapabilities) {
   return requiredCapabilities.filter((capability) => capabilities.has(capability));
 }
 
+function capabilityTokens(capability) {
+  return String(capability || '')
+    .split(/[.:/_-]+/g)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function capabilityOverlap(requiredCapability, moduleCapabilities = []) {
+  let requiredTokens = new Set(capabilityTokens(requiredCapability));
+  let exact = [];
+  let related = [];
+
+  for (let capability of moduleCapabilities) {
+    if (capability === requiredCapability) {
+      exact.push(capability);
+      continue;
+    }
+    let tokens = capabilityTokens(capability);
+    if (tokens.some((token) => requiredTokens.has(token))) {
+      related.push(capability);
+    }
+  }
+
+  return { exact, related };
+}
+
+function capabilityCandidate(module, requiredCapability) {
+  let capabilities = Array.isArray(module.capabilities) ? module.capabilities : [];
+  let overlap = capabilityOverlap(requiredCapability, capabilities);
+  let score = (overlap.exact.length * 100) + (overlap.related.length * 10);
+
+  if (score === 0) return null;
+
+  return {
+    panelType: module.panelType || module.value,
+    component: module.component,
+    title: module.title || module.label || null,
+    score,
+    matchedCapabilities: overlap.exact,
+    relatedCapabilities: overlap.related.slice(0, 5),
+  };
+}
+
+function rankedCapabilityCandidates(requiredCapability, modules, selectedPanelTypes) {
+  return modules
+    .map((module) => capabilityCandidate(module, requiredCapability))
+    .filter(Boolean)
+    .filter((candidate) => !selectedPanelTypes.has(candidate.panelType))
+    .sort((a, b) => {
+      if (a.score !== b.score) return b.score - a.score;
+      return a.panelType.localeCompare(b.panelType);
+    })
+    .slice(0, 5);
+}
+
 function defaultModuleSelection(modules, requiredCapabilities) {
   if (!requiredCapabilities.length) return modules.map((module) => module.value);
 
@@ -1084,9 +1139,10 @@ function moduleSelectionReason(matchedCapabilities, requiredCapabilities, select
   return 'template-default';
 }
 
-function capabilityCoverage(requiredCapabilities, modules) {
+function capabilityCoverage(requiredCapabilities, modules, availableModules = modules) {
   let matched = new Set();
   let byModule = [];
+  let selectedPanelTypes = new Set(modules.map((module) => module.panelType));
 
   for (let module of modules) {
     let matchedCapabilities = matchingCapabilities(module, requiredCapabilities);
@@ -1099,11 +1155,28 @@ function capabilityCoverage(requiredCapabilities, modules) {
     });
   }
 
+  let byCapability = requiredCapabilities.map((capability) => {
+    let selectedMatches = byModule
+      .filter((entry) => entry.matchedCapabilities.includes(capability))
+      .map(({ panelType, component }) => ({ panelType, component }));
+    let alternatives = selectedMatches.length > 0
+      ? []
+      : rankedCapabilityCandidates(capability, availableModules, selectedPanelTypes);
+
+    return {
+      capability,
+      status: selectedMatches.length > 0 ? 'matched' : 'missing',
+      selected: selectedMatches,
+      alternatives,
+    };
+  });
+
   return {
     required: deepClone(requiredCapabilities),
     matched: requiredCapabilities.filter((capability) => matched.has(capability)),
     missing: requiredCapabilities.filter((capability) => !matched.has(capability)),
     byModule,
+    byCapability,
   };
 }
 
@@ -1519,7 +1592,11 @@ export function planWorkspaceConstruction(intent, options = {}) {
       sectionLayouts: sectionLayoutPlan(config),
     },
     modules: plannedModules,
-    capabilities: capabilityCoverage(normalized.requiredCapabilities, plannedModules),
+    capabilities: capabilityCoverage(
+      normalized.requiredCapabilities,
+      plannedModules,
+      moduleOptions(config),
+    ),
     theme: {
       recipe: {
         mode,

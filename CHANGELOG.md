@@ -26,6 +26,9 @@ All notable changes to this project will be documented in this file.
   workspace packages into constructor-ready `workspaceTemplates`,
   `moduleCapabilities`, required capability tags, and source metadata without
   installing packages, activating plugins, or applying marketplace semantics.
+- **Constructor capability diagnostics** — construction plans now include
+  `capabilities.byCapability` with selected coverage and ranked unselected
+  module alternatives for unmet required capabilities.
 - **Package collection construction context helper** —
   `createWorkspacePackagesConstructionContext({ packages, available })`
   aggregates package objects and JSON entries into one constructor-ready context
