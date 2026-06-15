@@ -136,9 +136,9 @@ function parseProtocolResponses(state) {
   }
 }
 
-function mcpSession(command, args, messages, timeout = 5000) {
+function mcpSession(command, args, messages, timeout = 5000, options = {}) {
   return new Promise((resolveSession, reject) => {
-    let child = spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'] });
+    let child = spawn(command, args, { ...options, stdio: ['pipe', 'pipe', 'pipe'] });
     let expected = messages.filter((message) => message.id !== undefined).length;
     let responses = [];
     let state = { buffer: '' };
@@ -717,6 +717,22 @@ describe('packed package consumer', () => {
           `Tool ${tool.name} readOnlyHint mismatch`,
         );
       }
+
+      let subpathResponses = await mcpSession(process.execPath, [
+        '--input-type=module',
+        '-e',
+        "import('symbiote-workspace/mcp')",
+      ], [
+        { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+        { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} },
+      ], 5000, withNpmEnv({ cwd: consumerDir }, npmEnv));
+      let subpathToolList = subpathResponses.find((response) => response.id === 2);
+      assert.ok(subpathToolList);
+      assert.equal(subpathToolList.result.tools.length, TOOLS.length);
+      assert.deepEqual(
+        subpathToolList.result.tools.map((tool) => tool.name).sort(),
+        [...expectedTools.keys()].sort(),
+      );
 
       // Workspace package: public export availability from sharing + root entry points
       await runNode(consumerDir, `

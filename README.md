@@ -322,7 +322,7 @@ programmatically.
 |----------|-------|
 | **Discovery** | `describe_workspace` `discover_components` `find_component` `list_component_tags` `list_categories` `list_used_components` |
 | **Scaffold** | `list_templates` `scaffold_workspace` `scaffold_from_scratch` |
-| **Construction** | `classify_workspace` `plan_workspace` `construct_workspace` `propose_workspace_patch` `validate_workspace_patch` `apply_workspace_patch` `export_workspace` |
+| **Construction** | `classify_workspace` `build_construction_questions` `answer_construction_question` `plan_workspace` `construct_workspace` `propose_workspace_patch` `validate_workspace_patch` `apply_workspace_patch` `export_workspace` |
 | **Groups** | `add_group` `remove_group` `update_group` `reorder_groups` `list_groups` |
 | **Sections** | `add_section` `remove_section` `update_section` `reorder_sections` `list_sections` |
 | **Layout** | `set_layout` `add_panel` `remove_panel` `resize_panel` `update_layout_behavior` |
@@ -417,6 +417,13 @@ programmatically.
 
 The constructor protocol is designed for agents that build workspaces from
 declared modules instead of editing application code directly.
+
+The read-only `classify_workspace` tool returns the matched template,
+normalized intent, initial questionnaire, and `nextAction: "plan-workspace"`.
+The read-only `build_construction_questions` and
+`answer_construction_question` tools expose the questionnaire step directly
+through dispatch, CLI, and MCP without creating a plan or mutating session
+state.
 
 The read-only `plan_workspace` tool returns the same construction plan without
 changing session state. The mutating `construct_workspace` tool writes the

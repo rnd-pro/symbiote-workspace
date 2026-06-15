@@ -182,6 +182,8 @@ describe('MCP Protocol', () => {
       [...expectedTools.keys()].sort(),
     );
     assert.equal(toolNames.has('classify_workspace'), true);
+    assert.equal(toolNames.has('build_construction_questions'), true);
+    assert.equal(toolNames.has('answer_construction_question'), true);
     assert.equal(toolNames.has('plan_workspace'), true);
     assert.equal(toolNames.has('construct_workspace'), true);
     assert.equal(toolNames.has('apply_workspace_patch'), true);
@@ -222,12 +224,92 @@ describe('MCP Protocol', () => {
     assert.equal(listGroups.annotations.readOnlyHint, true);
     assert.equal(pluginModules.annotations.readOnlyHint, true);
     assert.equal(pluginTemplates.annotations.readOnlyHint, true);
+    assert.equal(
+      toolList.result.tools.find((tool) => tool.name === 'build_construction_questions')
+        .annotations.readOnlyHint,
+      true,
+    );
+    assert.equal(
+      toolList.result.tools.find((tool) => tool.name === 'answer_construction_question')
+        .annotations.readOnlyHint,
+      true,
+    );
     for (let tool of workspacePatchTools) {
       assert.deepEqual(tool.inputSchema.anyOf, [
         { required: ['overlay'] },
         { required: ['patch'] },
       ]);
     }
+  });
+
+  it('lists construction questionnaire tools with schemas', async () => {
+    let responses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} },
+    ]);
+
+    let tools = responses.find((r) => r.id === 2).result.tools;
+    let buildTool = tools.find((tool) => tool.name === 'build_construction_questions');
+    let answerTool = tools.find((tool) => tool.name === 'answer_construction_question');
+
+    assert.ok(buildTool.inputSchema.properties.intent);
+    assert.ok(buildTool.inputSchema.properties.workspaceTemplates);
+    assert.deepEqual(buildTool.inputSchema.required, ['intent']);
+    assert.equal(buildTool.annotations.readOnlyHint, true);
+    assert.ok(answerTool.inputSchema.properties.questions);
+    assert.ok(answerTool.inputSchema.properties.questionId);
+    assert.ok(answerTool.inputSchema.properties.answer);
+    assert.deepEqual(answerTool.inputSchema.required, ['questions', 'questionId', 'answer']);
+    assert.equal(answerTool.annotations.readOnlyHint, true);
+  });
+
+  it('builds and answers construction questions via tools/call', async () => {
+    let buildResponses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'tools/call',
+        params: {
+          name: 'build_construction_questions',
+          arguments: { intent: 'chat workspace' },
+        },
+      },
+    ]);
+    let built = JSON.parse(buildResponses.find((r) => r.id === 2).result.content[0].text);
+
+    assert.equal(built.status, 'ok');
+    assert.equal(built.templateName, 'chat');
+    assert.equal(built.nextAction, 'plan-workspace');
+    assert.ok(built.questions.find((question) => question.id === 'theme-mode'));
+    assert.equal(built.plan, undefined);
+    assert.equal(built.config, undefined);
+
+    let answerResponses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'tools/call',
+        params: {
+          name: 'answer_construction_question',
+          arguments: {
+            questions: built.questions,
+            questionId: 'theme-mode',
+            answer: 'custom',
+          },
+        },
+      },
+    ]);
+    let answered = JSON.parse(answerResponses.find((r) => r.id === 2).result.content[0].text);
+
+    assert.equal(answered.status, 'ok');
+    assert.equal(answered.answeredQuestionId, 'theme-mode');
+    assert.equal(answered.nextAction, 'plan-workspace');
+    assert.equal(answered.questions.find((question) => question.id === 'theme-mode').answer, 'custom');
+    assert.equal(answered.questions.find((question) => question.id === 'theme-hue').status, 'answered');
+    assert.equal(answered.plan, undefined);
+    assert.equal(answered.config, undefined);
   });
 
   it('dispatches scaffold_from_scratch via tools/call', async () => {

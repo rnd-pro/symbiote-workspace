@@ -32,6 +32,8 @@ async function withTempDir(prefix, run) {
 
 let CONSTRUCTION_TOOLS = [
   'classify_workspace',
+  'build_construction_questions',
+  'answer_construction_question',
   'plan_workspace',
   'construct_workspace',
   'propose_workspace_patch',
@@ -122,6 +124,8 @@ describe('construction workflow registry', () => {
 
   it('marks mutating construction flow tools', () => {
     assert.equal(isMutating('classify_workspace'), false);
+    assert.equal(isMutating('build_construction_questions'), false);
+    assert.equal(isMutating('answer_construction_question'), false);
     assert.equal(isMutating('plan_workspace'), false);
     assert.equal(isMutating('construct_workspace'), true);
     assert.equal(isMutating('propose_workspace_patch'), false);
@@ -142,6 +146,16 @@ describe('construction workflow dispatch', () => {
     assert.equal(result.status, 'ok');
     assert.equal(result.templateName, 'video-studio');
     assert.equal(result.fallback, false);
+    assert.equal(result.intent.brief, 'video editing studio');
+    assert.equal(result.intent.template, 'video-studio');
+    assert.equal(result.nextAction, 'plan-workspace');
+    assert.deepEqual(result.readiness, {
+      ready: true,
+      valid: true,
+      status: 'ready',
+      nextAction: 'plan-workspace',
+    });
+    assert.ok(result.questions.find((question) => question.id === 'workspace-name'));
     assert.equal(session.config, null);
   });
 
@@ -154,7 +168,51 @@ describe('construction workflow dispatch', () => {
 
     assert.equal(result.status, 'ok');
     assert.equal(result.templateName, 'team-ai-room');
+    assert.equal(result.intent.template, 'team-ai-room');
+    assert.ok(result.questions.find((question) => question.id === 'module-selection'));
     assert.equal(result.fallback, false);
+    assert.equal(session.config, null);
+  });
+
+  it('build_construction_questions returns questionnaire state without planning or mutating', async () => {
+    let session = createSession();
+    let result = await dispatch('build_construction_questions', {
+      intent: {
+        brief: 'Build a social reply queue',
+        template: 'social-automation',
+        requiredCapabilities: ['automation.reply-template'],
+      },
+    }, session);
+
+    assert.equal(result.status, 'ok');
+    assert.equal(result.templateName, 'social-automation');
+    assert.equal(result.intent.template, 'social-automation');
+    assert.equal(result.nextAction, 'plan-workspace');
+    assert.ok(result.questions.find((question) => question.id === 'module-selection'));
+    assert.equal(result.config, undefined);
+    assert.equal(result.plan, undefined);
+    assert.equal(session.config, null);
+  });
+
+  it('answer_construction_question re-evaluates questionnaire state without mutating', async () => {
+    let session = createSession();
+    let initial = await dispatch('build_construction_questions', {
+      intent: 'Build a chat workspace',
+    }, session);
+
+    let result = await dispatch('answer_construction_question', {
+      questions: initial.questions,
+      questionId: 'theme-mode',
+      answer: 'custom',
+    }, session);
+
+    assert.equal(result.status, 'ok');
+    assert.equal(result.answeredQuestionId, 'theme-mode');
+    assert.equal(result.nextAction, 'plan-workspace');
+    assert.equal(result.questions.find((question) => question.id === 'theme-mode').answer, 'custom');
+    assert.equal(result.questions.find((question) => question.id === 'theme-hue').status, 'answered');
+    assert.equal(result.config, undefined);
+    assert.equal(result.plan, undefined);
     assert.equal(session.config, null);
   });
 

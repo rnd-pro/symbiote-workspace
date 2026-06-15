@@ -187,7 +187,7 @@ export const TOOLS = [
   },
   {
     name: 'classify_workspace',
-    description: 'Classify workspace intent and return the matched construction template.',
+    description: 'Classify workspace intent and return the normalized intent, questionnaire, and next planning action.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -195,6 +195,40 @@ export const TOOLS = [
         workspaceTemplates: { type: 'array', items: { type: 'object' } },
       },
       required: ['intent'],
+    },
+  },
+  {
+    name: 'build_construction_questions',
+    description: 'Build deterministic construction questions for an intent without planning or mutating the session.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        intent: { description: 'Workspace brief string or construction intent object.' },
+        template: { type: 'string', description: 'Explicit template override.' },
+        register: { type: 'string', enum: WORKSPACE_REGISTER_VALUES },
+        targetRegister: { type: 'string', enum: WORKSPACE_REGISTER_VALUES },
+        audience: { type: 'array', items: { type: 'string' } },
+        constraints: { type: 'array', items: { type: 'string' } },
+        requiredCapabilities: { type: 'array', items: { type: 'string' } },
+        preferredTheme: { type: 'object' },
+        options: { type: 'object', description: 'Constructor options for question generation.' },
+        moduleCapabilities: { type: 'array', items: { type: 'object' } },
+        workspaceTemplates: { type: 'array', items: { type: 'object' } },
+      },
+      required: ['intent'],
+    },
+  },
+  {
+    name: 'answer_construction_question',
+    description: 'Apply one construction answer and return the re-evaluated questionnaire without mutating the session.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        questions: { type: 'array', items: { type: 'object' } },
+        questionId: { type: 'string', description: 'Construction question ID to answer.' },
+        answer: { description: 'Answer value for the selected question.' },
+      },
+      required: ['questions', 'questionId', 'answer'],
     },
   },
   {
@@ -1235,14 +1269,69 @@ export async function dispatch(toolName, args, session) {
 
   if (toolName === 'classify_workspace') {
     let c = await getConstructor();
-    let templateName = c.matchTemplate(args.intent, {
-      workspaceTemplates: args.workspaceTemplates,
-    });
+    let constructionIntent = constructionIntentFromArgs(args);
+    let options = constructionOptionsFromArgs(args, constructionIntent);
+    let normalized = c.normalizeConstructionIntent(constructionIntent, options);
+    let templateMatch = c.matchTemplate(normalized.brief, options);
     return {
       status: 'ok',
-      templateName: templateName || 'dashboard',
-      fallback: !templateName,
+      templateName: normalized.template,
+      fallback: !templateMatch && !constructionIntent?.template,
+      intent: normalized,
+      questions: c.buildConstructionQuestions(normalized, options),
+      readiness: {
+        ready: true,
+        valid: true,
+        status: 'ready',
+        nextAction: 'plan-workspace',
+      },
+      nextAction: 'plan-workspace',
     };
+  }
+
+  if (toolName === 'build_construction_questions') {
+    let c = await getConstructor();
+    try {
+      let constructionIntent = constructionIntentFromArgs(args);
+      let options = constructionOptionsFromArgs(args, constructionIntent);
+      let intent = c.normalizeConstructionIntent(constructionIntent, options);
+      return {
+        status: 'ok',
+        intent,
+        templateName: intent.template,
+        questions: c.buildConstructionQuestions(intent, options),
+        readiness: {
+          ready: true,
+          valid: true,
+          status: 'ready',
+          nextAction: 'plan-workspace',
+        },
+        nextAction: 'plan-workspace',
+      };
+    } catch (err) {
+      return constructionError(toolName, err);
+    }
+  }
+
+  if (toolName === 'answer_construction_question') {
+    let c = await getConstructor();
+    try {
+      let questions = c.answerConstructionQuestion(args.questions, args.questionId, args.answer);
+      return {
+        status: 'ok',
+        questions,
+        answeredQuestionId: args.questionId,
+        readiness: {
+          ready: true,
+          valid: true,
+          status: 'ready',
+          nextAction: 'plan-workspace',
+        },
+        nextAction: 'plan-workspace',
+      };
+    } catch (err) {
+      return constructionError(toolName, err);
+    }
   }
 
   if (toolName === 'plan_workspace') {

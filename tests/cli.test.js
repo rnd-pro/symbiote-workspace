@@ -174,6 +174,42 @@ describe('CLI tool commands', () => {
     assert.deepEqual(result.verification, result.plan.verification);
   });
 
+  it('build-construction-questions returns questionnaire JSON without planning', async () => {
+    let { stdout } = await exec('build-construction-questions', 'chat workspace');
+    let result = JSON.parse(stdout);
+
+    assert.equal(result.status, 'ok');
+    assert.equal(result.intent.brief, 'chat workspace');
+    assert.equal(result.templateName, 'chat');
+    assert.equal(result.nextAction, 'plan-workspace');
+    assert.ok(result.questions.find((question) => question.id === 'workspace-name'));
+    assert.equal(result.plan, undefined);
+    assert.equal(result.config, undefined);
+  });
+
+  it('answer-construction-question returns re-evaluated questionnaire JSON', async () => {
+    let first = await exec('build-construction-questions', 'chat workspace');
+    let initial = JSON.parse(first.stdout);
+    let { stdout } = await exec(
+      'answer-construction-question',
+      '--questions',
+      JSON.stringify(initial.questions),
+      '--question-id',
+      'theme-mode',
+      '--answer',
+      '"custom"',
+    );
+    let result = JSON.parse(stdout);
+
+    assert.equal(result.status, 'ok');
+    assert.equal(result.answeredQuestionId, 'theme-mode');
+    assert.equal(result.nextAction, 'plan-workspace');
+    assert.equal(result.questions.find((question) => question.id === 'theme-mode').answer, 'custom');
+    assert.equal(result.questions.find((question) => question.id === 'theme-hue').status, 'answered');
+    assert.equal(result.plan, undefined);
+    assert.equal(result.config, undefined);
+  });
+
   it('plan alias accepts a full construction handoff JSON positional', async () => {
     let { stdout } = await exec('plan', constructionHandoffJson());
     let result = JSON.parse(stdout);

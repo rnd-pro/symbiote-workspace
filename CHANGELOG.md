@@ -6,6 +6,11 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **Construction questionnaire tools** — `classify_workspace` now returns the
+  normalized intent, initial questionnaire, readiness, and next action, while
+  `build_construction_questions` and `answer_construction_question` expose the
+  questionnaire step directly through dispatch, CLI, and MCP without planning
+  or mutating session state.
 - **Workspace package format** — `exportWorkspacePackage(config, manifest)`,
   `importWorkspacePackage(json)`, and `validateWorkspacePackage(packageObject)`
   wrap portable workspace configs with manifest metadata, host integration

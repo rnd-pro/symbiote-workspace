@@ -82,7 +82,7 @@ Options for 'scaffold':
   --register <r>      Override register (tool|admin|editor|agent-workspace|media-studio|brand|presentation)
   --output <f>        Write config to file
 
-Options for 'plan-workspace' and 'construct-workspace':
+Options for 'build-construction-questions', 'plan-workspace', and 'construct-workspace':
   --template <name>   Explicit template name
   --name <n>          Override workspace name
   --register <r>      Override target register
@@ -98,6 +98,11 @@ Options for 'plan-workspace' and 'construct-workspace':
                       Preferred theme recipe fields
   --options <json-object>
                       Constructor options, including construction handoff options
+
+Options for 'answer-construction-question':
+  --questions <json-array>   Existing construction questionnaire
+  --question-id <string>     Question ID to answer
+  --answer <json-value>      Answer value
 
 Options for 'export-workspace-package':
   --manifest <json-object>  Package manifest with id, name, version, description, etc.
@@ -265,6 +270,7 @@ const COMMAND_ALIASES = {
 const POSITIONAL_MAP = {
   scaffold_workspace: 'template',
   classify_workspace: 'intent',
+  build_construction_questions: 'intent',
   plan_workspace: 'intent',
   construct_workspace: 'intent',
   validate_config: '_filePath',
