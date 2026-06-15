@@ -1427,6 +1427,37 @@ describe('Package Collection Construction Context via MCP', () => {
     assert.ok(content.missing.plugins.includes('mcp-collection-beta-plugin'));
     assert.ok(content.warnings.length > 0);
   });
+
+  it('create_workspace_packages_construction_context via tools/call returns blocked readiness for empty collections', async () => {
+    let responses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: {
+          name: 'create_workspace_packages_construction_context',
+          arguments: { packages: [] },
+        },
+      },
+    ]);
+
+    let result = responses.find((r) => r.id === 2);
+    let content = JSON.parse(result.result.content[0].text);
+    assert.equal(content.status, 'ok');
+    assert.equal(content.valid, false);
+    assert.equal(content.ready, false);
+    assert.equal(content.nextAction, 'fix-package-context');
+    assert.equal(content.source.packageCount, 0);
+    assert.equal(content.source.validPackageCount, 0);
+    assert.deepEqual(content.workspaceTemplates, []);
+    assert.deepEqual(content.moduleCapabilities, []);
+    assert.deepEqual(content.requiredCapabilities, []);
+    assert.ok(content.errors.some((error) => error.path === 'packages'));
+    assert.equal(content.readiness.ready, false);
+    assert.equal(content.readiness.valid, false);
+    assert.equal(content.readiness.status, 'blocked');
+    assert.equal(content.readiness.nextAction, 'fix-package-context');
+    assert.equal(content.readiness.errorCount, 1);
+  });
 });
 
 describe('Construction Handoff via MCP', () => {

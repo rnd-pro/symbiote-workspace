@@ -1488,6 +1488,32 @@ describe('createWorkspacePackagesConstructionContext', () => {
     });
   }
 
+  it('returns blocked readiness for empty package collections', () => {
+    let ctx = createWorkspacePackagesConstructionContext({ packages: [] });
+
+    assert.equal(ctx.valid, false);
+    assert.equal(ctx.ready, false);
+    assert.deepEqual(ctx.source, {
+      type: 'workspace-package-collection',
+      packageCount: 0,
+      validPackageCount: 0,
+    });
+    assert.deepEqual(ctx.workspaceTemplates, []);
+    assert.deepEqual(ctx.moduleCapabilities, []);
+    assert.deepEqual(ctx.requiredCapabilities, []);
+    assert.ok(ctx.errors.some((error) => error.path === 'packages'));
+    assert.equal(ctx.readiness.ready, false);
+    assert.equal(ctx.readiness.valid, false);
+    assert.equal(ctx.readiness.status, 'blocked');
+    assert.equal(ctx.readiness.nextAction, 'fix-package-context');
+    assert.equal(ctx.readiness.source.packageCount, 0);
+    assert.equal(ctx.readiness.source.validPackageCount, 0);
+    assert.equal(ctx.readiness.sourceCount, 0);
+    assert.equal(ctx.readiness.errorCount, 1);
+    assert.equal(ctx.readiness.warningCount, 0);
+    assert.equal(ctx.readiness.missingCount, 0);
+  });
+
   it('aggregates object and JSON package entries into constructor-ready arrays', () => {
     let beta = createPackagedWorkspace({
       id: 'beta-package',

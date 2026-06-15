@@ -605,7 +605,7 @@ export function createWorkspacePackagesConstructionContext(input, options = {}) 
       message: 'Workspace package collection requires a non-empty packages array.',
       severity: 'error',
     });
-    return result;
+    return finalizeCollectionResult(result, [], [], []);
   }
 
   let state = {

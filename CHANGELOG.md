@@ -256,6 +256,10 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **Package collection readiness** — empty multi-package construction context
+  inputs now return blocked readiness diagnostics and `nextAction:
+  "fix-package-context"` through the sharing helper, dispatch, and MCP instead
+  of a raw invalid result without recovery guidance.
 - **Export/import portability aliases** — strict export/import checks now
   reject normalized host/local field aliases such as `server_url`,
   `workspace_root`, `file_path`, and `apiEndpoint`, while preserving portable

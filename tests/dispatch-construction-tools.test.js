@@ -2387,6 +2387,32 @@ describe('create_workspace_packages_construction_context dispatch', () => {
     assert.ok(result.warnings.length > 0);
   });
 
+  it('returns blocked readiness for empty package collections', async () => {
+    let session = createSession();
+    let result = await dispatch('create_workspace_packages_construction_context', {
+      packages: [],
+    }, session);
+
+    assert.equal(result.status, 'ok');
+    assert.equal(result.valid, false);
+    assert.equal(result.ready, false);
+    assert.equal(result.nextAction, 'fix-package-context');
+    assert.equal(result.source.packageCount, 0);
+    assert.equal(result.source.validPackageCount, 0);
+    assert.deepEqual(result.workspaceTemplates, []);
+    assert.deepEqual(result.moduleCapabilities, []);
+    assert.deepEqual(result.requiredCapabilities, []);
+    assert.ok(result.errors.some((error) => error.path === 'packages'));
+    assert.equal(result.readiness.ready, false);
+    assert.equal(result.readiness.valid, false);
+    assert.equal(result.readiness.status, 'blocked');
+    assert.equal(result.readiness.nextAction, 'fix-package-context');
+    assert.equal(result.readiness.errorCount, 1);
+    assert.equal(result.readiness.warningCount, 0);
+    assert.equal(result.readiness.missingCount, 0);
+    assert.equal(session.config, null);
+  });
+
   it('rejects missing packages with validateArgs-style error', async () => {
     let session = createSession();
     let result = await dispatch('create_workspace_packages_construction_context', {}, session);
