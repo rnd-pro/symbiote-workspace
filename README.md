@@ -736,6 +736,9 @@ package `moduleCapabilities`, explicit `requiredCapabilities`, package
 requirements, readiness gaps, and source metadata. Pass the returned
 `workspaceTemplates`, `moduleCapabilities`, and `requiredCapabilities` to
 `planWorkspaceConstruction()` or the construction dispatch tools.
+Dispatch and MCP handoff flows preserve those package-provided templates and
+module descriptors through `plan_workspace`, `construct_workspace`, and exported
+workspace config output.
 
 `createWorkspacePackagesConstructionContext({ packages, available })` aggregates
 multiple package entries (`{ package, templateName }` or `{ json, templateName }`)

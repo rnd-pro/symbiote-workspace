@@ -1946,6 +1946,59 @@ describe('create_workspace_construction_handoff dispatch', () => {
     assert.equal(freshSession.config, null);
   });
 
+  it('constructs real package-derived handoffs with package templates and module metadata', async () => {
+    let sourceSession = createSession();
+    await dispatch('construct_workspace', {
+      intent: 'sentiment review operations dashboard',
+      template: 'dashboard',
+      requiredCapabilities: ['analysis.sentiment', 'review.queue'],
+      moduleCapabilities: [EXTERNAL_SENTIMENT_MODULE],
+    }, sourceSession);
+
+    let exportResult = await dispatch('export_workspace_package', {
+      manifest: { id: 'com.example.handoff-real-package' },
+    }, sourceSession);
+    assert.equal(exportResult.status, 'ok');
+
+    let targetSession = createSession();
+    let contextResult = await dispatch('create_workspace_package_construction_context', {
+      json: exportResult.json,
+    }, targetSession);
+
+    assert.equal(contextResult.status, 'ok');
+    assert.equal(contextResult.valid, true);
+    assert.equal(contextResult.ready, true);
+    assert.equal(contextResult.workspaceTemplates[0].source.packageId, 'com.example.handoff-real-package');
+    assert.equal(contextResult.moduleCapabilities[0].tagName, 'acme-sentiment-panel');
+
+    let handoffResult = await dispatch('create_workspace_construction_handoff', {
+      context: contextResult,
+      intent: {
+        brief: 'Build the packaged sentiment workspace.',
+        template: contextResult.workspaceTemplates[0].name,
+      },
+    }, targetSession);
+
+    assert.equal(handoffResult.status, 'ok');
+    assert.equal(handoffResult.valid, true);
+    assert.equal(handoffResult.ready, true);
+    assert.equal(targetSession.config, null);
+
+    let planResult = await dispatch('plan_workspace', handoffResult, targetSession);
+    assert.equal(planResult.status, 'ok');
+    assert.deepEqual(planResult.plan.capabilities.missing, []);
+    assert.equal(planResult.config.panelTypes.sentiment.component, 'acme-sentiment-panel');
+    assert.equal(planResult.plan.packageContext.source.packageId, 'com.example.handoff-real-package');
+    assert.equal(targetSession.config, null);
+
+    let constructResult = await dispatch('construct_workspace', handoffResult, targetSession);
+    assert.equal(constructResult.status, 'ok');
+    assert.deepEqual(constructResult.plan.capabilities.missing, []);
+    assert.equal(targetSession.config.panelTypes.sentiment.component, 'acme-sentiment-panel');
+    assert.ok(targetSession.config.components.catalog.includes('acme-sentiment-panel'));
+    assert.ok(layoutReferencesPanel(targetSession.config.layout, 'sentiment'));
+  });
+
   it('handoff with invalid context returns valid: false and preserves session config', async () => {
     let session = createSession();
     assert.equal(session.config, null);

@@ -1282,6 +1282,106 @@ describe('Construction Handoff via MCP', () => {
     assert.equal(exportedConfig.intent.template, 'mcp-voice-video-room');
   });
 
+  it('plan_workspace and construct_workspace materialize real package-derived handoffs via tools/call', async () => {
+    let sourceResponses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: {
+          name: 'construct_workspace',
+          arguments: {
+            intent: 'sentiment review operations dashboard',
+            template: 'dashboard',
+            requiredCapabilities: ['analysis.sentiment', 'review.queue'],
+            moduleCapabilities: [EXTERNAL_SENTIMENT_MODULE],
+          },
+        },
+      },
+      {
+        jsonrpc: '2.0', id: 3, method: 'tools/call',
+        params: {
+          name: 'export_workspace_package',
+          arguments: { manifest: { id: 'com.example.mcp-real-handoff' } },
+        },
+      },
+    ], 5000);
+    let exportContent = JSON.parse(sourceResponses.find((r) => r.id === 3).result.content[0].text);
+    assert.equal(exportContent.status, 'ok');
+
+    let contextResponses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: {
+          name: 'create_workspace_package_construction_context',
+          arguments: { json: exportContent.json },
+        },
+      },
+    ]);
+    let context = JSON.parse(contextResponses.find((r) => r.id === 2).result.content[0].text);
+    assert.equal(context.status, 'ok');
+    assert.equal(context.valid, true);
+    assert.equal(context.ready, true);
+    assert.equal(context.source.packageId, 'com.example.mcp-real-handoff');
+    assert.equal(context.moduleCapabilities[0].tagName, 'acme-sentiment-panel');
+
+    let handoffResponses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: {
+          name: 'create_workspace_construction_handoff',
+          arguments: {
+            context,
+            intent: {
+              brief: 'Build the packaged sentiment workspace.',
+              template: context.workspaceTemplates[0].name,
+            },
+          },
+        },
+      },
+    ]);
+    let handoff = JSON.parse(handoffResponses.find((r) => r.id === 2).result.content[0].text);
+    assert.equal(handoff.status, 'ok');
+    assert.equal(handoff.valid, true);
+    assert.equal(handoff.ready, true);
+
+    let planResponses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: { name: 'plan_workspace', arguments: handoff },
+      },
+    ]);
+    let plan = JSON.parse(planResponses.find((r) => r.id === 2).result.content[0].text);
+    assert.equal(plan.status, 'ok');
+    assert.deepEqual(plan.plan.capabilities.missing, []);
+    assert.equal(plan.config.panelTypes.sentiment.component, 'acme-sentiment-panel');
+    assert.equal(plan.plan.packageContext.source.packageId, 'com.example.mcp-real-handoff');
+
+    let constructResponses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: { name: 'construct_workspace', arguments: handoff },
+      },
+      {
+        jsonrpc: '2.0', id: 3, method: 'tools/call',
+        params: { name: 'export_workspace', arguments: {} },
+      },
+    ], 5000);
+    let construct = JSON.parse(constructResponses.find((r) => r.id === 2).result.content[0].text);
+    let exported = JSON.parse(constructResponses.find((r) => r.id === 3).result.content[0].text);
+    let exportedConfig = JSON.parse(exported.json);
+
+    assert.equal(construct.status, 'ok');
+    assert.deepEqual(construct.plan.capabilities.missing, []);
+    assert.equal(exported.status, 'ok');
+    assert.equal(exportedConfig.panelTypes.sentiment.component, 'acme-sentiment-panel');
+    assert.ok(exportedConfig.components.catalog.includes('acme-sentiment-panel'));
+    assert.ok(layoutReferencesPanel(exportedConfig.layout, 'sentiment'));
+  });
+
   it('create_workspace_construction_handoff with invalid context returns errors via tools/call', async () => {
     let responses = await mcpSession([
       { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
