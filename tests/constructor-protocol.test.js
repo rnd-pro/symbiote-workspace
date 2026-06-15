@@ -295,6 +295,127 @@ describe('planWorkspaceConstruction', () => {
     assert.equal(layoutReferencesPanel(result.config.layout, 'archive'), false);
   });
 
+  it('materializes descriptor events and bindings only from selected modules', () => {
+    let result = planWorkspaceConstruction({
+      brief: 'Build a focused review shell',
+      template: 'review-shell',
+      requiredCapabilities: ['review.queue', 'review.detail'],
+    }, {
+      workspaceTemplates: [{
+        name: 'review-shell',
+        config: {
+          version: '0.3.0',
+          name: 'Review Shell',
+          register: 'tool',
+          panelTypes: {
+            review: {
+              title: 'Review',
+              component: 'acme-review-panel',
+            },
+            detail: {
+              title: 'Detail',
+              component: 'acme-detail-panel',
+            },
+            archive: {
+              title: 'Archive',
+              component: 'acme-archive-panel',
+            },
+          },
+          layout: {
+            type: 'split',
+            direction: 'horizontal',
+            first: { type: 'panel', panelType: 'review' },
+            second: {
+              type: 'split',
+              direction: 'horizontal',
+              first: { type: 'panel', panelType: 'detail' },
+              second: { type: 'panel', panelType: 'archive' },
+            },
+          },
+          data: {
+            bindings: [{
+              panelType: 'review',
+              component: 'acme-review-panel',
+              id: 'rows',
+              direction: 'input',
+              path: 'data.rows',
+            }],
+          },
+          events: [
+            {
+              id: 'authored-review-detail',
+              sourcePanel: 'review',
+              event: 'existing-select',
+              targetPanel: 'detail',
+              targetProperty: 'selection',
+            },
+          ],
+        },
+      }],
+      moduleCapabilities: [
+        {
+          tagName: 'acme-review-panel',
+          capabilities: ['review.queue'],
+          events: { emits: [{ name: 'row-select' }, { name: 'existing-select' }] },
+          bindings: [{ id: 'rows', direction: 'input', path: 'data.rows' }],
+        },
+        {
+          tagName: 'acme-detail-panel',
+          capabilities: ['review.detail'],
+          events: { consumes: [{ name: 'row-select' }, { name: 'existing-select' }] },
+          bindings: [{ id: 'selection', direction: 'input', path: 'data.selection' }],
+        },
+        {
+          tagName: 'acme-archive-panel',
+          capabilities: ['archive.search'],
+          events: { emits: [{ name: 'archive-select' }], consumes: [{ name: 'row-select' }] },
+          bindings: [{ id: 'archived-selection', direction: 'input', path: 'data.archiveSelection' }],
+        },
+      ],
+    });
+
+    assert.deepEqual(result.plan.answers.moduleSelection, ['detail', 'review']);
+    assert.deepEqual(result.config.events, [
+      {
+        id: 'authored-review-detail',
+        sourcePanel: 'review',
+        event: 'existing-select',
+        targetPanel: 'detail',
+        targetProperty: 'selection',
+      },
+      {
+        id: 'review-row-select',
+        sourcePanel: 'review',
+        event: 'row-select',
+      },
+      {
+        id: 'review-existing-select',
+        sourcePanel: 'review',
+        event: 'existing-select',
+      },
+    ]);
+    assert.deepEqual(result.config.data.bindings, [
+      {
+        panelType: 'review',
+        component: 'acme-review-panel',
+        id: 'rows',
+        direction: 'input',
+        path: 'data.rows',
+      },
+      {
+        panelType: 'detail',
+        component: 'acme-detail-panel',
+        id: 'selection',
+        direction: 'input',
+        path: 'data.selection',
+      },
+    ]);
+    assert.equal(layoutReferencesPanel(result.config.layout, 'archive'), false);
+
+    let validation = validateWorkspaceConfig(result.config, { strict: true });
+    assert.deepEqual(validation.errors, []);
+  });
+
   it('places modules by required capability coverage when no explicit answer is provided', () => {
     let result = planWorkspaceConstruction({
       brief: 'Build a social automation reply queue with imports',

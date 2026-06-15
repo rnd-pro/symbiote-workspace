@@ -1018,6 +1018,114 @@ function materializeSelectedDescriptorPanelMenuActions(config, selectedModules) 
   }
 }
 
+function descriptorEventNames(descriptor, direction) {
+  return (descriptor?.events?.[direction] || [])
+    .map((event) => event?.name)
+    .filter((name) => typeof name === 'string' && name.trim())
+    .map((name) => name.trim());
+}
+
+function eventBridgeKey(bridge) {
+  return [
+    bridge.sourcePanel || '',
+    bridge.event || '',
+    bridge.targetPanel || '',
+    bridge.targetProperty || '',
+    bridge.targetMethod || '',
+  ].join('\u0000');
+}
+
+function uniqueEventBridgeId(config, baseId) {
+  let existing = new Set((config.events || []).map((bridge) => bridge?.id).filter(Boolean));
+  if (!existing.has(baseId)) return baseId;
+  for (let i = 2; ; i++) {
+    let candidate = `${baseId}-${i}`;
+    if (!existing.has(candidate)) return candidate;
+  }
+}
+
+function selectedDescriptorPanelEntries(config, selectedModules) {
+  let descriptors = moduleDescriptorMap(config);
+  let selected = new Set(selectedModules);
+  return Object.entries(config.panelTypes || {})
+    .filter(([panelType]) => selected.has(panelType))
+    .map(([panelType, panel]) => ({
+      panelType,
+      panel,
+      descriptor: descriptors.get(panel?.component),
+    }))
+    .filter((entry) => entry.descriptor);
+}
+
+function materializeSelectedDescriptorEventBridges(config, selectedModules) {
+  let selectedPanels = selectedDescriptorPanelEntries(config, selectedModules);
+  let existingKeys = new Set((config.events || []).map(eventBridgeKey));
+  let additions = [];
+
+  for (let source of selectedPanels) {
+    for (let eventName of descriptorEventNames(source.descriptor, 'emits')) {
+      let bridge = {
+        id: `${source.panelType}-${eventName}`,
+        sourcePanel: source.panelType,
+        event: eventName,
+      };
+      let key = eventBridgeKey(bridge);
+      if (existingKeys.has(key)) continue;
+      bridge.id = uniqueEventBridgeId(config, bridge.id);
+      existingKeys.add(key);
+      additions.push(bridge);
+    }
+  }
+
+  if (additions.length) config.events = [...(config.events || []), ...additions];
+}
+
+function dataBindingKey(binding) {
+  return [
+    binding.panelType || '',
+    binding.component || '',
+    binding.id || '',
+    binding.direction || '',
+    binding.path || '',
+  ].join('\u0000');
+}
+
+function descriptorDataBindingRecords(source) {
+  return (source.descriptor.bindings || [])
+    .filter((binding) => isObject(binding))
+    .map((binding) => ({
+      panelType: source.panelType,
+      component: source.panel.component,
+      id: binding.id,
+      direction: binding.direction,
+      ...(binding.path ? { path: binding.path } : {}),
+      ...(binding.schema ? { schema: deepClone(binding.schema) } : {}),
+    }));
+}
+
+function materializeSelectedDescriptorDataBindings(config, selectedModules) {
+  let selectedPanels = selectedDescriptorPanelEntries(config, selectedModules);
+  let additions = selectedPanels.flatMap(descriptorDataBindingRecords);
+  if (!additions.length) return;
+  if (config.data !== undefined && !isObject(config.data)) {
+    throw new Error('Workspace config data must be an object before module bindings can be materialized.');
+  }
+  config.data ||= {};
+  if (config.data.bindings !== undefined && !Array.isArray(config.data.bindings)) {
+    throw new Error('Workspace config data.bindings must be an array before module bindings can be materialized.');
+  }
+
+  let existing = config.data.bindings || [];
+  let existingKeys = new Set(existing.map(dataBindingKey));
+  let uniqueAdditions = additions.filter((binding) => {
+    let key = dataBindingKey(binding);
+    if (existingKeys.has(key)) return false;
+    existingKeys.add(key);
+    return true;
+  });
+  if (uniqueAdditions.length) config.data.bindings = [...existing, ...uniqueAdditions];
+}
+
 function withModuleCapabilities(config, moduleCapabilities) {
   let next = deepClone(config);
   if (moduleCapabilities === undefined) return next;
@@ -1706,6 +1814,8 @@ export function planWorkspaceConstruction(intent, options = {}) {
   let verificationScope = answers.get('verification-scope') || [];
   materializeSelectedModuleLayout(config, modules);
   materializeSelectedDescriptorPanelMenuActions(config, modules);
+  materializeSelectedDescriptorEventBridges(config, modules);
+  materializeSelectedDescriptorDataBindings(config, modules);
   let plannedModules = modulePlan(
     config,
     modules,

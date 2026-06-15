@@ -46,6 +46,7 @@ let EXTERNAL_SENTIMENT_MODULE = {
   provider: '@acme/workspace-pack',
   capabilities: ['analysis.sentiment', 'review.queue'],
   actions: [{ id: 'refresh', label: 'Refresh', command: 'sentiment.refresh' }],
+  events: { emits: [{ name: 'sentiment-select' }] },
   bindings: [{ id: 'items', direction: 'input', path: 'data.sentiment' }],
   requiredHostServices: ['storage.project'],
   placement: {
@@ -292,6 +293,18 @@ describe('construction workflow dispatch', () => {
     assert.equal(session.config.panelTypes.sentiment.component, 'acme-sentiment-panel');
     assert.ok(session.config.components.catalog.includes('acme-sentiment-panel'));
     assert.ok(layoutReferencesPanel(session.config.layout, 'sentiment'));
+    assert.deepEqual(session.config.events, [{
+      id: 'sentiment-sentiment-select',
+      sourcePanel: 'sentiment',
+      event: 'sentiment-select',
+    }]);
+    assert.deepEqual(session.config.data.bindings, [{
+      panelType: 'sentiment',
+      component: 'acme-sentiment-panel',
+      id: 'items',
+      direction: 'input',
+      path: 'data.sentiment',
+    }]);
     assert.deepEqual(result.plan.capabilities.missing, []);
   });
 

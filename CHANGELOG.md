@@ -39,6 +39,10 @@ All notable changes to this project will be documented in this file.
   now expose descriptor actions, toolbar items, and menu items through
   `panelTypes.*.menuActions`, preserving authored menu actions on existing
   panel types while carrying command/event metadata for host shells.
+- **Module event and binding materialization** — selected constructor module
+  descriptors now expose emitted events as top-level broadcast bridges and
+  copy selected binding declarations into `data.bindings` for portable
+  host/runtime handoff.
 - **Package readiness propagation** — package construction handoffs now carry
   `options.packageContext`, and construction plans preserve it as
   `plan.packageContext` plus `config.construction.packageContext` so agents can

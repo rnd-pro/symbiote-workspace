@@ -17,6 +17,11 @@ module capability descriptors, and plugin packs first. Custom components or
 new modules are fallback outputs only when discovery shows that the requested
 capability is missing from the available catalog.
 
+Selected module descriptors are materialized into executable workspace
+surfaces: placement creates panel types, actions/menus/toolbars become panel
+shell actions, `events.emits` become portable broadcast event bridges, and
+bindings are copied into `data.bindings` for host/runtime handoff.
+
 ## Install
 
 ```bash
