@@ -17,6 +17,17 @@ server:
 node examples/visual-demo/preview.mjs --write-only --output-dir tmp/visual-demo-preview
 ```
 
+Run the realtime chat-state builder demo:
+
+```bash
+npm run demo:realtime-builder
+```
+
+The realtime builder demo uses mock chat and questionnaire state. Press Play to
+step from intent capture into service blueprint, dynamic layout assembly,
+widget registration, bindings, adaptive collapse priorities, validation state,
+and the required theme editor widget.
+
 For opt-in browser evidence, run the real-browser smoke. It starts the demo
 server, launches a Chrome-compatible browser through the DevTools Protocol, and
 asserts that the mounted workspace DOM has no preview error:

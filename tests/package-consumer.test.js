@@ -128,6 +128,26 @@ function assertWorkspacePackList(pack) {
     'Package must include the visual demo script',
   );
   assert.equal(
+    paths.has('examples/visual-demo/server-utils.js'),
+    true,
+    'Package must include the visual demo server helper',
+  );
+  assert.equal(
+    paths.has('examples/visual-demo/realtime-builder.js'),
+    true,
+    'Package must include the realtime builder demo script',
+  );
+  assert.equal(
+    paths.has('examples/visual-demo/realtime-builder-state.js'),
+    true,
+    'Package must include the realtime builder state model',
+  );
+  assert.equal(
+    paths.has('examples/visual-demo/realtime-builder-runtime.js'),
+    true,
+    'Package must include the realtime builder browser runtime',
+  );
+  assert.equal(
     paths.has('examples/visual-demo/browser-smoke.mjs'),
     true,
     'Package must include the opt-in visual demo browser smoke script',
