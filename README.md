@@ -23,22 +23,16 @@ shell actions, `events.emits` become portable broadcast event bridges, and
 bindings are copied into validated `data.bindings` records for host/runtime
 handoff.
 
-## Install
+## Package Status
 
-```bash
-npm install symbiote-workspace
-```
-
-For server mode (optional):
-
-```bash
-npm install symbiote-workspace symbiote-engine
-```
+This repository is currently verified through local package packing and a
+temporary consumer install. Do not use the npm registry as the source of truth
+for this pre-publication state.
 
 ## Local Package Verification
 
-For pre-publication development, verify the packed package through a temporary
-consumer instead of publishing to npm:
+Verify the packed package through a temporary consumer instead of publishing to
+npm:
 
 ```bash
 npm run test:package-consumer
@@ -175,43 +169,44 @@ await dispatch('save_config', { filePath: './workspace.json' }, session);
 
 ## CLI
 
-All registered tools are available as CLI commands:
+From a checked-out repository, all registered tools are available as CLI
+commands through the local entrypoint:
 
 ```bash
 # Scaffold
-npx symbiote-workspace scaffold chat --name "My Chat"
-npx symbiote-workspace scaffold-from-scratch --name "Blank WS"
-npx symbiote-workspace list-templates
+node cli.js scaffold chat --name "My Chat"
+node cli.js scaffold-from-scratch --name "Blank WS"
+node cli.js list-templates
 
 # Stateful mode (--config auto-saves on mutations)
-npx symbiote-workspace scaffold dashboard --config ws.json
-npx symbiote-workspace classify-workspace "agent review workspace"
-npx symbiote-workspace plan-workspace "agent review workspace" --name "Review Desk"
-npx symbiote-workspace propose-workspace-patch --config ws.json --overlay '{"theme":{"params":{"mode":"dark","hue":220}}}'
-npx symbiote-workspace validate-workspace-patch --config ws.json --overlay '{"register":"editor"}'
-npx symbiote-workspace apply-workspace-patch --config ws.json --overlay '{"name":"Review Desk"}'
-npx symbiote-workspace export-workspace --config ws.json
-npx symbiote-workspace add-group --config ws.json --id analytics --name Analytics
-npx symbiote-workspace add-section --config ws.json --groupId analytics --id overview --label Overview
-npx symbiote-workspace register-panel-type --config ws.json --name chart --title Chart --component sn-chart
-npx symbiote-workspace set-layout --config ws.json --layoutTree '{"type":"split","direction":"horizontal","ratio":0.3,"first":{"type":"panel","panelType":"sidebar"},"second":{"type":"panel","panelType":"chart"}}'
+node cli.js scaffold dashboard --config ws.json
+node cli.js classify-workspace "agent review workspace"
+node cli.js plan-workspace "agent review workspace" --name "Review Desk"
+node cli.js propose-workspace-patch --config ws.json --overlay '{"theme":{"params":{"mode":"dark","hue":220}}}'
+node cli.js validate-workspace-patch --config ws.json --overlay '{"register":"editor"}'
+node cli.js apply-workspace-patch --config ws.json --overlay '{"name":"Review Desk"}'
+node cli.js export-workspace --config ws.json
+node cli.js add-group --config ws.json --id analytics --name Analytics
+node cli.js add-section --config ws.json --groupId analytics --id overview --label Overview
+node cli.js register-panel-type --config ws.json --name chart --title Chart --component sn-chart
+node cli.js set-layout --config ws.json --layoutTree '{"type":"split","direction":"horizontal","ratio":0.3,"first":{"type":"panel","panelType":"sidebar"},"second":{"type":"panel","panelType":"chart"}}'
 
 # Discovery (auto-detects symbiote-ui)
-npx symbiote-workspace discover
-npx symbiote-workspace find-component --tagName sn-data-table
-npx symbiote-workspace list-component-tags
-npx symbiote-workspace list-categories
+node cli.js discover
+node cli.js find-component --tagName sn-data-table
+node cli.js list-component-tags
+node cli.js list-categories
 
 # Validation
-npx symbiote-workspace validate workspace.json
-npx symbiote-workspace describe workspace.json
-npx symbiote-workspace preview workspace.json --output-dir .workspace-preview
+node cli.js validate workspace.json
+node cli.js describe workspace.json
+node cli.js preview workspace.json --output-dir .workspace-preview
 
 # Server
-npx symbiote-workspace serve --port 3100 --plugins-dir ./plugins
+node cli.js serve --port 3100 --plugins-dir ./plugins
 
 # MCP mode
-npx symbiote-workspace mcp
+node cli.js mcp
 ```
 
 ### CLI Aliases
@@ -328,7 +323,7 @@ credentials, user identity, URLs, local paths, or product code.
 Start as MCP server:
 
 ```bash
-npx symbiote-workspace mcp
+node cli.js mcp
 ```
 
 Exposes all 68 tools from the unified runtime registry via JSON-RPC over stdio.
@@ -792,7 +787,7 @@ Workspace configs are **portable JSON** — shareable like ComfyUI projects:
 Built-in workspace templates for quick start:
 
 ```bash
-npx symbiote-workspace list-templates
+node cli.js list-templates
 # chat, editor, graph, dashboard, admin, agent-workspace, social-automation, video-studio
 ```
 
@@ -990,7 +985,7 @@ or constructor options with `--options <json-object>` when agents pass only the
 handoff options through shell arguments:
 
 ```bash
-npx symbiote-workspace plan-workspace '{"_type":"workspace-construction-handoff","valid":true,"ready":true,"intent":{"brief":"Build a review queue workspace","template":"dashboard"},"options":{"workspaceTemplates":[],"moduleCapabilities":[]}}'
+node cli.js plan-workspace '{"_type":"workspace-construction-handoff","valid":true,"ready":true,"intent":{"brief":"Build a review queue workspace","template":"dashboard"},"options":{"workspaceTemplates":[],"moduleCapabilities":[]}}'
 ```
 
 The manifest rejects host, identity, and marketplace state:

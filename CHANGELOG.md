@@ -6,6 +6,10 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **Pre-publication package status** — README package instructions now describe
+  the current pack-based consumer verification path and local `node cli.js`
+  commands instead of presenting npm registry install or `npx` commands before
+  the package is published.
 - **Construction questionnaire tools** — `classify_workspace` now returns the
   normalized intent, initial questionnaire, readiness, and next action, while
   `build_construction_questions` and `answer_construction_question` expose the
