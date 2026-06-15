@@ -9,6 +9,7 @@
 
 import { readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { WORKSPACE_REGISTER_VALUES } from '../schema/workspace-schema.js';
 
 /**
  * @typedef {Object} ToolDefinition
@@ -18,16 +19,6 @@ import { resolve } from 'node:path';
  * @property {boolean} [mutates] - Whether this tool modifies config
  * @property {boolean} [writesFiles] - Whether this tool writes outside session state
  */
-
-const WORKSPACE_REGISTER_ENUM = Object.freeze([
-  'tool',
-  'admin',
-  'editor',
-  'agent-workspace',
-  'media-studio',
-  'brand',
-  'presentation',
-]);
 
 function toJsonString(value) {
   return typeof value === 'string' ? value : JSON.stringify(value);
@@ -111,7 +102,7 @@ export const TOOLS = [
       properties: {
         template: { type: 'string', description: 'Template name or intent text.' },
         name: { type: 'string', description: 'Workspace name override.' },
-        register: { type: 'string', enum: WORKSPACE_REGISTER_ENUM },
+        register: { type: 'string', enum: WORKSPACE_REGISTER_VALUES },
       },
     },
     mutates: true,
@@ -123,7 +114,7 @@ export const TOOLS = [
       type: 'object',
       properties: {
         name: { type: 'string', description: 'Workspace name.' },
-        register: { type: 'string', enum: WORKSPACE_REGISTER_ENUM },
+        register: { type: 'string', enum: WORKSPACE_REGISTER_VALUES },
       },
     },
     mutates: true,
@@ -149,8 +140,8 @@ export const TOOLS = [
         intent: { description: 'Workspace brief string or construction intent object.' },
         template: { type: 'string', description: 'Explicit template override.' },
         name: { type: 'string', description: 'Workspace name override.' },
-        register: { type: 'string', enum: WORKSPACE_REGISTER_ENUM },
-        targetRegister: { type: 'string', enum: WORKSPACE_REGISTER_ENUM },
+        register: { type: 'string', enum: WORKSPACE_REGISTER_VALUES },
+        targetRegister: { type: 'string', enum: WORKSPACE_REGISTER_VALUES },
         audience: { type: 'array', items: { type: 'string' } },
         constraints: { type: 'array', items: { type: 'string' } },
         requiredCapabilities: { type: 'array', items: { type: 'string' } },
@@ -172,8 +163,8 @@ export const TOOLS = [
         intent: { description: 'Workspace brief string or construction intent object.' },
         template: { type: 'string', description: 'Explicit template override.' },
         name: { type: 'string', description: 'Workspace name override.' },
-        register: { type: 'string', enum: WORKSPACE_REGISTER_ENUM },
-        targetRegister: { type: 'string', enum: WORKSPACE_REGISTER_ENUM },
+        register: { type: 'string', enum: WORKSPACE_REGISTER_VALUES },
+        targetRegister: { type: 'string', enum: WORKSPACE_REGISTER_VALUES },
         audience: { type: 'array', items: { type: 'string' } },
         constraints: { type: 'array', items: { type: 'string' } },
         requiredCapabilities: { type: 'array', items: { type: 'string' } },
