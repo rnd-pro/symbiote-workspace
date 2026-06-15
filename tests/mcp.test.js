@@ -1391,6 +1391,34 @@ describe('Construction Handoff via MCP', () => {
     assert.equal(content.errors.length, 0);
   });
 
+  it('create_workspace_construction_handoff via tools/call returns structured invalid intent errors', async () => {
+    let responses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: {
+          name: 'create_workspace_construction_handoff',
+          arguments: {
+            context: { valid: true, ready: true },
+            intent: {
+              brief: 'Invalid MCP handoff',
+              requiredCapabilities: ['valid', ''],
+            },
+          },
+        },
+      },
+    ]);
+
+    let result = responses.find((r) => r.id === 2);
+    assert.equal(result.result.isError, true);
+    let content = JSON.parse(result.result.content[0].text);
+    assert.equal(content.status, 'error');
+    assert.equal(content.tool, 'create_workspace_construction_handoff');
+    assert.equal(content.code, 'construction_handoff_intent_invalid');
+    assert.equal(content.nextAction, 'fix-construction-intent');
+    assert.match(content.hint, /requiredCapabilities must contain non-empty strings/);
+  });
+
   it('plan_workspace and construct_workspace accept handoff objects via tools/call', async () => {
     let handoffResponses = await mcpSession([
       { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },

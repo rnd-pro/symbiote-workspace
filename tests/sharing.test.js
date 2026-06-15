@@ -1390,9 +1390,32 @@ describe('createWorkspaceConstructionHandoff', () => {
     });
     let ctx = createWorkspacePackageConstructionContext(exported.package);
 
+    for (let requiredCapabilities of [
+      ['valid', ''],
+      ['valid', '   '],
+      ['valid', 42],
+      ['valid', ['nested']],
+      Array(1),
+    ]) {
+      assert.throws(
+        () => createWorkspaceConstructionHandoff(ctx, { requiredCapabilities }),
+        (error) => {
+          assert.equal(error.code, 'construction_handoff_intent_invalid');
+          assert.equal(error.nextAction, 'fix-construction-intent');
+          assert.match(error.message, /requiredCapabilities must contain non-empty strings/);
+          return true;
+        },
+      );
+    }
+
     assert.throws(
-      () => createWorkspaceConstructionHandoff(ctx, { requiredCapabilities: ['valid', ''] }),
-      /requiredCapabilities must contain non-empty strings/,
+      () => createWorkspaceConstructionHandoff(ctx, { requiredCapabilities: 'valid' }),
+      (error) => {
+        assert.equal(error.code, 'construction_handoff_intent_invalid');
+        assert.equal(error.nextAction, 'fix-construction-intent');
+        assert.match(error.message, /requiredCapabilities must be an array of strings/);
+        return true;
+      },
     );
   });
 });

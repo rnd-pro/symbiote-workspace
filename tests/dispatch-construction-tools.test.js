@@ -2330,6 +2330,35 @@ describe('create_workspace_construction_handoff dispatch', () => {
     assert.equal(freshSession.config, null);
   });
 
+  it('returns structured error for invalid handoff intent capabilities', async () => {
+    let session = createSession();
+    assert.equal(session.config, null);
+
+    let result = await dispatch('create_workspace_construction_handoff', {
+      context: { valid: true, ready: true },
+      intent: { brief: 'Invalid capability handoff', requiredCapabilities: ['valid', ''] },
+    }, session);
+
+    assert.equal(result.status, 'error');
+    assert.equal(result.tool, 'create_workspace_construction_handoff');
+    assert.equal(result.code, 'construction_handoff_intent_invalid');
+    assert.equal(result.nextAction, 'fix-construction-intent');
+    assert.match(result.hint, /requiredCapabilities must contain non-empty strings/);
+    assert.equal(session.config, null);
+
+    let nonArrayResult = await dispatch('create_workspace_construction_handoff', {
+      context: { valid: true, ready: true },
+      intent: { brief: 'Invalid capability handoff', requiredCapabilities: 'valid' },
+    }, session);
+
+    assert.equal(nonArrayResult.status, 'error');
+    assert.equal(nonArrayResult.tool, 'create_workspace_construction_handoff');
+    assert.equal(nonArrayResult.code, 'construction_handoff_intent_invalid');
+    assert.equal(nonArrayResult.nextAction, 'fix-construction-intent');
+    assert.match(nonArrayResult.hint, /requiredCapabilities must be an array of strings/);
+    assert.equal(session.config, null);
+  });
+
   it('rejects missing context with validateArgs-style error', async () => {
     let session = createSession();
     let result = await dispatch('create_workspace_construction_handoff', {}, session);

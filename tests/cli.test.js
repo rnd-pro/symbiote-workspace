@@ -310,4 +310,28 @@ describe('CLI error handling', () => {
       assert.match(result.hint, /Missing required arguments/);
     }
   });
+
+  it('prints structured create handoff intent errors as JSON', async () => {
+    try {
+      await exec(
+        'create-workspace-construction-handoff',
+        '--context',
+        JSON.stringify({ valid: true, ready: true }),
+        '--intent',
+        JSON.stringify({
+          brief: 'Invalid CLI handoff',
+          requiredCapabilities: ['valid', ''],
+        }),
+      );
+      assert.fail('Expected invalid handoff intent to exit with error');
+    } catch (err) {
+      assert.equal(err.code, 1);
+      let result = JSON.parse(err.stdout);
+      assert.equal(result.status, 'error');
+      assert.equal(result.tool, 'create_workspace_construction_handoff');
+      assert.equal(result.code, 'construction_handoff_intent_invalid');
+      assert.equal(result.nextAction, 'fix-construction-intent');
+      assert.match(result.hint, /requiredCapabilities must contain non-empty strings/);
+    }
+  });
 });

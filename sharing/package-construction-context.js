@@ -37,25 +37,38 @@ function sortedStrings(values = []) {
     .sort((a, b) => a.localeCompare(b));
 }
 
+function handoffIntentError(message) {
+  let error = new Error(message);
+  error.code = 'construction_handoff_intent_invalid';
+  error.nextAction = 'fix-construction-intent';
+  return error;
+}
+
 function requiredIntentCapabilities(intent) {
   if (intent.requiredCapabilities === undefined) return [];
   if (!Array.isArray(intent.requiredCapabilities)) {
-    throw new Error('Workspace construction handoff intent.requiredCapabilities must be an array of strings.');
+    throw handoffIntentError(
+      'Workspace construction handoff intent.requiredCapabilities must be an array of strings.',
+    );
   }
 
-  return intent.requiredCapabilities.map((value) => {
+  let requiredCapabilities = [];
+  for (let value of intent.requiredCapabilities) {
     if (typeof value !== 'string' || !value.trim()) {
-      throw new Error('Workspace construction handoff intent.requiredCapabilities must contain non-empty strings.');
+      throw handoffIntentError(
+        'Workspace construction handoff intent.requiredCapabilities must contain non-empty strings.',
+      );
     }
-    return value.trim();
-  });
+    requiredCapabilities.push(value.trim());
+  }
+  return requiredCapabilities;
 }
 
 function normalizeHandoffIntent(intent) {
   if (intent === undefined || intent === null) return {};
   if (typeof intent === 'string') return { brief: intent };
   if (!isObject(intent)) {
-    throw new Error('Workspace construction handoff intent must be a string or object.');
+    throw handoffIntentError('Workspace construction handoff intent must be a string or object.');
   }
   return deepClone(intent);
 }

@@ -865,6 +865,9 @@ Invalid handoff errors include `code: "construction_handoff_invalid"` and
 package source metadata. Missing capability entries also include `recovery`
 steps such as `register-component`, `install-plugin`, or `provide-host-service`
 so agents can route the next action without parsing prose.
+Invalid helper intent inputs in `create_workspace_construction_handoff` return
+`code: "construction_handoff_intent_invalid"` and
+`nextAction: "fix-construction-intent"` across dispatch, CLI, and MCP.
 It is exposed through dispatch/MCP as `create_workspace_construction_handoff`
 and through the CLI as `create-workspace-construction-handoff`.
 

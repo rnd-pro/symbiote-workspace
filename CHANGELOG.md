@@ -104,6 +104,11 @@ All notable changes to this project will be documented in this file.
 - **Invalid handoff diagnostics** — invalid construction handoff errors now
   include `code`, `nextAction`, and a blocked `readiness` payload so agents can
   route recovery to package-context fixes instead of readiness review.
+- **Invalid helper intent diagnostics** —
+  `create_workspace_construction_handoff` now returns
+  `code: "construction_handoff_intent_invalid"` and
+  `nextAction: "fix-construction-intent"` across dispatch, CLI, and MCP when
+  helper intent inputs are malformed.
 - **Top-level package readiness** — successful `plan_workspace` and
   `construct_workspace` responses now expose package readiness as top-level
   `readiness` when package context exists, matching the error recovery surface.

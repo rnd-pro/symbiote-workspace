@@ -1420,7 +1420,13 @@ export async function dispatch(toolName, args, session) {
       return { status: 'error', tool: toolName, hint: 'Missing required arguments: context' };
     }
     let { createWorkspaceConstructionHandoff } = await import('../sharing/index.js');
-    let raw = createWorkspaceConstructionHandoff(args.context, args.intent);
+    let raw;
+    try {
+      raw = createWorkspaceConstructionHandoff(args.context, args.intent);
+    } catch (err) {
+      if (err.code !== 'construction_handoff_intent_invalid') throw err;
+      return constructionError(toolName, err);
+    }
     return {
       status: 'ok',
       _type: WORKSPACE_CONSTRUCTION_HANDOFF_TYPE,
