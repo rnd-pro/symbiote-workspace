@@ -91,7 +91,7 @@ describe('checkDesignGuardrails', () => {
     assert.ok(result.issues.some((i) => i.check === 'layout-depth'));
   });
 
-  it('ignores unsupported children layout branches', () => {
+  it('does not traverse non-BSP layout branches', () => {
     let result = checkDesignGuardrails({
       version: '0.2.0',
       name: 'Unsupported Layout Shape',

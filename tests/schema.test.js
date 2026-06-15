@@ -135,8 +135,24 @@ describe('validateWorkspaceConfig', () => {
       },
     });
     assert.equal(result.valid, false);
+    assert.ok(result.errors.some((error) => error.path === 'layout.children'));
     assert.ok(result.errors.some((error) => error.path === 'layout.first'));
     assert.ok(result.errors.some((error) => error.path === 'layout.second'));
+  });
+
+  it('rejects children arrays on layout nodes', () => {
+    let result = validateWorkspaceConfig({
+      version: '0.2.0',
+      name: 'Children Layout',
+      layout: {
+        type: 'group',
+        children: [
+          { type: 'panel', panelType: 'a' },
+        ],
+      },
+    });
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some((error) => error.path === 'layout.children'));
   });
 
   it('rejects unknown keys in strict mode', () => {

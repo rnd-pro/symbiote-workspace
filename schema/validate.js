@@ -365,6 +365,14 @@ function validateValidationReports(validation, errors, warnings) {
 function validateLayoutNode(node, path, errors, warnings) {
   if (!isObject(node)) return;
 
+  if (Object.hasOwn(node, 'children')) {
+    errors.push({
+      path: `${path}.children`,
+      message: 'Layout nodes do not support children[]. Use BSP first/second nodes.',
+      severity: 'error',
+    });
+  }
+
   if (!node.type) {
     errors.push({
       path: `${path}.type`,
