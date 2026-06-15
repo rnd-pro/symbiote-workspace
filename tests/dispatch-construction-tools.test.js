@@ -182,6 +182,25 @@ describe('construction workflow dispatch', () => {
     assert.equal(session.config, null);
   });
 
+  it('plan_workspace exposes construction verification reports without mutating session config', async () => {
+    let session = createSession();
+    let result = await dispatch('plan_workspace', {
+      intent: 'dashboard workspace',
+      template: 'dashboard',
+      answers: {
+        'verification-scope': ['modules', 'portability', 'design'],
+      },
+    }, session);
+
+    assert.equal(result.status, 'ok');
+    assert.deepEqual(
+      result.plan.verification.reports.map((report) => report.check),
+      ['portability', 'design', 'modules'],
+    );
+    assert.deepEqual(result.config.validation.reports, result.plan.verification.reports);
+    assert.equal(session.config, null);
+  });
+
   it('plan_workspace accepts live construction capability arguments without mutating', async () => {
     let session = createSession();
     let result = await dispatch('plan_workspace', {
@@ -216,6 +235,7 @@ describe('construction workflow dispatch', () => {
     assert.deepEqual(result.plan.answers.moduleSelection, ['imports', 'reply']);
     assert.deepEqual(result.plan.capabilities.missing, []);
     assert.equal(session.config.construction.plan.theme.recipe.mode, 'dark');
+    assert.deepEqual(session.config.validation.reports, result.plan.verification.reports);
   });
 
   it('construct_workspace merges object intent with top-level construction fields', async () => {

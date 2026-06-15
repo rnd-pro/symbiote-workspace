@@ -4,6 +4,8 @@ import {
 } from '../schema/workspace-schema.js';
 import { validateModuleCapabilityDescriptor } from '../schema/module-capability.js';
 import { validateWorkspaceConfig } from '../schema/validate.js';
+import { exportConfig } from '../sharing/config-portability.js';
+import { checkDesignGuardrails } from '../validation/design-guardrails.js';
 
 /**
  * @typedef {Object} WorkspaceTemplate
@@ -705,7 +707,15 @@ let TOPOLOGY_OPTIONS = Object.freeze([
   'studio',
 ]);
 
-let VERIFICATION_TARGETS = Object.freeze(['layout', 'modules', 'theme', 'portability']);
+let VERIFICATION_TARGETS = Object.freeze([
+  'layout',
+  'modules',
+  'theme',
+  'portability',
+  'design',
+  'plugins',
+  'host-policy',
+]);
 
 let REGISTER_THEME_DEFAULTS = Object.freeze({
   tool: { hue: 210, chroma: 18 },
@@ -1836,8 +1846,147 @@ function verificationPlan(scope) {
     if (type === 'layout') return { id: 'layout-root', type, path: 'layout' };
     if (type === 'modules') return { id: 'module-catalog', type, path: 'panelTypes' };
     if (type === 'theme') return { id: 'theme-root', type, path: 'theme' };
-    return { id: 'portability-check', type, checks: ['no-auth', 'no-host-endpoints', 'no-local-paths'] };
+    if (type === 'design') return { id: 'design-guardrails', type, tool: 'check_guardrails' };
+    if (type === 'plugins') return { id: 'plugin-readiness', type, path: 'construction.packageContext.requirements.plugins' };
+    if (type === 'host-policy') return { id: 'host-policy-readiness', type, checks: ['host-services', 'runtime-slots'] };
+    return { id: 'portability-check', type, checks: ['strict-export', 'no-auth', 'no-host-endpoints', 'no-local-paths'] };
   });
+}
+
+function reportStatus(diagnostics = []) {
+  if (diagnostics.some((item) => item.severity === 'error' || item.severity === 'hard')) return 'blocked';
+  if (diagnostics.length > 0) return 'warn';
+  return 'pass';
+}
+
+function verificationSeverity(status) {
+  if (status === 'blocked') return 'error';
+  if (status === 'warn' || status === 'warning') return 'warning';
+  return 'info';
+}
+
+function portabilityVerificationReport(config) {
+  let exported = exportConfig(config, { strict: true });
+  let diagnostics = (exported.errors || []).map((error) => ({
+    surface: 'portability',
+    path: error.path || '',
+    severity: error.severity || 'error',
+    message: error.message || String(error),
+  }));
+  let status = reportStatus(diagnostics);
+  return {
+    id: 'portability-strict-export',
+    check: 'portability',
+    status,
+    severity: verificationSeverity(status),
+    message: status === 'pass'
+      ? 'Workspace config passes strict portable export checks.'
+      : 'Workspace config is not ready for strict portable export.',
+    diagnostics,
+  };
+}
+
+function designVerificationReport(config) {
+  let result = checkDesignGuardrails(config);
+  let diagnostics = (result.issues || []).map((issue) => ({
+    surface: 'design',
+    check: issue.check,
+    severity: issue.severity === 'error' ? 'error' : issue.severity,
+    message: issue.message,
+  }));
+  let status = result.pass ? (diagnostics.length > 0 ? 'warn' : 'pass') : 'blocked';
+  return {
+    id: 'design-guardrails',
+    check: 'design',
+    status,
+    severity: verificationSeverity(status),
+    message: status === 'pass'
+      ? 'Workspace design guardrails passed.'
+      : 'Workspace design guardrails returned diagnostics.',
+    diagnostics,
+  };
+}
+
+function capabilityVerificationReport(plan) {
+  let missing = Array.isArray(plan?.capabilities?.missing) ? plan.capabilities.missing : [];
+  let diagnostics = missing.map((item) => ({
+    surface: 'modules',
+    severity: 'error',
+    message: `Required capability "${item}" is not covered by selected modules.`,
+    capability: item,
+    action: 'provide-module-capability',
+  }));
+  let status = reportStatus(diagnostics);
+  return {
+    id: 'construction-capability-readiness',
+    check: 'modules',
+    status,
+    severity: verificationSeverity(status),
+    message: status === 'pass'
+      ? 'Selected modules cover required construction capabilities.'
+      : 'Selected modules do not cover all required construction capabilities.',
+    diagnostics,
+  };
+}
+
+function packageVerificationReport(packageReadiness) {
+  if (!packageReadiness) {
+    return {
+      id: 'package-host-readiness',
+      check: 'package-readiness',
+      status: 'pass',
+      severity: 'info',
+      message: 'No package context was provided for this construction plan.',
+      diagnostics: [],
+    };
+  }
+
+  let diagnostics = [];
+  if (packageReadiness.missingCount > 0) {
+    diagnostics.push({
+      surface: 'package',
+      severity: 'warning',
+      message: `${packageReadiness.missingCount} package, plugin, component, host-service, or runtime-slot requirement(s) are missing.`,
+      action: packageReadiness.nextAction,
+    });
+  }
+  if (packageReadiness.warningCount > 0) {
+    diagnostics.push({
+      surface: 'package',
+      severity: 'warning',
+      message: `${packageReadiness.warningCount} package readiness warning(s) require review.`,
+      action: packageReadiness.nextAction,
+    });
+  }
+  if (packageReadiness.errorCount > 0) {
+    diagnostics.push({
+      surface: 'package',
+      severity: 'error',
+      message: `${packageReadiness.errorCount} package readiness error(s) must be fixed.`,
+      action: packageReadiness.nextAction,
+    });
+  }
+
+  return {
+    id: 'package-host-readiness',
+    check: 'package-readiness',
+    status: packageReadiness.status,
+    severity: verificationSeverity(packageReadiness.status),
+    message: packageReadiness.ready
+      ? 'Package, plugin, and host requirements are ready for construction.'
+      : 'Package, plugin, or host requirements need review before construction.',
+    diagnostics,
+  };
+}
+
+function constructionVerificationReports(config, plan, packageReadiness, scope) {
+  let selected = new Set(scope);
+  let reports = [];
+  if (selected.has('portability')) reports.push(portabilityVerificationReport(config));
+  if (selected.has('design')) reports.push(designVerificationReport(config));
+  if (selected.has('modules')) reports.push(capabilityVerificationReport(plan));
+  if (selected.has('plugins') || selected.has('host-policy')) reports.push(packageVerificationReport(packageReadiness));
+  return reports;
 }
 
 function packageContextPlan(options) {
@@ -2040,6 +2189,7 @@ export function planWorkspaceConstruction(intent, options = {}) {
     },
     verification: {
       targets: verificationPlan(verificationScope),
+      reports: [],
     },
   };
   if (packageContext) plan.packageContext = packageContext;
@@ -2068,6 +2218,13 @@ export function planWorkspaceConstruction(intent, options = {}) {
       chroma: defaults.chroma,
     },
   };
+  let verificationReports = constructionVerificationReports(config, plan, packageReadiness, verificationScope);
+  plan.verification.reports = verificationReports;
+  config.validation = {
+    ...(deepClone(config.validation) || {}),
+    reports: verificationReports,
+  };
+  config.construction.plan = plan;
 
   return {
     intent: deepClone(config.intent),

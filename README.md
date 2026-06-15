@@ -495,6 +495,13 @@ stored in `config.construction.plan.capabilities`.
 `validation.reports` and `patches` can persist machine-readable review results
 from patch validation.
 
+Construction also writes verification reports to
+`config.construction.plan.verification.reports` and mirrors them to
+`config.validation.reports`. Reports compose existing portability export,
+design guardrail, module capability, and package/host readiness checks, so
+agents can inspect construction readiness without invoking separate validators
+or host-specific services.
+
 Selected descriptor bindings are also materialized into `config.data.bindings`.
 Each binding record carries `panelType`, `component`, `id`, `direction`, and
 optional `path`/`schema`; `direction` must be `input`, `output`, or `two-way`.

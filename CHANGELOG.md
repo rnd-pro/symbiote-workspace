@@ -59,6 +59,10 @@ All notable changes to this project will be documented in this file.
   validates cascade theme `params`, `relations`, token `overrides`, and scoped
   `subtrees[]`; construction plans carry subtree theme layers alongside root
   theme metadata for portable host mounting.
+- **Construction verification reports** — `planWorkspaceConstruction()` now
+  records verification reports under `plan.verification.reports` and mirrors
+  them to `config.validation.reports`, composing existing portability, design
+  guardrail, module capability, and package/host readiness checks.
 - **Module setting materialization** — generated constructor panel types and
   selected existing panel types now expose descriptor settings through
   `panelTypes.*.settings` while preserving authored panel settings.

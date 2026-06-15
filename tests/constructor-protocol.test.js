@@ -128,6 +128,64 @@ describe('planWorkspaceConstruction', () => {
     );
   });
 
+  it('records construction verification reports on the plan and config', () => {
+    let result = planWorkspaceConstruction({
+      brief: 'Build a dashboard',
+      template: 'dashboard',
+      requiredCapabilities: ['dashboard.card'],
+    }, {
+      answers: {
+        'verification-scope': ['modules', 'portability', 'design', 'plugins', 'host-policy'],
+      },
+    });
+
+    assert.deepEqual(
+      result.plan.verification.reports.map((report) => report.check),
+      ['portability', 'design', 'modules', 'package-readiness'],
+    );
+    assert.deepEqual(result.config.validation.reports, result.plan.verification.reports);
+    assert.equal(result.plan.verification.reports.find((report) => report.check === 'portability').status, 'pass');
+    assert.equal(result.plan.verification.reports.find((report) => report.check === 'modules').status, 'pass');
+    assert.equal(result.plan.verification.reports.find((report) => report.check === 'package-readiness').status, 'pass');
+    assert.equal(validateWorkspaceConfig(result.config, { strict: true }).valid, true);
+  });
+
+  it('blocks portability verification reports for non-portable construction values', () => {
+    let result = planWorkspaceConstruction({
+      brief: 'Build a non-portable dashboard',
+      template: 'nonportable-dashboard',
+    }, {
+      workspaceTemplates: [{
+        name: 'nonportable-dashboard',
+        config: {
+          version: '0.3.0',
+          name: 'Nonportable Dashboard',
+          register: 'tool',
+          data: {
+            endpoint: 'https://api.example.com',
+          },
+          panelTypes: {
+            summary: { title: 'Summary', component: 'sn-card' },
+          },
+          layout: { type: 'panel', panelType: 'summary' },
+          components: {
+            catalog: ['sn-card'],
+          },
+        },
+      }],
+      answers: {
+        'verification-scope': ['portability'],
+      },
+    });
+
+    let report = result.plan.verification.reports.find((item) => item.check === 'portability');
+
+    assert.equal(report.status, 'blocked');
+    assert.equal(report.severity, 'error');
+    assert.ok(report.diagnostics.some((item) => item.path === 'data.endpoint'));
+    assert.deepEqual(result.config.validation.reports, result.plan.verification.reports);
+  });
+
   it('carries scoped theme layers into the construction plan and config', () => {
     let result = planWorkspaceConstruction({
       brief: 'Build a scoped theme dashboard',
