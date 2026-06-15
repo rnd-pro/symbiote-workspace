@@ -505,7 +505,9 @@ agents can inspect construction readiness without invoking separate validators
 or host-specific services. Dispatch, CLI, and MCP construction responses expose
 the same payload as top-level `verification`. Report entries use stable
 `pass`, `warn`, or `blocked` status values with `info`, `warning`, or `error`
-severity, and both report locations are validated against the same shape.
+severity, and both report locations are validated against the same shape. Each
+report entry requires `id`, `check`, `status`, `severity`, and `message`; it may
+also include `version`, `diagnostics`, and `suggestedPatches`.
 
 Selected descriptor bindings are also materialized into `config.data.bindings`.
 Each binding record carries `panelType`, `component`, `id`, `direction`, and

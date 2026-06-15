@@ -249,6 +249,58 @@ describe('packed package consumer', () => {
         if (typeof validateWorkspaceConfig !== 'function') throw new Error('schema wildcard validateWorkspaceConfig export missing');
         if (!WORKSPACE_CONFIG_SCHEMA?.properties) throw new Error('schema wildcard WORKSPACE_CONFIG_SCHEMA export missing');
         if (!MODULE_CAPABILITY_DESCRIPTOR_SCHEMA?.properties) throw new Error('schema wildcard MODULE_CAPABILITY_DESCRIPTOR_SCHEMA export missing');
+        let validationReportSchema = WORKSPACE_CONFIG_SCHEMA.$defs?.validationReport;
+        if (!validationReportSchema?.properties) throw new Error('validationReport schema export missing');
+        if (JSON.stringify(validationReportSchema.required) !== JSON.stringify(['id', 'check', 'status', 'severity', 'message'])) {
+          throw new Error('validationReport required fields drifted');
+        }
+        if (JSON.stringify(validationReportSchema.properties.status.enum) !== JSON.stringify(['pass', 'warn', 'blocked'])) {
+          throw new Error('validationReport status enum drifted');
+        }
+        if (JSON.stringify(validationReportSchema.properties.severity.enum) !== JSON.stringify(['info', 'warning', 'error'])) {
+          throw new Error('validationReport severity enum drifted');
+        }
+        let validReportConfig = {
+          version: '0.3.0',
+          name: 'Report Contract',
+          validation: {
+            reports: [{
+              id: 'package-readiness',
+              check: 'package-readiness',
+              status: 'warn',
+              severity: 'warning',
+              message: 'Package capability missing.',
+            }],
+          },
+          construction: {
+            plan: {
+              verification: {
+                reports: [{
+                  id: 'package-readiness',
+                  check: 'package-readiness',
+                  status: 'warn',
+                  severity: 'warning',
+                  message: 'Package capability missing.',
+                }],
+              },
+            },
+          },
+        };
+        let validReportResult = validateWorkspaceConfig(validReportConfig);
+        if (!validReportResult.valid) throw new Error('installed validator rejected valid reports');
+        let invalidReportResult = validateWorkspaceConfig({
+          ...validReportConfig,
+          validation: {
+            reports: [{
+              id: 'bad-report',
+              check: 'package-readiness',
+              status: 'warning',
+              severity: 'warning',
+              message: 'Bad status.',
+            }],
+          },
+        });
+        if (invalidReportResult.valid) throw new Error('installed validator accepted invalid report status');
       `);
 
       await runNode(consumerDir, `

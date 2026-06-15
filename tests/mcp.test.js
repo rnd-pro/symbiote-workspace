@@ -1377,6 +1377,8 @@ describe('Construction Handoff via MCP', () => {
     assert.equal(plan.status, 'ok');
     assert.equal(plan.templateName, 'mcp-voice-video-room');
     assert.equal(plan.config.name, 'MCP Voice Video Room');
+    assert.deepEqual(plan.verification, plan.plan.verification);
+    assert.deepEqual(plan.config.validation.reports, plan.verification.reports);
 
     let constructResponses = await mcpSession([
       { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
@@ -1475,6 +1477,8 @@ describe('Construction Handoff via MCP', () => {
     assert.deepEqual(plan.plan.capabilities.missing, []);
     assert.equal(plan.config.panelTypes.sentiment.component, 'acme-sentiment-panel');
     assert.equal(plan.plan.packageContext.source.packageId, 'com.example.mcp-real-handoff');
+    assert.deepEqual(plan.verification, plan.plan.verification);
+    assert.deepEqual(plan.config.validation.reports, plan.verification.reports);
 
     let constructResponses = await mcpSession([
       { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
@@ -1627,6 +1631,11 @@ describe('Construction Handoff via MCP', () => {
     assert.equal(plan.status, 'ok');
     assert.equal(plan.plan.readiness.package.status, 'warning');
     assert.deepEqual(plan.readiness, plan.plan.readiness.package);
+    let packageReadinessReport = plan.verification.reports.find((report) => (
+      report.check === 'package-readiness'
+    ));
+    assert.equal(packageReadinessReport.status, 'warn');
+    assert.equal(packageReadinessReport.severity, 'warning');
     assert.equal(constructResponse.result.isError, true);
     assert.equal(construct.status, 'error');
     assert.equal(construct.tool, 'construct_workspace');
