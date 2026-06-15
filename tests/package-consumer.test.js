@@ -217,6 +217,7 @@ describe('packed package consumer', () => {
           'symbiote-workspace/runtime',
           'symbiote-workspace/constructor',
           'symbiote-workspace/schema',
+          'symbiote-workspace/schema/validate.js',
           'symbiote-workspace/loader',
           'symbiote-workspace/sharing',
           'symbiote-workspace/validation',
@@ -233,6 +234,9 @@ describe('packed package consumer', () => {
         import packageMeta from 'symbiote-workspace/package.json' with { type: 'json' };
         import { describeWorkspace, setLayout } from 'symbiote-workspace/handlers';
         import { loadWorkspaceConfig } from 'symbiote-workspace/loader';
+        import { validateWorkspaceConfig } from 'symbiote-workspace/schema/validate.js';
+        import { WORKSPACE_CONFIG_SCHEMA } from 'symbiote-workspace/schema/workspace-schema.js';
+        import { MODULE_CAPABILITY_DESCRIPTOR_SCHEMA } from 'symbiote-workspace/schema/module-capability.js';
 
         let sideEffects = packageMeta.sideEffects;
         if (!Array.isArray(sideEffects)) throw new Error('sideEffects metadata must be explicit');
@@ -241,6 +245,9 @@ describe('packed package consumer', () => {
         if (typeof describeWorkspace !== 'function') throw new Error('handlers describeWorkspace export missing');
         if (typeof setLayout !== 'function') throw new Error('handlers setLayout export missing');
         if (typeof loadWorkspaceConfig !== 'function') throw new Error('loader loadWorkspaceConfig export missing');
+        if (typeof validateWorkspaceConfig !== 'function') throw new Error('schema wildcard validateWorkspaceConfig export missing');
+        if (!WORKSPACE_CONFIG_SCHEMA?.properties) throw new Error('schema wildcard WORKSPACE_CONFIG_SCHEMA export missing');
+        if (!MODULE_CAPABILITY_DESCRIPTOR_SCHEMA?.properties) throw new Error('schema wildcard MODULE_CAPABILITY_DESCRIPTOR_SCHEMA export missing');
       `);
 
       await runNode(consumerDir, `

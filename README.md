@@ -79,6 +79,7 @@ CLI and MCP share the same dispatch layer — every tool available via MCP is al
 | `symbiote-workspace/server` | Node | Workspace server + plugin loader |
 | `symbiote-workspace/mcp` | Node | MCP stdio transport entrypoint |
 | `symbiote-workspace/schema` | Node | Schema definitions, validators |
+| `symbiote-workspace/schema/*` | Node | Direct schema module imports for validators and schema constants |
 | `symbiote-workspace/package.json` | Node | Package metadata for consumer tooling |
 
 ## Quick Start
