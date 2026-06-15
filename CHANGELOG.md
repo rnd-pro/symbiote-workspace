@@ -17,6 +17,12 @@ All notable changes to this project will be documented in this file.
 - Added construction lineage evidence to the realtime builder demo contract,
   including canonical questionnaire IDs, module capability coverage, decision
   traces, verification reports, and strict export/import evidence.
+- Added adaptive viewport preview evidence to the realtime builder demo so
+  wide, tablet, and mobile scenarios expose visible, docked, collapsed, and
+  protected panels, including the required theme editor widget.
+- Added stable adaptive/theme runtime evidence attributes and contract metadata
+  for responsive mode, breakpoint, theme mode, theme editor state, and theme
+  editor subtree binding.
 - Added an opt-in visual-demo browser smoke script that launches the packaged
   demo through a Chrome-compatible DevTools Protocol session and verifies the
   mounted workspace DOM without changing the default test command.

@@ -28,12 +28,20 @@ step from intent capture into service blueprint, dynamic layout assembly,
 widget registration, bindings, adaptive collapse priorities, validation state,
 and the required theme editor widget.
 
+Use the Wide, Tablet, and Mobile controls to preview the generated adaptive
+layout contract. The preview exposes visible, docked, collapsed, and protected
+panels for each viewport scenario while keeping the theme editor requirement
+visible in the contract. The demo shell also exposes stable adaptive and theme
+runtime state for responsive mode, breakpoint, theme mode, and theme editor
+status.
+
 The generated `demo.contract.json` includes the play stages, required widgets,
 acceptance matrix, build stream timeline, chat-state timeline, questionnaire
-decision trace, and construction trace. The construction trace records canonical
-questionnaire IDs, required module capability coverage, verification reports,
-and strict export/import evidence so the staged transformation is inspectable
-without reading the browser DOM.
+decision trace, adaptive viewport scenarios, and construction trace. The
+construction trace records canonical questionnaire IDs, required module
+capability coverage, adaptive/theme evidence, verification reports, and strict
+export/import evidence so the staged transformation is inspectable without
+reading the browser DOM.
 
 For opt-in browser evidence, run the real-browser smoke. It starts the demo
 server, launches a Chrome-compatible browser through the DevTools Protocol, and

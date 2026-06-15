@@ -100,6 +100,44 @@ function moduleCapability(panelTypeName, title, component, capabilities, icon) {
   };
 }
 
+function unique(items) {
+  return [...new Set(items.filter(Boolean))];
+}
+
+function adaptiveScenarios(options) {
+  let required = options.requiredElements || [];
+  let adaptive = options.adaptiveBehavior || {};
+  let collapseOrder = adaptive.collapseOrder || [];
+  let pinned = adaptive.pinned || [];
+  let protectedPanels = unique([...pinned, options.themeCascade?.editorWidget]);
+  let collapseByCount = (count) => collapseOrder.slice(0, count);
+  let scenario = (mode, inlineSize, collapsed, docked = []) => {
+    let dockedSet = new Set(docked);
+    let resolvedCollapsed = unique(collapsed.filter((item) => !dockedSet.has(item)));
+    let collapsedSet = new Set(resolvedCollapsed);
+    return {
+      mode,
+      inlineSize,
+      visiblePanels: required.filter((item) => !collapsedSet.has(item) && !dockedSet.has(item)),
+      dockedPanels: unique(docked),
+      collapsedPanels: resolvedCollapsed,
+      protectedPanels,
+      themeEditor: protectedPanels.includes('theme-editor') ? 'visible-or-docked' : 'not-required',
+      collapseRule: `${collapseOrder.join(' -> ') || 'none'} after ${protectedPanels.join(', ') || 'none'}`,
+    };
+  };
+  return [
+    scenario('wide', 1280, []),
+    scenario('tablet', 860, collapseByCount(Math.min(2, collapseOrder.length))),
+    scenario(
+      'mobile',
+      390,
+      collapseByCount(Math.max(0, collapseOrder.length - 1)),
+      protectedPanels.filter((item) => item !== 'agent-chat')
+    ),
+  ];
+}
+
 function chatState(options) {
   return {
     activeIntent: options.activeIntent,
@@ -110,6 +148,7 @@ function chatState(options) {
     layoutRoles: options.layoutRoles || {},
     widgetRegistry: options.widgetRegistry || [],
     adaptiveBehavior: options.adaptiveBehavior || null,
+    adaptiveScenarios: options.adaptiveScenarios || adaptiveScenarios(options),
     themeCascade: options.themeCascade || null,
     validationChecklist: options.validationChecklist || [],
     decisionTrace: options.decisionTrace || [],
@@ -1289,6 +1328,11 @@ function demoModuleCapabilities() {
 function buildConstructionTrace(finalStage) {
   let moduleCapabilities = demoModuleCapabilities();
   let requiredCapabilities = moduleCapabilities.flatMap((item) => item.capabilities.slice(0, 1));
+  let finalConfig = finalStage.config;
+  let finalChatState = finalStage.chatState;
+  let adaptivePriorities = Object.entries(finalConfig.construction.plan.adaptivePriorities || {})
+    .sort(([, a], [, b]) => b - a)
+    .map(([panelTypeName, importance]) => ({ panelType: panelTypeName, importance }));
   let result = planWorkspaceConstruction({
     brief: 'AI agent tool that creates a service UI from guided questionnaire answers.',
     template: 'dashboard',
@@ -1345,6 +1389,18 @@ function buildConstructionTrace(finalStage) {
       })),
     },
     verificationReports: result.plan.verification.reports,
+    adaptiveThemeEvidence: {
+      responsiveMode: finalConfig.rootBehavior.responsiveMode,
+      breakpoint: finalConfig.rootBehavior.responsiveBreakpoint,
+      adaptivePriorities,
+      collapseOrder: finalChatState.adaptiveBehavior.collapseOrder,
+      themeRecipe: finalConfig.theme.recipe,
+      themeParams: finalConfig.theme.params,
+      themeEditorBinding: finalConfig.data.bindings.find((item) => item.panelType === 'theme-editor'),
+      themeEditorSubtree: finalConfig.theme.subtrees.find((item) => (
+        item.selector.includes('theme-editor')
+      )),
+    },
     exportImportEvidence: {
       exportedBytes: exported.json.length,
       importedName: imported.config?.name,

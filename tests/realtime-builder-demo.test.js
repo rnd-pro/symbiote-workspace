@@ -49,6 +49,12 @@ describe('realtime builder demo', () => {
     ]);
     assert.deepEqual(demo.constructionTrace.capabilityCoverage.missing, []);
     assert.equal(demo.constructionTrace.exportImportEvidence.valid, true);
+    assert.equal(demo.constructionTrace.adaptiveThemeEvidence.responsiveMode, 'drawer');
+    assert.equal(demo.constructionTrace.adaptiveThemeEvidence.themeParams.mode, 'light');
+    assert.equal(
+      demo.constructionTrace.adaptiveThemeEvidence.themeEditorBinding.path,
+      'theme'
+    );
     assert.deepEqual(
       demo.constructionTrace.selectedModules.map((item) => item.panelType).sort(),
       demo.requiredWidgets.slice().sort()
@@ -80,6 +86,15 @@ describe('realtime builder demo', () => {
     );
     assert.equal(finalStage.chatState.themeCascade.editorWidget, 'theme-editor');
     assert.ok(finalStage.chatState.adaptiveBehavior.collapseOrder.includes('adaptive-rules'));
+    assert.deepEqual(
+      finalStage.chatState.adaptiveScenarios.map((scenario) => scenario.mode),
+      ['wide', 'tablet', 'mobile']
+    );
+    assert.ok(
+      finalStage.chatState.adaptiveScenarios
+        .find((scenario) => scenario.mode === 'mobile')
+        .dockedPanels.includes('theme-editor')
+    );
     assert.equal(finalStage.config.rootBehavior.responsiveMode, 'drawer');
   });
 
@@ -98,10 +113,25 @@ describe('realtime builder demo', () => {
       assert.deepEqual(contract.playStages, ['intent', 'questionnaire', 'builder', 'validation']);
       assert.deepEqual(contract.constructionTrace.capabilityCoverage.missing, []);
       assert.equal(contract.constructionTrace.exportImportEvidence.valid, true);
+      assert.equal(contract.constructionTrace.adaptiveThemeEvidence.breakpoint, 860);
+      assert.equal(
+        contract.constructionTrace.adaptiveThemeEvidence.themeEditorSubtree.params.hue,
+        280
+      );
       assert.deepEqual(contract.buildStreamTimeline.map((item) => item.progress), [25, 50, 75, 100]);
       assert.equal(contract.buildStreamTimeline.at(-1).operations.length, 4);
       assert.equal(contract.chatStateTimeline.length, 4);
       assert.equal(contract.chatStateTimeline.at(-1).requiredElements.includes('theme-editor'), true);
+      assert.deepEqual(
+        contract.chatStateTimeline.at(-1).adaptiveScenarios.map((scenario) => scenario.mode),
+        ['wide', 'tablet', 'mobile']
+      );
+      assert.equal(
+        contract.chatStateTimeline.at(-1).adaptiveScenarios
+          .find((scenario) => scenario.mode === 'mobile')
+          .themeEditor,
+        'visible-or-docked'
+      );
       assert.equal(contract.chatStateTimeline.at(-1).decisionTrace.length, 5);
       assert.match(html, /<script type="importmap">/);
       assert.match(app, /mountWorkspace/);
@@ -112,6 +142,11 @@ describe('realtime builder demo', () => {
       assert.match(app, /dataset\.buildKind/);
       assert.match(app, /Service blueprint/);
       assert.match(app, /Widget registry/);
+      assert.match(app, /Adaptive preview/);
+      assert.match(app, /dataset\.collapsedPanels/);
+      assert.match(app, /dataset\.themeEditorState/);
+      assert.match(app, /applyAdaptiveScenario/);
+      assert.match(app, /data-adaptive-state="collapsed"/);
       assert.match(app, /Questionnaire decisions/);
       assert.match(app, /Construction tool trace/);
       assert.doesNotMatch(app, /\/Users\//);
@@ -127,5 +162,8 @@ describe('realtime builder demo', () => {
     assert.match(smoke, /realtime-builder/);
     assert.match(smoke, /Realtime builder Play/);
     assert.match(smoke, /data-action="play"/);
+    assert.match(smoke, /mobile adaptive preview/);
+    assert.match(smoke, /data-adaptive-state="docked"/);
+    assert.match(smoke, /themeEditorState/);
   });
 });

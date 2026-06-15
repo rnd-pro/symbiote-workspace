@@ -424,12 +424,38 @@ new Promise((resolve, reject) => {
       'Layout roles',
       'Widget registry',
       'Adaptive and theme state',
+      'Adaptive preview',
+      'Construction tool trace',
     ].every((text) => document.body.textContent.includes(text));
     if (finalStage && finalKind && progress.includes('100%') && doneSteps.length >= 3 && activeSteps.length === 1 && themeEditor && contractSections) {
+      let mobile = document.querySelector('[data-viewport-mode="mobile"]');
+      if (!mobile) {
+        reject(new Error('Realtime builder mobile adaptive preview button is missing.'));
+        return;
+      }
+      mobile.click();
+      let mobileShell = document.querySelector('.demo-shell');
+      let dockedPanels = mobileShell?.dataset.dockedPanels || '';
+      let collapsedPanels = mobileShell?.dataset.collapsedPanels || '';
+      let dockedTheme = document.querySelector('[data-panel-type="theme-editor"][data-adaptive-state="docked"]');
+      let collapsedAdaptive = document.querySelector('[data-panel-type="adaptive-rules"][data-adaptive-state="collapsed"]');
+      let themeEvidence = mobileShell?.dataset.themeMode === 'light' &&
+        mobileShell?.dataset.themeEditorState === 'validated' &&
+        mobileShell?.dataset.adaptiveMode === 'drawer';
+      if (mobileShell?.dataset.viewportMode !== 'mobile' || !dockedPanels.includes('theme-editor') || !collapsedPanels.includes('adaptive-rules') || !dockedTheme || !collapsedAdaptive || !themeEvidence) {
+        reject(new Error('Realtime builder mobile adaptive preview did not expose docked/collapsed panels.'));
+        return;
+      }
       resolve({
         title: document.title,
-        stage: shell.dataset.stage,
-        buildKind: shell.dataset.buildKind,
+        stage: mobileShell.dataset.stage,
+        buildKind: mobileShell.dataset.buildKind,
+        viewportMode: mobileShell.dataset.viewportMode,
+        adaptiveMode: mobileShell.dataset.adaptiveMode,
+        themeMode: mobileShell.dataset.themeMode,
+        themeEditorState: mobileShell.dataset.themeEditorState,
+        dockedPanels,
+        collapsedPanels,
         progress,
         activeStep: activeSteps[0].textContent,
         doneStepCount: doneSteps.length,

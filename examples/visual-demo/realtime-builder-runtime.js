@@ -80,6 +80,7 @@ import { applyCascadeTheme } from '${BROWSER_THEME_IMPORT}';
 let demo = ${escapeScriptJson(demo)};
 let stageIndex = 0;
 let operationIndex = 0;
+let viewportMode = 'wide';
 let mounted = null;
 let playTimer = null;
 
@@ -182,6 +183,28 @@ styles.replaceSync(\`
   .demo-stage-chip[aria-current="step"] {
     border-color: var(--demo-accent);
     color: var(--demo-accent);
+  }
+  .demo-viewport-controls {
+    display: flex;
+    gap: 0.25rem;
+    padding: 0.2rem;
+    border: 1px solid var(--demo-border);
+    border-radius: 8px;
+    background: Canvas;
+  }
+  .demo-viewport-button {
+    min-height: 1.75rem;
+    padding: 0 0.5rem;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: CanvasText;
+    cursor: pointer;
+    font-size: 0.78rem;
+  }
+  .demo-viewport-button[aria-pressed="true"] {
+    background: var(--demo-accent);
+    color: white;
   }
   .demo-build-progress {
     display: grid;
@@ -398,6 +421,13 @@ styles.replaceSync(\`
   .symbiote-workspace__panel {
     transition: border-color 180ms ease, transform 180ms ease;
   }
+  .symbiote-workspace__panel[data-adaptive-state="collapsed"] {
+    display: none;
+  }
+  .symbiote-workspace__panel[data-adaptive-state="docked"] {
+    border-color: var(--demo-accent);
+    box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--demo-accent) 42%, transparent);
+  }
   @media (max-width: 980px) {
     .demo-shell {
       grid-template-columns: 1fr;
@@ -431,6 +461,9 @@ styles.replaceSync(\`
     .demo-stage-rail {
       flex: 1 1 100%;
     }
+    .demo-viewport-controls {
+      flex: 0 0 auto;
+    }
     .demo-build-progress {
       flex: 1 1 100%;
     }
@@ -454,6 +487,7 @@ shell.innerHTML = \`
       <span></span>
       <i aria-hidden="true"></i>
     </div>
+    <div class="demo-viewport-controls" role="group" aria-label="Adaptive preview"></div>
     <div class="demo-stage-rail" role="tablist" aria-label="Demo stages"></div>
   </header>
   <aside class="demo-chat" aria-label="Chat and questionnaire"></aside>
@@ -468,6 +502,7 @@ let title = shell.querySelector('.demo-title strong');
 let subtitle = shell.querySelector('.demo-title span');
 let playButton = shell.querySelector('[data-action="play"]');
 let buildProgress = shell.querySelector('.demo-build-progress');
+let viewportControls = shell.querySelector('.demo-viewport-controls');
 let stageRail = shell.querySelector('.demo-stage-rail');
 let chat = shell.querySelector('.demo-chat');
 let workspace = shell.querySelector('.demo-workspace');
@@ -546,6 +581,29 @@ function appendContractSection(parent, title, rows) {
   parent.appendChild(section);
 }
 
+function adaptiveScenario(stage) {
+  let scenarios = stage.chatState?.adaptiveScenarios || [];
+  return scenarios.find((item) => item.mode === viewportMode) || scenarios[0] || null;
+}
+
+function renderViewportControls(stage) {
+  let scenarios = stage.chatState?.adaptiveScenarios || [];
+  viewportControls.textContent = '';
+  for (let scenario of scenarios) {
+    let button = document.createElement('button');
+    button.className = 'demo-viewport-button';
+    button.type = 'button';
+    button.dataset.viewportMode = scenario.mode;
+    button.textContent = scenario.mode;
+    button.setAttribute('aria-pressed', String(scenario.mode === viewportMode));
+    button.addEventListener('click', () => {
+      viewportMode = scenario.mode;
+      renderStage(stageIndex);
+    });
+    viewportControls.appendChild(button);
+  }
+}
+
 function renderStageRail() {
   stageRail.textContent = '';
   demo.stages.forEach((stage, index) => {
@@ -619,6 +677,7 @@ function renderInspector(stage) {
   let theme = chatState.themeCascade || {};
   let decisions = chatState.decisionTrace || [];
   let constructionTrace = demo.constructionTrace || {};
+  let scenario = adaptiveScenario(stage);
   inspector.textContent = '';
 
   let heading = document.createElement('h2');
@@ -633,6 +692,7 @@ function renderInspector(stage) {
     ['Bindings', plural(bindings.length, 'wired')],
     ['Events', plural(events.length, 'bridged')],
     ['Adaptive mode', config.rootBehavior?.responsiveMode || 'preserve'],
+    ['Viewport preview', scenario ? \`\${scenario.mode} / \${scenario.inlineSize}px\` : 'pending'],
     ['Chat state', chatState.questionnaireStatus || 'pending'],
     ['Theme editor', panels.includes('theme-editor') ? 'required widget present' : 'missing'],
     ['Validation', validation.valid ? 'strict config pass' : 'strict config fail'],
@@ -673,6 +733,17 @@ function renderInspector(stage) {
     { label: 'Theme source', value: theme.source || 'pending' },
     { label: 'Theme editor', value: \`\${theme.editorWidget || 'missing'} / \${theme.status || 'pending'}\` },
   ]);
+
+  if (scenario) {
+    appendContractSection(inspector, 'Adaptive preview', [
+      { label: 'Visible panels', value: scenario.visiblePanels.join(', ') || 'none' },
+      { label: 'Docked panels', value: scenario.dockedPanels.join(', ') || 'none' },
+      { label: 'Collapsed panels', value: scenario.collapsedPanels.join(', ') || 'none' },
+      { label: 'Protected panels', value: scenario.protectedPanels.join(', ') || 'none' },
+      { label: 'Theme editor', value: scenario.themeEditor },
+      { label: 'Collapse rule', value: scenario.collapseRule },
+    ]);
+  }
 
   appendContractSection(
     inspector,
@@ -729,19 +800,49 @@ function renderWorkspace(stage) {
     themeAdapter: { applyCascadeTheme },
     strictComponents: false,
   });
+  applyAdaptiveScenario(stage);
+}
+
+function applyAdaptiveScenario(stage) {
+  let scenario = adaptiveScenario(stage);
+  if (!scenario) return;
+  let collapsed = new Set(scenario.collapsedPanels);
+  let docked = new Set(scenario.dockedPanels);
+  let visible = [];
+  for (let panel of workspace.querySelectorAll('[data-panel-type]')) {
+    let panelType = panel.dataset.panelType;
+    let state = collapsed.has(panelType) ? 'collapsed' : docked.has(panelType) ? 'docked' : 'visible';
+    panel.dataset.adaptiveState = state;
+    if (state !== 'collapsed') visible.push(panelType);
+  }
+  workspace.dataset.visiblePanels = visible.join(',');
+  workspace.dataset.collapsedPanels = scenario.collapsedPanels.join(',');
+  workspace.dataset.dockedPanels = scenario.dockedPanels.join(',');
 }
 
 function renderStage(index) {
   stageIndex = index;
   let stage = demo.stages[stageIndex];
+  let scenario = adaptiveScenario(stage);
+  let adaptive = stage.chatState?.adaptiveBehavior || {};
+  let theme = stage.chatState?.themeCascade || {};
   let progress = buildProgressPercent(stageIndex);
   let activeOperation = buildOperations(stage)[operationIndex];
   shell.dataset.stage = stage.id;
   shell.dataset.buildKind = activeOperation?.label.toLowerCase().replaceAll(' ', '-') || 'stage';
+  shell.dataset.adaptiveMode = adaptive.mode || '';
+  shell.dataset.adaptiveBreakpoint = String(adaptive.breakpoint || stage.config.rootBehavior?.responsiveBreakpoint || '');
+  shell.dataset.themeMode = theme.mode || stage.config.theme?.params?.mode || '';
+  shell.dataset.themeEditorState = theme.status || '';
+  shell.dataset.viewportMode = scenario?.mode || viewportMode;
+  shell.dataset.collapsedPanels = scenario?.collapsedPanels.join(',') || '';
+  shell.dataset.dockedPanels = scenario?.dockedPanels.join(',') || '';
+  workspace.dataset.viewportMode = scenario?.mode || viewportMode;
   title.textContent = demo.name;
   subtitle.textContent = \`\${stage.clock} - \${stage.title}\`;
   buildProgress.querySelector('span').textContent = \`Build \${progress}%\`;
   buildProgress.style.setProperty('--demo-progress', \`\${progress}%\`);
+  renderViewportControls(stage);
   renderStageRail();
   renderChat(stage);
   renderWorkspace(stage);
@@ -823,6 +924,7 @@ export async function writeRealtimeChatStateDemo(options = {}) {
       activeQuestionId: stage.chatState.activeQuestionId,
       questionnaireStatus: stage.chatState.questionnaireStatus,
       requiredElements: stage.chatState.requiredElements,
+      adaptiveScenarios: stage.chatState.adaptiveScenarios,
       decisionTrace: stage.chatState.decisionTrace,
       nextPatch: stage.chatState.nextPatch,
     })),
