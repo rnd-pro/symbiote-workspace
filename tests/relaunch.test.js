@@ -331,12 +331,25 @@ function catalogForConfig(config) {
 }
 
 function assertRelaunchable(config, label) {
+  let reports = config.construction?.plan?.verification?.reports;
   let exported = exportConfig(config, { strict: true });
   assert.ok(exported.json, `${label} exports strict portable JSON`);
 
   let imported = importConfig(exported.json);
   assert.ok(imported.config, `${label} imports from exported JSON`);
   assert.deepEqual(imported.errors, []);
+  if (reports) {
+    assert.deepEqual(
+      imported.config.construction.plan.verification.reports,
+      reports,
+      `${label} preserves construction verification reports`,
+    );
+    assert.deepEqual(
+      imported.config.validation.reports,
+      reports,
+      `${label} preserves mirrored validation reports`,
+    );
+  }
 
   let catalog = catalogForConfig(imported.config);
   let loaded = loadWorkspaceConfig(imported.config, { catalog, strict: true });
@@ -373,6 +386,9 @@ describe('portable workspace relaunch', () => {
       name: 'Portable Agent Review',
       requiredCapabilities: ['agent.review', 'workflow.node-editor'],
     }, session);
+    let reports = session.config.construction.plan.verification.reports;
+    assert.ok(reports.length > 0);
+    assert.deepEqual(session.config.validation.reports, reports);
 
     let exported = await dispatch('export_workspace', { strict: true }, session);
     assert.equal(exported.status, 'ok');
@@ -380,6 +396,8 @@ describe('portable workspace relaunch', () => {
     let relaunched = createSession();
     let imported = await dispatch('import_config', { json: exported.json }, relaunched);
     assert.equal(imported.status, 'ok');
+    assert.deepEqual(relaunched.config.construction.plan.verification.reports, reports);
+    assert.deepEqual(relaunched.config.validation.reports, reports);
 
     assertRelaunchable(relaunched.config, 'dispatch relaunch');
 

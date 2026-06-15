@@ -453,7 +453,11 @@ describe('packed package consumer', () => {
           registerPlugin
         } from 'symbiote-workspace/plugins';
         import { planWorkspaceConstruction } from 'symbiote-workspace/constructor';
-        import { createHostIntegrationContract } from 'symbiote-workspace/sharing';
+        import {
+          createHostIntegrationContract,
+          exportWorkspacePackage,
+          importWorkspacePackage,
+        } from 'symbiote-workspace/sharing';
 
         let session = createSession();
         let plugin = {
@@ -606,9 +610,29 @@ describe('packed package consumer', () => {
         if (session.config.panelTypes.sentiment.component !== 'acme-sentiment-panel') {
           throw new Error('plugin-derived module was not materialized');
         }
+        let generatedReports = session.config.construction.plan.verification.reports;
+        if (!Array.isArray(generatedReports) || generatedReports.length === 0) {
+          throw new Error('constructed workspace did not generate verification reports');
+        }
+        if (JSON.stringify(session.config.validation.reports) !== JSON.stringify(generatedReports)) {
+          throw new Error('constructed workspace validation reports do not mirror construction reports');
+        }
         let exported = await dispatch('export_workspace', { strict: true }, session);
         if (exported.status !== 'ok') {
           throw new Error(exported.hint || 'export_workspace failed');
+        }
+        let packageExport = exportWorkspacePackage(session.config, {
+          id: 'constructed-report-package',
+          version: '1.0.0',
+        });
+        if (!packageExport.json) throw new Error(JSON.stringify(packageExport.errors));
+        let packageImport = importWorkspacePackage(packageExport.json);
+        if (!packageImport.config) throw new Error(JSON.stringify(packageImport.errors));
+        if (JSON.stringify(packageImport.config.construction.plan.verification.reports) !== JSON.stringify(generatedReports)) {
+          throw new Error('package import dropped generated construction verification reports');
+        }
+        if (JSON.stringify(packageImport.config.validation.reports) !== JSON.stringify(generatedReports)) {
+          throw new Error('package import dropped generated validation reports');
         }
         let contract = createHostIntegrationContract(session.config);
         if (contract.status !== 'ok') {
@@ -706,6 +730,13 @@ describe('packed package consumer', () => {
           validateWorkspacePackage,
         } from 'symbiote-workspace/sharing';
 
+        let reports = [{
+          id: 'package-host-readiness',
+          check: 'package-readiness',
+          status: 'warn',
+          severity: 'warning',
+          message: 'Package host capability requires review.',
+        }];
         let config = {
           version: '0.2.0',
           name: 'Packed Consumer Package',
@@ -713,6 +744,12 @@ describe('packed package consumer', () => {
           theme: { params: { mode: 'dark' } },
           layout: { type: 'panel', panelType: 'main' },
           components: { catalog: ['sn-panel'] },
+          construction: {
+            plan: {
+              verification: { reports },
+            },
+          },
+          validation: { reports },
         };
 
         let manifest = {
@@ -735,11 +772,23 @@ describe('packed package consumer', () => {
         if (!exported.package.manifest.dependencies.packages.includes('symbiote-ui')) {
           throw new Error('package dependency missing');
         }
+        if (JSON.stringify(exported.package.workspace.config.construction.plan.verification.reports) !== JSON.stringify(reports)) {
+          throw new Error('exported package dropped construction verification reports');
+        }
+        if (JSON.stringify(exported.package.workspace.config.validation.reports) !== JSON.stringify(reports)) {
+          throw new Error('exported package dropped validation reports');
+        }
 
         let imported = importWorkspacePackage(exported.json);
         if (!imported.package) throw new Error(JSON.stringify(imported.errors));
         if (imported.package.manifest.id !== 'packed-consumer-pkg') throw new Error('imported id mismatch');
         if (imported.config.name !== 'Packed Consumer Package') throw new Error('imported config name mismatch');
+        if (JSON.stringify(imported.config.construction.plan.verification.reports) !== JSON.stringify(reports)) {
+          throw new Error('imported config dropped construction verification reports');
+        }
+        if (JSON.stringify(imported.config.validation.reports) !== JSON.stringify(reports)) {
+          throw new Error('imported config dropped validation reports');
+        }
 
         let validation = validateWorkspacePackage(imported.package);
         if (!validation.valid) throw new Error(JSON.stringify(validation.errors));

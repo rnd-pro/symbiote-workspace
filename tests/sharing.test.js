@@ -37,6 +37,14 @@ let BASE_CONFIG = {
   },
 };
 
+let VERIFICATION_REPORTS = [{
+  id: 'theme-check',
+  check: 'theme',
+  status: 'warn',
+  severity: 'warning',
+  message: 'Contrast fallback required.',
+}];
+
 let EXTENDED_CONFIG = {
   ...BASE_CONFIG,
   theme: {
@@ -57,16 +65,13 @@ let EXTENDED_CONFIG = {
     plan: {
       layoutTemplate: 'video-studio',
       modules: [{ id: 'viewport', role: 'preview' }],
+      verification: {
+        reports: VERIFICATION_REPORTS,
+      },
     },
   },
   validation: {
-    reports: [{
-      id: 'theme-check',
-      check: 'theme',
-      status: 'warn',
-      severity: 'warning',
-      message: 'Contrast fallback required.',
-    }],
+    reports: VERIFICATION_REPORTS,
   },
 };
 
@@ -191,7 +196,8 @@ describe('exportConfig', () => {
     assert.equal(parsed.theme.relations.surfaceStep, 1.15);
     assert.equal(parsed.theme.subtrees[0].relations.radiusScale, 0.8);
     assert.equal(parsed.construction.plan.layoutTemplate, 'video-studio');
-    assert.equal(parsed.validation.reports[0].check, 'theme');
+    assert.deepEqual(parsed.construction.plan.verification.reports, VERIFICATION_REPORTS);
+    assert.deepEqual(parsed.validation.reports, VERIFICATION_REPORTS);
   });
 
   it('strips host-only and local data from exported packages', () => {
@@ -348,7 +354,25 @@ describe('workspace package portability', () => {
   });
 
   it('imports exported workspace packages with strict config validation', () => {
-    let exported = exportWorkspacePackage(PACKAGE_CONFIG, {
+    let reports = [{
+      id: 'package-host-readiness',
+      check: 'package-readiness',
+      status: 'warn',
+      severity: 'warning',
+      message: 'Package host capability requires review.',
+    }];
+    let reportedConfig = {
+      ...PACKAGE_CONFIG,
+      construction: {
+        ...PACKAGE_CONFIG.construction,
+        plan: {
+          ...PACKAGE_CONFIG.construction.plan,
+          verification: { reports },
+        },
+      },
+      validation: { reports },
+    };
+    let exported = exportWorkspacePackage(reportedConfig, {
       id: 'command-room-package',
       version: '1.2.3',
     });
@@ -359,6 +383,9 @@ describe('workspace package portability', () => {
     assert.deepEqual(imported.errors, []);
     assert.equal(imported.package.manifest.id, 'command-room-package');
     assert.equal(imported.config.name, 'Test Workspace');
+    assert.deepEqual(imported.package.workspace.config.construction.plan.verification.reports, reports);
+    assert.deepEqual(imported.config.construction.plan.verification.reports, reports);
+    assert.deepEqual(imported.config.validation.reports, reports);
   });
 
   it('rejects non-portable package metadata and marketplace service state', () => {
