@@ -890,7 +890,7 @@ let context = createWorkspacePackageConstructionContext(packageJson, {
 
 let handoff = createWorkspaceConstructionHandoff(context, {
   brief: 'Build a review queue workspace',
-  template: 'review-package',
+  template: 'dashboard',
 });
 
 let { config, plan } = planWorkspaceConstruction(handoff.intent, handoff.options);
@@ -908,7 +908,7 @@ or constructor options with `--options <json-object>` when agents pass only the
 handoff options through shell arguments:
 
 ```bash
-npx symbiote-workspace plan-workspace '{"_type":"workspace-construction-handoff","valid":true,"ready":true,"intent":{"brief":"Build a review queue workspace","template":"review-package"},"options":{"workspaceTemplates":[],"moduleCapabilities":[]}}'
+npx symbiote-workspace plan-workspace '{"_type":"workspace-construction-handoff","valid":true,"ready":true,"intent":{"brief":"Build a review queue workspace","template":"dashboard"},"options":{"workspaceTemplates":[],"moduleCapabilities":[]}}'
 ```
 
 The manifest rejects host, identity, and marketplace state:

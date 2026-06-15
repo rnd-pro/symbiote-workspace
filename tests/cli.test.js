@@ -49,11 +49,23 @@ async function withTempPath(prefix, filename, run) {
 
 function constructionHandoffJson() {
   return JSON.stringify({
+    _type: 'workspace-construction-handoff',
+    valid: true,
+    ready: true,
     intent: {
       brief: 'CLI handoff room',
       template: 'cli-handoff-room',
     },
     options: {
+      packageContext: {
+        valid: true,
+        ready: true,
+        source: { packageId: 'cli-handoff-package' },
+        missing: {},
+        warnings: [],
+        errors: [],
+        recovery: [],
+      },
       workspaceTemplates: [{
         name: 'cli-handoff-room',
         config: {
@@ -163,6 +175,8 @@ describe('CLI tool commands', () => {
     assert.equal(result.status, 'ok');
     assert.equal(result.intent.brief, 'CLI handoff room');
     assert.equal(result.intent.template, 'cli-handoff-room');
+    assert.equal(result.readiness.ready, true);
+    assert.equal(result.readiness.source.packageId, 'cli-handoff-package');
     assert.deepEqual(result.verification, result.plan.verification);
     assert.equal(result.config.name, 'CLI Handoff Room');
   });
@@ -176,8 +190,11 @@ describe('CLI tool commands', () => {
       assert.equal(result.status, 'ok');
       assert.equal(result.intent.brief, 'CLI handoff room');
       assert.equal(result.intent.template, 'cli-handoff-room');
+      assert.equal(result.readiness.ready, true);
+      assert.equal(result.readiness.source.packageId, 'cli-handoff-package');
       assert.deepEqual(result.verification, result.plan.verification);
       assert.equal(saved.intent.template, 'cli-handoff-room');
+      assert.equal(saved.construction.packageContext.source.packageId, 'cli-handoff-package');
       assert.equal(saved.name, 'CLI Handoff Room');
       assert.deepEqual(saved.validation.reports, result.verification.reports);
     });
