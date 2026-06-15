@@ -972,6 +972,12 @@ function descriptorMenuActions(descriptor) {
   return actions;
 }
 
+function descriptorSettings(descriptor) {
+  return (descriptor.settings || [])
+    .filter((setting) => isObject(setting))
+    .map((setting) => deepClone(setting));
+}
+
 function materializeDescriptorPanelTypes(config, descriptors) {
   if (!descriptors.length) return;
   config.panelTypes ||= {};
@@ -1001,6 +1007,9 @@ function materializeDescriptorPanelTypes(config, descriptors) {
     let menuActions = descriptorMenuActions(descriptor);
     if (menuActions.length) panel.menuActions = menuActions;
 
+    let settings = descriptorSettings(descriptor);
+    if (settings.length) panel.settings = settings;
+
     config.panelTypes[panelType] = panel;
   }
 }
@@ -1015,6 +1024,19 @@ function materializeSelectedDescriptorPanelMenuActions(config, selectedModules) 
     if (!descriptor) continue;
     let menuActions = descriptorMenuActions(descriptor);
     if (menuActions.length) panel.menuActions = menuActions;
+  }
+}
+
+function materializeSelectedDescriptorPanelSettings(config, selectedModules) {
+  let descriptors = moduleDescriptorMap(config);
+  let selected = new Set(selectedModules);
+  for (let [panelType, panel] of Object.entries(config.panelTypes || {})) {
+    if (!selected.has(panelType)) continue;
+    if (!panel?.component || panel.settings !== undefined) continue;
+    let descriptor = descriptors.get(panel.component);
+    if (!descriptor) continue;
+    let settings = descriptorSettings(descriptor);
+    if (settings.length) panel.settings = settings;
   }
 }
 
@@ -1811,6 +1833,7 @@ export function planWorkspaceConstruction(intent, options = {}) {
   let verificationScope = answers.get('verification-scope') || [];
   materializeSelectedModuleLayout(config, modules);
   materializeSelectedDescriptorPanelMenuActions(config, modules);
+  materializeSelectedDescriptorPanelSettings(config, modules);
   materializeSelectedDescriptorEventBridges(config, modules);
   materializeSelectedDescriptorDataBindings(config, modules);
   let plannedModules = modulePlan(

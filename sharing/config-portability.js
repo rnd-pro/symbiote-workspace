@@ -173,14 +173,22 @@ function moduleName(descriptor) {
 
 function collectModuleDescriptors(config) {
   let descriptors = [];
+  let plan = config.construction?.plan;
+  let planModules = plan?.modules;
+  let hasSelectedPlanModules = Array.isArray(planModules)
+    && Array.isArray(plan?.answers?.moduleSelection);
+  if (hasSelectedPlanModules) {
+    for (let [index, descriptor] of planModules.entries()) {
+      if (isObject(descriptor)) {
+        descriptors.push({ descriptor, source: moduleDescriptorSource('construction.plan.modules', index) });
+      }
+    }
+    return descriptors;
+  }
+
   for (let [index, descriptor] of (config.components?.modules || []).entries()) {
     if (isObject(descriptor)) {
       descriptors.push({ descriptor, source: moduleDescriptorSource('components.modules', index) });
-    }
-  }
-  for (let [index, descriptor] of (config.construction?.plan?.modules || []).entries()) {
-    if (isObject(descriptor)) {
-      descriptors.push({ descriptor, source: moduleDescriptorSource('construction.plan.modules', index) });
     }
   }
   return descriptors;

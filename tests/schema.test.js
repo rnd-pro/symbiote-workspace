@@ -315,6 +315,43 @@ describe('validateWorkspaceConfig', () => {
     assert.equal(result.errors.length, 0);
   });
 
+  it('validates portable panel settings', () => {
+    let result = validateWorkspaceConfig({
+      version: '0.2.0',
+      name: 'Settings Workspace',
+      panelTypes: {
+        table: {
+          title: 'Table',
+          component: 'sn-data-table',
+          settings: [{ id: 'page-size', label: 'Page size', type: 'number', default: 50 }],
+        },
+      },
+    }, { strict: true });
+
+    assert.equal(result.valid, true);
+    assert.equal(result.errors.length, 0);
+
+    let invalid = validateWorkspaceConfig({
+      version: '0.2.0',
+      name: 'Broken Settings Workspace',
+      panelTypes: {
+        table: {
+          title: 'Table',
+          component: 'sn-data-table',
+          settings: [
+            { id: 'page-size', label: 'Page size', type: 'number' },
+            { id: 'page-size', label: 'Duplicate', type: 'unknown', options: true },
+          ],
+        },
+      },
+    }, { strict: true });
+
+    assert.equal(invalid.valid, false);
+    assert.ok(invalid.errors.some((error) => error.path === 'panelTypes.table.settings[1].id'));
+    assert.ok(invalid.errors.some((error) => error.path === 'panelTypes.table.settings[1].type'));
+    assert.ok(invalid.errors.some((error) => error.path === 'panelTypes.table.settings[1].options'));
+  });
+
   it('rejects invalid module capability descriptors', () => {
     let result = validateWorkspaceConfig({
       version: '0.2.0',

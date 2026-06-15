@@ -481,9 +481,11 @@ generated panels are added to the root BSP layout when they are not present in
 any existing layout.
 
 Generated panel types also receive shell `menuActions` from descriptor
-`actions`, `toolbarItems`, and `menus[].items`. Existing panel type menu
-actions are preserved, so templates can keep authored shell commands while
-external descriptors still expose executable actions when they create panels.
+`actions`, `toolbarItems`, and `menus[].items`, plus portable `settings` from
+descriptor settings. Existing panel type menu actions and settings are
+preserved, so templates can keep authored shell commands and controls while
+external descriptors still expose executable declarations when they create
+panels.
 
 The constructor copies matching descriptor capabilities, actions, settings,
 events, bindings, runtime slots, placement hints, and required host service IDs
@@ -498,6 +500,11 @@ Each binding record carries `panelType`, `component`, `id`, `direction`, and
 optional `path`/`schema`; `direction` must be `input`, `output`, or `two-way`.
 This is a portable declaration for host/runtime handoff, not an embedded server
 endpoint or execution engine.
+
+Selected descriptor settings are materialized into `panelTypes.*.settings` when
+the selected panel type does not already define settings. Each setting carries a
+portable `id`, `label`, `type`, optional `default`, enum `options`, and optional
+binding identifier for host/UI configuration surfaces.
 
 ## Browser Theme Mounting
 

@@ -177,6 +177,7 @@ describe('planWorkspaceConstruction', () => {
           label: 'Review',
           items: [{ id: 'assign', label: 'Assign', command: 'sentiment.assign' }],
         }],
+        settings: [{ id: 'density', label: 'Density', type: 'enum', options: [{ value: 'compact', label: 'Compact' }] }],
         bindings: [{ id: 'items', direction: 'input', path: 'data.sentiment' }],
         requiredHostServices: ['storage.project'],
         placement: {
@@ -196,6 +197,9 @@ describe('planWorkspaceConstruction', () => {
       { id: 'refresh', label: 'Refresh', command: 'sentiment.refresh' },
       { id: 'filter', label: 'Filter', group: 'toolbar', groupLabel: 'Toolbar', command: 'sentiment.filter' },
       { id: 'assign', label: 'Assign', group: 'review', groupLabel: 'Review', command: 'sentiment.assign' },
+    ]);
+    assert.deepEqual(result.config.panelTypes.sentiment.settings, [
+      { id: 'density', label: 'Density', type: 'enum', options: [{ value: 'compact', label: 'Compact' }] },
     ]);
     assert.ok(result.config.components.catalog.includes('acme-sentiment-panel'));
     assert.ok(result.config.components.modules.some((item) => item.tagName === 'acme-sentiment-panel'));
@@ -295,7 +299,7 @@ describe('planWorkspaceConstruction', () => {
     assert.equal(layoutReferencesPanel(result.config.layout, 'archive'), false);
   });
 
-  it('materializes descriptor events and bindings only from selected modules', () => {
+  it('materializes descriptor events, settings, and bindings only from selected modules', () => {
     let result = planWorkspaceConstruction({
       brief: 'Build a focused review shell',
       template: 'review-shell',
@@ -311,6 +315,7 @@ describe('planWorkspaceConstruction', () => {
             review: {
               title: 'Review',
               component: 'acme-review-panel',
+              settings: [{ id: 'authored', label: 'Authored', type: 'boolean' }],
             },
             detail: {
               title: 'Detail',
@@ -357,18 +362,21 @@ describe('planWorkspaceConstruction', () => {
           tagName: 'acme-review-panel',
           capabilities: ['review.queue'],
           events: { emits: [{ name: 'row-select' }, { name: 'existing-select' }] },
+          settings: [{ id: 'density', label: 'Density', type: 'enum' }],
           bindings: [{ id: 'rows', direction: 'input', path: 'data.rows' }],
         },
         {
           tagName: 'acme-detail-panel',
           capabilities: ['review.detail'],
           events: { consumes: [{ name: 'row-select' }, { name: 'existing-select' }] },
+          settings: [{ id: 'selection-mode', label: 'Selection mode', type: 'string' }],
           bindings: [{ id: 'selection', direction: 'input', path: 'data.selection' }],
         },
         {
           tagName: 'acme-archive-panel',
           capabilities: ['archive.search'],
           events: { emits: [{ name: 'archive-select' }], consumes: [{ name: 'row-select' }] },
+          settings: [{ id: 'archive-filter', label: 'Archive filter', type: 'string' }],
           bindings: [{ id: 'archived-selection', direction: 'input', path: 'data.archiveSelection' }],
         },
       ],
@@ -410,6 +418,13 @@ describe('planWorkspaceConstruction', () => {
         path: 'data.selection',
       },
     ]);
+    assert.deepEqual(result.config.panelTypes.review.settings, [
+      { id: 'authored', label: 'Authored', type: 'boolean' },
+    ]);
+    assert.deepEqual(result.config.panelTypes.detail.settings, [
+      { id: 'selection-mode', label: 'Selection mode', type: 'string' },
+    ]);
+    assert.equal(result.config.panelTypes.archive.settings, undefined);
     assert.equal(layoutReferencesPanel(result.config.layout, 'archive'), false);
 
     let validation = validateWorkspaceConfig(result.config, { strict: true });

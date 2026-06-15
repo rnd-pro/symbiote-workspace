@@ -10,6 +10,8 @@ import {
 } from './workspace-schema.js';
 import { validateModuleCapabilityDescriptor } from './module-capability.js';
 
+let PANEL_SETTING_TYPES = new Set(['string', 'number', 'boolean', 'enum', 'object', 'array', 'color', 'token', 'json']);
+
 /** @type {Set<string>} */
 let BLOCKED_CONFIG_PATTERNS = new Set([
   'token',
@@ -536,6 +538,45 @@ function validatePanelTypes(panelTypes, errors, warnings) {
           if (action.id) actionIds.add(action.id);
         }
       }
+    }
+    if (pt.settings) {
+      validatePanelSettings(pt.settings, `${path}.settings`, errors);
+    }
+  }
+}
+
+function validatePanelSettings(settings, path, errors) {
+  if (!Array.isArray(settings)) {
+    errors.push({ path, message: 'settings must be an array.', severity: 'error' });
+    return;
+  }
+
+  let settingIds = new Set();
+  for (let i = 0; i < settings.length; i++) {
+    let setting = settings[i];
+    let itemPath = `${path}[${i}]`;
+    if (!isObject(setting)) {
+      errors.push({ path: itemPath, message: 'Panel setting entry must be an object.', severity: 'error' });
+      continue;
+    }
+
+    validatePortableIdField(setting.id, `${itemPath}.id`, 'Panel setting requires a portable "id".', errors);
+    if (setting.id && settingIds.has(setting.id)) {
+      errors.push({ path: `${itemPath}.id`, message: `Duplicate setting ID: "${setting.id}".`, severity: 'error' });
+    }
+    if (setting.id) settingIds.add(setting.id);
+
+    if (!setting.label) errors.push({ path: `${itemPath}.label`, message: 'Panel setting requires a "label".', severity: 'error' });
+    if (!setting.type) {
+      errors.push({ path: `${itemPath}.type`, message: 'Panel setting requires a "type".', severity: 'error' });
+    } else if (!PANEL_SETTING_TYPES.has(setting.type)) {
+      errors.push({ path: `${itemPath}.type`, message: `Unknown panel setting type: "${setting.type}".`, severity: 'error' });
+    }
+    if (setting.options !== undefined && !Array.isArray(setting.options)) {
+      errors.push({ path: `${itemPath}.options`, message: 'Panel setting options must be an array.', severity: 'error' });
+    }
+    if (setting.binding !== undefined) {
+      validatePortableIdField(setting.binding, `${itemPath}.binding`, 'Panel setting binding must be portable.', errors);
     }
   }
 }

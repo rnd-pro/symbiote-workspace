@@ -132,6 +132,24 @@ const MENU_ACTION_SCHEMA = Object.freeze({
   },
 });
 
+/** Panel setting schema */
+const PANEL_SETTING_SCHEMA = Object.freeze({
+  type: 'object',
+  required: ['id', 'label', 'type'],
+  properties: {
+    id: { type: 'string', description: 'Portable setting identifier.' },
+    label: { type: 'string', description: 'Displayed setting label.' },
+    type: {
+      type: 'string',
+      enum: ['string', 'number', 'boolean', 'enum', 'object', 'array', 'color', 'token', 'json'],
+      description: 'Portable setting value type.',
+    },
+    default: { description: 'Default setting value.' },
+    options: { type: 'array', items: { type: 'object' }, description: 'Enum option records.' },
+    binding: { type: 'string', description: 'Data binding identifier updated by this setting.' },
+  },
+});
+
 /** Panel type registration schema */
 const PANEL_TYPE_SCHEMA = Object.freeze({
   type: 'object',
@@ -145,6 +163,11 @@ const PANEL_TYPE_SCHEMA = Object.freeze({
       type: 'array',
       items: MENU_ACTION_SCHEMA,
       description: 'Panel header dropdown menu actions.',
+    },
+    settings: {
+      type: 'array',
+      items: PANEL_SETTING_SCHEMA,
+      description: 'Panel setting declarations exposed to host shells.',
     },
   },
 });

@@ -43,6 +43,9 @@ All notable changes to this project will be documented in this file.
   descriptors now expose emitted events as top-level broadcast bridges and
   copy selected binding declarations into `data.bindings` for portable
   host/runtime handoff.
+- **Module setting materialization** — generated constructor panel types and
+  selected existing panel types now expose descriptor settings through
+  `panelTypes.*.settings` while preserving authored panel settings.
 - **Data binding contract validation** — workspace schema and
   `validateWorkspaceConfig()` now define and validate portable
   `data.bindings[]` records with panel, component, binding ID, direction, path,

@@ -545,6 +545,7 @@ describe('host integration contract', () => {
       },
       construction: {
         plan: {
+          answers: { moduleSelection: ['archive-panel'] },
           modules: [{
             tagName: 'archive-panel',
             requiredHostServices: ['storage.archive', 'storage.project'],
@@ -560,6 +561,50 @@ describe('host integration contract', () => {
     ]);
     assert.deepEqual(result.contract.persistence.optionalEngineServices, []);
     assert.equal(result.contract.browser.importMap.imports, undefined);
+  });
+
+  it('scopes host requirements to selected construction plan modules', () => {
+    let { config } = planWorkspaceConstruction({
+      brief: 'AI command chat with transcript only',
+      template: 'ai-command-chat',
+      requiredCapabilities: ['chat.transcript'],
+    }, {
+      workspaceTemplates: collectPluginWorkspaceTemplates([COLLABORATION_ROOM_PLUGIN]).templates,
+    });
+
+    let result = createHostIntegrationContract(config);
+
+    assert.equal(result.status, 'ok');
+    assert.deepEqual(config.construction.plan.modules.map((module) => module.panelType), ['transcript']);
+    assert.deepEqual(result.contract.services.required, []);
+    assert.deepEqual(result.contract.services.byModule, []);
+    assert.deepEqual(result.contract.runtimeSlots.required, []);
+    assert.deepEqual(result.contract.persistence.requiredEngineServices, []);
+  });
+
+  it('does not fall back to catalog requirements for explicit empty module selections', () => {
+    let result = createHostIntegrationContract({
+      version: '0.3.0',
+      name: 'Empty Selection',
+      register: 'tool',
+      components: {
+        modules: [{
+          tagName: 'agent-runtime-panel',
+          requiredHostServices: ['agent.runtime'],
+          runtimeSlots: [{ id: 'agent-runtime', role: 'provider', required: true }],
+        }],
+      },
+      construction: {
+        plan: {
+          answers: { moduleSelection: [] },
+          modules: [],
+        },
+      },
+    });
+
+    assert.equal(result.status, 'ok');
+    assert.deepEqual(result.contract.services.required, []);
+    assert.deepEqual(result.contract.runtimeSlots.required, []);
   });
 
   it('reports invalid configs instead of fabricating a host contract', () => {
