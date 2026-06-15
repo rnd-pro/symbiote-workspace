@@ -287,6 +287,7 @@ describe('dispatch', () => {
     let session = createSession();
     let result = await dispatch('nonexistent_tool', {}, session);
     assert.equal(result.status, 'error');
+    assert.equal(session.config, null);
   });
 
   it('reorder_groups', async () => {
@@ -341,6 +342,20 @@ describe('dispatch', () => {
       assert.equal(result.status, 'error');
       assert.equal(session.config, null);
       assert.ok(result.errors.some((error) => error.path === 'host'));
+    });
+  });
+
+  it('load_config returns structured errors for missing files without initializing session', async () => {
+    await withTempPath('dispatch-missing-load', 'workspace.json', async (tmpFile) => {
+      let session = createSession();
+
+      let result = await dispatch('load_config', { filePath: tmpFile }, session);
+
+      assert.equal(result.status, 'error');
+      assert.equal(result.tool, 'load_config');
+      assert.equal(result.code, 'workspace_config_read_failed');
+      assert.match(result.hint, /Load failed: cannot read/);
+      assert.equal(session.config, null);
     });
   });
 

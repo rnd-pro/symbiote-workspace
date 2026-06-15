@@ -647,6 +647,7 @@ describe('MCP Protocol', () => {
         jsonrpc: '2.0', id: 2, method: 'tools/call',
         params: { name: 'nonexistent_tool', arguments: {} },
       },
+      { jsonrpc: '2.0', id: 3, method: 'tools/list', params: {} },
     ]);
 
     let result = responses.find((r) => r.id === 2);
@@ -654,6 +655,35 @@ describe('MCP Protocol', () => {
     assert.equal(result.result.isError, true);
     let content = JSON.parse(result.result.content[0].text);
     assert.equal(content.status, 'error');
+    assert.match(content.hint, /Unknown tool: nonexistent_tool/);
+
+    let toolList = responses.find((r) => r.id === 3);
+    assert.ok(toolList);
+    assert.equal(toolList.result.tools.length, TOOLS.length);
+  });
+
+  it('returns structured tool errors for load_config file failures', async () => {
+    let missingFile = resolve(__dirname, '../tmp/missing-mcp-load-config.json');
+    let responses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: { name: 'load_config', arguments: { filePath: missingFile } },
+      },
+      { jsonrpc: '2.0', id: 3, method: 'tools/list', params: {} },
+    ]);
+
+    let result = responses.find((r) => r.id === 2);
+    assert.ok(result);
+    assert.equal(result.result.isError, true);
+    let content = JSON.parse(result.result.content[0].text);
+    assert.equal(content.status, 'error');
+    assert.equal(content.tool, 'load_config');
+    assert.equal(content.code, 'workspace_config_read_failed');
+
+    let toolList = responses.find((r) => r.id === 3);
+    assert.ok(toolList);
+    assert.equal(toolList.result.tools.length, TOOLS.length);
   });
 });
 

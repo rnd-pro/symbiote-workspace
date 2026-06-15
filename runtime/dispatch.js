@@ -1273,6 +1273,10 @@ function constructionError(toolName, err) {
  * @returns {Promise<Object>} Result object
  */
 export async function dispatch(toolName, args, session) {
+  if (!TOOLS.some((tool) => tool.name === toolName)) {
+    return { status: 'error', hint: `Unknown tool: ${toolName}` };
+  }
+
   // Input validation
   let validation = validateArgs(toolName, args);
   if (!validation.valid) {
@@ -1285,24 +1289,28 @@ export async function dispatch(toolName, args, session) {
 
   if (toolName === 'classify_workspace') {
     let c = await getConstructor();
-    let constructionIntent = constructionIntentFromArgs(args);
-    let options = constructionOptionsFromArgs(args, constructionIntent);
-    let normalized = c.normalizeConstructionIntent(constructionIntent, options);
-    let templateMatch = c.matchTemplate(normalized.brief, options);
-    return {
-      status: 'ok',
-      templateName: normalized.template,
-      fallback: !templateMatch && !constructionIntent?.template,
-      intent: normalized,
-      questions: c.buildConstructionQuestions(normalized, options),
-      readiness: {
-        ready: true,
-        valid: true,
-        status: 'ready',
+    try {
+      let constructionIntent = constructionIntentFromArgs(args);
+      let options = constructionOptionsFromArgs(args, constructionIntent);
+      let normalized = c.normalizeConstructionIntent(constructionIntent, options);
+      let templateMatch = c.matchTemplate(normalized.brief, options);
+      return {
+        status: 'ok',
+        templateName: normalized.template,
+        fallback: !templateMatch && !constructionIntent?.template,
+        intent: normalized,
+        questions: c.buildConstructionQuestions(normalized, options),
+        readiness: {
+          ready: true,
+          valid: true,
+          status: 'ready',
+          nextAction: 'plan-workspace',
+        },
         nextAction: 'plan-workspace',
-      },
-      nextAction: 'plan-workspace',
-    };
+      };
+    } catch (err) {
+      return constructionError(toolName, err);
+    }
   }
 
   if (toolName === 'build_construction_questions') {
@@ -1405,13 +1413,28 @@ export async function dispatch(toolName, args, session) {
 
   if (toolName === 'load_config') {
     let filePath = resolve(args.filePath);
-    let json = await readFile(filePath, 'utf-8');
+    let json;
+    try {
+      json = await readFile(filePath, 'utf-8');
+    } catch (err) {
+      return {
+        status: 'error',
+        tool: toolName,
+        filePath,
+        code: 'workspace_config_read_failed',
+        errors: [{ path: 'filePath', message: `Cannot read config file: ${err.message}`, severity: 'error' }],
+        hint: `Load failed: cannot read ${filePath}.`,
+      };
+    }
     let { importConfig } = await import('../sharing/index.js');
     let result = importConfig(json);
     if (!result.config) {
       return {
         status: 'error',
+        tool: toolName,
+        filePath,
         errors: result.errors,
+        code: 'workspace_config_invalid',
         hint: 'Load failed: file does not contain a portable workspace config.',
       };
     }

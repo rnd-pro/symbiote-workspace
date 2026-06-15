@@ -123,6 +123,16 @@ All notable changes to this project will be documented in this file.
 - **MCP UTF-8 framing** — the stdio MCP server now parses incoming
   `Content-Length` frames by byte length, preserving non-ASCII JSON-RPC
   payloads across tool calls.
+- **Unknown tool session hygiene** — `dispatch()` now returns unknown-tool
+  errors before any session initialization, so invalid tool calls cannot seed a
+  blank workspace state.
+- **Construction classifier error parity** — `classify_workspace` now returns
+  the same structured construction error envelope as adjacent construction
+  tools for malformed intent objects instead of throwing before dispatch can
+  respond.
+- **Config load file error parity** — `load_config` now reports file-read
+  failures as structured dispatch/MCP tool errors without initializing session
+  state, keeping CLI/MCP recovery behavior aligned with normal tool failures.
 - **Construction handoff sentinel and ready gate** —
   `create_workspace_construction_handoff` now returns
   `_type: "workspace-construction-handoff"` and `construct_workspace` rejects

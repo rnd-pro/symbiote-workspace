@@ -175,6 +175,18 @@ describe('construction workflow dispatch', () => {
     assert.equal(session.config, null);
   });
 
+  it('classify_workspace rejects malformed construction intent without mutating session', async () => {
+    let session = createSession();
+    let result = await dispatch('classify_workspace', {
+      intent: { template: 'chat' },
+    }, session);
+
+    assert.equal(result.status, 'error');
+    assert.equal(result.tool, 'classify_workspace');
+    assert.match(result.hint, /brief/);
+    assert.equal(session.config, null);
+  });
+
   it('build_construction_questions returns questionnaire state without planning or mutating', async () => {
     let session = createSession();
     let result = await dispatch('build_construction_questions', {
