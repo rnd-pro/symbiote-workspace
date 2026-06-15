@@ -234,6 +234,8 @@ loading `app.js`, so browser bare imports resolve through an explicit host
 contract:
 
 ```javascript
+import { startPreview } from 'symbiote-workspace/handlers';
+
 await startPreview(config, {
   outputDir: '.workspace-preview',
   imports: {

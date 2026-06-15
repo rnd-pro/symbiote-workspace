@@ -241,8 +241,9 @@ describe('packed package consumer', () => {
 
         let sideEffects = packageMeta.sideEffects;
         if (!Array.isArray(sideEffects)) throw new Error('sideEffects metadata must be explicit');
-        if (!sideEffects.includes('./cli.js')) throw new Error('cli.js side effect metadata missing');
-        if (!sideEffects.includes('./mcp/index.js')) throw new Error('mcp/index.js side effect metadata missing');
+        if (JSON.stringify(sideEffects) !== JSON.stringify(['./cli.js', './mcp/index.js'])) {
+          throw new Error('sideEffects metadata drifted');
+        }
         if (typeof describeWorkspace !== 'function') throw new Error('handlers describeWorkspace export missing');
         if (typeof setLayout !== 'function') throw new Error('handlers setLayout export missing');
         if (typeof loadWorkspaceConfig !== 'function') throw new Error('loader loadWorkspaceConfig export missing');
@@ -723,6 +724,8 @@ describe('packed package consumer', () => {
           exportWorkspacePackage,
           importWorkspacePackage,
           validateWorkspacePackage,
+          BROWSER_REQUIRED_IMPORTS,
+          createBrowserRuntimeContract,
           createWorkspaceConstructionHandoff,
           createWorkspacePackageConstructionContext,
           createWorkspacePackagesConstructionContext,
@@ -734,6 +737,16 @@ describe('packed package consumer', () => {
         if (typeof exportWorkspacePackage !== 'function') throw new Error('exportWorkspacePackage not exported');
         if (typeof importWorkspacePackage !== 'function') throw new Error('importWorkspacePackage not exported');
         if (typeof validateWorkspacePackage !== 'function') throw new Error('validateWorkspacePackage not exported');
+        if (!Array.isArray(BROWSER_REQUIRED_IMPORTS)) throw new Error('BROWSER_REQUIRED_IMPORTS not exported from sharing');
+        if (!BROWSER_REQUIRED_IMPORTS.includes('symbiote-workspace/browser')) {
+          throw new Error('BROWSER_REQUIRED_IMPORTS missing browser entrypoint');
+        }
+        if (typeof createBrowserRuntimeContract !== 'function') {
+          throw new Error('createBrowserRuntimeContract not exported from sharing');
+        }
+        if (createBrowserRuntimeContract().entrypoint !== 'symbiote-workspace/browser') {
+          throw new Error('createBrowserRuntimeContract entrypoint mismatch');
+        }
         if (typeof createWorkspaceConstructionHandoff !== 'function') {
           throw new Error('createWorkspaceConstructionHandoff not exported from sharing');
         }
@@ -751,6 +764,10 @@ describe('packed package consumer', () => {
         if (typeof root.exportWorkspacePackage !== 'function') throw new Error('root exportWorkspacePackage missing');
         if (typeof root.importWorkspacePackage !== 'function') throw new Error('root importWorkspacePackage missing');
         if (typeof root.validateWorkspacePackage !== 'function') throw new Error('root validateWorkspacePackage missing');
+        if (!Array.isArray(root.BROWSER_REQUIRED_IMPORTS)) throw new Error('root BROWSER_REQUIRED_IMPORTS missing');
+        if (typeof root.createBrowserRuntimeContract !== 'function') {
+          throw new Error('root createBrowserRuntimeContract missing');
+        }
         if (typeof root.createWorkspaceConstructionHandoff !== 'function') {
           throw new Error('root createWorkspaceConstructionHandoff missing');
         }
@@ -763,6 +780,10 @@ describe('packed package consumer', () => {
         if (typeof root.inspectWorkspacePackage !== 'function') throw new Error('root inspectWorkspacePackage missing');
 
         let browser = await import('symbiote-workspace/browser');
+        if (!Array.isArray(browser.BROWSER_REQUIRED_IMPORTS)) throw new Error('browser BROWSER_REQUIRED_IMPORTS missing');
+        if (typeof browser.createBrowserRuntimeContract !== 'function') {
+          throw new Error('browser createBrowserRuntimeContract missing');
+        }
         if (typeof browser.createWorkspaceConstructionHandoff !== 'function') {
           throw new Error('browser createWorkspaceConstructionHandoff missing');
         }

@@ -48,4 +48,14 @@ describe('browser entrypoint', () => {
     let nodeImports = collectBrowserGraph(resolve(ROOT, 'browser.js'));
     assert.deepEqual(nodeImports, []);
   });
+
+  it('differs from the root entrypoint only by intentional runtime and DOM APIs', async () => {
+    let root = await import('../index.js');
+    let browser = await import('../browser.js');
+    let onlyRoot = Object.keys(root).filter((key) => !(key in browser)).sort();
+    let onlyBrowser = Object.keys(browser).filter((key) => !(key in root)).sort();
+
+    assert.deepEqual(onlyRoot, ['TOOLS', 'createSession', 'dispatch', 'isMutating']);
+    assert.deepEqual(onlyBrowser, ['applyWorkspaceTheme', 'mountWorkspace']);
+  });
 });
