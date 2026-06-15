@@ -196,6 +196,7 @@ npx symbiote-workspace list-categories
 # Validation
 npx symbiote-workspace validate workspace.json
 npx symbiote-workspace describe workspace.json
+npx symbiote-workspace preview workspace.json --output-dir .workspace-preview
 
 # Server
 npx symbiote-workspace serve --port 3100 --plugins-dir ./plugins

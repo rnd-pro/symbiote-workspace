@@ -139,6 +139,7 @@ Examples:
   npx symbiote-workspace register-panel-type --config ws.json --name vp --title Viewport --component sn-canvas-viewport
   npx symbiote-workspace list-panel-types --config ws.json
   npx symbiote-workspace describe --config ws.json
+  npx symbiote-workspace preview ws.json --output-dir .workspace-preview
   npx symbiote-workspace mcp
   `);
 }

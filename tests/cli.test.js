@@ -210,6 +210,12 @@ describe('CLI --config workflow', () => {
       let r5 = await exec('validate', tmpFile);
       let p5 = JSON.parse(r5.stdout);
       assert.equal(p5.valid, true);
+
+      let previewDir = join(dirname(tmpFile), 'preview');
+      let r6 = await exec('preview', tmpFile, '--output-dir', previewDir);
+      let p6 = JSON.parse(r6.stdout);
+      assert.equal(p6.status, 'ok');
+      assert.equal(p6.outputDir, previewDir);
     });
   });
 
