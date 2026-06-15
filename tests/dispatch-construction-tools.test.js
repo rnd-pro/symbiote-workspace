@@ -613,6 +613,35 @@ describe('construction workflow dispatch', () => {
     assert.equal(session.config.name, 'Existing Config');
   });
 
+  it('construct_workspace gates typed handoffs with string intents', async () => {
+    let session = createSession();
+    await dispatch('scaffold_from_scratch', { name: 'Existing Config' }, session);
+    let handoff = {
+      _type: 'workspace-construction-handoff',
+      valid: false,
+      ready: false,
+      intent: 'chat workspace',
+      options: {},
+      errors: [{ path: 'kind', message: 'Invalid package kind.', severity: 'error' }],
+      warnings: [],
+    };
+
+    let plan = await dispatch('plan_workspace', handoff, session);
+    let construct = await dispatch('construct_workspace', handoff, session);
+
+    assert.equal(plan.status, 'error');
+    assert.equal(plan.tool, 'plan_workspace');
+    assert.equal(plan.code, 'construction_handoff_invalid');
+    assert.equal(plan.nextAction, 'fix-package-context');
+    assert.match(plan.hint, /Invalid package kind/);
+    assert.equal(construct.status, 'error');
+    assert.equal(construct.tool, 'construct_workspace');
+    assert.equal(construct.code, 'construction_handoff_invalid');
+    assert.equal(construct.nextAction, 'fix-package-context');
+    assert.match(construct.hint, /Invalid package kind/);
+    assert.equal(session.config.name, 'Existing Config');
+  });
+
   it('construct_workspace rejects contradictory handoff diagnostics even when valid is true', async () => {
     let session = createSession();
     await dispatch('scaffold_from_scratch', { name: 'Existing Config' }, session);

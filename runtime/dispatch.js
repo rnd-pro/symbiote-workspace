@@ -1054,7 +1054,7 @@ function constructionOptionsFromArgs(args, intent) {
 
 function isConstructionHandoffArgs(args) {
   return isObject(args)
-    && isObject(args.intent)
+    && (isObject(args.intent) || typeof args.intent === 'string')
     && isObject(args.options)
     && (
       args._type === WORKSPACE_CONSTRUCTION_HANDOFF_TYPE

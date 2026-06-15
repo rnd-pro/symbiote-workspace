@@ -1301,6 +1301,7 @@ describe('createWorkspaceConstructionHandoff', () => {
 
     assert.equal(handoff.valid, true);
     assert.equal(handoff.ready, true);
+    assert.equal(handoff._type, 'workspace-construction-handoff');
     assert.deepEqual(handoff.intent.requiredCapabilities, ['agent.runtime', 'room.command']);
     assert.deepEqual(handoff.options.workspaceTemplates.map((template) => template.name), [
       'handoff-command-room',
@@ -1343,6 +1344,7 @@ describe('createWorkspaceConstructionHandoff', () => {
 
     assert.equal(handoff.valid, true);
     assert.equal(handoff.ready, false);
+    assert.equal(handoff._type, 'workspace-construction-handoff');
     assert.equal(handoff.options.packageContext.ready, false);
     assert.equal(handoff.options.packageContext.sources.length, 1);
     assert.equal(handoff.options.packageContext.source.packageId, 'handoff-gapped-package');
@@ -1372,6 +1374,7 @@ describe('createWorkspaceConstructionHandoff', () => {
 
     assert.equal(handoff.valid, false);
     assert.equal(handoff.ready, false);
+    assert.equal(handoff._type, 'workspace-construction-handoff');
     assert.deepEqual(handoff.intent.requiredCapabilities, ['host.capability']);
     assert.deepEqual(handoff.options.workspaceTemplates, []);
     assert.deepEqual(handoff.options.moduleCapabilities, []);
@@ -1702,6 +1705,7 @@ describe('createWorkspacePackagesConstructionContext', () => {
 
     assert.equal(handoff.valid, true);
     assert.equal(handoff.ready, true);
+    assert.equal(handoff._type, 'workspace-construction-handoff');
     assert.deepEqual(handoff.intent.requiredCapabilities, ['handoff.alpha', 'handoff.beta']);
     assert.deepEqual(handoff.options.workspaceTemplates.map((template) => template.name), [
       'handoff-alpha-room',

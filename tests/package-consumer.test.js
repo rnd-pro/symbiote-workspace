@@ -954,6 +954,9 @@ describe('packed package consumer', () => {
           brief: 'Review queue workspace',
           template: 'review-package',
         });
+        if (handoff._type !== 'workspace-construction-handoff') {
+          throw new Error('handoff _type sentinel missing');
+        }
         let plan = planWorkspaceConstruction(handoff.intent, handoff.options);
         if (plan.plan.capabilities.missing.length !== 0) {
           throw new Error('package-derived constructor context did not cover review.queue');

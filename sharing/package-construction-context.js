@@ -23,6 +23,7 @@ const BUILT_IN_TEMPLATES = new Set([
   'video-studio',
 ]);
 
+const WORKSPACE_CONSTRUCTION_HANDOFF_TYPE = 'workspace-construction-handoff';
 const TEMPLATE_NAME_PATTERN = /^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/;
 
 function isPortableTemplateName(name) {
@@ -353,6 +354,7 @@ function handoffSources(context) {
  * @param {string} [options.templateName] - External template name override
  * @param {Object} [options.available] - Host-neutral available capabilities
  * @returns {{
+ *   _type: string,
  *   valid: boolean,
  *   ready: boolean,
  *   workspaceTemplates: Array,
@@ -493,6 +495,7 @@ export function createWorkspaceConstructionHandoff(context, intent = {}) {
   };
 
   return {
+    _type: WORKSPACE_CONSTRUCTION_HANDOFF_TYPE,
     valid,
     ready,
     intent: {
