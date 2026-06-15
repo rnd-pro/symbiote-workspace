@@ -15,6 +15,8 @@ let STATE_FIELD_TYPES = new Set(['string', 'number', 'boolean', 'enum', 'object'
 let STATE_FIELD_PERSISTENCE = new Set(['session', 'workspace', 'ephemeral']);
 let ENGINE_BINDING_SURFACES = new Set(['action', 'setting', 'state', 'event', 'binding']);
 let ENGINE_NODE_CACHE_MODES = new Set(['auto', 'freeze', 'force']);
+let VALIDATION_REPORT_STATUSES = new Set(['pass', 'warn', 'blocked']);
+let VALIDATION_REPORT_SEVERITIES = new Set(['info', 'warning', 'error']);
 
 /** @type {Set<string>} */
 let BLOCKED_CONFIG_PATTERNS = new Set([
@@ -336,9 +338,19 @@ function validateConstruction(construction, errors, warnings) {
       validateConstructionQuestions(construction.questions, errors, warnings);
     }
   }
-  if (construction.plan !== undefined && !isObject(construction.plan)) {
-    errors.push({ path: 'construction.plan', message: 'construction.plan must be an object.', severity: 'error' });
+  if (construction.plan !== undefined) {
+    if (!isObject(construction.plan)) {
+      errors.push({ path: 'construction.plan', message: 'construction.plan must be an object.', severity: 'error' });
+    } else {
+      validateConstructionPlanReports(construction.plan, errors);
+    }
   }
+}
+
+function validateConstructionPlanReports(plan, errors) {
+  let reports = plan.verification?.reports;
+  if (reports === undefined) return;
+  validateReportArray(reports, 'construction.plan.verification.reports', errors);
 }
 
 function validateConstructionQuestions(questions, errors, warnings) {
@@ -395,8 +407,49 @@ function validateValidationReports(validation, errors, warnings) {
     errors.push({ path: 'validation', message: 'Field "validation" must be an object.', severity: 'error' });
     return;
   }
-  if (validation.reports !== undefined && !Array.isArray(validation.reports)) {
-    errors.push({ path: 'validation.reports', message: 'validation.reports must be an array.', severity: 'error' });
+  if (validation.reports !== undefined) validateReportArray(validation.reports, 'validation.reports', errors);
+}
+
+function validateReportArray(reports, path, errors) {
+  if (!Array.isArray(reports)) {
+    errors.push({ path, message: `${path} must be an array.`, severity: 'error' });
+    return;
+  }
+  for (let i = 0; i < reports.length; i++) validateReport(reports[i], `${path}[${i}]`, errors);
+}
+
+function validateReport(report, path, errors) {
+  if (!isObject(report)) {
+    errors.push({ path, message: 'Report entries must be objects.', severity: 'error' });
+    return;
+  }
+  for (let field of ['id', 'check', 'status', 'severity', 'message']) {
+    if (typeof report[field] !== 'string' || !report[field].trim()) {
+      errors.push({ path: `${path}.${field}`, message: `Report ${field} must be a non-empty string.`, severity: 'error' });
+    }
+  }
+  if (typeof report.status === 'string' && !VALIDATION_REPORT_STATUSES.has(report.status)) {
+    errors.push({ path: `${path}.status`, message: `Invalid report status: "${report.status}".`, severity: 'error' });
+  }
+  if (typeof report.severity === 'string' && !VALIDATION_REPORT_SEVERITIES.has(report.severity)) {
+    errors.push({ path: `${path}.severity`, message: `Invalid report severity: "${report.severity}".`, severity: 'error' });
+  }
+  if (report.version !== undefined && (typeof report.version !== 'string' || !report.version.trim())) {
+    errors.push({ path: `${path}.version`, message: 'Report version must be a non-empty string.', severity: 'error' });
+  }
+  if (report.diagnostics !== undefined) validateReportObjects(report.diagnostics, `${path}.diagnostics`, errors);
+  if (report.suggestedPatches !== undefined) validateReportObjects(report.suggestedPatches, `${path}.suggestedPatches`, errors);
+}
+
+function validateReportObjects(items, path, errors) {
+  if (!Array.isArray(items)) {
+    errors.push({ path, message: `${path} must be an array.`, severity: 'error' });
+    return;
+  }
+  for (let i = 0; i < items.length; i++) {
+    if (!isObject(items[i])) {
+      errors.push({ path: `${path}[${i}]`, message: `${path} entries must be objects.`, severity: 'error' });
+    }
   }
 }
 

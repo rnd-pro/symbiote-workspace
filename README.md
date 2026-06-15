@@ -417,7 +417,9 @@ changing session state. The mutating `construct_workspace` tool writes the
 planned executable config into the active CLI/MCP session and participates in
 the same `--config` auto-save flow as other mutating tools. Both tools accept
 constructor `options` directly, including the `{ intent, options }` object
-returned by `create_workspace_construction_handoff`.
+returned by `create_workspace_construction_handoff`. Successful responses also
+expose `verification` at the top level, matching `plan.verification` for CLI and
+MCP consumers that need transport-stable construction diagnostics.
 
 ```javascript
 import {
@@ -500,7 +502,10 @@ Construction also writes verification reports to
 `config.validation.reports`. Reports compose existing portability export,
 design guardrail, module capability, and package/host readiness checks, so
 agents can inspect construction readiness without invoking separate validators
-or host-specific services.
+or host-specific services. Dispatch, CLI, and MCP construction responses expose
+the same payload as top-level `verification`. Report entries use stable
+`pass`, `warn`, or `blocked` status values with `info`, `warning`, or `error`
+severity, and both report locations are validated against the same shape.
 
 Selected descriptor bindings are also materialized into `config.data.bindings`.
 Each binding record carries `panelType`, `component`, `id`, `direction`, and

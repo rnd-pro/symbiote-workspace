@@ -1865,6 +1865,12 @@ function verificationSeverity(status) {
   return 'info';
 }
 
+function readinessVerificationStatus(status) {
+  if (status === 'ready') return 'pass';
+  if (status === 'blocked') return 'blocked';
+  return 'warn';
+}
+
 function portabilityVerificationReport(config) {
   let exported = exportConfig(config, { strict: true });
   let diagnostics = (exported.errors || []).map((error) => ({
@@ -1967,11 +1973,12 @@ function packageVerificationReport(packageReadiness) {
     });
   }
 
+  let status = readinessVerificationStatus(packageReadiness.status);
   return {
     id: 'package-host-readiness',
     check: 'package-readiness',
-    status: packageReadiness.status,
-    severity: verificationSeverity(packageReadiness.status),
+    status,
+    severity: verificationSeverity(status),
     message: packageReadiness.ready
       ? 'Package, plugin, and host requirements are ready for construction.'
       : 'Package, plugin, or host requirements need review before construction.',

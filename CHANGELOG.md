@@ -107,6 +107,13 @@ All notable changes to this project will be documented in this file.
 - **Top-level package readiness** — successful `plan_workspace` and
   `construct_workspace` responses now expose package readiness as top-level
   `readiness` when package context exists, matching the error recovery surface.
+- **Top-level construction verification** — successful `plan_workspace` and
+  `construct_workspace` dispatch, CLI, and MCP responses now expose
+  `verification` as a top-level mirror of `plan.verification`.
+- **Validation report shape** — `validation.reports` and
+  `construction.plan.verification.reports` now reject malformed report entries,
+  and package readiness verification reports use the same `pass | warn |
+  blocked` status contract as other construction reports.
 - **Missing-capability recovery hints** — readiness diagnostics now include
   deterministic `recovery` steps for missing package capabilities so agents can
   choose component, plugin, package, host-service, or runtime-slot remediation.

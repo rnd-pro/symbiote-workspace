@@ -1247,6 +1247,7 @@ export async function dispatch(toolName, args, session) {
       questions: result.questions,
       plan: result.plan,
       readiness: cloneJson(result.plan.readiness?.package),
+      verification: cloneJson(result.plan.verification),
       config: result.config,
     });
   }
@@ -1273,6 +1274,7 @@ export async function dispatch(toolName, args, session) {
       questions: result.questions,
       plan: result.plan,
       readiness: cloneJson(result.plan.readiness?.package),
+      verification: cloneJson(result.plan.verification),
       config: result.config,
       hint: `Workspace "${result.config.name}" constructed from "${result.intent.template}".`,
     });

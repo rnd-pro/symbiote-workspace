@@ -35,6 +35,10 @@ describe('schema', () => {
     assert.ok(WORKSPACE_CONFIG_SCHEMA.required.includes('version'));
     assert.ok(WORKSPACE_CONFIG_SCHEMA.required.includes('name'));
     assert.deepEqual(
+      WORKSPACE_CONFIG_SCHEMA.$defs.validationReport.required,
+      ['id', 'check', 'status', 'severity', 'message'],
+    );
+    assert.deepEqual(
       WORKSPACE_CONFIG_SCHEMA.properties.data.properties.bindings.items.required,
       ['panelType', 'component', 'id', 'direction'],
     );
@@ -99,6 +103,73 @@ describe('validateWorkspaceConfig', () => {
       });
       assert.equal(result.valid, true, `register "${register}" should be valid`);
     }
+  });
+
+  it('accepts valid validation reports', () => {
+    let report = {
+      id: 'portability-strict-export',
+      check: 'portability',
+      status: 'pass',
+      severity: 'info',
+      message: 'Workspace config passes strict portable export checks.',
+      diagnostics: [],
+    };
+    let result = validateWorkspaceConfig({
+      version: '0.2.0',
+      name: 'Reported Workspace',
+      construction: {
+        plan: {
+          verification: { reports: [report] },
+        },
+      },
+      validation: { reports: [report] },
+    });
+
+    assert.equal(result.valid, true);
+    assert.equal(result.errors.length, 0);
+  });
+
+  it('rejects malformed validation reports', () => {
+    let result = validateWorkspaceConfig({
+      version: '0.2.0',
+      name: 'Bad Reports',
+      validation: {
+        reports: ['bad', {
+          id: 123,
+          check: '',
+          status: 'ready',
+          severity: 'notice',
+          message: '',
+          diagnostics: 'bad',
+        }],
+      },
+    });
+
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some((error) => error.path === 'validation.reports[0]'));
+    assert.ok(result.errors.some((error) => error.path === 'validation.reports[1].id'));
+    assert.ok(result.errors.some((error) => error.path === 'validation.reports[1].check'));
+    assert.ok(result.errors.some((error) => error.path === 'validation.reports[1].status'));
+    assert.ok(result.errors.some((error) => error.path === 'validation.reports[1].severity'));
+    assert.ok(result.errors.some((error) => error.path === 'validation.reports[1].message'));
+    assert.ok(result.errors.some((error) => error.path === 'validation.reports[1].diagnostics'));
+  });
+
+  it('rejects malformed construction verification reports', () => {
+    let result = validateWorkspaceConfig({
+      version: '0.2.0',
+      name: 'Bad Construction Reports',
+      construction: {
+        plan: {
+          verification: {
+            reports: [{ id: 'bad', check: 'package-readiness', status: 'warning', severity: 'warning', message: 'Bad' }],
+          },
+        },
+      },
+    });
+
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some((error) => error.path === 'construction.plan.verification.reports[0].status'));
   });
 
   it('warns on auth-like keys in config', () => {

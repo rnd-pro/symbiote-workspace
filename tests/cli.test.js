@@ -153,6 +153,7 @@ describe('CLI tool commands', () => {
     assert.ok(Array.isArray(result.questions));
     assert.ok(Array.isArray(result.plan.modules));
     assert.ok(Array.isArray(result.plan.verification.targets));
+    assert.deepEqual(result.verification, result.plan.verification);
   });
 
   it('plan alias accepts a full construction handoff JSON positional', async () => {
@@ -162,6 +163,7 @@ describe('CLI tool commands', () => {
     assert.equal(result.status, 'ok');
     assert.equal(result.intent.brief, 'CLI handoff room');
     assert.equal(result.intent.template, 'cli-handoff-room');
+    assert.deepEqual(result.verification, result.plan.verification);
     assert.equal(result.config.name, 'CLI Handoff Room');
   });
 
@@ -174,8 +176,10 @@ describe('CLI tool commands', () => {
       assert.equal(result.status, 'ok');
       assert.equal(result.intent.brief, 'CLI handoff room');
       assert.equal(result.intent.template, 'cli-handoff-room');
+      assert.deepEqual(result.verification, result.plan.verification);
       assert.equal(saved.intent.template, 'cli-handoff-room');
       assert.equal(saved.name, 'CLI Handoff Room');
+      assert.deepEqual(saved.validation.reports, result.verification.reports);
     });
   });
 });

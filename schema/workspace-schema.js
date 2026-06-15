@@ -398,12 +398,13 @@ const PATCH_SCHEMA = Object.freeze({
 
 const VALIDATION_REPORT_SCHEMA = Object.freeze({
   type: 'object',
+  required: ['id', 'check', 'status', 'severity', 'message'],
   properties: {
     id: { type: 'string' },
     check: { type: 'string' },
     version: { type: 'string' },
-    status: { type: 'string' },
-    severity: { type: 'string' },
+    status: { type: 'string', enum: ['pass', 'warn', 'blocked'] },
+    severity: { type: 'string', enum: ['info', 'warning', 'error'] },
     message: { type: 'string' },
     diagnostics: { type: 'array', items: { type: 'object' } },
     suggestedPatches: { type: 'array', items: { type: 'object' } },

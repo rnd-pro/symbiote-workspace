@@ -63,6 +63,7 @@ let EXTENDED_CONFIG = {
     reports: [{
       id: 'theme-check',
       check: 'theme',
+      status: 'warn',
       severity: 'warning',
       message: 'Contrast fallback required.',
     }],

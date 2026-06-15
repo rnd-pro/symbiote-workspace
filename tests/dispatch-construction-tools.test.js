@@ -197,6 +197,7 @@ describe('construction workflow dispatch', () => {
       result.plan.verification.reports.map((report) => report.check),
       ['portability', 'design', 'modules'],
     );
+    assert.deepEqual(result.verification, result.plan.verification);
     assert.deepEqual(result.config.validation.reports, result.plan.verification.reports);
     assert.equal(session.config, null);
   });
@@ -235,6 +236,7 @@ describe('construction workflow dispatch', () => {
     assert.deepEqual(result.plan.answers.moduleSelection, ['imports', 'reply']);
     assert.deepEqual(result.plan.capabilities.missing, []);
     assert.equal(session.config.construction.plan.theme.recipe.mode, 'dark');
+    assert.deepEqual(result.verification, result.plan.verification);
     assert.deepEqual(session.config.validation.reports, result.plan.verification.reports);
   });
 
@@ -505,6 +507,9 @@ describe('construction workflow dispatch', () => {
       status: 'warning',
       nextAction: 'review-package-readiness',
     });
+    let report = planResult.verification.reports.find((item) => item.check === 'package-readiness');
+    assert.equal(report.status, 'warn');
+    assert.equal(report.severity, 'warning');
     assert.equal(session.config, null);
 
     let constructResult = await dispatch('construct_workspace', handoff, session);

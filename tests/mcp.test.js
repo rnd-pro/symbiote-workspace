@@ -284,6 +284,7 @@ describe('MCP Protocol', () => {
     assert.ok(constructResult);
     let constructContent = JSON.parse(constructResult.result.content[0].text);
     assert.equal(constructContent.status, 'ok');
+    assert.deepEqual(constructContent.verification, constructContent.plan.verification);
     assert.deepEqual(constructContent.plan.answers.moduleSelection, ['imports', 'reply']);
 
     let exportResult = responses.find((r) => r.id === 3);
@@ -292,6 +293,7 @@ describe('MCP Protocol', () => {
     let exportedConfig = JSON.parse(exportContent.json);
     assert.equal(exportedConfig.name, 'MCP Constructed');
     assert.deepEqual(exportedConfig.construction.plan.capabilities.missing, []);
+    assert.deepEqual(exportedConfig.validation.reports, constructContent.verification.reports);
   });
 
   it('rejects missing construction capabilities through tools/call without replacing session state', async () => {
