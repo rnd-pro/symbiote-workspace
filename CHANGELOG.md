@@ -74,6 +74,9 @@ All notable changes to this project will be documented in this file.
   `options.packageContext`, and construction plans preserve it as
   `plan.packageContext` plus `config.construction.packageContext` so agents can
   see source, readiness, missing capabilities, and warnings after planning.
+- **Construction handoff readiness contract** —
+  `create_workspace_construction_handoff` now mirrors package `readiness` and
+  `nextAction` at the top level across dispatch, CLI, and MCP responses.
 - **Package-derived handoff construction parity** — dispatch and MCP tests now
   cover real exported packages flowing through construction context, handoff,
   `plan_workspace`, `construct_workspace`, and exported config output while

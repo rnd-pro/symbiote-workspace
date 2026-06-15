@@ -1884,6 +1884,8 @@ describe('workspace package CLI commands', () => {
       assert.equal(handoffResult.status, 'ok');
       assert.equal(handoffResult.valid, true);
       assert.equal(handoffResult.ready, true);
+      assert.equal(handoffResult.readiness.nextAction, 'construct');
+      assert.equal(handoffResult.nextAction, 'construct');
       assert.ok(handoffResult.intent);
       assert.equal(handoffResult.intent.template, 'review-package');
       assert.ok(handoffResult.options);
@@ -2290,6 +2292,8 @@ describe('create_workspace_construction_handoff dispatch', () => {
     assert.equal(handoffResult._type, 'workspace-construction-handoff');
     assert.equal(handoffResult.valid, true);
     assert.equal(handoffResult.ready, true);
+    assert.equal(handoffResult.readiness.nextAction, 'construct');
+    assert.equal(handoffResult.nextAction, 'construct');
     assert.ok(handoffResult.intent);
     assert.ok(handoffResult.intent.requiredCapabilities);
     assert.ok(handoffResult.options);
@@ -2335,6 +2339,8 @@ describe('create_workspace_construction_handoff dispatch', () => {
     assert.equal(handoffResult.status, 'ok');
     assert.equal(handoffResult.valid, true);
     assert.equal(handoffResult.ready, true);
+    assert.equal(handoffResult.readiness.nextAction, 'construct');
+    assert.equal(handoffResult.nextAction, 'construct');
     assert.equal(targetSession.config, null);
 
     let planResult = await dispatch('plan_workspace', handoffResult, targetSession);
@@ -2381,6 +2387,8 @@ describe('create_workspace_construction_handoff dispatch', () => {
     assert.equal(result._type, 'workspace-construction-handoff');
     assert.equal(result.valid, false);
     assert.equal(result.ready, false);
+    assert.equal(result.readiness.status, 'blocked');
+    assert.equal(result.nextAction, 'fix-package-context');
     assert.deepEqual(result.options.workspaceTemplates, []);
     assert.deepEqual(result.options.moduleCapabilities, []);
     assert.ok(result.errors.length > 0);

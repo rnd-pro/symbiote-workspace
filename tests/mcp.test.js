@@ -1384,6 +1384,8 @@ describe('Construction Handoff via MCP', () => {
     assert.equal(content.status, 'ok');
     assert.equal(content.valid, true);
     assert.equal(content.ready, true);
+    assert.equal(content.readiness.nextAction, 'construct');
+    assert.equal(content.nextAction, 'construct');
     assert.ok(content.intent);
     assert.equal(content.intent.template, 'review-package');
     assert.ok(content.options);
@@ -1543,6 +1545,8 @@ describe('Construction Handoff via MCP', () => {
     assert.equal(handoff.status, 'ok');
     assert.equal(handoff.valid, true);
     assert.equal(handoff.ready, true);
+    assert.equal(handoff.readiness.nextAction, 'construct');
+    assert.equal(handoff.nextAction, 'construct');
 
     let planResponses = await mcpSession([
       { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
@@ -1605,6 +1609,8 @@ describe('Construction Handoff via MCP', () => {
     assert.equal(content._type, 'workspace-construction-handoff');
     assert.equal(content.valid, false);
     assert.equal(content.ready, false);
+    assert.equal(content.readiness.status, 'blocked');
+    assert.equal(content.nextAction, 'fix-package-context');
     assert.ok(content.errors.length > 0);
     assert.deepEqual(content.options.workspaceTemplates, []);
   });

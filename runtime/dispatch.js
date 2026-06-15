@@ -1447,6 +1447,8 @@ export async function dispatch(toolName, args, session) {
       ready: raw.ready,
       requirements: raw.requirements,
       missing: raw.missing,
+      readiness: raw.readiness,
+      nextAction: raw.readiness?.nextAction,
       source: raw.source,
       sources: raw.sources,
       summary: raw.summary,

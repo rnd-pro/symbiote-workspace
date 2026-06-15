@@ -820,7 +820,10 @@ structural errors), `ready` (`valid` and no missing-dependency warnings),
 `missing`. Pass an optional `options.available` host-neutral inventory
 (`components`, `plugins`, `packages`, `hostServices`, `runtimeSlots`) to
 detect missing capabilities; missing items lower `ready` to `false` through
-warnings. No marketplace or product-install semantics are applied.
+warnings. Dispatch/MCP `inspect_workspace_package` returns the transport-safe
+inspection summary, readiness, `nextAction`, warnings, and errors without
+echoing the full package or config. No marketplace or product-install semantics
+are applied.
 
 `createWorkspacePackageConstructionContext(input, options)` projects a valid
 workspace package into constructor-ready data without installing or activating
@@ -854,6 +857,9 @@ handoff also carries `options.packageContext`, which construction plans copy to
 `plan.packageContext` and `config.construction.packageContext` so agents can see
 package source, requirements, missing capability gaps, warnings, and readiness
 without re-inspecting the package.
+Dispatch/MCP/CLI handoff responses mirror the same package decision data as
+top-level `readiness` and `nextAction`, so agents can route immediately after
+creating a handoff without parsing nested `options.packageContext`.
 Plans also include `plan.readiness.package`, a compact summary with package
 validity, readiness status, source count, missing/warning/error counts, and the
 next action (`construct`, `review-package-readiness`, or
