@@ -183,17 +183,21 @@ class CdpWebSocket {
     socket.on('close', () => this.rejectAll(new Error('CDP WebSocket closed.')));
   }
 
-  static connect(url) {
+  static connect(url, timeout = DEFAULT_TIMEOUT) {
     let parsed = new URL(url);
     let key = randomBytes(16).toString('base64');
     return new Promise((resolveSocket, rejectSocket) => {
       let socket = createConnection(Number(parsed.port), parsed.hostname);
       let chunks = [];
       let settled = false;
+      let timer = setTimeout(() => {
+        fail(new Error('Timed out opening CDP WebSocket.'));
+      }, timeout);
 
       function fail(error) {
         if (settled) return;
         settled = true;
+        clearTimeout(timer);
         socket.destroy();
         rejectSocket(error);
       }
@@ -226,6 +230,7 @@ class CdpWebSocket {
           return;
         }
         settled = true;
+        clearTimeout(timer);
         let client = new CdpWebSocket(socket);
         let rest = response.slice(headerEnd + 4);
         if (rest.length > 0) client.onData(rest);
@@ -235,7 +240,10 @@ class CdpWebSocket {
   }
 
   rejectAll(error) {
-    for (let pending of this.pending.values()) pending.reject(error);
+    for (let pending of this.pending.values()) {
+      clearTimeout(pending.timer);
+      pending.reject(error);
+    }
     this.pending.clear();
   }
 
@@ -277,6 +285,7 @@ class CdpWebSocket {
     if (message.id && this.pending.has(message.id)) {
       let pending = this.pending.get(message.id);
       this.pending.delete(message.id);
+      clearTimeout(pending.timer);
       if (message.error) pending.reject(new Error(message.error.message || JSON.stringify(message.error)));
       else pending.resolve(message.result);
       return;
@@ -310,24 +319,29 @@ class CdpWebSocket {
     this.socket.write(Buffer.concat([header, masked]));
   }
 
-  send(method, params = {}) {
+  send(method, params = {}, timeout = DEFAULT_TIMEOUT) {
     let id = this.nextId++;
     this.writeFrame(1, JSON.stringify({ id, method, params }));
     return new Promise((resolveSend, rejectSend) => {
-      this.pending.set(id, { resolve: resolveSend, reject: rejectSend });
+      let timer = setTimeout(() => {
+        this.pending.delete(id);
+        rejectSend(new Error(`Timed out waiting for CDP command ${method}.`));
+      }, timeout);
+      this.pending.set(id, { resolve: resolveSend, reject: rejectSend, timer });
     });
   }
 
   waitEvent(method, timeout) {
     return new Promise((resolveEvent, rejectEvent) => {
+      let waiters = this.events.get(method) || [];
       let timer = setTimeout(() => {
+        this.events.set(method, waiters.filter((waiter) => waiter !== wrapped));
         rejectEvent(new Error(`Timed out waiting for CDP event ${method}.`));
       }, timeout);
       let wrapped = (params) => {
         clearTimeout(timer);
         resolveEvent(params);
       };
-      let waiters = this.events.get(method) || [];
       waiters.push(wrapped);
       this.events.set(method, waiters);
     });
@@ -418,16 +432,16 @@ async function run() {
       ].filter(Boolean).join('\n'));
     }
     let target = await createCdpTarget(cdpPort, `http://127.0.0.1:${previewPort}/`);
-    cdp = await CdpWebSocket.connect(target.webSocketDebuggerUrl);
-    await cdp.send('Page.enable');
-    await cdp.send('Runtime.enable');
-    await cdp.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/` });
+    cdp = await CdpWebSocket.connect(target.webSocketDebuggerUrl, timeout);
+    await cdp.send('Page.enable', {}, timeout);
+    await cdp.send('Runtime.enable', {}, timeout);
+    await cdp.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/` }, timeout);
     await cdp.waitEvent('Page.loadEventFired', timeout);
     let result = await cdp.send('Runtime.evaluate', {
       expression: mountExpression,
       awaitPromise: true,
       returnByValue: true,
-    });
+    }, timeout);
     if (result.exceptionDetails) {
       let text = result.exceptionDetails.exception?.description || result.exceptionDetails.text;
       throw new Error(text);

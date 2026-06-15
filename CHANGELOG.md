@@ -7,6 +7,9 @@ All notable changes to this project will be documented in this file.
 - Added an opt-in visual-demo browser smoke script that launches the packaged
   demo through a Chrome-compatible DevTools Protocol session and verifies the
   mounted workspace DOM without changing the default test command.
+- Bounded visual-demo browser smoke WebSocket handshakes and CDP commands with
+  the configured timeout so unavailable or stalled browser automation exits
+  with diagnostics and cleanup instead of hanging.
 
 ### Added
 
