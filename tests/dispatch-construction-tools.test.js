@@ -240,6 +240,37 @@ describe('construction workflow dispatch', () => {
     assert.equal(session.config, null);
   });
 
+  it('plan_workspace prioritizes missing module capability readiness over ready package context', async () => {
+    let session = createSession();
+    let result = await dispatch('plan_workspace', {
+      intent: 'dashboard with package and unknown module requirement',
+      template: 'dashboard',
+      requiredCapabilities: ['capability.that.does.not.exist'],
+      options: {
+        packageContext: {
+          valid: true,
+          ready: true,
+          readiness: {
+            ready: true,
+            status: 'ready',
+            nextAction: 'construct',
+          },
+          source: { packageId: 'ready-package' },
+          missing: {},
+          warnings: [],
+          errors: [],
+        },
+      },
+    }, session);
+
+    assert.equal(result.status, 'ok');
+    assert.equal(result.plan.readiness.package.nextAction, 'construct');
+    assert.equal(result.readiness.ready, false);
+    assert.equal(result.readiness.nextAction, 'provide-module-capabilities');
+    assert.deepEqual(result.readiness.missing.moduleCapabilities, ['capability.that.does.not.exist']);
+    assert.equal(session.config, null);
+  });
+
   it('construct_workspace plans and stores the executable config in session state', async () => {
     let session = createSession();
     let result = await dispatch('construct_workspace', {
@@ -764,6 +795,35 @@ describe('construction workflow dispatch', () => {
     assert.deepEqual(construct.readiness.recovery, [{
       kind: 'components',
       item: 'sn-direct-room',
+      action: 'register-component',
+    }]);
+    assert.equal(session.config.name, 'Existing Config');
+  });
+
+  it('construct_workspace rejects not-ready packageContext provided through bare options', async () => {
+    let session = createSession();
+    await dispatch('scaffold_from_scratch', { name: 'Existing Config' }, session);
+
+    let construct = await dispatch('construct_workspace', {
+      intent: { brief: 'chat workspace', template: 'chat' },
+      options: {
+        packageContext: {
+          valid: true,
+          ready: false,
+          missing: { components: ['sn-options-room'] },
+          warnings: [{ path: 'available.components', message: 'Missing options room shell.', severity: 'warning' }],
+        },
+      },
+    }, session);
+
+    assert.equal(construct.status, 'error');
+    assert.equal(construct.code, 'construction_handoff_not_ready');
+    assert.equal(construct.nextAction, 'review-package-readiness');
+    assert.equal(construct.readiness.ready, false);
+    assert.equal(construct.readiness.missingCount, 1);
+    assert.deepEqual(construct.readiness.recovery, [{
+      kind: 'components',
+      item: 'sn-options-room',
       action: 'register-component',
     }]);
     assert.equal(session.config.name, 'Existing Config');
@@ -2282,11 +2342,15 @@ describe('create_workspace_construction_handoff dispatch', () => {
     assert.deepEqual(planResult.plan.capabilities.missing, []);
     assert.equal(planResult.config.panelTypes.sentiment.component, 'acme-sentiment-panel');
     assert.equal(planResult.plan.packageContext.source.packageId, 'com.example.handoff-real-package');
+    assert.equal(planResult.plan.packageContext.readiness.nextAction, 'construct');
+    assert.equal(planResult.config.construction.packageContext.readiness.nextAction, 'construct');
     assert.equal(targetSession.config, null);
 
     let constructResult = await dispatch('construct_workspace', handoffResult, targetSession);
     assert.equal(constructResult.status, 'ok');
     assert.deepEqual(constructResult.plan.capabilities.missing, []);
+    assert.equal(constructResult.plan.packageContext.readiness.nextAction, 'construct');
+    assert.equal(constructResult.config.construction.packageContext.readiness.nextAction, 'construct');
     assert.equal(targetSession.config.panelTypes.sentiment.component, 'acme-sentiment-panel');
     assert.ok(targetSession.config.components.catalog.includes('acme-sentiment-panel'));
     assert.ok(layoutReferencesPanel(targetSession.config.layout, 'sentiment'));

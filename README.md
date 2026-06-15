@@ -857,14 +857,14 @@ without re-inspecting the package.
 Plans also include `plan.readiness.package`, a compact summary with package
 validity, readiness status, source count, missing/warning/error counts, and the
 next action (`construct`, `review-package-readiness`, or
-`fix-package-context`). Dispatch/MCP responses also expose that package summary
-as top-level `readiness` when package context exists, so agents can read the
-same recovery contract on success and error paths.
+`fix-package-context`). Dispatch/MCP responses expose the highest-priority
+recovery summary as top-level `readiness`: package readiness when package
+context is invalid or not ready, and required-module-capability readiness when a
+ready package context still leaves unmatched required capabilities.
 Package readiness is only `ready` when the package context is valid, explicitly
-ready, and has no missing requirements, warnings, or errors. When no package
-context exists, `plan_workspace` exposes top-level blocked readiness for missing
-required module capabilities so agents can recover before calling
-`construct_workspace`.
+ready, and has no missing requirements, warnings, or errors. `plan_workspace`
+exposes top-level blocked readiness for missing required module capabilities so
+agents can recover before calling `construct_workspace`.
 `plan_workspace` accepts not-ready handoffs for diagnostics, but
 `construct_workspace` rejects `ready: false` handoffs so agents cannot
 materialize a degraded package workspace without resolving readiness gaps first.

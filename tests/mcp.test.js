@@ -1556,6 +1556,8 @@ describe('Construction Handoff via MCP', () => {
     assert.deepEqual(plan.plan.capabilities.missing, []);
     assert.equal(plan.config.panelTypes.sentiment.component, 'acme-sentiment-panel');
     assert.equal(plan.plan.packageContext.source.packageId, 'com.example.mcp-real-handoff');
+    assert.equal(plan.plan.packageContext.readiness.nextAction, 'construct');
+    assert.equal(plan.config.construction.packageContext.readiness.nextAction, 'construct');
     assert.deepEqual(plan.verification, plan.plan.verification);
     assert.deepEqual(plan.config.validation.reports, plan.verification.reports);
 
@@ -1769,6 +1771,42 @@ describe('Construction Handoff via MCP', () => {
     assert.deepEqual(construct.readiness.recovery, [{
       kind: 'components',
       item: 'sn-direct-room-shell',
+      action: 'register-component',
+    }]);
+  });
+
+  it('construct_workspace rejects bare options packageContext readiness gaps via tools/call', async () => {
+    let payload = {
+      intent: { brief: 'MCP options package context room', template: 'mcp-voice-video-room' },
+      options: {
+        packageContext: {
+          valid: true,
+          ready: false,
+          missing: { components: ['sn-options-room-shell'] },
+          warnings: [{ path: 'available.components', message: 'Missing options room shell.', severity: 'warning' }],
+        },
+      },
+    };
+
+    let responses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: { name: 'construct_workspace', arguments: payload },
+      },
+    ]);
+
+    let constructResponse = responses.find((r) => r.id === 2);
+    let construct = JSON.parse(constructResponse.result.content[0].text);
+    assert.equal(constructResponse.result.isError, true);
+    assert.equal(construct.status, 'error');
+    assert.equal(construct.code, 'construction_handoff_not_ready');
+    assert.equal(construct.nextAction, 'review-package-readiness');
+    assert.equal(construct.readiness.ready, false);
+    assert.equal(construct.readiness.missingCount, 1);
+    assert.deepEqual(construct.readiness.recovery, [{
+      kind: 'components',
+      item: 'sn-options-room-shell',
       action: 'register-component',
     }]);
   });

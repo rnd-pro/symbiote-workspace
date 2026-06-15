@@ -2060,6 +2060,7 @@ function packageContextPlan(options) {
     'ready',
     'requirements',
     'missing',
+    'readiness',
     'source',
     'sources',
     'summary',

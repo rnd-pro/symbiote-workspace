@@ -206,6 +206,29 @@ describe('planWorkspaceConstruction', () => {
     assert.deepEqual(result.config.validation.reports, result.plan.verification.reports);
   });
 
+  it('preserves package context readiness details on the plan and config', () => {
+    let result = planWorkspaceConstruction('Build a package-backed chat workspace', {
+      packageContext: {
+        valid: true,
+        ready: true,
+        source: { packageId: 'constructor-package' },
+        missing: {},
+        readiness: {
+          ready: true,
+          status: 'ready',
+          nextAction: 'construct',
+          source: { packageId: 'constructor-package' },
+        },
+        warnings: [],
+        errors: [],
+      },
+    });
+
+    assert.equal(result.plan.packageContext.readiness.nextAction, 'construct');
+    assert.equal(result.config.construction.packageContext.readiness.nextAction, 'construct');
+    assert.equal(result.plan.readiness.package.nextAction, 'construct');
+  });
+
   it('carries scoped theme layers into the construction plan and config', () => {
     let result = planWorkspaceConstruction({
       brief: 'Build a scoped theme dashboard',

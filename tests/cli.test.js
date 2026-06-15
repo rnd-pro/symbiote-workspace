@@ -62,6 +62,12 @@ function constructionHandoffJson() {
         ready: true,
         source: { packageId: 'cli-handoff-package' },
         missing: {},
+        readiness: {
+          ready: true,
+          status: 'ready',
+          nextAction: 'construct',
+          source: { packageId: 'cli-handoff-package' },
+        },
         warnings: [],
         errors: [],
         recovery: [],
@@ -195,6 +201,7 @@ describe('CLI tool commands', () => {
       assert.deepEqual(result.verification, result.plan.verification);
       assert.equal(saved.intent.template, 'cli-handoff-room');
       assert.equal(saved.construction.packageContext.source.packageId, 'cli-handoff-package');
+      assert.equal(saved.construction.packageContext.readiness.nextAction, 'construct');
       assert.equal(saved.name, 'CLI Handoff Room');
       assert.deepEqual(saved.validation.reports, result.verification.reports);
     });

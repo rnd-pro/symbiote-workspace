@@ -109,9 +109,11 @@ All notable changes to this project will be documented in this file.
   `code: "construction_handoff_intent_invalid"` and
   `nextAction: "fix-construction-intent"` across dispatch, CLI, and MCP when
   helper intent inputs are malformed.
-- **Top-level package readiness** — successful `plan_workspace` and
-  `construct_workspace` responses now expose package readiness as top-level
-  `readiness` when package context exists, matching the error recovery surface.
+- **Top-level construction readiness** — successful `plan_workspace` and
+  `construct_workspace` responses expose the highest-priority recovery summary
+  as top-level `readiness`: package readiness for package gaps, or required
+  module capability readiness when a ready package still leaves unmatched
+  capabilities.
 - **Construction readiness hardening** — package readiness is no longer marked
   ready when missing requirements, warnings, or errors are still present, and
   `plan_workspace` now exposes blocked top-level readiness for missing required

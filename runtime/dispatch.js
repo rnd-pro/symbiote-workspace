@@ -1064,6 +1064,7 @@ function isConstructionHandoffArgs(args) {
       || Array.isArray(args.warnings)
       || args.source !== undefined
       || args.sources !== undefined
+      || isObject(args.options.packageContext)
     );
 }
 
