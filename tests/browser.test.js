@@ -408,7 +408,11 @@ describe('mountWorkspace', () => {
 
     assert.equal(panels.length, 2);
     assert.equal(split.dataset.direction, 'horizontal');
+    assert.equal(split.style.getPropertyValue('display'), 'flex');
+    assert.equal(split.style.getPropertyValue('flex-direction'), 'row');
     assert.equal(split.style.getPropertyValue('--symbiote-workspace-preview-ratio'), '0.65');
+    assert.equal(panels[0].style.getPropertyValue('border-radius'), '8px');
+    assert.equal(panels[0].style.getPropertyValue('min-height'), '8rem');
     assert.equal(panels[0].dataset.panelType, 'timeline');
     assert.equal(panels[0].dataset.component, 'sn-video-timeline');
     assert.equal(panels[0].children[0].textContent, 'Timeline');

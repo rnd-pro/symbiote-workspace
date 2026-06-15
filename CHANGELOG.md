@@ -137,7 +137,8 @@ All notable changes to this project will be documented in this file.
   the `video-studio` workspace through the public construction flow, verifies
   strict export/import relaunch, writes preview artifacts, and can serve a local
   browser preview URL. Browser mounting now renders portable layout/panel DOM by
-  default when no host runtime controller is supplied.
+  default when no host runtime controller is supplied, with styled split and
+  panel fallback surfaces for the generated visual preview.
 - **Construction handoff sentinel and ready gate** —
   `create_workspace_construction_handoff` now returns
   `_type: "workspace-construction-handoff"` and `construct_workspace` rejects

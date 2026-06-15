@@ -206,6 +206,12 @@ function appendTextElement(document, parent, tagName, className, text) {
   return element;
 }
 
+function setStyles(element, styles) {
+  for (let [name, value] of Object.entries(styles)) {
+    element.style.setProperty(name, value);
+  }
+}
+
 function firstLayout(config) {
   if (config.layout) return config.layout;
   let firstNamedLayout = Object.values(config.layouts || {})[0];
@@ -218,23 +224,63 @@ function renderPreviewPanel(config, node, document) {
   element.className = 'symbiote-workspace__panel';
   element.dataset.panelType = node.panelType || 'unknown';
   if (panel.component) element.dataset.component = panel.component;
+  setStyles(element, {
+    display: 'flex',
+    'flex-direction': 'column',
+    gap: '0.5rem',
+    'min-width': '0',
+    'min-height': '8rem',
+    padding: '1rem',
+    border: '1px solid color-mix(in srgb, currentColor 18%, transparent)',
+    'border-radius': '8px',
+    background: 'color-mix(in srgb, Canvas 96%, currentColor 4%)',
+    overflow: 'hidden',
+  });
 
-  appendTextElement(document, element, 'h2', 'symbiote-workspace__panel-title', (
+  let title = appendTextElement(document, element, 'h2', 'symbiote-workspace__panel-title', (
     panel.title || node.panelType || 'Panel'
   ));
+  setStyles(title, {
+    margin: '0',
+    'font-size': '1rem',
+    'font-weight': '650',
+    'line-height': '1.25',
+  });
   if (panel.component) {
-    appendTextElement(document, element, 'p', 'symbiote-workspace__panel-component', panel.component);
+    let component = appendTextElement(document, element, 'p', 'symbiote-workspace__panel-component', panel.component);
+    setStyles(component, {
+      margin: '0',
+      'font-size': '0.8125rem',
+      color: 'color-mix(in srgb, currentColor 62%, transparent)',
+      overflow: 'hidden',
+      'text-overflow': 'ellipsis',
+      'white-space': 'nowrap',
+    });
   }
 
   let slots = Array.isArray(panel.slots) ? panel.slots : [];
   if (slots.length > 0) {
     let slotList = document.createElement('ul');
     slotList.className = 'symbiote-workspace__panel-slots';
+    setStyles(slotList, {
+      display: 'flex',
+      gap: '0.375rem',
+      margin: 'auto 0 0',
+      padding: '0',
+      'list-style': 'none',
+      'flex-wrap': 'wrap',
+    });
     for (let slot of slots) {
       let item = document.createElement('li');
       item.className = 'symbiote-workspace__panel-slot';
       item.dataset.slotId = slot.id || 'slot';
       item.textContent = slot.role ? `${slot.id || 'slot'} (${slot.role})` : slot.id || 'slot';
+      setStyles(item, {
+        padding: '0.25rem 0.5rem',
+        'border-radius': '999px',
+        background: 'color-mix(in srgb, currentColor 10%, transparent)',
+        'font-size': '0.75rem',
+      });
       slotList.appendChild(item);
     }
     element.appendChild(slotList);
@@ -251,12 +297,24 @@ function renderPreviewLayout(config, node, document) {
   let element = document.createElement('div');
   element.className = 'symbiote-workspace__split';
   element.dataset.direction = node.direction || 'horizontal';
+  let horizontal = (node.direction || 'horizontal') === 'horizontal';
+  setStyles(element, {
+    display: 'flex',
+    'flex-direction': horizontal ? 'row' : 'column',
+    gap: '0.75rem',
+    width: '100%',
+    height: '100%',
+    'min-width': '0',
+    'min-height': '0',
+  });
   if (node.ratio !== undefined) {
     element.style.setProperty('--symbiote-workspace-preview-ratio', String(node.ratio));
   }
 
   let first = renderPreviewLayout(config, node.first, document);
   let second = renderPreviewLayout(config, node.second, document);
+  if (first) first.style.setProperty('flex', `${Number(node.ratio) || 0.5} 1 0`);
+  if (second) second.style.setProperty('flex', `${1 - (Number(node.ratio) || 0.5)} 1 0`);
   if (first) element.appendChild(first);
   if (second) element.appendChild(second);
   return element;
@@ -269,6 +327,21 @@ function renderDefaultWorkspacePreview(config, wrapper) {
   let document = wrapper.ownerDocument;
   let preview = document.createElement('div');
   preview.className = 'symbiote-workspace__preview';
+  setStyles(wrapper, {
+    display: 'block',
+    height: '100%',
+    padding: '1rem',
+    'box-sizing': 'border-box',
+    color: 'CanvasText',
+    background: 'Canvas',
+  });
+  setStyles(preview, {
+    display: 'flex',
+    width: '100%',
+    height: '100%',
+    'min-height': '24rem',
+    'box-sizing': 'border-box',
+  });
   let renderedLayout = renderPreviewLayout(config, layout, document);
   if (renderedLayout) preview.appendChild(renderedLayout);
   wrapper.appendChild(preview);

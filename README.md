@@ -264,7 +264,9 @@ include the original error message instead of a broad fallback.
 The packaged visual demo runs the same portable construction path that agents
 use: classify intent, create a construction handoff, plan and construct the
 workspace, validate it, strictly export/import the config, write preview files,
-and serve the generated browser preview.
+and serve the generated browser preview. The browser fallback renderer
+materializes the portable layout as styled split panels when no host runtime
+controller is supplied.
 
 ```bash
 npm run demo:visual
