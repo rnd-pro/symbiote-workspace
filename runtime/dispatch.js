@@ -183,7 +183,7 @@ export const TOOLS = [
   },
   {
     name: 'plan_workspace',
-    description: 'Generate construction intent, questions, plan, and config without mutating the session.',
+    description: 'Generate construction diagnostics, questions, plan, readiness summary, and config without mutating the session.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -207,7 +207,7 @@ export const TOOLS = [
   },
   {
     name: 'construct_workspace',
-    description: 'Generate a construction plan and store the executable config in the active session.',
+    description: 'Generate a construction plan and store the executable config; rejects not-ready construction handoffs with structured readiness diagnostics.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1065,18 +1065,34 @@ function assertUsableConstructionHandoff(args, { requireReady = false } = {}) {
       ...missing,
       ...warnings.map((warning) => warning?.message || warning?.path).filter(Boolean),
     ].join('; ');
-    throw new Error(
-      `Construction handoff is not ready${detail ? `: ${detail}` : '.'}`,
-    );
+    let err = new Error(`Construction handoff is not ready${detail ? `: ${detail}` : '.'}`);
+    err.code = 'construction_handoff_not_ready';
+    err.nextAction = 'review-package-readiness';
+    err.readiness = {
+      ready: false,
+      valid: args.valid === true,
+      status: 'warning',
+      missingCount: missing.length,
+      warningCount: warnings.length,
+      errorCount: 0,
+      missing: cloneJson(args.missing),
+      warnings: cloneJson(warnings),
+      source: cloneJson(args.source),
+      sources: cloneJson(args.sources),
+    };
+    throw err;
   }
 }
 
 function constructionError(toolName, err) {
-  return {
+  return compactObject({
     status: 'error',
     tool: toolName,
     hint: err.message,
-  };
+    code: err.code,
+    nextAction: err.nextAction,
+    readiness: cloneJson(err.readiness),
+  });
 }
 
 /**

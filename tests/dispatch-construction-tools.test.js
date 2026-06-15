@@ -432,9 +432,19 @@ describe('construction workflow dispatch', () => {
     let constructResult = await dispatch('construct_workspace', handoff, session);
     assert.equal(constructResult.status, 'error');
     assert.equal(constructResult.tool, 'construct_workspace');
+    assert.equal(constructResult.code, 'construction_handoff_not_ready');
+    assert.equal(constructResult.nextAction, 'review-package-readiness');
     assert.match(constructResult.hint, /Construction handoff is not ready/);
     assert.match(constructResult.hint, /sn-team-room/);
     assert.match(constructResult.hint, /Package missing available components/);
+    assert.equal(constructResult.readiness.ready, false);
+    assert.equal(constructResult.readiness.valid, true);
+    assert.equal(constructResult.readiness.status, 'warning');
+    assert.equal(constructResult.readiness.missingCount, 1);
+    assert.equal(constructResult.readiness.warningCount, 1);
+    assert.equal(constructResult.readiness.errorCount, 0);
+    assert.deepEqual(constructResult.readiness.missing.components, ['sn-team-room']);
+    assert.equal(constructResult.readiness.source.packageId, 'gapped-team-room');
     assert.equal(session.config, null);
   });
 

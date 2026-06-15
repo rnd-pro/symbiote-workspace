@@ -757,6 +757,9 @@ next action (`construct`, `review-package-readiness`, or
 `plan_workspace` accepts not-ready handoffs for diagnostics, but
 `construct_workspace` rejects `ready: false` handoffs so agents cannot
 materialize a degraded package workspace without resolving readiness gaps first.
+The not-ready error includes `code: "construction_handoff_not_ready"`,
+`nextAction: "review-package-readiness"`, and a `readiness` payload with missing
+capabilities, warning/error counts, status, and package source metadata.
 It is exposed through dispatch/MCP as `create_workspace_construction_handoff`
 and through the CLI as `create-workspace-construction-handoff`.
 

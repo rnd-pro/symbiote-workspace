@@ -45,6 +45,8 @@ All notable changes to this project will be documented in this file.
   `create_workspace_construction_handoff` now returns
   `_type: "workspace-construction-handoff"` and `construct_workspace` rejects
   `ready: false` handoffs while `plan_workspace` still returns diagnostics.
+- **Ready-gate diagnostics** — not-ready construction handoff errors now include
+  `code`, `nextAction`, and a structured `readiness` payload for agent recovery.
 - **Package collection construction context helper** —
   `createWorkspacePackagesConstructionContext({ packages, available })`
   aggregates package objects and JSON entries into one constructor-ready context

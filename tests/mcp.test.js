@@ -1136,6 +1136,8 @@ describe('Construction Handoff via MCP', () => {
 
     let planTool = tools.find((t) => t.name === 'plan_workspace');
     let constructTool = tools.find((t) => t.name === 'construct_workspace');
+    assert.match(planTool.description, /readiness summary/);
+    assert.match(constructTool.description, /structured readiness diagnostics/);
     assert.ok(planTool.inputSchema.properties.options);
     assert.ok(constructTool.inputSchema.properties.options);
     for (let tool of [planTool, constructTool]) {
@@ -1375,13 +1377,24 @@ describe('Construction Handoff via MCP', () => {
       },
     ]);
 
+    let constructResponse = responses.find((r) => r.id === 3);
     let plan = JSON.parse(responses.find((r) => r.id === 2).result.content[0].text);
-    let construct = JSON.parse(responses.find((r) => r.id === 3).result.content[0].text);
+    let construct = JSON.parse(constructResponse.result.content[0].text);
     assert.equal(plan.status, 'ok');
     assert.equal(plan.plan.readiness.package.status, 'warning');
+    assert.equal(constructResponse.result.isError, true);
     assert.equal(construct.status, 'error');
     assert.equal(construct.tool, 'construct_workspace');
+    assert.equal(construct.code, 'construction_handoff_not_ready');
+    assert.equal(construct.nextAction, 'review-package-readiness');
     assert.match(construct.hint, /Construction handoff is not ready/);
     assert.match(construct.hint, /sn-room-shell/);
+    assert.equal(construct.readiness.ready, false);
+    assert.equal(construct.readiness.valid, true);
+    assert.equal(construct.readiness.status, 'warning');
+    assert.equal(construct.readiness.missingCount, 1);
+    assert.equal(construct.readiness.warningCount, 1);
+    assert.equal(construct.readiness.errorCount, 0);
+    assert.deepEqual(construct.readiness.missing.components, ['sn-room-shell']);
   });
 });
