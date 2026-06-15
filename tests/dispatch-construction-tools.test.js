@@ -2354,6 +2354,18 @@ describe('create_workspace_construction_handoff dispatch', () => {
     assert.equal(targetSession.config.panelTypes.sentiment.component, 'acme-sentiment-panel');
     assert.ok(targetSession.config.components.catalog.includes('acme-sentiment-panel'));
     assert.ok(layoutReferencesPanel(targetSession.config.layout, 'sentiment'));
+
+    let roundTripPackage = await dispatch('export_workspace_package', {
+      manifest: { id: 'com.example.handoff-roundtrip-package' },
+    }, targetSession);
+    assert.equal(roundTripPackage.status, 'ok');
+    assert.doesNotMatch(roundTripPackage.json, /https?:|file:\/\/|\/Users\//);
+
+    let roundTripContext = await dispatch('create_workspace_package_construction_context', {
+      json: roundTripPackage.json,
+    }, createSession());
+    assert.equal(roundTripContext.status, 'ok');
+    assert.equal(roundTripContext.moduleCapabilities[0].tagName, 'acme-sentiment-panel');
   });
 
   it('handoff with invalid context returns valid: false and preserves session config', async () => {
