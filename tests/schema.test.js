@@ -220,6 +220,85 @@ describe('validateWorkspaceConfig', () => {
     assert.ok(result.errors.some((error) => error.path === 'data'));
   });
 
+  it('accepts portable engine packs, graphs, and bindings', () => {
+    let result = validateWorkspaceConfig({
+      version: '0.2.0',
+      name: 'Engine Workspace',
+      engine: {
+        packs: ['analysis-pack'],
+        graphs: [{
+          id: 'main',
+          nodes: [{ id: 'sentiment', type: 'analysis/sentiment', params: { threshold: 0.7 } }],
+          connections: [{ from: 'source', out: 'items', to: 'sentiment', in: 'items' }],
+        }],
+        bindings: [{
+          id: 'review-action-analyze',
+          panelType: 'review',
+          component: 'acme-review-panel',
+          surface: 'action',
+          sourceId: 'analyze',
+          graphId: 'main',
+          nodeId: 'sentiment',
+          input: 'items',
+          pack: 'analysis-pack',
+        }],
+      },
+    }, { strict: true });
+
+    assert.equal(result.valid, true, JSON.stringify(result.errors));
+    assert.equal(result.errors.length, 0);
+  });
+
+  it('rejects invalid engine packs, graphs, and bindings', () => {
+    let result = validateWorkspaceConfig({
+      version: '0.2.0',
+      name: 'Broken Engine Workspace',
+      engine: {
+        packs: ['analysis-pack', 'analysis-pack', 'https://example.com/pack'],
+        graphs: [{
+          id: 'Main Graph',
+          nodes: [
+            { id: 'Review Node', type: 'analysis sentiment', params: [] },
+            { id: 'Review Node', type: 'analysis/sentiment', cacheMode: 'always' },
+          ],
+          connections: [{ from: '', out: '', to: 'sentiment', in: '' }],
+        }],
+        bindings: [{
+          id: 'Review Action',
+          panelType: 'review',
+          component: 'ReviewPanel',
+          surface: 'button',
+          sourceId: '/tmp/action',
+          graphId: 'main',
+          nodeId: 'sentiment',
+        }, {
+          id: 'Review Action',
+          panelType: 'review',
+          surface: 'action',
+          sourceId: 'analyze',
+          graphId: 'main',
+          nodeId: 'sentiment',
+        }],
+      },
+    }, { strict: true });
+
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some((error) => error.path === 'engine.packs[1]'));
+    assert.ok(result.errors.some((error) => error.path === 'engine.packs[2]'));
+    assert.ok(result.errors.some((error) => error.path === 'engine.graphs[0].id'));
+    assert.ok(result.errors.some((error) => error.path === 'engine.graphs[0].nodes[0].id'));
+    assert.ok(result.errors.some((error) => error.path === 'engine.graphs[0].nodes[0].type'));
+    assert.ok(result.errors.some((error) => error.path === 'engine.graphs[0].nodes[0].params'));
+    assert.ok(result.errors.some((error) => error.path === 'engine.graphs[0].nodes[1].id'));
+    assert.ok(result.errors.some((error) => error.path === 'engine.graphs[0].nodes[1].cacheMode'));
+    assert.ok(result.errors.some((error) => error.path === 'engine.graphs[0].connections[0].from'));
+    assert.ok(result.errors.some((error) => error.path === 'engine.bindings[0].id'));
+    assert.ok(result.errors.some((error) => error.path === 'engine.bindings[0].component'));
+    assert.ok(result.errors.some((error) => error.path === 'engine.bindings[0].surface'));
+    assert.ok(result.errors.some((error) => error.path === 'engine.bindings[0].sourceId'));
+    assert.ok(result.errors.some((error) => error.path === 'engine.bindings[1].id'));
+  });
+
   it('validates layout node types', () => {
     let result = validateWorkspaceConfig({
       version: '0.2.0',
@@ -301,8 +380,8 @@ describe('validateWorkspaceConfig', () => {
           menus: [{ id: 'row-menu', label: 'Row menu', items: [{ id: 'open', label: 'Open' }] }],
           toolbarItems: [{ id: 'filter', label: 'Filter', command: 'filter.open' }],
           settings: [{ id: 'page-size', label: 'Page size', type: 'number', default: 50 }],
-          events: { emits: [{ name: 'row-select' }], consumes: [{ name: 'data-update' }] },
-          bindings: [{ id: 'rows', direction: 'input', path: 'data.rows' }],
+          events: { emits: [{ name: 'row-select', engine: { graphId: 'main', nodeId: 'select', output: 'row' } }], consumes: [{ name: 'data-update' }] },
+          bindings: [{ id: 'rows', direction: 'input', path: 'data.rows', engine: { graphId: 'main', nodeId: 'rows', input: 'items' } }],
           slots: [{ id: 'empty-state', accepts: ['sn-empty-state'] }],
           runtimeSlots: [{ id: 'data-provider', role: 'provider', required: true }],
           requiredHostServices: ['storage.project', 'selection'],
@@ -360,7 +439,8 @@ describe('validateWorkspaceConfig', () => {
         modules: [{
           tagName: 'Data Table',
           capabilities: ['data table'],
-          actions: [{ id: 'refresh' }],
+          actions: [{ id: 'refresh', engine: { graphId: 'main graph', nodeId: 'refresh' } }],
+          bindings: [{ id: 'rows', direction: 'input', engine: { graphId: 'main', nodeId: '/tmp/rows' } }],
           requiredHostServices: ['https://api.example.com'],
         }],
       },
@@ -370,6 +450,8 @@ describe('validateWorkspaceConfig', () => {
     assert.ok(result.errors.some((error) => error.path === 'components.modules[0].tagName'));
     assert.ok(result.errors.some((error) => error.path === 'components.modules[0].capabilities[0]'));
     assert.ok(result.errors.some((error) => error.path === 'components.modules[0].actions[0].label'));
+    assert.ok(result.errors.some((error) => error.path === 'components.modules[0].actions[0].engine.graphId'));
+    assert.ok(result.errors.some((error) => error.path === 'components.modules[0].bindings[0].engine.nodeId'));
     assert.ok(result.errors.some((error) => error.path === 'components.modules[0].requiredHostServices[0]'));
   });
 

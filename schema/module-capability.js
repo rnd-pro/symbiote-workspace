@@ -7,6 +7,19 @@ function stringProperty(description) {
   return { type: 'string', description };
 }
 
+const MODULE_ENGINE_REFERENCE_SCHEMA = Object.freeze({
+  type: 'object',
+  required: ['graphId', 'nodeId'],
+  properties: {
+    graphId: stringProperty('Portable engine graph identifier.'),
+    nodeId: stringProperty('Portable engine node identifier.'),
+    input: stringProperty('Optional engine node input socket.'),
+    output: stringProperty('Optional engine node output socket.'),
+    param: stringProperty('Optional engine node parameter name.'),
+    pack: stringProperty('Optional required engine pack identifier.'),
+  },
+});
+
 const MODULE_ACTION_SCHEMA = Object.freeze({
   type: 'object',
   required: ['id', 'label'],
@@ -18,6 +31,7 @@ const MODULE_ACTION_SCHEMA = Object.freeze({
     event: stringProperty('DOM event emitted when the action is invoked.'),
     method: stringProperty('Component method to call when invoked.'),
     binding: stringProperty('Data binding identifier affected by the action.'),
+    engine: MODULE_ENGINE_REFERENCE_SCHEMA,
   },
 });
 
@@ -34,6 +48,7 @@ const MODULE_SETTING_SCHEMA = Object.freeze({
     default: {},
     options: { type: 'array', items: { type: 'object' } },
     binding: stringProperty('Data binding identifier updated by this setting.'),
+    engine: MODULE_ENGINE_REFERENCE_SCHEMA,
   },
 });
 
@@ -44,6 +59,7 @@ const MODULE_EVENT_SCHEMA = Object.freeze({
     name: stringProperty('DOM event name.'),
     detailSchema: { type: 'object' },
     description: stringProperty('Event description.'),
+    engine: MODULE_ENGINE_REFERENCE_SCHEMA,
   },
 });
 
@@ -55,6 +71,7 @@ const MODULE_BINDING_SCHEMA = Object.freeze({
     direction: { type: 'string', enum: ['input', 'output', 'two-way'] },
     path: stringProperty('Config or state path for the binding.'),
     schema: { type: 'object' },
+    engine: MODULE_ENGINE_REFERENCE_SCHEMA,
   },
 });
 
@@ -199,6 +216,9 @@ function validateActionList(value, path, errors, options) {
       pushError(errors, `${itemPath}.id`, `Duplicate action ID "${action.id}".`, options);
     }
     if (action.id) ids.add(action.id);
+    if (action.engine !== undefined) {
+      validateEngineReference(action.engine, `${itemPath}.engine`, errors, options);
+    }
   }
 }
 
@@ -222,6 +242,9 @@ function validateSettings(value, path, errors, options) {
     if (!types.has(setting.type)) {
       pushError(errors, `${itemPath}.type`, `Invalid setting type "${setting.type}".`, options);
     }
+    if (setting.engine !== undefined) {
+      validateEngineReference(setting.engine, `${itemPath}.engine`, errors, options);
+    }
   }
 }
 
@@ -241,8 +264,13 @@ function validateEvents(value, path, errors, options) {
       let itemPath = `${path}.${key}[${i}]`;
       if (!isObject(event)) {
         pushError(errors, itemPath, 'Event entry must be an object.', options);
-      } else if (typeof event.name !== 'string' || !event.name.trim()) {
-        pushError(errors, `${itemPath}.name`, 'Event requires a non-empty name.', options);
+      } else {
+        if (typeof event.name !== 'string' || !event.name.trim()) {
+          pushError(errors, `${itemPath}.name`, 'Event requires a non-empty name.', options);
+        }
+        if (event.engine !== undefined) {
+          validateEngineReference(event.engine, `${itemPath}.engine`, errors, options);
+        }
       }
     }
   }
@@ -264,6 +292,23 @@ function validateBindings(value, path, errors, options) {
     validatePortableId(binding.id, `${itemPath}.id`, errors, options);
     if (!directions.has(binding.direction)) {
       pushError(errors, `${itemPath}.direction`, `Invalid binding direction "${binding.direction}".`, options);
+    }
+    if (binding.engine !== undefined) {
+      validateEngineReference(binding.engine, `${itemPath}.engine`, errors, options);
+    }
+  }
+}
+
+function validateEngineReference(value, path, errors, options) {
+  if (!isObject(value)) {
+    pushError(errors, path, `${path} must be an object.`, options);
+    return;
+  }
+  validatePortableId(value.graphId, `${path}.graphId`, errors, options);
+  validatePortableId(value.nodeId, `${path}.nodeId`, errors, options);
+  for (let field of ['input', 'output', 'param', 'pack']) {
+    if (value[field] !== undefined) {
+      validatePortableId(value[field], `${path}.${field}`, errors, options);
     }
   }
 }

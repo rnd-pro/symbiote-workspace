@@ -276,6 +276,37 @@ function collectPersistenceEngineServices(services) {
     .sort((a, b) => a.localeCompare(b));
 }
 
+function collectEngineRequirements(config) {
+  let engine = isObject(config.engine) ? config.engine : {};
+  let packs = new Set();
+  for (let pack of engine.packs || []) {
+    if (typeof pack === 'string') packs.add(pack);
+  }
+  for (let binding of engine.bindings || []) {
+    if (isObject(binding) && typeof binding.pack === 'string') packs.add(binding.pack);
+  }
+  return {
+    packs: [...packs].sort((a, b) => a.localeCompare(b)),
+    graphs: (engine.graphs || [])
+      .filter((graph) => isObject(graph) && typeof graph.id === 'string')
+      .map((graph) => ({
+        id: graph.id,
+        nodes: Array.isArray(graph.nodes) ? graph.nodes.length : 0,
+        connections: Array.isArray(graph.connections) ? graph.connections.length : 0,
+      })),
+    bindings: (engine.bindings || [])
+      .filter((binding) => isObject(binding))
+      .map((binding) => ({
+        id: binding.id,
+        panelType: binding.panelType,
+        surface: binding.surface,
+        sourceId: binding.sourceId,
+        graphId: binding.graphId,
+        nodeId: binding.nodeId,
+      })),
+  };
+}
+
 /**
  * @param {import('../schema/workspace-schema.js').WorkspaceConfig} config
  * @param {Object} [options]
@@ -323,6 +354,7 @@ export function createHostIntegrationContract(config) {
 
   let services = collectHostServices(exported.config);
   let runtimeSlots = collectRuntimeSlots(exported.config);
+  let engine = collectEngineRequirements(exported.config);
   let contractErrors = [
     ...validateHostServices(services),
     ...validateRuntimeSlots(runtimeSlots),
@@ -360,6 +392,7 @@ export function createHostIntegrationContract(config) {
       },
       services,
       runtimeSlots,
+      engine,
       prohibitedConfigFields: [...new Set([...EXPORT_STRIP_KEYS, ...USER_IDENTITY_KEYS])]
         .sort((a, b) => a.localeCompare(b)),
     },

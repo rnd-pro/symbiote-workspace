@@ -1122,6 +1122,73 @@ function descriptorDataBindingRecords(source) {
     }));
 }
 
+function descriptorEngineBindingId(source, surface, sourceId) {
+  return `${source.panelType}-${surface}-${sourceId}`;
+}
+
+function descriptorEngineBindingRecord(source, surface, sourceId, engine) {
+  if (!isObject(engine)) return null;
+  return {
+    id: descriptorEngineBindingId(source, surface, sourceId),
+    panelType: source.panelType,
+    component: source.panel.component,
+    surface,
+    sourceId,
+    graphId: engine.graphId,
+    nodeId: engine.nodeId,
+    ...(engine.input ? { input: engine.input } : {}),
+    ...(engine.output ? { output: engine.output } : {}),
+    ...(engine.param ? { param: engine.param } : {}),
+    ...(engine.pack ? { pack: engine.pack } : {}),
+  };
+}
+
+function descriptorEngineBindingRecords(source) {
+  let records = [];
+  for (let action of source.descriptor.actions || []) {
+    if (isObject(action) && action.id) {
+      let record = descriptorEngineBindingRecord(source, 'action', action.id, action.engine);
+      if (record) records.push(record);
+    }
+  }
+  for (let action of source.descriptor.toolbarItems || []) {
+    if (isObject(action) && action.id) {
+      let record = descriptorEngineBindingRecord(source, 'action', action.id, action.engine);
+      if (record) records.push(record);
+    }
+  }
+  for (let menu of source.descriptor.menus || []) {
+    if (!isObject(menu)) continue;
+    for (let action of menu.items || []) {
+      if (isObject(action) && action.id) {
+        let record = descriptorEngineBindingRecord(source, 'action', action.id, action.engine);
+        if (record) records.push(record);
+      }
+    }
+  }
+  for (let setting of source.descriptor.settings || []) {
+    if (isObject(setting) && setting.id) {
+      let record = descriptorEngineBindingRecord(source, 'setting', setting.id, setting.engine);
+      if (record) records.push(record);
+    }
+  }
+  for (let direction of ['emits', 'consumes']) {
+    for (let event of source.descriptor.events?.[direction] || []) {
+      if (isObject(event) && event.name) {
+        let record = descriptorEngineBindingRecord(source, 'event', event.name, event.engine);
+        if (record) records.push(record);
+      }
+    }
+  }
+  for (let binding of source.descriptor.bindings || []) {
+    if (isObject(binding) && binding.id) {
+      let record = descriptorEngineBindingRecord(source, 'binding', binding.id, binding.engine);
+      if (record) records.push(record);
+    }
+  }
+  return records;
+}
+
 function materializeSelectedDescriptorDataBindings(config, selectedModules) {
   let selectedPanels = selectedDescriptorPanelEntries(config, selectedModules);
   let additions = selectedPanels.flatMap(descriptorDataBindingRecords);
@@ -1143,6 +1210,35 @@ function materializeSelectedDescriptorDataBindings(config, selectedModules) {
     return true;
   });
   if (uniqueAdditions.length) config.data.bindings = [...existing, ...uniqueAdditions];
+}
+
+function materializeSelectedDescriptorEngineBindings(config, selectedModules) {
+  let selectedPanels = selectedDescriptorPanelEntries(config, selectedModules);
+  let additions = selectedPanels.flatMap(descriptorEngineBindingRecords);
+  if (!additions.length) return;
+  if (config.engine !== undefined && !isObject(config.engine)) {
+    throw new Error('Workspace config engine must be an object before module engine bindings can be materialized.');
+  }
+  config.engine ||= {};
+  if (config.engine.bindings !== undefined && !Array.isArray(config.engine.bindings)) {
+    throw new Error('Workspace config engine.bindings must be an array before module engine bindings can be materialized.');
+  }
+
+  let existing = config.engine.bindings || [];
+  let existingIds = new Set(existing.map((binding) => binding?.id).filter(Boolean));
+  let uniqueAdditions = additions.filter((binding) => {
+    if (existingIds.has(binding.id)) return false;
+    existingIds.add(binding.id);
+    return true;
+  });
+  if (!uniqueAdditions.length) return;
+
+  let packs = new Set(config.engine.packs || []);
+  for (let binding of uniqueAdditions) {
+    if (binding.pack) packs.add(binding.pack);
+  }
+  config.engine.bindings = [...existing, ...uniqueAdditions];
+  if (packs.size > 0) config.engine.packs = [...packs].sort((a, b) => a.localeCompare(b));
 }
 
 function withModuleCapabilities(config, moduleCapabilities) {
@@ -1203,6 +1299,7 @@ function applyDescriptorPlanFields(target, descriptor) {
     'settings',
     'events',
     'bindings',
+    'engine',
     'slots',
     'runtimeSlots',
     'placement',
@@ -1836,6 +1933,7 @@ export function planWorkspaceConstruction(intent, options = {}) {
   materializeSelectedDescriptorPanelSettings(config, modules);
   materializeSelectedDescriptorEventBridges(config, modules);
   materializeSelectedDescriptorDataBindings(config, modules);
+  materializeSelectedDescriptorEngineBindings(config, modules);
   let plannedModules = modulePlan(
     config,
     modules,

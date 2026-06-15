@@ -229,6 +229,83 @@ const DATA_BINDING_SCHEMA = Object.freeze({
   },
 });
 
+const ENGINE_GRAPH_NODE_SCHEMA = Object.freeze({
+  type: 'object',
+  required: ['id', 'type'],
+  properties: {
+    id: { type: 'string', description: 'Portable node identifier inside the engine graph.' },
+    type: { type: 'string', description: 'Portable symbiote-engine node type identifier.' },
+    name: { type: 'string', description: 'Optional display name.' },
+    params: { type: 'object', description: 'Serializable node parameter defaults.' },
+    cacheMode: { type: 'string', enum: ['auto', 'freeze', 'force'] },
+  },
+});
+
+const ENGINE_GRAPH_CONNECTION_SCHEMA = Object.freeze({
+  type: 'object',
+  required: ['from', 'out', 'to', 'in'],
+  properties: {
+    from: { type: 'string', description: 'Source node identifier.' },
+    out: { type: 'string', description: 'Source output socket.' },
+    to: { type: 'string', description: 'Target node identifier.' },
+    in: { type: 'string', description: 'Target input socket.' },
+    type: { type: 'string', description: 'Optional connection type.' },
+    label: { type: 'string', description: 'Optional connection label.' },
+  },
+});
+
+const ENGINE_GRAPH_SCHEMA = Object.freeze({
+  type: 'object',
+  required: ['id'],
+  properties: {
+    id: { type: 'string', description: 'Portable engine graph identifier.' },
+    name: { type: 'string', description: 'Optional graph label.' },
+    execution: { type: 'object', description: 'Serializable engine execution metadata.' },
+    nodes: { type: 'array', items: ENGINE_GRAPH_NODE_SCHEMA },
+    connections: { type: 'array', items: ENGINE_GRAPH_CONNECTION_SCHEMA },
+    ui: { type: 'object', description: 'Serializable graph UI metadata.' },
+  },
+});
+
+const ENGINE_BINDING_SCHEMA = Object.freeze({
+  type: 'object',
+  required: ['id', 'panelType', 'surface', 'sourceId', 'graphId', 'nodeId'],
+  properties: {
+    id: { type: 'string', description: 'Portable workspace engine binding identifier.' },
+    panelType: { type: 'string', description: 'Panel type that owns the source surface.' },
+    component: { type: 'string', description: 'Custom element tag name that declares the source surface.' },
+    surface: { type: 'string', enum: ['action', 'setting', 'event', 'binding'] },
+    sourceId: { type: 'string', description: 'Source action, setting, event, or data binding identifier.' },
+    graphId: { type: 'string', description: 'Target engine graph identifier.' },
+    nodeId: { type: 'string', description: 'Target engine node identifier.' },
+    input: { type: 'string', description: 'Optional target input socket.' },
+    output: { type: 'string', description: 'Optional target output socket.' },
+    param: { type: 'string', description: 'Optional target parameter.' },
+    pack: { type: 'string', description: 'Optional required engine pack identifier.' },
+  },
+});
+
+const ENGINE_CONFIG_SCHEMA = Object.freeze({
+  type: 'object',
+  properties: {
+    packs: {
+      type: 'array',
+      description: 'Portable symbiote-engine pack identifiers required by this workspace.',
+      items: { type: 'string' },
+    },
+    graphs: {
+      type: 'array',
+      description: 'Portable symbiote-engine graph JSON records.',
+      items: ENGINE_GRAPH_SCHEMA,
+    },
+    bindings: {
+      type: 'array',
+      description: 'Portable bindings from workspace module surfaces to engine graph nodes.',
+      items: ENGINE_BINDING_SCHEMA,
+    },
+  },
+});
+
 const INTENT_SCHEMA = Object.freeze({
   type: 'object',
   required: ['brief'],
@@ -532,8 +609,8 @@ export const WORKSPACE_CONFIG_SCHEMA = Object.freeze({
       },
     },
     engine: {
-      type: 'object',
-      description: 'Optional symbiote-engine graph and handler configs.',
+      ...ENGINE_CONFIG_SCHEMA,
+      description: 'Optional portable symbiote-engine packs, graphs, and workspace bindings.',
     },
   },
   additionalProperties: false,

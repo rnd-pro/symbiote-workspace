@@ -246,7 +246,29 @@ describe('exportConfig', () => {
 
 describe('workspace package portability', () => {
   it('exports config, manifest, host contract, dependencies, and permissions', () => {
-    let result = exportWorkspacePackage(PACKAGE_CONFIG, {
+    let packageConfig = {
+      ...PACKAGE_CONFIG,
+      engine: {
+        packs: ['command-pack'],
+        graphs: [{
+          id: 'main',
+          nodes: [{ id: 'route-command', type: 'agent/route' }],
+          connections: [],
+        }],
+        bindings: [{
+          id: 'command-action-run',
+          panelType: 'command',
+          component: 'ai-command-composer',
+          surface: 'action',
+          sourceId: 'run',
+          graphId: 'main',
+          nodeId: 'route-command',
+          input: 'prompt',
+          pack: 'command-pack',
+        }],
+      },
+    };
+    let result = exportWorkspacePackage(packageConfig, {
       id: 'command-room-package',
       version: '1.2.3',
       description: 'Portable command room package.',
@@ -284,6 +306,18 @@ describe('workspace package portability', () => {
       'agent.runtime',
       'storage.project',
     ]);
+    assert.deepEqual(result.package.host.contract.engine, {
+      packs: ['command-pack'],
+      graphs: [{ id: 'main', nodes: 1, connections: 0 }],
+      bindings: [{
+        id: 'command-action-run',
+        panelType: 'command',
+        surface: 'action',
+        sourceId: 'run',
+        graphId: 'main',
+        nodeId: 'route-command',
+      }],
+    });
     assert.equal(result.package.workspace.config.name, 'Test Workspace');
     assert.doesNotMatch(JSON.stringify(result.package), /https?:|file:\/\/|\/Users\//);
   });

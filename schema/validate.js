@@ -11,6 +11,8 @@ import {
 import { validateModuleCapabilityDescriptor } from './module-capability.js';
 
 let PANEL_SETTING_TYPES = new Set(['string', 'number', 'boolean', 'enum', 'object', 'array', 'color', 'token', 'json']);
+let ENGINE_BINDING_SURFACES = new Set(['action', 'setting', 'event', 'binding']);
+let ENGINE_NODE_CACHE_MODES = new Set(['auto', 'freeze', 'force']);
 
 /** @type {Set<string>} */
 let BLOCKED_CONFIG_PATTERNS = new Set([
@@ -212,6 +214,14 @@ export function validateWorkspaceConfig(config, options = {}) {
       errors.push({ path: 'data', message: 'Field "data" must be an object.', severity: 'error' });
     } else {
       validateData(config.data, errors);
+    }
+  }
+
+  if (config.engine !== undefined) {
+    if (!isObject(config.engine)) {
+      errors.push({ path: 'engine', message: 'Field "engine" must be an object.', severity: 'error' });
+    } else {
+      validateEngine(config.engine, errors);
     }
   }
 
@@ -644,6 +654,158 @@ function validateData(data, errors) {
       }
       bindingKeys.add(key);
     }
+  }
+}
+
+function validateEngine(engine, errors) {
+  if (engine.packs !== undefined) {
+    validateEnginePacks(engine.packs, errors);
+  }
+  if (engine.graphs !== undefined) {
+    validateEngineGraphs(engine.graphs, errors);
+  }
+  if (engine.bindings !== undefined) {
+    validateEngineBindings(engine.bindings, errors);
+  }
+}
+
+function validateEnginePacks(packs, errors) {
+  if (!Array.isArray(packs)) {
+    errors.push({ path: 'engine.packs', message: 'engine.packs must be an array.', severity: 'error' });
+    return;
+  }
+  let ids = new Set();
+  for (let i = 0; i < packs.length; i++) {
+    let path = `engine.packs[${i}]`;
+    validatePortableIdField(packs[i], path, 'Engine pack must be a portable identifier.', errors);
+    if (typeof packs[i] === 'string') {
+      if (ids.has(packs[i])) {
+        errors.push({ path, message: `Duplicate engine pack "${packs[i]}".`, severity: 'error' });
+      }
+      ids.add(packs[i]);
+    }
+  }
+}
+
+function validateEngineGraphs(graphs, errors) {
+  if (!Array.isArray(graphs)) {
+    errors.push({ path: 'engine.graphs', message: 'engine.graphs must be an array.', severity: 'error' });
+    return;
+  }
+  let ids = new Set();
+  for (let i = 0; i < graphs.length; i++) {
+    let graph = graphs[i];
+    let path = `engine.graphs[${i}]`;
+    if (!isObject(graph)) {
+      errors.push({ path, message: 'Engine graph entry must be an object.', severity: 'error' });
+      continue;
+    }
+    validatePortableIdField(graph.id, `${path}.id`, 'Engine graph requires a portable "id".', errors);
+    if (graph.id && ids.has(graph.id)) {
+      errors.push({ path: `${path}.id`, message: `Duplicate engine graph ID: "${graph.id}".`, severity: 'error' });
+    }
+    if (graph.id) ids.add(graph.id);
+    if (graph.name !== undefined && (typeof graph.name !== 'string' || !graph.name.trim())) {
+      errors.push({ path: `${path}.name`, message: 'Engine graph name must be a non-empty string.', severity: 'error' });
+    }
+    if (graph.execution !== undefined && !isObject(graph.execution)) {
+      errors.push({ path: `${path}.execution`, message: 'Engine graph execution metadata must be an object.', severity: 'error' });
+    }
+    if (graph.ui !== undefined && !isObject(graph.ui)) {
+      errors.push({ path: `${path}.ui`, message: 'Engine graph UI metadata must be an object.', severity: 'error' });
+    }
+    if (graph.nodes !== undefined) validateEngineGraphNodes(graph.nodes, `${path}.nodes`, errors);
+    if (graph.connections !== undefined) validateEngineGraphConnections(graph.connections, `${path}.connections`, errors);
+  }
+}
+
+function validateEngineGraphNodes(nodes, path, errors) {
+  if (!Array.isArray(nodes)) {
+    errors.push({ path, message: `${path} must be an array.`, severity: 'error' });
+    return;
+  }
+  let ids = new Set();
+  for (let i = 0; i < nodes.length; i++) {
+    let node = nodes[i];
+    let itemPath = `${path}[${i}]`;
+    if (!isObject(node)) {
+      errors.push({ path: itemPath, message: 'Engine graph node must be an object.', severity: 'error' });
+      continue;
+    }
+    validatePortableIdField(node.id, `${itemPath}.id`, 'Engine graph node requires a portable "id".', errors);
+    validatePortableIdField(node.type, `${itemPath}.type`, 'Engine graph node requires a portable "type".', errors);
+    if (node.id && ids.has(node.id)) {
+      errors.push({ path: `${itemPath}.id`, message: `Duplicate engine graph node ID: "${node.id}".`, severity: 'error' });
+    }
+    if (node.id) ids.add(node.id);
+    if (node.name !== undefined && (typeof node.name !== 'string' || !node.name.trim())) {
+      errors.push({ path: `${itemPath}.name`, message: 'Engine graph node name must be a non-empty string.', severity: 'error' });
+    }
+    if (node.params !== undefined && !isObject(node.params)) {
+      errors.push({ path: `${itemPath}.params`, message: 'Engine graph node params must be an object.', severity: 'error' });
+    }
+    if (node.cacheMode !== undefined && !ENGINE_NODE_CACHE_MODES.has(node.cacheMode)) {
+      errors.push({ path: `${itemPath}.cacheMode`, message: 'Engine graph node cacheMode must be auto, freeze, or force.', severity: 'error' });
+    }
+  }
+}
+
+function validateEngineGraphConnections(connections, path, errors) {
+  if (!Array.isArray(connections)) {
+    errors.push({ path, message: `${path} must be an array.`, severity: 'error' });
+    return;
+  }
+  for (let i = 0; i < connections.length; i++) {
+    let connection = connections[i];
+    let itemPath = `${path}[${i}]`;
+    if (!isObject(connection)) {
+      errors.push({ path: itemPath, message: 'Engine graph connection must be an object.', severity: 'error' });
+      continue;
+    }
+    for (let field of ['from', 'out', 'to', 'in']) {
+      if (typeof connection[field] !== 'string' || !connection[field].trim()) {
+        errors.push({ path: `${itemPath}.${field}`, message: `Engine graph connection requires a non-empty "${field}" string.`, severity: 'error' });
+      }
+    }
+    for (let field of ['type', 'label']) {
+      if (connection[field] !== undefined && (typeof connection[field] !== 'string' || !connection[field].trim())) {
+        errors.push({ path: `${itemPath}.${field}`, message: `Engine graph connection "${field}" must be a non-empty string.`, severity: 'error' });
+      }
+    }
+  }
+}
+
+function validateEngineBindings(bindings, errors) {
+  if (!Array.isArray(bindings)) {
+    errors.push({ path: 'engine.bindings', message: 'engine.bindings must be an array.', severity: 'error' });
+    return;
+  }
+  let ids = new Set();
+  for (let i = 0; i < bindings.length; i++) {
+    let binding = bindings[i];
+    let path = `engine.bindings[${i}]`;
+    if (!isObject(binding)) {
+      errors.push({ path, message: 'Engine binding entry must be an object.', severity: 'error' });
+      continue;
+    }
+    validatePortableIdField(binding.id, `${path}.id`, 'Engine binding requires a portable "id".', errors);
+    validatePortableIdField(binding.panelType, `${path}.panelType`, 'Engine binding requires a portable "panelType".', errors);
+    validatePortableIdField(binding.sourceId, `${path}.sourceId`, 'Engine binding requires a portable "sourceId".', errors);
+    validatePortableIdField(binding.graphId, `${path}.graphId`, 'Engine binding requires a portable "graphId".', errors);
+    validatePortableIdField(binding.nodeId, `${path}.nodeId`, 'Engine binding requires a portable "nodeId".', errors);
+    if (binding.component !== undefined) validateCustomElementField(binding.component, `${path}.component`, errors);
+    if (typeof binding.surface !== 'string' || !ENGINE_BINDING_SURFACES.has(binding.surface)) {
+      errors.push({ path: `${path}.surface`, message: 'Engine binding surface must be action, setting, event, or binding.', severity: 'error' });
+    }
+    for (let field of ['input', 'output', 'param', 'pack']) {
+      if (binding[field] !== undefined) {
+        validatePortableIdField(binding[field], `${path}.${field}`, `Engine binding "${field}" must be portable.`, errors);
+      }
+    }
+    if (binding.id && ids.has(binding.id)) {
+      errors.push({ path: `${path}.id`, message: `Duplicate engine binding ID: "${binding.id}".`, severity: 'error' });
+    }
+    if (binding.id) ids.add(binding.id);
   }
 }
 

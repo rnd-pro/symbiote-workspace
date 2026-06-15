@@ -501,6 +501,14 @@ optional `path`/`schema`; `direction` must be `input`, `output`, or `two-way`.
 This is a portable declaration for host/runtime handoff, not an embedded server
 endpoint or execution engine.
 
+Selected descriptor actions, settings, events, and bindings may also carry
+portable `engine` metadata with `graphId`, `nodeId`, and optional
+`input`/`output`/`param`/`pack`. The constructor materializes those references
+into `config.engine.bindings[]` and aggregates pack identifiers into
+`config.engine.packs[]`; authored `config.engine.graphs[]` records stay plain
+serializable graph JSON. This layer describes host/engine handoff metadata only
+and does not import or execute `symbiote-engine`.
+
 Selected descriptor settings are materialized into `panelTypes.*.settings` when
 the selected panel type does not already define settings. Each setting carries a
 portable `id`, `label`, `type`, optional `default`, enum `options`, and optional
@@ -572,7 +580,17 @@ export default {
       tagName: 'sn-data-table',
       provider: 'symbiote-ui',
       capabilities: ['data.table'],
-      toolbarItems: [{ id: 'filter', label: 'Filter' }],
+      toolbarItems: [{
+        id: 'filter',
+        label: 'Filter',
+        engine: { graphId: 'table-flow', nodeId: 'filter', input: 'rows' },
+      }],
+      bindings: [{
+        id: 'rows',
+        direction: 'input',
+        path: 'data.rows',
+        engine: { graphId: 'table-flow', nodeId: 'rows', output: 'rows', pack: 'table-pack' },
+      }],
       requiredHostServices: ['storage.project'],
     },
   ],

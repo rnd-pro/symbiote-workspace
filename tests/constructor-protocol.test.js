@@ -170,7 +170,12 @@ describe('planWorkspaceConstruction', () => {
         tagName: 'acme-sentiment-panel',
         provider: '@acme/workspace-pack',
         capabilities: ['analysis.sentiment', 'review.queue'],
-        actions: [{ id: 'refresh', label: 'Refresh', command: 'sentiment.refresh' }],
+        actions: [{
+          id: 'refresh',
+          label: 'Refresh',
+          command: 'sentiment.refresh',
+          engine: { graphId: 'main', nodeId: 'sentiment-refresh', input: 'items', pack: 'analysis-pack' },
+        }],
         toolbarItems: [{ id: 'filter', label: 'Filter', command: 'sentiment.filter' }],
         menus: [{
           id: 'review',
@@ -178,7 +183,12 @@ describe('planWorkspaceConstruction', () => {
           items: [{ id: 'assign', label: 'Assign', command: 'sentiment.assign' }],
         }],
         settings: [{ id: 'density', label: 'Density', type: 'enum', options: [{ value: 'compact', label: 'Compact' }] }],
-        bindings: [{ id: 'items', direction: 'input', path: 'data.sentiment' }],
+        bindings: [{
+          id: 'items',
+          direction: 'input',
+          path: 'data.sentiment',
+          engine: { graphId: 'main', nodeId: 'sentiment-source', output: 'items' },
+        }],
         requiredHostServices: ['storage.project'],
         placement: {
           panelType: 'sentiment',
@@ -209,6 +219,32 @@ describe('planWorkspaceConstruction', () => {
     assert.deepEqual(result.plan.modules[0].matchedCapabilities, ['analysis.sentiment']);
     assert.equal(result.plan.modules[0].selectionReason, 'required-capability');
     assert.deepEqual(result.plan.capabilities.missing, []);
+    assert.deepEqual(result.config.engine, {
+      packs: ['analysis-pack'],
+      bindings: [
+        {
+          id: 'sentiment-action-refresh',
+          panelType: 'sentiment',
+          component: 'acme-sentiment-panel',
+          surface: 'action',
+          sourceId: 'refresh',
+          graphId: 'main',
+          nodeId: 'sentiment-refresh',
+          input: 'items',
+          pack: 'analysis-pack',
+        },
+        {
+          id: 'sentiment-binding-items',
+          panelType: 'sentiment',
+          component: 'acme-sentiment-panel',
+          surface: 'binding',
+          sourceId: 'items',
+          graphId: 'main',
+          nodeId: 'sentiment-source',
+          output: 'items',
+        },
+      ],
+    });
 
     let validation = validateWorkspaceConfig(result.config, { strict: true });
     assert.equal(validation.valid, true, JSON.stringify(validation.errors));
@@ -299,7 +335,7 @@ describe('planWorkspaceConstruction', () => {
     assert.equal(layoutReferencesPanel(result.config.layout, 'archive'), false);
   });
 
-  it('materializes descriptor events, settings, and bindings only from selected modules', () => {
+  it('materializes descriptor events, settings, bindings, and engine bindings only from selected modules', () => {
     let result = planWorkspaceConstruction({
       brief: 'Build a focused review shell',
       template: 'review-shell',
@@ -361,23 +397,23 @@ describe('planWorkspaceConstruction', () => {
         {
           tagName: 'acme-review-panel',
           capabilities: ['review.queue'],
-          events: { emits: [{ name: 'row-select' }, { name: 'existing-select' }] },
-          settings: [{ id: 'density', label: 'Density', type: 'enum' }],
-          bindings: [{ id: 'rows', direction: 'input', path: 'data.rows' }],
+          events: { emits: [{ name: 'row-select', engine: { graphId: 'review-flow', nodeId: 'select-row', output: 'row' } }, { name: 'existing-select' }] },
+          settings: [{ id: 'density', label: 'Density', type: 'enum', engine: { graphId: 'review-flow', nodeId: 'density', param: 'mode' } }],
+          bindings: [{ id: 'rows', direction: 'input', path: 'data.rows', engine: { graphId: 'review-flow', nodeId: 'normalize', input: 'rows', pack: 'review-pack' } }],
         },
         {
           tagName: 'acme-detail-panel',
           capabilities: ['review.detail'],
           events: { consumes: [{ name: 'row-select' }, { name: 'existing-select' }] },
           settings: [{ id: 'selection-mode', label: 'Selection mode', type: 'string' }],
-          bindings: [{ id: 'selection', direction: 'input', path: 'data.selection' }],
+          bindings: [{ id: 'selection', direction: 'input', path: 'data.selection', engine: { graphId: 'review-flow', nodeId: 'summarize', input: 'selection', pack: 'detail-pack' } }],
         },
         {
           tagName: 'acme-archive-panel',
           capabilities: ['archive.search'],
-          events: { emits: [{ name: 'archive-select' }], consumes: [{ name: 'row-select' }] },
+          events: { emits: [{ name: 'archive-select', engine: { graphId: 'archive-flow', nodeId: 'archive-select' } }], consumes: [{ name: 'row-select' }] },
           settings: [{ id: 'archive-filter', label: 'Archive filter', type: 'string' }],
-          bindings: [{ id: 'archived-selection', direction: 'input', path: 'data.archiveSelection' }],
+          bindings: [{ id: 'archived-selection', direction: 'input', path: 'data.archiveSelection', engine: { graphId: 'archive-flow', nodeId: 'archive-selection', pack: 'archive-pack' } }],
         },
       ],
     });
@@ -426,6 +462,53 @@ describe('planWorkspaceConstruction', () => {
     ]);
     assert.equal(result.config.panelTypes.archive.settings, undefined);
     assert.equal(layoutReferencesPanel(result.config.layout, 'archive'), false);
+    assert.deepEqual(result.config.engine, {
+      packs: ['detail-pack', 'review-pack'],
+      bindings: [
+        {
+          id: 'review-setting-density',
+          panelType: 'review',
+          component: 'acme-review-panel',
+          surface: 'setting',
+          sourceId: 'density',
+          graphId: 'review-flow',
+          nodeId: 'density',
+          param: 'mode',
+        },
+        {
+          id: 'review-event-row-select',
+          panelType: 'review',
+          component: 'acme-review-panel',
+          surface: 'event',
+          sourceId: 'row-select',
+          graphId: 'review-flow',
+          nodeId: 'select-row',
+          output: 'row',
+        },
+        {
+          id: 'review-binding-rows',
+          panelType: 'review',
+          component: 'acme-review-panel',
+          surface: 'binding',
+          sourceId: 'rows',
+          graphId: 'review-flow',
+          nodeId: 'normalize',
+          input: 'rows',
+          pack: 'review-pack',
+        },
+        {
+          id: 'detail-binding-selection',
+          panelType: 'detail',
+          component: 'acme-detail-panel',
+          surface: 'binding',
+          sourceId: 'selection',
+          graphId: 'review-flow',
+          nodeId: 'summarize',
+          input: 'selection',
+          pack: 'detail-pack',
+        },
+      ],
+    });
 
     let validation = validateWorkspaceConfig(result.config, { strict: true });
     assert.deepEqual(validation.errors, []);
