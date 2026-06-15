@@ -50,6 +50,7 @@ let EXTERNAL_SENTIMENT_MODULE = {
   actions: [{ id: 'refresh', label: 'Refresh', command: 'sentiment.refresh' }],
   events: { emits: [{ name: 'sentiment-select' }] },
   state: [{ id: 'selection', type: 'object', default: null }],
+  slots: [{ id: 'empty-state', role: 'fallback', accepts: ['sn-empty-state'], required: true }],
   bindings: [{ id: 'items', direction: 'input', path: 'data.sentiment' }],
   requiredHostServices: ['storage.project'],
   placement: {
@@ -462,6 +463,9 @@ describe('construction workflow dispatch', () => {
     assert.equal(result.status, 'ok');
     assert.deepEqual(result.plan.answers.moduleSelection, ['sentiment']);
     assert.equal(session.config.panelTypes.sentiment.component, 'acme-sentiment-panel');
+    assert.deepEqual(session.config.panelTypes.sentiment.slots, [
+      { id: 'empty-state', role: 'fallback', accepts: ['sn-empty-state'], required: true },
+    ]);
     assert.ok(session.config.components.catalog.includes('acme-sentiment-panel'));
     assert.ok(layoutReferencesPanel(session.config.layout, 'sentiment'));
     assert.deepEqual(session.config.events, [{
@@ -1306,6 +1310,9 @@ describe('construction workflow CLI commands', () => {
     assert.equal(result.status, 'ok');
     assert.deepEqual(result.plan.answers.moduleSelection, ['sentiment']);
     assert.equal(result.config.panelTypes.sentiment.component, 'acme-sentiment-panel');
+    assert.deepEqual(result.config.panelTypes.sentiment.slots, [
+      { id: 'empty-state', role: 'fallback', accepts: ['sn-empty-state'], required: true },
+    ]);
     assert.ok(result.config.components.catalog.includes('acme-sentiment-panel'));
     assert.ok(layoutReferencesPanel(result.config.layout, 'sentiment'));
   });

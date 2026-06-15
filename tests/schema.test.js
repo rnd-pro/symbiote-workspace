@@ -690,6 +690,44 @@ describe('validateWorkspaceConfig', () => {
     assert.ok(invalid.errors.some((error) => error.path === 'panelTypes.table.settings[1].options'));
   });
 
+  it('validates portable panel slots', () => {
+    let result = validateWorkspaceConfig({
+      version: '0.2.0',
+      name: 'Slot Workspace',
+      panelTypes: {
+        table: {
+          title: 'Table',
+          component: 'sn-data-table',
+          slots: [{ id: 'empty-state', role: 'fallback', accepts: ['sn-empty-state'], required: true }],
+        },
+      },
+    }, { strict: true });
+
+    assert.equal(result.valid, true);
+    assert.equal(result.errors.length, 0);
+
+    let invalid = validateWorkspaceConfig({
+      version: '0.2.0',
+      name: 'Broken Slot Workspace',
+      panelTypes: {
+        table: {
+          title: 'Table',
+          component: 'sn-data-table',
+          slots: [
+            { id: 'empty-state', accepts: ['sn-empty-state'] },
+            { id: 'empty-state', role: 'bad role', accepts: [42], required: 'yes' },
+          ],
+        },
+      },
+    }, { strict: true });
+
+    assert.equal(invalid.valid, false);
+    assert.ok(invalid.errors.some((error) => error.path === 'panelTypes.table.slots[1].id'));
+    assert.ok(invalid.errors.some((error) => error.path === 'panelTypes.table.slots[1].role'));
+    assert.ok(invalid.errors.some((error) => error.path === 'panelTypes.table.slots[1].accepts[0]'));
+    assert.ok(invalid.errors.some((error) => error.path === 'panelTypes.table.slots[1].required'));
+  });
+
   it('rejects invalid module capability descriptors', () => {
     let result = validateWorkspaceConfig({
       version: '0.2.0',

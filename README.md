@@ -511,16 +511,17 @@ are pruned from the executable config in the same cleanup pass.
 
 Generated panel types also receive shell `menuActions` from descriptor
 `actions`, `toolbarItems`, and `menus[].items`, plus portable `settings` from
-descriptor settings. Existing panel type menu actions and settings are
+descriptor settings and portable child `slots` from descriptor slots. Existing
+panel type menu actions, settings, and slots are
 preserved, so templates can keep authored shell commands and controls while
 external descriptors still expose executable declarations when they create
 panels.
 
 The constructor copies matching descriptor capabilities, actions, settings,
-state fields, events, bindings, runtime slots, placement hints, and required
-host service IDs into `config.construction.plan.modules`. Selected modules
-also expose `matchedCapabilities` and `selectionReason`; aggregate coverage is
-stored in `config.construction.plan.capabilities`.
+state fields, events, bindings, slots, runtime slots, placement hints, and
+required host service IDs into `config.construction.plan.modules`. Selected
+modules also expose `matchedCapabilities` and `selectionReason`; aggregate
+coverage is stored in `config.construction.plan.capabilities`.
 `validation.reports` and `patches` can persist machine-readable review results
 from patch validation.
 
@@ -563,6 +564,12 @@ Selected descriptor settings are materialized into `panelTypes.*.settings` when
 the selected panel type does not already define settings. Each setting carries a
 portable `id`, `label`, `type`, optional `default`, enum `options`, and optional
 binding identifier for host/UI configuration surfaces.
+
+Selected descriptor slots are materialized into `panelTypes.*.slots` when the
+selected panel type does not already define slots. Each slot carries a portable
+`id`, optional `role`, accepted component/capability identifiers, and an optional
+`required` flag for host shell composition surfaces. Runtime slots stay in
+descriptor/package readiness metadata and are not converted into panel slots.
 
 ## Browser Theme Mounting
 

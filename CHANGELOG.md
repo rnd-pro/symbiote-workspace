@@ -56,6 +56,10 @@ All notable changes to this project will be documented in this file.
   now expose descriptor actions, toolbar items, and menu items through
   `panelTypes.*.menuActions`, preserving authored menu actions on existing
   panel types while carrying command/event metadata for host shells.
+- **Module slot shell materialization** — workspace configs now define and
+  validate `panelTypes.*.slots`; selected constructor module descriptors
+  materialize portable `slots[]` onto generated and selected existing panel
+  types while preserving authored panel slots.
 - **Module event and binding materialization** — selected constructor module
   descriptors now expose emitted events as top-level broadcast bridges and
   copy selected binding declarations into `data.bindings` for portable

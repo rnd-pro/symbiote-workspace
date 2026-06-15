@@ -988,6 +988,12 @@ function descriptorSettings(descriptor) {
     .map((setting) => deepClone(setting));
 }
 
+function descriptorSlots(descriptor) {
+  return (descriptor.slots || [])
+    .filter((slot) => isObject(slot))
+    .map((slot) => deepClone(slot));
+}
+
 function materializeDescriptorPanelTypes(config, descriptors) {
   if (!descriptors.length) return;
   config.panelTypes ||= {};
@@ -1020,6 +1026,9 @@ function materializeDescriptorPanelTypes(config, descriptors) {
     let settings = descriptorSettings(descriptor);
     if (settings.length) panel.settings = settings;
 
+    let slots = descriptorSlots(descriptor);
+    if (slots.length) panel.slots = slots;
+
     config.panelTypes[panelType] = panel;
   }
 }
@@ -1047,6 +1056,19 @@ function materializeSelectedDescriptorPanelSettings(config, selectedModules) {
     if (!descriptor) continue;
     let settings = descriptorSettings(descriptor);
     if (settings.length) panel.settings = settings;
+  }
+}
+
+function materializeSelectedDescriptorPanelSlots(config, selectedModules) {
+  let descriptors = moduleDescriptorMap(config);
+  let selected = new Set(selectedModules);
+  for (let [panelType, panel] of Object.entries(config.panelTypes || {})) {
+    if (!selected.has(panelType)) continue;
+    if (!panel?.component || panel.slots !== undefined) continue;
+    let descriptor = descriptors.get(panel.component);
+    if (!descriptor) continue;
+    let slots = descriptorSlots(descriptor);
+    if (slots.length) panel.slots = slots;
   }
 }
 
@@ -2243,6 +2265,7 @@ export function planWorkspaceConstruction(intent, options = {}) {
   materializeSelectedModuleLayout(config, modules, generatedPanelTypes);
   materializeSelectedDescriptorPanelMenuActions(config, modules);
   materializeSelectedDescriptorPanelSettings(config, modules);
+  materializeSelectedDescriptorPanelSlots(config, modules);
   materializeSelectedDescriptorEventBridges(config, modules);
   materializeSelectedDescriptorDataBindings(config, modules);
   materializeSelectedDescriptorStateFields(config, modules);

@@ -17,6 +17,7 @@ let EXTERNAL_SENTIMENT_MODULE = {
   capabilities: ['analysis.sentiment', 'review.queue'],
   actions: [{ id: 'refresh', label: 'Refresh', command: 'sentiment.refresh' }],
   state: [{ id: 'selection', type: 'object', default: null }],
+  slots: [{ id: 'empty-state', role: 'fallback', accepts: ['sn-empty-state'], required: true }],
   bindings: [{ id: 'items', direction: 'input', path: 'data.sentiment' }],
   requiredHostServices: ['storage.project'],
   placement: {
@@ -551,6 +552,9 @@ describe('MCP Protocol', () => {
     let exportContent = JSON.parse(exportResult.result.content[0].text);
     let exportedConfig = JSON.parse(exportContent.json);
     assert.equal(exportedConfig.panelTypes.sentiment.component, 'acme-sentiment-panel');
+    assert.deepEqual(exportedConfig.panelTypes.sentiment.slots, [
+      { id: 'empty-state', role: 'fallback', accepts: ['sn-empty-state'], required: true },
+    ]);
     assert.ok(exportedConfig.components.catalog.includes('acme-sentiment-panel'));
     assert.deepEqual(exportedConfig.state.fields, [{
       panelType: 'sentiment',

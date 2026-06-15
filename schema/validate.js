@@ -677,6 +677,9 @@ function validatePanelTypes(panelTypes, errors, warnings) {
     if (pt.settings) {
       validatePanelSettings(pt.settings, `${path}.settings`, errors);
     }
+    if (pt.slots) {
+      validatePanelSlots(pt.slots, `${path}.slots`, errors);
+    }
   }
 }
 
@@ -712,6 +715,47 @@ function validatePanelSettings(settings, path, errors) {
     }
     if (setting.binding !== undefined) {
       validatePortableIdField(setting.binding, `${itemPath}.binding`, 'Panel setting binding must be portable.', errors);
+    }
+  }
+}
+
+function validatePanelSlots(slots, path, errors) {
+  if (!Array.isArray(slots)) {
+    errors.push({ path, message: 'slots must be an array.', severity: 'error' });
+    return;
+  }
+
+  let slotIds = new Set();
+  for (let i = 0; i < slots.length; i++) {
+    let slot = slots[i];
+    let itemPath = `${path}[${i}]`;
+    if (!isObject(slot)) {
+      errors.push({ path: itemPath, message: 'Panel slot entry must be an object.', severity: 'error' });
+      continue;
+    }
+
+    validatePortableIdField(slot.id, `${itemPath}.id`, 'Panel slot requires a portable "id".', errors);
+    if (slot.id && slotIds.has(slot.id)) {
+      errors.push({ path: `${itemPath}.id`, message: `Duplicate slot ID: "${slot.id}".`, severity: 'error' });
+    }
+    if (slot.id) slotIds.add(slot.id);
+
+    if (slot.role !== undefined) {
+      validatePortableIdField(slot.role, `${itemPath}.role`, 'Panel slot role must be portable when provided.', errors);
+    }
+    if (slot.accepts !== undefined) {
+      if (!Array.isArray(slot.accepts)) {
+        errors.push({ path: `${itemPath}.accepts`, message: 'Panel slot accepts must be an array.', severity: 'error' });
+      } else {
+        for (let j = 0; j < slot.accepts.length; j++) {
+          if (typeof slot.accepts[j] !== 'string' || !slot.accepts[j].trim()) {
+            errors.push({ path: `${itemPath}.accepts[${j}]`, message: 'Panel slot accepts entries must be non-empty strings.', severity: 'error' });
+          }
+        }
+      }
+    }
+    if (slot.required !== undefined && typeof slot.required !== 'boolean') {
+      errors.push({ path: `${itemPath}.required`, message: 'Panel slot required must be a boolean.', severity: 'error' });
     }
   }
 }

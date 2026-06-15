@@ -324,6 +324,7 @@ describe('planWorkspaceConstruction', () => {
           items: [{ id: 'assign', label: 'Assign', command: 'sentiment.assign' }],
         }],
         settings: [{ id: 'density', label: 'Density', type: 'enum', options: [{ value: 'compact', label: 'Compact' }] }],
+        slots: [{ id: 'empty-state', role: 'fallback', accepts: ['sn-empty-state'], required: true }],
         bindings: [{
           id: 'items',
           direction: 'input',
@@ -351,6 +352,9 @@ describe('planWorkspaceConstruction', () => {
     ]);
     assert.deepEqual(result.config.panelTypes.sentiment.settings, [
       { id: 'density', label: 'Density', type: 'enum', options: [{ value: 'compact', label: 'Compact' }] },
+    ]);
+    assert.deepEqual(result.config.panelTypes.sentiment.slots, [
+      { id: 'empty-state', role: 'fallback', accepts: ['sn-empty-state'], required: true },
     ]);
     assert.ok(result.config.components.catalog.includes('acme-sentiment-panel'));
     assert.ok(result.config.components.modules.some((item) => item.tagName === 'acme-sentiment-panel'));
@@ -476,7 +480,7 @@ describe('planWorkspaceConstruction', () => {
     assert.equal(layoutReferencesPanel(result.config.layout, 'archive'), false);
   });
 
-  it('materializes descriptor events, settings, bindings, and engine bindings only from selected modules', () => {
+  it('materializes descriptor events, settings, slots, bindings, and engine bindings only from selected modules', () => {
     let result = planWorkspaceConstruction({
       brief: 'Build a focused review shell',
       template: 'review-shell',
@@ -493,6 +497,7 @@ describe('planWorkspaceConstruction', () => {
               title: 'Review',
               component: 'acme-review-panel',
               settings: [{ id: 'authored', label: 'Authored', type: 'boolean' }],
+              slots: [{ id: 'authored-footer', role: 'footer', accepts: ['acme-footer'] }],
             },
             detail: {
               title: 'Detail',
@@ -540,6 +545,7 @@ describe('planWorkspaceConstruction', () => {
           capabilities: ['review.queue'],
           events: { emits: [{ name: 'row-select', engine: { graphId: 'review-flow', nodeId: 'select-row', output: 'row' } }, { name: 'existing-select' }] },
           settings: [{ id: 'density', label: 'Density', type: 'enum', engine: { graphId: 'review-flow', nodeId: 'density', param: 'mode' } }],
+          slots: [{ id: 'review-toolbar', role: 'toolbar', accepts: ['acme-review-tool'] }],
           state: [{ id: 'selection', type: 'object', default: null, engine: { graphId: 'review-flow', nodeId: 'selection', input: 'value' } }],
           bindings: [{ id: 'rows', direction: 'input', path: 'data.rows', engine: { graphId: 'review-flow', nodeId: 'normalize', input: 'rows', pack: 'review-pack' } }],
         },
@@ -548,6 +554,7 @@ describe('planWorkspaceConstruction', () => {
           capabilities: ['review.detail'],
           events: { consumes: [{ name: 'row-select' }, { name: 'existing-select' }] },
           settings: [{ id: 'selection-mode', label: 'Selection mode', type: 'string' }],
+          slots: [{ id: 'detail-aside', role: 'aside', accepts: ['acme-detail-aside'], required: true }],
           state: [{ id: 'expanded', type: 'boolean', default: true, path: 'state.detail.expanded', persistence: 'workspace' }],
           bindings: [{ id: 'selection', direction: 'input', path: 'data.selection', engine: { graphId: 'review-flow', nodeId: 'summarize', input: 'selection', pack: 'detail-pack' } }],
         },
@@ -556,6 +563,7 @@ describe('planWorkspaceConstruction', () => {
           capabilities: ['archive.search'],
           events: { emits: [{ name: 'archive-select', engine: { graphId: 'archive-flow', nodeId: 'archive-select' } }], consumes: [{ name: 'row-select' }] },
           settings: [{ id: 'archive-filter', label: 'Archive filter', type: 'string' }],
+          slots: [{ id: 'archive-tools', role: 'toolbar', accepts: ['acme-archive-tool'] }],
           state: [{ id: 'archive-selection', type: 'object', engine: { graphId: 'archive-flow', nodeId: 'archive-state' } }],
           bindings: [{ id: 'archived-selection', direction: 'input', path: 'data.archiveSelection', engine: { graphId: 'archive-flow', nodeId: 'archive-selection', pack: 'archive-pack' } }],
         },
@@ -624,6 +632,13 @@ describe('planWorkspaceConstruction', () => {
       { id: 'selection-mode', label: 'Selection mode', type: 'string' },
     ]);
     assert.equal(result.config.panelTypes.archive.settings, undefined);
+    assert.deepEqual(result.config.panelTypes.review.slots, [
+      { id: 'authored-footer', role: 'footer', accepts: ['acme-footer'] },
+    ]);
+    assert.deepEqual(result.config.panelTypes.detail.slots, [
+      { id: 'detail-aside', role: 'aside', accepts: ['acme-detail-aside'], required: true },
+    ]);
+    assert.equal(result.config.panelTypes.archive.slots, undefined);
     assert.equal(layoutReferencesPanel(result.config.layout, 'archive'), false);
     assert.deepEqual(result.config.engine, {
       packs: ['detail-pack', 'review-pack'],

@@ -150,6 +150,18 @@ const PANEL_SETTING_SCHEMA = Object.freeze({
   },
 });
 
+/** Panel slot schema */
+const PANEL_SLOT_SCHEMA = Object.freeze({
+  type: 'object',
+  required: ['id'],
+  properties: {
+    id: { type: 'string', description: 'Portable panel slot identifier.' },
+    role: { type: 'string', description: 'Slot role in the panel component.' },
+    accepts: { type: 'array', items: { type: 'string' }, description: 'Accepted component tag names or capability IDs.' },
+    required: { type: 'boolean', description: 'Whether the host should treat this slot as required.' },
+  },
+});
+
 /** Panel type registration schema */
 const PANEL_TYPE_SCHEMA = Object.freeze({
   type: 'object',
@@ -168,6 +180,11 @@ const PANEL_TYPE_SCHEMA = Object.freeze({
       type: 'array',
       items: PANEL_SETTING_SCHEMA,
       description: 'Panel setting declarations exposed to host shells.',
+    },
+    slots: {
+      type: 'array',
+      items: PANEL_SLOT_SCHEMA,
+      description: 'Portable child-slot declarations exposed to host shells.',
     },
   },
 });
