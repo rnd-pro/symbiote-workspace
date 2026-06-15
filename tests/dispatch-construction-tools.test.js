@@ -1275,6 +1275,27 @@ describe('workspace package CLI commands', () => {
     assert.ok(result.errors.some((item) => item.path === 'kind'));
   });
 
+  it('validate-workspace-package accepts --json package strings', async () => {
+    await withTempDir('pkg-validate-json-cli', async (dir) => {
+      let tmpFile = join(dir, 'workspace.json');
+      await execCli('scaffold', '--config', tmpFile, '--name', 'CLI Validate JSON', 'chat workspace');
+      let exportOut = await execCli(
+        'export-workspace-package',
+        '--config',
+        tmpFile,
+        '--manifest',
+        JSON.stringify({ id: 'com.example.cli-validate-json' }),
+      );
+      let exportResult = JSON.parse(exportOut.stdout);
+
+      let validateOut = await execCli('validate-workspace-package', '--json', exportResult.json);
+      let validateResult = JSON.parse(validateOut.stdout);
+      assert.equal(validateResult.status, 'ok');
+      assert.equal(validateResult.valid, true);
+      assert.equal(validateResult.errors.length, 0);
+    });
+  });
+
   it('inspect-workspace-package is listed in help', async () => {
     let { stdout } = await execCli('--help');
     assert.ok(stdout.includes('inspect-workspace-package'));
@@ -1380,7 +1401,7 @@ describe('workspace package CLI commands', () => {
       let jsonContext = await execCli(
         'create-workspace-package-construction-context',
         '--json',
-        JSON.stringify(exportResult.json),
+        exportResult.json,
         '--available',
         JSON.stringify({
           components: [],

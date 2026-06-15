@@ -408,6 +408,14 @@ describe('Workspace Package via MCP', () => {
     assert.equal(toolNames.has('export_workspace_package'), true);
     assert.equal(toolNames.has('import_workspace_package'), true);
     assert.equal(toolNames.has('validate_workspace_package'), true);
+
+    let validateTool = toolList.result.tools.find((tool) => tool.name === 'validate_workspace_package');
+    assert.ok(validateTool.inputSchema.properties.package);
+    assert.ok(validateTool.inputSchema.properties.json);
+    assert.deepEqual(validateTool.inputSchema.anyOf, [
+      { required: ['package'] },
+      { required: ['json'] },
+    ]);
   });
 
   it('export_workspace_package produces a full package with kind and host contract', async () => {

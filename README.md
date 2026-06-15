@@ -714,9 +714,10 @@ and its workspace config as separate objects.
 in isolation, checking the package kind and schema version, workspace config
 validity, manifest portability, and host contract integrity, without requiring
 JSON serialization. Dispatch/MCP `validate_workspace_package` returns
-`status: "ok"` for valid packages; invalid packages keep `valid: false` and
-`errors`, and also return `status: "error"`,
-`code: "workspace_package_invalid"`, and
+`status: "ok"` for valid packages and accepts either a `package` object or a
+`json` package string; the CLI exposes those forms as `--package` and `--json`.
+Invalid packages keep `valid: false` and `errors`, and also return
+`status: "error"`, `code: "workspace_package_invalid"`, and
 `nextAction: "fix-workspace-package"` so transports can signal failure.
 
 `inspectWorkspacePackage(input, options)` inspects a workspace package

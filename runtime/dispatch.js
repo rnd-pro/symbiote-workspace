@@ -24,6 +24,11 @@ function toJsonString(value) {
   return typeof value === 'string' ? value : JSON.stringify(value);
 }
 
+function parseJsonInput(value) {
+  if (typeof value !== 'string') return value;
+  return JSON.parse(value);
+}
+
 function cloneJson(value) {
   if (value === undefined) return undefined;
   if (typeof structuredClone === 'function') return structuredClone(value);
@@ -706,13 +711,17 @@ export const TOOLS = [
   },
   {
     name: 'validate_workspace_package',
-    description: 'Validate a workspace package object without mutating session state.',
+    description: 'Validate a workspace package object or JSON string without mutating session state.',
     inputSchema: {
       type: 'object',
       properties: {
         package: { type: 'object', description: 'Workspace package object to validate.' },
+        json: { type: 'string', description: 'JSON string of the workspace package to validate.' },
       },
-      required: ['package'],
+      anyOf: [
+        { required: ['package'] },
+        { required: ['json'] },
+      ],
     },
   },
   {
@@ -1242,7 +1251,24 @@ export async function dispatch(toolName, args, session) {
 
   if (toolName === 'validate_workspace_package') {
     let { validateWorkspacePackage } = await import('../sharing/index.js');
-    let result = validateWorkspacePackage(args.package);
+    let input;
+    try {
+      input = args.package || parseJsonInput(args.json);
+    } catch (err) {
+      return {
+        status: 'error',
+        tool: toolName,
+        valid: false,
+        errors: [{ path: '', message: `Invalid JSON: ${err.message}`, severity: 'error' }],
+        code: 'workspace_package_invalid',
+        nextAction: 'fix-workspace-package',
+        hint: 'Workspace package has validation errors.',
+      };
+    }
+    if (!input) {
+      return { status: 'error', tool: toolName, hint: 'Missing required arguments: package or json' };
+    }
+    let result = validateWorkspacePackage(input);
     return compactObject({
       status: result.valid ? 'ok' : 'error',
       tool: result.valid ? undefined : toolName,

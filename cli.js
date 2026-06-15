@@ -108,6 +108,7 @@ Options for 'import-workspace-package':
 
 Options for 'validate-workspace-package':
   --package <json-object>    Workspace package to validate
+  --json <string>            JSON string of the workspace package
 
 Options for 'inspect-workspace-package':
   --package <json-object>    Workspace package object to inspect
@@ -160,11 +161,14 @@ function parseArgs(argv) {
       let key = arg.slice(2);
       let next = argv[i + 1];
       if (next && !next.startsWith('--')) {
-        // Try to parse as JSON for complex values (arrays, objects)
-        try {
-          flags[key] = JSON.parse(next);
-        } catch {
+        if (key === 'json') {
           flags[key] = next;
+        } else {
+          try {
+            flags[key] = JSON.parse(next);
+          } catch {
+            flags[key] = next;
+          }
         }
         i++;
       } else {

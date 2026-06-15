@@ -53,7 +53,9 @@ All notable changes to this project will be documented in this file.
 - **Package validation transport errors** — invalid
   `validate_workspace_package` results now include `status: "error"`, `code`,
   and `nextAction` while preserving `valid: false` and validation `errors`, so
-  CLI and MCP transports can signal failure consistently.
+  CLI and MCP transports can signal failure consistently. The validation tool
+  now also accepts package JSON strings through the same `json` input used by
+  related package inspection and construction-context tools.
 - **Invalid handoff diagnostics** — invalid construction handoff errors now
   include `code`, `nextAction`, and a blocked `readiness` payload so agents can
   route recovery to package-context fixes instead of readiness review.
