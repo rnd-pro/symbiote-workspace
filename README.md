@@ -488,6 +488,9 @@ and any uncovered requirements are reported in
 `config.construction.plan.capabilities.missing`. The plan also records
 `capabilities.byCapability` so agents can see which selected modules cover each
 requirement and which ranked unselected modules are available as alternatives.
+When `plan_workspace` or `construct_workspace` report missing module
+capabilities, top-level `readiness.recovery[]` entries include those ranked
+alternatives when the planner found compatible unselected modules.
 
 External descriptors that do not already have a matching `panelTypes` entry are
 materialized from `placement.panelType` or `tagName`. The constructor copies

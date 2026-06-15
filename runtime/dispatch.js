@@ -1159,6 +1159,13 @@ function constructionReadinessFromHandoff(args, overrides = {}) {
   return constructionReadinessFromPackageContext(packageContextFromHandoff(args) || {}, overrides);
 }
 
+function moduleCapabilityAlternatives(capabilities, capability) {
+  let byCapability = Array.isArray(capabilities.byCapability) ? capabilities.byCapability : [];
+  let match = byCapability.find((item) => item?.capability === capability);
+  let alternatives = Array.isArray(match?.alternatives) ? match.alternatives : [];
+  return alternatives.length > 0 ? cloneJson(alternatives) : undefined;
+}
+
 function constructionReadinessFromPlan(plan, overrides = {}) {
   let capabilities = plan?.capabilities || {};
   let missing = Array.isArray(capabilities.missing) ? capabilities.missing : [];
@@ -1172,10 +1179,11 @@ function constructionReadinessFromPlan(plan, overrides = {}) {
     errorCount: 0,
     missing: missing.length > 0 ? { moduleCapabilities: cloneJson(missing) } : undefined,
     recovery: missing.length > 0
-      ? missing.map((item) => ({
+      ? missing.map((item) => compactObject({
         kind: 'moduleCapabilities',
         item,
         action: 'provide-module-capability',
+        alternatives: moduleCapabilityAlternatives(capabilities, item),
       }))
       : undefined,
     requiredCapabilities: cloneJson(capabilities.required),

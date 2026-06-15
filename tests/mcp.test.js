@@ -401,9 +401,10 @@ describe('MCP Protocol', () => {
         params: {
           name: 'construct_workspace',
           arguments: {
-            intent: 'dashboard with unknown module requirement',
-            template: 'dashboard',
-            requiredCapabilities: ['capability.that.does.not.exist'],
+            intent: 'admin records workspace',
+            template: 'admin',
+            requiredCapabilities: ['admin.records'],
+            answers: { 'module-selection': ['metric'] },
           },
         },
       },
@@ -422,8 +423,21 @@ describe('MCP Protocol', () => {
     assert.equal(constructContent.nextAction, 'provide-module-capabilities');
     assert.deepEqual(
       constructContent.readiness.missing.moduleCapabilities,
-      ['capability.that.does.not.exist'],
+      ['admin.records'],
     );
+    assert.deepEqual(constructContent.readiness.recovery, [{
+      kind: 'moduleCapabilities',
+      item: 'admin.records',
+      action: 'provide-module-capability',
+      alternatives: [{
+        panelType: 'records',
+        component: 'sn-data-table',
+        title: 'Records',
+        score: 110,
+        matchedCapabilities: ['admin.records'],
+        relatedCapabilities: ['admin.bulk-actions'],
+      }],
+    }]);
 
     let exportResult = responses.find((r) => r.id === 4);
     assert.ok(exportResult);
@@ -1799,7 +1813,14 @@ describe('Construction Handoff via MCP', () => {
     let construct = JSON.parse(constructResponse.result.content[0].text);
     assert.equal(plan.status, 'ok');
     assert.equal(plan.plan.readiness.package.status, 'warning');
-    assert.deepEqual(plan.readiness, plan.plan.readiness.package);
+    assert.equal(plan.readiness.status, plan.plan.readiness.package.status);
+    assert.equal(plan.readiness.nextAction, plan.plan.readiness.package.nextAction);
+    assert.deepEqual(plan.readiness.missing.components, ['sn-room-shell']);
+    assert.deepEqual(plan.readiness.recovery, [{
+      kind: 'components',
+      item: 'sn-room-shell',
+      action: 'register-component',
+    }]);
     let packageReadinessReport = plan.verification.reports.find((report) => (
       report.check === 'package-readiness'
     ));

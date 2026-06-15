@@ -298,6 +298,34 @@ describe('construction workflow dispatch', () => {
     assert.equal(session.config, null);
   });
 
+  it('plan_workspace includes ranked module alternatives in missing capability recovery', async () => {
+    let session = createSession();
+    let result = await dispatch('plan_workspace', {
+      intent: 'admin records workspace',
+      template: 'admin',
+      requiredCapabilities: ['admin.records'],
+      answers: { 'module-selection': ['metric'] },
+    }, session);
+
+    assert.equal(result.status, 'ok');
+    assert.deepEqual(result.plan.capabilities.missing, ['admin.records']);
+    assert.deepEqual(result.readiness.missing.moduleCapabilities, ['admin.records']);
+    assert.deepEqual(result.readiness.recovery, [{
+      kind: 'moduleCapabilities',
+      item: 'admin.records',
+      action: 'provide-module-capability',
+      alternatives: [{
+        panelType: 'records',
+        component: 'sn-data-table',
+        title: 'Records',
+        score: 110,
+        matchedCapabilities: ['admin.records'],
+        relatedCapabilities: ['admin.bulk-actions'],
+      }],
+    }]);
+    assert.equal(session.config, null);
+  });
+
   it('plan_workspace prioritizes missing module capability readiness over ready package context', async () => {
     let session = createSession();
     let result = await dispatch('plan_workspace', {
@@ -504,6 +532,37 @@ describe('construction workflow dispatch', () => {
       kind: 'moduleCapabilities',
       item: 'capability.that.does.not.exist',
       action: 'provide-module-capability',
+    }]);
+    assert.equal(session.config.name, 'Existing Config');
+  });
+
+  it('construct_workspace includes ranked module alternatives in missing capability recovery', async () => {
+    let session = createSession();
+    await dispatch('scaffold_from_scratch', { name: 'Existing Config' }, session);
+
+    let construct = await dispatch('construct_workspace', {
+      intent: 'admin records workspace',
+      template: 'admin',
+      requiredCapabilities: ['admin.records'],
+      answers: { 'module-selection': ['metric'] },
+    }, session);
+
+    assert.equal(construct.status, 'error');
+    assert.equal(construct.tool, 'construct_workspace');
+    assert.equal(construct.code, 'construction_capabilities_missing');
+    assert.deepEqual(construct.readiness.missing.moduleCapabilities, ['admin.records']);
+    assert.deepEqual(construct.readiness.recovery, [{
+      kind: 'moduleCapabilities',
+      item: 'admin.records',
+      action: 'provide-module-capability',
+      alternatives: [{
+        panelType: 'records',
+        component: 'sn-data-table',
+        title: 'Records',
+        score: 110,
+        matchedCapabilities: ['admin.records'],
+        relatedCapabilities: ['admin.bulk-actions'],
+      }],
     }]);
     assert.equal(session.config.name, 'Existing Config');
   });
