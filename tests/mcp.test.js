@@ -350,6 +350,46 @@ describe('MCP Protocol', () => {
     assert.equal(exportedConfig.name, 'Existing MCP Config');
   });
 
+  it('rejects stale construction answer IDs through tools/call without replacing session state', async () => {
+    let responses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: { name: 'scaffold_from_scratch', arguments: { name: 'Existing MCP Config' } },
+      },
+      {
+        jsonrpc: '2.0', id: 3, method: 'tools/call',
+        params: {
+          name: 'plan_workspace',
+          arguments: {
+            intent: 'chat workspace',
+            answers: {
+              'stale-question': 'value',
+            },
+          },
+        },
+      },
+      {
+        jsonrpc: '2.0', id: 4, method: 'tools/call',
+        params: { name: 'export_workspace', arguments: {} },
+      },
+    ], 5000);
+
+    let planResult = responses.find((r) => r.id === 3);
+    assert.ok(planResult);
+    assert.equal(planResult.result.isError, true);
+    let planContent = JSON.parse(planResult.result.content[0].text);
+    assert.equal(planContent.status, 'error');
+    assert.equal(planContent.tool, 'plan_workspace');
+    assert.match(planContent.hint, /Unknown construction question "stale-question"/);
+
+    let exportResult = responses.find((r) => r.id === 4);
+    assert.ok(exportResult);
+    let exportContent = JSON.parse(exportResult.result.content[0].text);
+    let exportedConfig = JSON.parse(exportContent.json);
+    assert.equal(exportedConfig.name, 'Existing MCP Config');
+  });
+
   it('constructs external module descriptors through tools/call and exports executable config', async () => {
     let responses = await mcpSession([
       { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },

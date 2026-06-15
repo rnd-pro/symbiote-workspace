@@ -783,6 +783,23 @@ describe('construction workflow dispatch', () => {
     assert.equal(session.config.name, 'Existing Config');
   });
 
+  it('plan_workspace rejects stale construction answer IDs without mutating session state', async () => {
+    let session = createSession();
+    await dispatch('scaffold_from_scratch', { name: 'Existing Config' }, session);
+
+    let result = await dispatch('plan_workspace', {
+      intent: 'chat workspace',
+      answers: {
+        'stale-question': 'value',
+      },
+    }, session);
+
+    assert.equal(result.status, 'error');
+    assert.equal(result.tool, 'plan_workspace');
+    assert.match(result.hint, /Unknown construction question "stale-question"/);
+    assert.equal(session.config.name, 'Existing Config');
+  });
+
   it('construct_workspace rejects missing intent brief without replacing session state', async () => {
     let session = createSession();
     await dispatch('scaffold_from_scratch', { name: 'Existing Config' }, session);
@@ -794,6 +811,21 @@ describe('construction workflow dispatch', () => {
     assert.equal(result.status, 'error');
     assert.equal(result.tool, 'construct_workspace');
     assert.match(result.hint, /brief/);
+    assert.equal(session.config.name, 'Existing Config');
+  });
+
+  it('construct_workspace rejects malformed construction answers without replacing session state', async () => {
+    let session = createSession();
+    await dispatch('scaffold_from_scratch', { name: 'Existing Config' }, session);
+
+    let result = await dispatch('construct_workspace', {
+      intent: 'chat workspace',
+      answers: [],
+    }, session);
+
+    assert.equal(result.status, 'error');
+    assert.equal(result.tool, 'construct_workspace');
+    assert.match(result.hint, /answers must be a plain object/);
     assert.equal(session.config.name, 'Existing Config');
   });
 

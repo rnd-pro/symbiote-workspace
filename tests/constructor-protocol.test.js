@@ -128,6 +128,26 @@ describe('planWorkspaceConstruction', () => {
     );
   });
 
+  it('rejects malformed construction answers before planning', () => {
+    assert.throws(() => planWorkspaceConstruction('Build a graph workspace', {
+      answers: null,
+    }), /answers must be a plain object/);
+
+    assert.throws(() => planWorkspaceConstruction('Build a graph workspace', {
+      answers: [],
+    }), /answers must be a plain object/);
+
+    assert.throws(() => planWorkspaceConstruction('Build a graph workspace', {
+      answers: 'not answers',
+    }), /answers must be a plain object/);
+
+    assert.throws(() => planWorkspaceConstruction('Build a graph workspace', {
+      answers: {
+        'stale-question': 'value',
+      },
+    }), /Unknown construction question "stale-question"/);
+  });
+
   it('records construction verification reports on the plan and config', () => {
     let result = planWorkspaceConstruction({
       brief: 'Build a dashboard',

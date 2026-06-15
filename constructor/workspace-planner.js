@@ -1717,7 +1717,17 @@ function answerMap(questions) {
   return new Map(questions.map((question) => [question.id, question.answer]));
 }
 
-function applyAnswers(questions, answers = {}) {
+function applyAnswers(questions, answers = undefined) {
+  if (answers === undefined) return questions;
+  if (!isObject(answers)) {
+    throw new Error('Construction answers must be a plain object.');
+  }
+  let knownQuestionIds = new Set(questions.map((question) => question.id));
+  for (let questionId of Object.keys(answers)) {
+    if (!knownQuestionIds.has(questionId)) {
+      throw new Error(`Unknown construction question "${questionId}".`);
+    }
+  }
   let result = questions;
   for (let question of result) {
     if (Object.prototype.hasOwnProperty.call(answers, question.id)) {
@@ -2124,7 +2134,7 @@ export function planWorkspaceConstruction(intent, options = {}) {
   let registryOptions = { ...options, templateRegistry: registry };
   let normalized = normalizeConstructionIntent(intent, registryOptions);
   let config = withModuleCapabilities(templateConfig(normalized.template, registry), options.moduleCapabilities);
-  let questions = applyAnswers(buildConstructionQuestions(normalized, registryOptions), options.answers || {});
+  let questions = applyAnswers(buildConstructionQuestions(normalized, registryOptions), options.answers);
   let answers = answerMap(questions);
   let workspaceName = answers.get('workspace-name') || config.name;
   let register = assertRegister(answers.get('target-register') || normalized.targetRegister);
