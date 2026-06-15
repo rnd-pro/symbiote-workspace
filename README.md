@@ -70,6 +70,7 @@ CLI and MCP share the same dispatch layer — every tool available via MCP is al
 | `symbiote-workspace` | Node | Schema, loader, constructor, sharing, validation, plugins, runtime |
 | `symbiote-workspace/runtime` | Node | Dispatch, session, tool registry |
 | `symbiote-workspace/browser` | Browser | DOM mounting + browser-safe isomorphic APIs |
+| `symbiote-workspace/loader` | Node | Workspace config loading and theme extraction helpers |
 | `symbiote-workspace/constructor` | Node | Construction planning, templates, questions, handoff consumption |
 | `symbiote-workspace/sharing` | Node | Package export/import, host contracts, construction context projection |
 | `symbiote-workspace/validation` | Node | Design guardrails and construction patch validation |
@@ -78,6 +79,7 @@ CLI and MCP share the same dispatch layer — every tool available via MCP is al
 | `symbiote-workspace/server` | Node | Workspace server + plugin loader |
 | `symbiote-workspace/mcp` | Node | MCP stdio transport entrypoint |
 | `symbiote-workspace/schema` | Node | Schema definitions, validators |
+| `symbiote-workspace/package.json` | Node | Package metadata for consumer tooling |
 
 ## Quick Start
 
