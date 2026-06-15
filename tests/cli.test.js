@@ -110,6 +110,8 @@ describe('CLI help', () => {
     assert.ok(stdout.includes('--config'));
     assert.equal(stdout.includes('Force JSON output'), false);
     assert.ok(stdout.includes('--json <string>'));
+    assert.ok(stdout.includes('node cli.js scaffold'));
+    assert.equal(stdout.includes('npx symbiote-workspace'), false);
   });
 
   it('lists every tool command or documented CLI alias in help', async () => {

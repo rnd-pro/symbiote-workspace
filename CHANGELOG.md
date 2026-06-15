@@ -10,6 +10,8 @@ All notable changes to this project will be documented in this file.
 - Bounded visual-demo browser smoke WebSocket handshakes and CDP commands with
   the configured timeout so unavailable or stalled browser automation exits
   with diagnostics and cleanup instead of hanging.
+- Replaced pre-publication CLI help examples with local `node cli.js` commands,
+  matching the current pack-based verification flow before npm publication.
 
 ### Added
 

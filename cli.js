@@ -138,14 +138,14 @@ Options for 'collect-plugin-module-capabilities' and 'collect-plugin-workspace-t
   --plugins <json-object-or-array>  Plugin definition object or array of plugin definitions
 
 Examples:
-  npx symbiote-workspace scaffold "chat workspace" --config ws.json
-  npx symbiote-workspace add-group --config ws.json --id g1 --name "Editor"
-  npx symbiote-workspace add-section --config ws.json --groupId g1 --id s1 --label "Source"
-  npx symbiote-workspace register-panel-type --config ws.json --name vp --title Viewport --component sn-canvas-viewport
-  npx symbiote-workspace list-panel-types --config ws.json
-  npx symbiote-workspace describe --config ws.json
-  npx symbiote-workspace preview ws.json --output-dir .workspace-preview
-  npx symbiote-workspace mcp
+  node cli.js scaffold "chat workspace" --config ws.json
+  node cli.js add-group --config ws.json --id g1 --name "Editor"
+  node cli.js add-section --config ws.json --groupId g1 --id s1 --label "Source"
+  node cli.js register-panel-type --config ws.json --name vp --title Viewport --component sn-canvas-viewport
+  node cli.js list-panel-types --config ws.json
+  node cli.js describe --config ws.json
+  node cli.js preview ws.json --output-dir .workspace-preview
+  node cli.js mcp
   `);
 }
 
