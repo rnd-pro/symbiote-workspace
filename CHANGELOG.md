@@ -229,7 +229,7 @@ All notable changes to this project will be documented in this file.
 
 - **MCP Server** — reduced from 671 to 136 lines (−80%). Now a pure JSON-RPC transport layer delegating to `runtime/dispatch.js`.
 - **CLI** — rewritten as thin proxy to dispatch. All 50 tools available via kebab-case commands.
-- **`describeLayout()`** — updated for BSP format (`panel`/`split` with `first`/`second`) with backward-compatible `children[]` fallback.
+- **Layout readers** — use the current BSP format (`panel`/`split` with `first`/`second`) without `children[]` compatibility traversal.
 - **`listUsedComponents()`** — now collects from layout tree + `panelTypes` + `components.catalog`. Returns `{ components, count }`.
 - **`bridgeEvent()`** — config-derived ID generation instead of global counter (works across stateless CLI invocations).
 - **`findComponent()`** — returns `{ status: 'not_found' }` for unknown tags instead of bare `null`.

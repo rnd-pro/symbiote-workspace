@@ -55,6 +55,24 @@ describe('loadWorkspaceConfig', () => {
     assert.ok(result.warnings.some((w) => w.message.includes('fallback')));
   });
 
+  it('does not collect components from unsupported layout children branches', () => {
+    let result = loadWorkspaceConfig({
+      version: '0.2.0',
+      name: 'Unsupported Layout Shape',
+      layout: {
+        type: 'group',
+        component: 'layout-shell',
+        children: [
+          { type: 'panel', component: 'nested-panel', panelType: 'nested' },
+        ],
+      },
+      components: { catalog: [] },
+    });
+    assert.equal(result.valid, true);
+    assert.ok(result.missingComponents.includes('layout-shell'));
+    assert.equal(result.missingComponents.includes('nested-panel'), false);
+  });
+
   it('fails in strict mode on missing components', () => {
     let catalog = { has: () => false, list: () => [] };
     let result = loadWorkspaceConfig(VALID_CONFIG, { catalog, strict: true });

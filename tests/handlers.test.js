@@ -35,6 +35,8 @@ import {
   removePanel,
   resizePanel,
   updateLayoutBehavior,
+  describeWorkspace,
+  listUsedComponents,
 } from '../handlers/index.js';
 
 describe('scaffoldFromScratch', () => {
@@ -45,6 +47,32 @@ describe('scaffoldFromScratch', () => {
     assert.ok(Array.isArray(config.groups));
     assert.ok(Array.isArray(config.sections));
     assert.ok(typeof config.panelTypes === 'object');
+  });
+});
+
+describe('describeWorkspace', () => {
+  it('does not project unsupported layout children branches', () => {
+    let config = {
+      version: '0.2.0',
+      name: 'Unsupported Layout Shape',
+      layout: {
+        type: 'group',
+        component: 'layout-shell',
+        children: [
+          { type: 'single', component: 'old-panel', panelType: 'old' },
+        ],
+      },
+      panelTypes: {
+        main: { title: 'Main', component: 'current-panel' },
+      },
+    };
+
+    let description = describeWorkspace(config);
+    let used = listUsedComponents(config);
+
+    assert.equal(description.layout.type, 'unknown');
+    assert.equal(description.layout.raw, config.layout);
+    assert.deepEqual(used.components, ['current-panel', 'layout-shell']);
   });
 });
 

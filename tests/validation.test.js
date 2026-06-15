@@ -91,6 +91,24 @@ describe('checkDesignGuardrails', () => {
     assert.ok(result.issues.some((i) => i.check === 'layout-depth'));
   });
 
+  it('ignores unsupported children layout branches', () => {
+    let result = checkDesignGuardrails({
+      version: '0.2.0',
+      name: 'Unsupported Layout Shape',
+      register: 'presentation',
+      layout: {
+        type: 'group',
+        ratio: [0.01, 0.99],
+        children: Array.from({ length: 8 }, (_, index) => ({
+          type: 'panel',
+          panelType: `p${index}`,
+        })),
+      },
+    });
+    assert.ok(!result.issues.some((i) => i.check === 'register-density'));
+    assert.ok(!result.issues.some((i) => i.check === 'layout-depth'));
+  });
+
   it('reports info on missing theme params', () => {
     let result = checkDesignGuardrails({
       version: '0.2.0',

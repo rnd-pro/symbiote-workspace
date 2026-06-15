@@ -120,6 +120,25 @@ describe('validateWorkspaceConfig', () => {
     assert.equal(result.valid, true);
   });
 
+  it('rejects split layout children without BSP first and second nodes', () => {
+    let result = validateWorkspaceConfig({
+      version: '0.2.0',
+      name: 'Children Layout',
+      layout: {
+        type: 'split',
+        direction: 'horizontal',
+        ratio: 0.5,
+        children: [
+          { type: 'panel', panelType: 'a' },
+          { type: 'panel', panelType: 'b' },
+        ],
+      },
+    });
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some((error) => error.path === 'layout.first'));
+    assert.ok(result.errors.some((error) => error.path === 'layout.second'));
+  });
+
   it('rejects unknown keys in strict mode', () => {
     let result = validateWorkspaceConfig({
       version: '0.1.0',

@@ -28,7 +28,6 @@ function isObject(value) {
 
 function collectComponentTags(layout, tags = new Set()) {
   if (!isObject(layout)) return tags;
-  // BSP format: panelType in panels, recurse into first/second
   if (layout.component) tags.add(layout.component);
   if (layout.type === 'panel' && layout.panelType) {
     // Tag will be resolved from panelTypes later
@@ -36,12 +35,6 @@ function collectComponentTags(layout, tags = new Set()) {
   if (layout.type === 'split') {
     if (layout.first) collectComponentTags(layout.first, tags);
     if (layout.second) collectComponentTags(layout.second, tags);
-  }
-  // Legacy children[] format
-  if (Array.isArray(layout.children)) {
-    for (let child of layout.children) {
-      collectComponentTags(child, tags);
-    }
   }
   return tags;
 }

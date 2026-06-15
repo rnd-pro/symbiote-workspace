@@ -74,26 +74,9 @@ function describeLayout(node, depth = 0) {
       depth,
       behavior: node.behavior || null,
     };
-    // BSP format
-    if (node.first || node.second) {
-      result.first = describeLayout(node.first, depth + 1);
-      result.second = describeLayout(node.second, depth + 1);
-    }
-    // Legacy children[] fallback
-    if (Array.isArray(node.children)) {
-      result.children = node.children.map((child) => describeLayout(child, depth + 1));
-    }
+    result.first = describeLayout(node.first, depth + 1);
+    result.second = describeLayout(node.second, depth + 1);
     return result;
-  }
-
-  // Legacy 'single' type fallback
-  if (node.type === 'single') {
-    return {
-      type: 'panel',
-      component: node.component,
-      panelType: node.panelType || null,
-      depth,
-    };
   }
 
   return { type: 'unknown', raw: node };
@@ -135,14 +118,6 @@ export function listUsedComponents(config) {
 function collectLayoutComponents(node, components) {
   if (!node) return;
   if (node.component) components.add(node.component);
-  // BSP format
   if (node.first) collectLayoutComponents(node.first, components);
   if (node.second) collectLayoutComponents(node.second, components);
-  // Legacy children[]
-  if (Array.isArray(node.children)) {
-    for (let child of node.children) {
-      collectLayoutComponents(child, components);
-    }
-  }
 }
-
