@@ -7,6 +7,7 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import { TOOLS } from '../runtime/index.js';
 
 let exec = promisify(execFile);
 let ROOT = resolve(import.meta.dirname, '..');
@@ -570,9 +571,22 @@ describe('packed package consumer', () => {
       ]);
       let toolList = responses.find((response) => response.id === 2);
       assert.ok(toolList);
+      assert.equal(toolList.result.tools.length, TOOLS.length);
+      let expectedTools = new Map(TOOLS.map((tool) => [tool.name, tool]));
       let toolNames = new Set(toolList.result.tools.map((tool) => tool.name));
-      assert.equal(toolNames.has('construct_workspace'), true);
-      assert.equal(toolNames.has('export_workspace'), true);
+      assert.deepEqual([...toolNames].sort(), [...expectedTools.keys()].sort());
+      for (let tool of toolList.result.tools) {
+        let expected = expectedTools.get(tool.name);
+        assert.equal(tool.description, expected.description, `${tool.name} description mismatch`);
+        assert.deepEqual(tool.inputSchema, expected.inputSchema, `${tool.name} inputSchema mismatch`);
+        assert.equal(tool.mutates, undefined, `Tool ${tool.name} leaked 'mutates' field`);
+        assert.equal(tool.writesFiles, undefined, `Tool ${tool.name} leaked 'writesFiles' field`);
+        assert.equal(
+          tool.annotations?.readOnlyHint,
+          expected.mutates !== true && expected.writesFiles !== true,
+          `Tool ${tool.name} readOnlyHint mismatch`,
+        );
+      }
 
       // Workspace package: public export availability from sharing + root entry points
       await runNode(consumerDir, `

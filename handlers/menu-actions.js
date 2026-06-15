@@ -37,6 +37,10 @@ export function addMenuAction(config, panelType, action) {
     ...(action.group ? { group: action.group } : {}),
     ...(action.groupLabel ? { groupLabel: action.groupLabel } : {}),
     ...(action.active !== undefined ? { active: action.active } : {}),
+    ...(action.command ? { command: action.command } : {}),
+    ...(action.event ? { event: action.event } : {}),
+    ...(action.method ? { method: action.method } : {}),
+    ...(action.binding ? { binding: action.binding } : {}),
   });
 
   return {

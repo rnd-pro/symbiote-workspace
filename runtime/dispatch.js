@@ -506,6 +506,8 @@ export const TOOLS = [
         label: { type: 'string' }, icon: { type: 'string' },
         group: { type: 'string' }, groupLabel: { type: 'string' },
         active: { type: 'boolean' },
+        command: { type: 'string' }, event: { type: 'string' },
+        method: { type: 'string' }, binding: { type: 'string' },
       },
       required: ['panelType', 'id', 'label'],
     },
@@ -1618,6 +1620,8 @@ export async function dispatch(toolName, args, session) {
       return applyMutation(session, h.addMenuAction(config, args.panelType, {
         id: args.id, label: args.label, icon: args.icon,
         group: args.group, groupLabel: args.groupLabel, active: args.active,
+        command: args.command, event: args.event,
+        method: args.method, binding: args.binding,
       }));
 
     case 'remove_menu_action':

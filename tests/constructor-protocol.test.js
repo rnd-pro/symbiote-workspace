@@ -171,6 +171,12 @@ describe('planWorkspaceConstruction', () => {
         provider: '@acme/workspace-pack',
         capabilities: ['analysis.sentiment', 'review.queue'],
         actions: [{ id: 'refresh', label: 'Refresh', command: 'sentiment.refresh' }],
+        toolbarItems: [{ id: 'filter', label: 'Filter', command: 'sentiment.filter' }],
+        menus: [{
+          id: 'review',
+          label: 'Review',
+          items: [{ id: 'assign', label: 'Assign', command: 'sentiment.assign' }],
+        }],
         bindings: [{ id: 'items', direction: 'input', path: 'data.sentiment' }],
         requiredHostServices: ['storage.project'],
         placement: {
@@ -186,6 +192,11 @@ describe('planWorkspaceConstruction', () => {
     assert.equal(result.config.panelTypes.sentiment.component, 'acme-sentiment-panel');
     assert.equal(result.config.panelTypes.sentiment.title, 'Sentiment');
     assert.deepEqual(result.config.panelTypes.sentiment.behavior, { importance: 72, minInlineSize: 260 });
+    assert.deepEqual(result.config.panelTypes.sentiment.menuActions, [
+      { id: 'refresh', label: 'Refresh', command: 'sentiment.refresh' },
+      { id: 'filter', label: 'Filter', group: 'toolbar', groupLabel: 'Toolbar', command: 'sentiment.filter' },
+      { id: 'assign', label: 'Assign', group: 'review', groupLabel: 'Review', command: 'sentiment.assign' },
+    ]);
     assert.ok(result.config.components.catalog.includes('acme-sentiment-panel'));
     assert.ok(result.config.components.modules.some((item) => item.tagName === 'acme-sentiment-panel'));
     assert.ok(layoutReferencesPanel(result.config.layout, 'sentiment'));
@@ -197,6 +208,91 @@ describe('planWorkspaceConstruction', () => {
 
     let validation = validateWorkspaceConfig(result.config, { strict: true });
     assert.equal(validation.valid, true, JSON.stringify(validation.errors));
+  });
+
+  it('preserves existing panel menu actions when module descriptors add shell actions', () => {
+    let result = planWorkspaceConstruction({
+      brief: 'Build a custom review shell',
+      template: 'review-shell',
+    }, {
+      workspaceTemplates: [{
+        name: 'review-shell',
+        config: {
+          version: '0.3.0',
+          name: 'Review Shell',
+          register: 'tool',
+          panelTypes: {
+            review: {
+              title: 'Review',
+              component: 'acme-review-panel',
+              menuActions: [{ id: 'existing', label: 'Existing', command: 'review.existing' }],
+            },
+          },
+          layout: { type: 'panel', panelType: 'review' },
+        },
+      }],
+      moduleCapabilities: [{
+        tagName: 'acme-review-panel',
+        capabilities: ['review.queue'],
+        actions: [{ id: 'refresh', label: 'Refresh', command: 'review.refresh' }],
+      }],
+    });
+
+    assert.deepEqual(result.config.panelTypes.review.menuActions, [
+      { id: 'existing', label: 'Existing', command: 'review.existing' },
+    ]);
+  });
+
+  it('materializes descriptor menu actions only onto selected existing panels', () => {
+    let result = planWorkspaceConstruction({
+      brief: 'Build a focused review shell',
+      template: 'review-shell',
+      requiredCapabilities: ['review.queue'],
+    }, {
+      workspaceTemplates: [{
+        name: 'review-shell',
+        config: {
+          version: '0.3.0',
+          name: 'Review Shell',
+          register: 'tool',
+          panelTypes: {
+            review: {
+              title: 'Review',
+              component: 'acme-review-panel',
+            },
+            archive: {
+              title: 'Archive',
+              component: 'acme-archive-panel',
+            },
+          },
+          layout: {
+            type: 'split',
+            direction: 'horizontal',
+            first: { type: 'panel', panelType: 'review' },
+            second: { type: 'panel', panelType: 'archive' },
+          },
+        },
+      }],
+      moduleCapabilities: [
+        {
+          tagName: 'acme-review-panel',
+          capabilities: ['review.queue'],
+          actions: [{ id: 'refresh', label: 'Refresh', command: 'review.refresh' }],
+        },
+        {
+          tagName: 'acme-archive-panel',
+          capabilities: ['archive.search'],
+          actions: [{ id: 'search', label: 'Search', command: 'archive.search' }],
+        },
+      ],
+    });
+
+    assert.deepEqual(result.plan.answers.moduleSelection, ['review']);
+    assert.deepEqual(result.config.panelTypes.review.menuActions, [
+      { id: 'refresh', label: 'Refresh', command: 'review.refresh' },
+    ]);
+    assert.equal(result.config.panelTypes.archive.menuActions, undefined);
+    assert.equal(layoutReferencesPanel(result.config.layout, 'archive'), false);
   });
 
   it('places modules by required capability coverage when no explicit answer is provided', () => {

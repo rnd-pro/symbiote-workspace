@@ -936,6 +936,42 @@ function panelTypeForComponent(config, tagName) {
   return null;
 }
 
+function menuActionFromModuleAction(action, defaults = {}) {
+  return {
+    id: action.id,
+    label: action.label,
+    ...(action.icon ? { icon: action.icon } : {}),
+    ...(defaults.group ? { group: defaults.group } : {}),
+    ...(defaults.groupLabel ? { groupLabel: defaults.groupLabel } : {}),
+    ...(action.command ? { command: action.command } : {}),
+    ...(action.event ? { event: action.event } : {}),
+    ...(action.method ? { method: action.method } : {}),
+    ...(action.binding ? { binding: action.binding } : {}),
+  };
+}
+
+function descriptorMenuActions(descriptor) {
+  let actions = [];
+  let seen = new Set();
+  let addAction = (action, defaults = {}) => {
+    if (!isObject(action) || seen.has(action.id)) return;
+    seen.add(action.id);
+    actions.push(menuActionFromModuleAction(action, defaults));
+  };
+
+  for (let action of descriptor.actions || []) addAction(action);
+  for (let action of descriptor.toolbarItems || []) {
+    addAction(action, { group: 'toolbar', groupLabel: 'Toolbar' });
+  }
+  for (let menu of descriptor.menus || []) {
+    if (!isObject(menu)) continue;
+    for (let action of menu.items || []) {
+      addAction(action, { group: menu.id, groupLabel: menu.label });
+    }
+  }
+  return actions;
+}
+
 function materializeDescriptorPanelTypes(config, descriptors) {
   if (!descriptors.length) return;
   config.panelTypes ||= {};
@@ -962,7 +998,23 @@ function materializeDescriptorPanelTypes(config, descriptors) {
       panel.behavior = deepClone(placement.behavior);
     }
 
+    let menuActions = descriptorMenuActions(descriptor);
+    if (menuActions.length) panel.menuActions = menuActions;
+
     config.panelTypes[panelType] = panel;
+  }
+}
+
+function materializeSelectedDescriptorPanelMenuActions(config, selectedModules) {
+  let descriptors = moduleDescriptorMap(config);
+  let selected = new Set(selectedModules);
+  for (let [panelType, panel] of Object.entries(config.panelTypes || {})) {
+    if (!selected.has(panelType)) continue;
+    if (!panel?.component || panel.menuActions !== undefined) continue;
+    let descriptor = descriptors.get(panel.component);
+    if (!descriptor) continue;
+    let menuActions = descriptorMenuActions(descriptor);
+    if (menuActions.length) panel.menuActions = menuActions;
   }
 }
 
@@ -1653,6 +1705,7 @@ export function planWorkspaceConstruction(intent, options = {}) {
   let hue = mode === 'custom' ? (answers.get('theme-hue') ?? defaults.hue) : defaults.hue;
   let verificationScope = answers.get('verification-scope') || [];
   materializeSelectedModuleLayout(config, modules);
+  materializeSelectedDescriptorPanelMenuActions(config, modules);
   let plannedModules = modulePlan(
     config,
     modules,

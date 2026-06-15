@@ -173,11 +173,19 @@ describe('dispatch', () => {
     await dispatch('scaffold_from_scratch', {}, session);
     await dispatch('register_panel_type', { name: 'vp', title: 'VP', component: 'c' }, session);
 
-    let r1 = await dispatch('add_menu_action', { panelType: 'vp', id: 'a1', label: 'Act 1' }, session);
+    let r1 = await dispatch('add_menu_action', {
+      panelType: 'vp',
+      id: 'a1',
+      label: 'Act 1',
+      command: 'viewport.action',
+      event: 'viewport-action',
+    }, session);
     assert.equal(r1.status, 'ok');
 
     let r2 = await dispatch('list_menu_actions', { panelType: 'vp' }, session);
     assert.equal(r2.count, 1);
+    assert.equal(r2.actions[0].command, 'viewport.action');
+    assert.equal(r2.actions[0].event, 'viewport-action');
 
     let r3 = await dispatch('toggle_menu_action', { panelType: 'vp', actionId: 'a1', active: true }, session);
     assert.equal(r3.status, 'ok');

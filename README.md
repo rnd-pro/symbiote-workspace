@@ -474,6 +474,11 @@ placement title, icon, and behavior into the generated panel type, and selected
 generated panels are added to the root BSP layout when they are not present in
 any existing layout.
 
+Generated panel types also receive shell `menuActions` from descriptor
+`actions`, `toolbarItems`, and `menus[].items`. Existing panel type menu
+actions are preserved, so templates can keep authored shell commands while
+external descriptors still expose executable actions when they create panels.
+
 The constructor copies matching descriptor capabilities, actions, settings,
 events, bindings, runtime slots, placement hints, and required host service IDs
 into `config.construction.plan.modules`. Selected modules also expose

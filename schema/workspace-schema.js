@@ -123,6 +123,10 @@ const MENU_ACTION_SCHEMA = Object.freeze({
     group: { type: 'string', description: 'Grouping key for action submenu.' },
     groupLabel: { type: 'string', description: 'Label for the action group.' },
     active: { type: 'boolean', default: false, description: 'Whether the action is currently active/checked.' },
+    command: { type: 'string', description: 'Portable command identifier handled by the host or module.' },
+    event: { type: 'string', description: 'DOM event emitted when the action is invoked.' },
+    method: { type: 'string', description: 'Component method to call when invoked.' },
+    binding: { type: 'string', description: 'Data binding identifier affected by the action.' },
   },
 });
 
@@ -531,6 +535,10 @@ export const WORKSPACE_CONFIG_SCHEMA = Object.freeze({
  * @property {string} [group]
  * @property {string} [groupLabel]
  * @property {boolean} [active]
+ * @property {string} [command]
+ * @property {string} [event]
+ * @property {string} [method]
+ * @property {string} [binding]
  */
 
 /**
