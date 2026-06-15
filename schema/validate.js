@@ -658,14 +658,15 @@ function validateData(data, errors) {
 }
 
 function validateEngine(engine, errors) {
+  let graphIndex = null;
   if (engine.packs !== undefined) {
     validateEnginePacks(engine.packs, errors);
   }
   if (engine.graphs !== undefined) {
-    validateEngineGraphs(engine.graphs, errors);
+    graphIndex = validateEngineGraphs(engine.graphs, errors);
   }
   if (engine.bindings !== undefined) {
-    validateEngineBindings(engine.bindings, errors);
+    validateEngineBindings(engine.bindings, errors, graphIndex);
   }
 }
 
@@ -690,9 +691,10 @@ function validateEnginePacks(packs, errors) {
 function validateEngineGraphs(graphs, errors) {
   if (!Array.isArray(graphs)) {
     errors.push({ path: 'engine.graphs', message: 'engine.graphs must be an array.', severity: 'error' });
-    return;
+    return null;
   }
   let ids = new Set();
+  let graphIndex = new Map();
   for (let i = 0; i < graphs.length; i++) {
     let graph = graphs[i];
     let path = `engine.graphs[${i}]`;
@@ -705,6 +707,13 @@ function validateEngineGraphs(graphs, errors) {
       errors.push({ path: `${path}.id`, message: `Duplicate engine graph ID: "${graph.id}".`, severity: 'error' });
     }
     if (graph.id) ids.add(graph.id);
+    if (typeof graph.id === 'string' && PORTABLE_ID_PATTERN.test(graph.id) && !graphIndex.has(graph.id)) {
+      graphIndex.set(graph.id, {
+        nodeIds: Array.isArray(graph.nodes)
+          ? new Set(graph.nodes.filter((node) => isObject(node) && typeof node.id === 'string').map((node) => node.id))
+          : null,
+      });
+    }
     if (graph.name !== undefined && (typeof graph.name !== 'string' || !graph.name.trim())) {
       errors.push({ path: `${path}.name`, message: 'Engine graph name must be a non-empty string.', severity: 'error' });
     }
@@ -717,6 +726,7 @@ function validateEngineGraphs(graphs, errors) {
     if (graph.nodes !== undefined) validateEngineGraphNodes(graph.nodes, `${path}.nodes`, errors);
     if (graph.connections !== undefined) validateEngineGraphConnections(graph.connections, `${path}.connections`, errors);
   }
+  return graphIndex;
 }
 
 function validateEngineGraphNodes(nodes, path, errors) {
@@ -775,7 +785,7 @@ function validateEngineGraphConnections(connections, path, errors) {
   }
 }
 
-function validateEngineBindings(bindings, errors) {
+function validateEngineBindings(bindings, errors, graphIndex = null) {
   if (!Array.isArray(bindings)) {
     errors.push({ path: 'engine.bindings', message: 'engine.bindings must be an array.', severity: 'error' });
     return;
@@ -806,6 +816,17 @@ function validateEngineBindings(bindings, errors) {
       errors.push({ path: `${path}.id`, message: `Duplicate engine binding ID: "${binding.id}".`, severity: 'error' });
     }
     if (binding.id) ids.add(binding.id);
+    validateEngineBindingGraphReference(binding, path, graphIndex, errors);
+  }
+}
+
+function validateEngineBindingGraphReference(binding, path, graphIndex, errors) {
+  if (!graphIndex || graphIndex.size === 0 || typeof binding.graphId !== 'string') return;
+  let graph = graphIndex.get(binding.graphId);
+  if (!graph) return;
+  if (!graph.nodeIds || typeof binding.nodeId !== 'string') return;
+  if (!graph.nodeIds.has(binding.nodeId)) {
+    errors.push({ path: `${path}.nodeId`, message: `Engine binding references undeclared node "${binding.nodeId}" in graph "${binding.graphId}".`, severity: 'error' });
   }
 }
 

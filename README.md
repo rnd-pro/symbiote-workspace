@@ -506,8 +506,11 @@ portable `engine` metadata with `graphId`, `nodeId`, and optional
 `input`/`output`/`param`/`pack`. The constructor materializes those references
 into `config.engine.bindings[]` and aggregates pack identifiers into
 `config.engine.packs[]`; authored `config.engine.graphs[]` records stay plain
-serializable graph JSON. This layer describes host/engine handoff metadata only
-and does not import or execute `symbiote-engine`.
+serializable graph JSON. When a binding targets a graph authored in the
+workspace, validation checks the referenced node ID when that graph lists nodes.
+Bindings to undeclared graph IDs remain portable host handoff references that a
+host/runtime may resolve externally. This layer describes host/engine handoff
+metadata only and does not import or execute `symbiote-engine`.
 
 Selected descriptor settings are materialized into `panelTypes.*.settings` when
 the selected panel type does not already define settings. Each setting carries a

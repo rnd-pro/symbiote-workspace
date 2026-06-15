@@ -47,7 +47,9 @@ All notable changes to this project will be documented in this file.
   validate portable `engine.packs[]`, `engine.graphs[]`, and
   `engine.bindings[]`; selected descriptor actions, settings, events, and
   bindings can materialize engine binding metadata without importing or
-  executing `symbiote-engine`.
+  executing `symbiote-engine`. Validation now checks binding node IDs when
+  they target authored graph JSON, while preserving external host-provided
+  graph references.
 - **Module setting materialization** — generated constructor panel types and
   selected existing panel types now expose descriptor settings through
   `panelTypes.*.settings` while preserving authored panel settings.

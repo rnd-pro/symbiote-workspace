@@ -249,6 +249,57 @@ describe('validateWorkspaceConfig', () => {
     assert.equal(result.errors.length, 0);
   });
 
+  it('accepts engine bindings for external host-provided graphs', () => {
+    let result = validateWorkspaceConfig({
+      version: '0.2.0',
+      name: 'External Engine Workspace',
+      engine: {
+        graphs: [{
+          id: 'main',
+          nodes: [{ id: 'sentiment', type: 'analysis/sentiment' }],
+        }],
+        bindings: [{
+          id: 'review-action-analyze',
+          panelType: 'review',
+          component: 'acme-review-panel',
+          surface: 'action',
+          sourceId: 'analyze',
+          graphId: 'host-main',
+          nodeId: 'sentiment',
+          input: 'items',
+        }],
+      },
+    }, { strict: true });
+
+    assert.equal(result.valid, true, JSON.stringify(result.errors));
+    assert.equal(result.errors.length, 0);
+  });
+
+  it('rejects engine bindings that miss declared graph nodes', () => {
+    let result = validateWorkspaceConfig({
+      version: '0.2.0',
+      name: 'Broken Engine References',
+      engine: {
+        graphs: [{
+          id: 'main',
+          nodes: [{ id: 'sentiment', type: 'analysis/sentiment' }],
+        }],
+        bindings: [{
+          id: 'review-action-analyze',
+          panelType: 'review',
+          component: 'acme-review-panel',
+          surface: 'action',
+          sourceId: 'analyze',
+          graphId: 'main',
+          nodeId: 'missing',
+        }],
+      },
+    }, { strict: true });
+
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some((error) => error.path === 'engine.bindings[0].nodeId'));
+  });
+
   it('rejects invalid engine packs, graphs, and bindings', () => {
     let result = validateWorkspaceConfig({
       version: '0.2.0',
