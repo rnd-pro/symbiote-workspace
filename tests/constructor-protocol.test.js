@@ -399,6 +399,7 @@ describe('planWorkspaceConstruction', () => {
           capabilities: ['review.queue'],
           events: { emits: [{ name: 'row-select', engine: { graphId: 'review-flow', nodeId: 'select-row', output: 'row' } }, { name: 'existing-select' }] },
           settings: [{ id: 'density', label: 'Density', type: 'enum', engine: { graphId: 'review-flow', nodeId: 'density', param: 'mode' } }],
+          state: [{ id: 'selection', type: 'object', default: null, engine: { graphId: 'review-flow', nodeId: 'selection', input: 'value' } }],
           bindings: [{ id: 'rows', direction: 'input', path: 'data.rows', engine: { graphId: 'review-flow', nodeId: 'normalize', input: 'rows', pack: 'review-pack' } }],
         },
         {
@@ -406,6 +407,7 @@ describe('planWorkspaceConstruction', () => {
           capabilities: ['review.detail'],
           events: { consumes: [{ name: 'row-select' }, { name: 'existing-select' }] },
           settings: [{ id: 'selection-mode', label: 'Selection mode', type: 'string' }],
+          state: [{ id: 'expanded', type: 'boolean', default: true, path: 'state.detail.expanded', persistence: 'workspace' }],
           bindings: [{ id: 'selection', direction: 'input', path: 'data.selection', engine: { graphId: 'review-flow', nodeId: 'summarize', input: 'selection', pack: 'detail-pack' } }],
         },
         {
@@ -413,6 +415,7 @@ describe('planWorkspaceConstruction', () => {
           capabilities: ['archive.search'],
           events: { emits: [{ name: 'archive-select', engine: { graphId: 'archive-flow', nodeId: 'archive-select' } }], consumes: [{ name: 'row-select' }] },
           settings: [{ id: 'archive-filter', label: 'Archive filter', type: 'string' }],
+          state: [{ id: 'archive-selection', type: 'object', engine: { graphId: 'archive-flow', nodeId: 'archive-state' } }],
           bindings: [{ id: 'archived-selection', direction: 'input', path: 'data.archiveSelection', engine: { graphId: 'archive-flow', nodeId: 'archive-selection', pack: 'archive-pack' } }],
         },
       ],
@@ -454,6 +457,25 @@ describe('planWorkspaceConstruction', () => {
         path: 'data.selection',
       },
     ]);
+    assert.deepEqual(result.config.state.fields, [
+      {
+        panelType: 'review',
+        component: 'acme-review-panel',
+        id: 'selection',
+        type: 'object',
+        path: 'state.review.selection',
+        default: null,
+      },
+      {
+        panelType: 'detail',
+        component: 'acme-detail-panel',
+        id: 'expanded',
+        type: 'boolean',
+        path: 'state.detail.expanded',
+        default: true,
+        persistence: 'workspace',
+      },
+    ]);
     assert.deepEqual(result.config.panelTypes.review.settings, [
       { id: 'authored', label: 'Authored', type: 'boolean' },
     ]);
@@ -474,6 +496,16 @@ describe('planWorkspaceConstruction', () => {
           graphId: 'review-flow',
           nodeId: 'density',
           param: 'mode',
+        },
+        {
+          id: 'review-state-selection',
+          panelType: 'review',
+          component: 'acme-review-panel',
+          surface: 'state',
+          sourceId: 'selection',
+          graphId: 'review-flow',
+          nodeId: 'selection',
+          input: 'value',
         },
         {
           id: 'review-event-row-select',

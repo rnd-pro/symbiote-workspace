@@ -52,6 +52,23 @@ const MODULE_SETTING_SCHEMA = Object.freeze({
   },
 });
 
+const MODULE_STATE_FIELD_SCHEMA = Object.freeze({
+  type: 'object',
+  required: ['id', 'type'],
+  properties: {
+    id: stringProperty('Portable state field identifier.'),
+    type: {
+      type: 'string',
+      enum: ['string', 'number', 'boolean', 'enum', 'object', 'array', 'color', 'token', 'json'],
+    },
+    default: {},
+    path: stringProperty('Portable workspace state path.'),
+    schema: { type: 'object' },
+    persistence: { type: 'string', enum: ['session', 'workspace', 'ephemeral'] },
+    engine: MODULE_ENGINE_REFERENCE_SCHEMA,
+  },
+});
+
 const MODULE_EVENT_SCHEMA = Object.freeze({
   type: 'object',
   required: ['name'],
@@ -135,6 +152,7 @@ export const MODULE_CAPABILITY_DESCRIPTOR_SCHEMA = Object.freeze({
     },
     toolbarItems: { type: 'array', items: MODULE_ACTION_SCHEMA },
     settings: { type: 'array', items: MODULE_SETTING_SCHEMA },
+    state: { type: 'array', items: MODULE_STATE_FIELD_SCHEMA },
     events: {
       type: 'object',
       properties: {
@@ -248,6 +266,46 @@ function validateSettings(value, path, errors, options) {
   }
 }
 
+function validateStateFields(value, path, errors, options) {
+  if (!Array.isArray(value)) {
+    pushError(errors, path, `${path} must be an array.`, options);
+    return;
+  }
+  let types = new Set(MODULE_STATE_FIELD_SCHEMA.properties.type.enum);
+  let ids = new Set();
+  for (let i = 0; i < value.length; i++) {
+    let field = value[i];
+    let itemPath = `${path}[${i}]`;
+    if (!isObject(field)) {
+      pushError(errors, itemPath, 'State field entry must be an object.', options);
+      continue;
+    }
+    validatePortableId(field.id, `${itemPath}.id`, errors, options);
+    if (field.id && ids.has(field.id)) {
+      pushError(errors, `${itemPath}.id`, `Duplicate state field ID "${field.id}".`, options);
+    }
+    if (field.id) ids.add(field.id);
+    if (!types.has(field.type)) {
+      pushError(errors, `${itemPath}.type`, `Invalid state field type "${field.type}".`, options);
+    }
+    if (field.path !== undefined && (typeof field.path !== 'string' || !field.path.trim())) {
+      pushError(errors, `${itemPath}.path`, 'State field path must be a non-empty string.', options);
+    }
+    if (field.schema !== undefined && !isObject(field.schema)) {
+      pushError(errors, `${itemPath}.schema`, 'State field schema must be an object.', options);
+    }
+    if (Object.prototype.hasOwnProperty.call(field, 'default') && !isJsonSerializable(field.default)) {
+      pushError(errors, `${itemPath}.default`, 'State field default must be JSON-serializable.', options);
+    }
+    if (field.persistence !== undefined && !MODULE_STATE_FIELD_SCHEMA.properties.persistence.enum.includes(field.persistence)) {
+      pushError(errors, `${itemPath}.persistence`, 'State field persistence must be session, workspace, or ephemeral.', options);
+    }
+    if (field.engine !== undefined) {
+      validateEngineReference(field.engine, `${itemPath}.engine`, errors, options);
+    }
+  }
+}
+
 function validateEvents(value, path, errors, options) {
   if (!isObject(value)) {
     pushError(errors, path, `${path} must be an object.`, options);
@@ -297,6 +355,30 @@ function validateBindings(value, path, errors, options) {
       validateEngineReference(binding.engine, `${itemPath}.engine`, errors, options);
     }
   }
+}
+
+function isJsonSerializable(value, seen = new Set()) {
+  if (value === null) return true;
+  if (typeof value === 'string' || typeof value === 'boolean') return true;
+  if (typeof value === 'number') return Number.isFinite(value);
+  if (value === undefined || typeof value === 'function' || typeof value === 'symbol' || typeof value === 'bigint') {
+    return false;
+  }
+  if (Array.isArray(value)) {
+    if (seen.has(value)) return false;
+    seen.add(value);
+    let valid = value.every((item) => isJsonSerializable(item, seen));
+    seen.delete(value);
+    return valid;
+  }
+  if (!isObject(value) || Object.getPrototypeOf(value) !== Object.prototype) {
+    return false;
+  }
+  if (seen.has(value)) return false;
+  seen.add(value);
+  let valid = Object.values(value).every((item) => isJsonSerializable(item, seen));
+  seen.delete(value);
+  return valid;
 }
 
 function validateEngineReference(value, path, errors, options) {
@@ -412,6 +494,7 @@ export function validateModuleCapabilityDescriptor(descriptor, path, errors, opt
     }
   }
   if (descriptor.settings !== undefined) validateSettings(descriptor.settings, `${path}.settings`, errors, options);
+  if (descriptor.state !== undefined) validateStateFields(descriptor.state, `${path}.state`, errors, options);
   if (descriptor.events !== undefined) validateEvents(descriptor.events, `${path}.events`, errors, options);
   if (descriptor.bindings !== undefined) validateBindings(descriptor.bindings, `${path}.bindings`, errors, options);
   if (descriptor.slots !== undefined) validateSlots(descriptor.slots, `${path}.slots`, errors, options);

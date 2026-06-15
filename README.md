@@ -488,10 +488,10 @@ external descriptors still expose executable declarations when they create
 panels.
 
 The constructor copies matching descriptor capabilities, actions, settings,
-events, bindings, runtime slots, placement hints, and required host service IDs
-into `config.construction.plan.modules`. Selected modules also expose
-`matchedCapabilities` and `selectionReason`; aggregate coverage is stored in
-`config.construction.plan.capabilities`.
+state fields, events, bindings, runtime slots, placement hints, and required
+host service IDs into `config.construction.plan.modules`. Selected modules
+also expose `matchedCapabilities` and `selectionReason`; aggregate coverage is
+stored in `config.construction.plan.capabilities`.
 `validation.reports` and `patches` can persist machine-readable review results
 from patch validation.
 
@@ -501,7 +501,13 @@ optional `path`/`schema`; `direction` must be `input`, `output`, or `two-way`.
 This is a portable declaration for host/runtime handoff, not an embedded server
 endpoint or execution engine.
 
-Selected descriptor actions, settings, events, and bindings may also carry
+Selected descriptor state declarations are materialized into
+`config.state.fields`. Each state field record carries `panelType`, `component`,
+`id`, `type`, a portable `path`, and optional `default`, `schema`, and
+`persistence`. This is a portable field contract and default declaration; live
+component/session values stay outside workspace configs.
+
+Selected descriptor actions, settings, state fields, events, and bindings may also carry
 portable `engine` metadata with `graphId`, `nodeId`, and optional
 `input`/`output`/`param`/`pack`. The constructor materializes those references
 into `config.engine.bindings[]` and aggregates pack identifiers into
@@ -716,8 +722,8 @@ console.log(template.config); // Full workspace config
 
 Canonical templates include module capability descriptors in
 `config.components.modules`, so construction plans can map selected panels to
-portable capabilities, actions, bindings, runtime slots, placement hints, and
-required host services.
+portable capabilities, actions, state fields, bindings, runtime slots, placement
+hints, and required host services.
 
 Constructor and dispatch APIs also accept external templates as plain data:
 

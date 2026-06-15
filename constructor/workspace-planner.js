@@ -1122,6 +1122,28 @@ function descriptorDataBindingRecords(source) {
     }));
 }
 
+function stateFieldKey(field) {
+  return [
+    field.panelType || '',
+    field.id || '',
+  ].join('\u0000');
+}
+
+function descriptorStateFieldRecords(source) {
+  return (source.descriptor.state || [])
+    .filter((field) => isObject(field))
+    .map((field) => ({
+      panelType: source.panelType,
+      component: source.panel.component,
+      id: field.id,
+      type: field.type,
+      path: field.path || `state.${source.panelType}.${field.id}`,
+      ...(Object.prototype.hasOwnProperty.call(field, 'default') ? { default: deepClone(field.default) } : {}),
+      ...(field.schema ? { schema: deepClone(field.schema) } : {}),
+      ...(field.persistence ? { persistence: field.persistence } : {}),
+    }));
+}
+
 function descriptorEngineBindingId(source, surface, sourceId) {
   return `${source.panelType}-${surface}-${sourceId}`;
 }
@@ -1172,6 +1194,12 @@ function descriptorEngineBindingRecords(source) {
       if (record) records.push(record);
     }
   }
+  for (let field of source.descriptor.state || []) {
+    if (isObject(field) && field.id) {
+      let record = descriptorEngineBindingRecord(source, 'state', field.id, field.engine);
+      if (record) records.push(record);
+    }
+  }
   for (let direction of ['emits', 'consumes']) {
     for (let event of source.descriptor.events?.[direction] || []) {
       if (isObject(event) && event.name) {
@@ -1210,6 +1238,29 @@ function materializeSelectedDescriptorDataBindings(config, selectedModules) {
     return true;
   });
   if (uniqueAdditions.length) config.data.bindings = [...existing, ...uniqueAdditions];
+}
+
+function materializeSelectedDescriptorStateFields(config, selectedModules) {
+  let selectedPanels = selectedDescriptorPanelEntries(config, selectedModules);
+  let additions = selectedPanels.flatMap(descriptorStateFieldRecords);
+  if (!additions.length) return;
+  if (config.state !== undefined && !isObject(config.state)) {
+    throw new Error('Workspace config state must be an object before module state fields can be materialized.');
+  }
+  config.state ||= {};
+  if (config.state.fields !== undefined && !Array.isArray(config.state.fields)) {
+    throw new Error('Workspace config state.fields must be an array before module state fields can be materialized.');
+  }
+
+  let existing = config.state.fields || [];
+  let existingKeys = new Set(existing.map(stateFieldKey));
+  let uniqueAdditions = additions.filter((field) => {
+    let key = stateFieldKey(field);
+    if (existingKeys.has(key)) return false;
+    existingKeys.add(key);
+    return true;
+  });
+  if (uniqueAdditions.length) config.state.fields = [...existing, ...uniqueAdditions];
 }
 
 function materializeSelectedDescriptorEngineBindings(config, selectedModules) {
@@ -1297,6 +1348,7 @@ function applyDescriptorPlanFields(target, descriptor) {
     'menus',
     'toolbarItems',
     'settings',
+    'state',
     'events',
     'bindings',
     'engine',
@@ -1933,6 +1985,7 @@ export function planWorkspaceConstruction(intent, options = {}) {
   materializeSelectedDescriptorPanelSettings(config, modules);
   materializeSelectedDescriptorEventBridges(config, modules);
   materializeSelectedDescriptorDataBindings(config, modules);
+  materializeSelectedDescriptorStateFields(config, modules);
   materializeSelectedDescriptorEngineBindings(config, modules);
   let plannedModules = modulePlan(
     config,

@@ -220,6 +220,90 @@ describe('validateWorkspaceConfig', () => {
     assert.ok(result.errors.some((error) => error.path === 'data'));
   });
 
+  it('accepts portable state fields', () => {
+    let result = validateWorkspaceConfig({
+      version: '0.2.0',
+      name: 'State Workspace',
+      state: {
+        fields: [{
+          panelType: 'review',
+          component: 'acme-review-panel',
+          id: 'selection',
+          type: 'object',
+          default: null,
+          path: 'state.review.selection',
+          schema: { type: 'object' },
+          persistence: 'session',
+        }],
+      },
+      engine: {
+        bindings: [{
+          id: 'review-state-selection',
+          panelType: 'review',
+          component: 'acme-review-panel',
+          surface: 'state',
+          sourceId: 'selection',
+          graphId: 'review-flow',
+          nodeId: 'selection',
+        }],
+      },
+    }, { strict: true });
+
+    assert.equal(result.valid, true, JSON.stringify(result.errors));
+    assert.equal(result.errors.length, 0);
+  });
+
+  it('rejects invalid and duplicate state fields', () => {
+    let result = validateWorkspaceConfig({
+      version: '0.2.0',
+      name: 'Broken State Workspace',
+      state: {
+        fields: [{
+          panelType: 'Review Panel',
+          component: 'ReviewPanel',
+          id: 'selection field',
+          type: 'record',
+          path: '/tmp/selection.json',
+          schema: 'object',
+          persistence: 'local',
+          default: 1n,
+        }, {
+          panelType: 'review',
+          component: 'acme-review-panel',
+          id: 'selection',
+          type: 'object',
+        }, {
+          panelType: 'review',
+          component: 'acme-review-panel',
+          id: 'selection',
+          type: 'object',
+        }],
+      },
+    }, { strict: true });
+
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some((error) => error.path === 'state.fields[0].panelType'));
+    assert.ok(result.errors.some((error) => error.path === 'state.fields[0].component'));
+    assert.ok(result.errors.some((error) => error.path === 'state.fields[0].id'));
+    assert.ok(result.errors.some((error) => error.path === 'state.fields[0].type'));
+    assert.ok(result.errors.some((error) => error.path === 'state.fields[0].path'));
+    assert.ok(result.errors.some((error) => error.path === 'state.fields[0].schema'));
+    assert.ok(result.errors.some((error) => error.path === 'state.fields[0].persistence'));
+    assert.ok(result.errors.some((error) => error.path === 'state.fields[0].default'));
+    assert.ok(result.errors.some((error) => error.path === 'state.fields[2].id'));
+  });
+
+  it('rejects non-array state fields', () => {
+    let result = validateWorkspaceConfig({
+      version: '0.2.0',
+      name: 'Non-array State Workspace',
+      state: { fields: { id: 'selection' } },
+    });
+
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some((error) => error.path === 'state.fields'));
+  });
+
   it('accepts portable engine packs, graphs, and bindings', () => {
     let result = validateWorkspaceConfig({
       version: '0.2.0',
@@ -431,6 +515,7 @@ describe('validateWorkspaceConfig', () => {
           menus: [{ id: 'row-menu', label: 'Row menu', items: [{ id: 'open', label: 'Open' }] }],
           toolbarItems: [{ id: 'filter', label: 'Filter', command: 'filter.open' }],
           settings: [{ id: 'page-size', label: 'Page size', type: 'number', default: 50 }],
+          state: [{ id: 'selection', type: 'object', default: null, path: 'state.selection', persistence: 'session', engine: { graphId: 'main', nodeId: 'selection', input: 'value' } }],
           events: { emits: [{ name: 'row-select', engine: { graphId: 'main', nodeId: 'select', output: 'row' } }], consumes: [{ name: 'data-update' }] },
           bindings: [{ id: 'rows', direction: 'input', path: 'data.rows', engine: { graphId: 'main', nodeId: 'rows', input: 'items' } }],
           slots: [{ id: 'empty-state', accepts: ['sn-empty-state'] }],
@@ -491,6 +576,7 @@ describe('validateWorkspaceConfig', () => {
           tagName: 'Data Table',
           capabilities: ['data table'],
           actions: [{ id: 'refresh', engine: { graphId: 'main graph', nodeId: 'refresh' } }],
+          state: [{ id: 'Selected State', type: 'record', default: NaN, schema: 'object', persistence: 'local', engine: { graphId: 'main', nodeId: '/tmp/state' } }],
           bindings: [{ id: 'rows', direction: 'input', engine: { graphId: 'main', nodeId: '/tmp/rows' } }],
           requiredHostServices: ['https://api.example.com'],
         }],
@@ -502,6 +588,12 @@ describe('validateWorkspaceConfig', () => {
     assert.ok(result.errors.some((error) => error.path === 'components.modules[0].capabilities[0]'));
     assert.ok(result.errors.some((error) => error.path === 'components.modules[0].actions[0].label'));
     assert.ok(result.errors.some((error) => error.path === 'components.modules[0].actions[0].engine.graphId'));
+    assert.ok(result.errors.some((error) => error.path === 'components.modules[0].state[0].id'));
+    assert.ok(result.errors.some((error) => error.path === 'components.modules[0].state[0].type'));
+    assert.ok(result.errors.some((error) => error.path === 'components.modules[0].state[0].default'));
+    assert.ok(result.errors.some((error) => error.path === 'components.modules[0].state[0].schema'));
+    assert.ok(result.errors.some((error) => error.path === 'components.modules[0].state[0].persistence'));
+    assert.ok(result.errors.some((error) => error.path === 'components.modules[0].state[0].engine.nodeId'));
     assert.ok(result.errors.some((error) => error.path === 'components.modules[0].bindings[0].engine.nodeId'));
     assert.ok(result.errors.some((error) => error.path === 'components.modules[0].requiredHostServices[0]'));
   });

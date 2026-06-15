@@ -11,7 +11,9 @@ import {
 import { validateModuleCapabilityDescriptor } from './module-capability.js';
 
 let PANEL_SETTING_TYPES = new Set(['string', 'number', 'boolean', 'enum', 'object', 'array', 'color', 'token', 'json']);
-let ENGINE_BINDING_SURFACES = new Set(['action', 'setting', 'event', 'binding']);
+let STATE_FIELD_TYPES = new Set(['string', 'number', 'boolean', 'enum', 'object', 'array', 'color', 'token', 'json']);
+let STATE_FIELD_PERSISTENCE = new Set(['session', 'workspace', 'ephemeral']);
+let ENGINE_BINDING_SURFACES = new Set(['action', 'setting', 'state', 'event', 'binding']);
 let ENGINE_NODE_CACHE_MODES = new Set(['auto', 'freeze', 'force']);
 
 /** @type {Set<string>} */
@@ -217,6 +219,14 @@ export function validateWorkspaceConfig(config, options = {}) {
     }
   }
 
+  if (config.state !== undefined) {
+    if (!isObject(config.state)) {
+      errors.push({ path: 'state', message: 'Field "state" must be an object.', severity: 'error' });
+    } else {
+      validateState(config.state, errors);
+    }
+  }
+
   if (config.engine !== undefined) {
     if (!isObject(config.engine)) {
       errors.push({ path: 'engine', message: 'Field "engine" must be an object.', severity: 'error' });
@@ -247,7 +257,7 @@ export function validateWorkspaceConfig(config, options = {}) {
     let knownKeys = new Set([
       'version', 'name', 'register', 'intent', 'construction', 'patches',
       'validation', 'runtime', 'exports', 'design', 'theme', 'layout', 'layouts',
-      'components', 'data', 'engine', 'groups', 'sections', 'panelTypes',
+      'components', 'data', 'state', 'engine', 'groups', 'sections', 'panelTypes',
       'events', 'rootBehavior',
     ]);
     for (let key of Object.keys(config)) {
@@ -657,6 +667,60 @@ function validateData(data, errors) {
   }
 }
 
+function validateState(state, errors) {
+  if (state.fields === undefined) return;
+  if (!Array.isArray(state.fields)) {
+    errors.push({ path: 'state.fields', message: 'state.fields must be an array.', severity: 'error' });
+    return;
+  }
+
+  let fieldKeys = new Set();
+  for (let i = 0; i < state.fields.length; i++) {
+    let field = state.fields[i];
+    let path = `state.fields[${i}]`;
+    if (!isObject(field)) {
+      errors.push({ path, message: 'State field entry must be an object.', severity: 'error' });
+      continue;
+    }
+
+    validatePortableIdField(field.panelType, `${path}.panelType`, 'State field requires a portable "panelType".', errors);
+    validateCustomElementField(field.component, `${path}.component`, errors);
+    validatePortableIdField(field.id, `${path}.id`, 'State field requires a portable "id".', errors);
+
+    if (typeof field.type !== 'string' || !STATE_FIELD_TYPES.has(field.type)) {
+      errors.push({ path: `${path}.type`, message: 'State field type must be string, number, boolean, enum, object, array, color, token, or json.', severity: 'error' });
+    }
+
+    if (field.path !== undefined) {
+      if (typeof field.path !== 'string' || !field.path.trim()) {
+        errors.push({ path: `${path}.path`, message: 'State field path must be a non-empty string.', severity: 'error' });
+      } else if (isNonPortableDataPath(field.path)) {
+        errors.push({ path: `${path}.path`, message: 'State field path must be a portable state path, not a URL or local filesystem path.', severity: 'error' });
+      }
+    }
+
+    if (field.schema !== undefined && !isObject(field.schema)) {
+      errors.push({ path: `${path}.schema`, message: 'State field schema must be an object.', severity: 'error' });
+    }
+
+    if (field.persistence !== undefined && !STATE_FIELD_PERSISTENCE.has(field.persistence)) {
+      errors.push({ path: `${path}.persistence`, message: 'State field persistence must be session, workspace, or ephemeral.', severity: 'error' });
+    }
+
+    if (field.default !== undefined && !isJsonSerializable(field.default)) {
+      errors.push({ path: `${path}.default`, message: 'State field default must be JSON-serializable.', severity: 'error' });
+    }
+
+    if (field.panelType && field.id) {
+      let key = `${field.panelType}:${field.id}`;
+      if (fieldKeys.has(key)) {
+        errors.push({ path: `${path}.id`, message: `Duplicate state field for panel/id: "${key}".`, severity: 'error' });
+      }
+      fieldKeys.add(key);
+    }
+  }
+}
+
 function validateEngine(engine, errors) {
   let graphIndex = null;
   if (engine.packs !== undefined) {
@@ -805,7 +869,7 @@ function validateEngineBindings(bindings, errors, graphIndex = null) {
     validatePortableIdField(binding.nodeId, `${path}.nodeId`, 'Engine binding requires a portable "nodeId".', errors);
     if (binding.component !== undefined) validateCustomElementField(binding.component, `${path}.component`, errors);
     if (typeof binding.surface !== 'string' || !ENGINE_BINDING_SURFACES.has(binding.surface)) {
-      errors.push({ path: `${path}.surface`, message: 'Engine binding surface must be action, setting, event, or binding.', severity: 'error' });
+      errors.push({ path: `${path}.surface`, message: 'Engine binding surface must be action, setting, state, event, or binding.', severity: 'error' });
     }
     for (let field of ['input', 'output', 'param', 'pack']) {
       if (binding[field] !== undefined) {
@@ -848,6 +912,30 @@ function validateCustomElementField(value, path, errors) {
   if (!CUSTOM_ELEMENT_PATTERN.test(value)) {
     errors.push({ path, message: `Component tag "${value}" must be a valid custom element name.`, severity: 'error' });
   }
+}
+
+function isJsonSerializable(value, seen = new Set()) {
+  if (value === null) return true;
+  if (typeof value === 'string' || typeof value === 'boolean') return true;
+  if (typeof value === 'number') return Number.isFinite(value);
+  if (value === undefined || typeof value === 'function' || typeof value === 'symbol' || typeof value === 'bigint') {
+    return false;
+  }
+  if (Array.isArray(value)) {
+    if (seen.has(value)) return false;
+    seen.add(value);
+    let valid = value.every((item) => isJsonSerializable(item, seen));
+    seen.delete(value);
+    return valid;
+  }
+  if (!isObject(value) || Object.getPrototypeOf(value) !== Object.prototype) {
+    return false;
+  }
+  if (seen.has(value)) return false;
+  seen.add(value);
+  let valid = Object.values(value).every((item) => isJsonSerializable(item, seen));
+  seen.delete(value);
+  return valid;
 }
 
 function isNonPortableDataPath(value) {

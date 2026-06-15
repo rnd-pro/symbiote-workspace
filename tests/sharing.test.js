@@ -252,20 +252,34 @@ describe('workspace package portability', () => {
         packs: ['command-pack'],
         graphs: [{
           id: 'main',
-          nodes: [{ id: 'route-command', type: 'agent/route' }],
+          nodes: [
+            { id: 'route-command', type: 'agent/route' },
+            { id: 'sync-draft', type: 'state/sync' },
+          ],
           connections: [],
         }],
-        bindings: [{
-          id: 'command-action-run',
-          panelType: 'command',
-          component: 'ai-command-composer',
-          surface: 'action',
-          sourceId: 'run',
-          graphId: 'main',
-          nodeId: 'route-command',
-          input: 'prompt',
-          pack: 'command-pack',
-        }],
+        bindings: [
+          {
+            id: 'command-action-run',
+            panelType: 'command',
+            component: 'ai-command-composer',
+            surface: 'action',
+            sourceId: 'run',
+            graphId: 'main',
+            nodeId: 'route-command',
+            input: 'prompt',
+            pack: 'command-pack',
+          },
+          {
+            id: 'command-state-draft',
+            panelType: 'command',
+            component: 'ai-command-composer',
+            surface: 'state',
+            sourceId: 'draft',
+            graphId: 'main',
+            nodeId: 'sync-draft',
+          },
+        ],
       },
     };
     let result = exportWorkspacePackage(packageConfig, {
@@ -308,15 +322,25 @@ describe('workspace package portability', () => {
     ]);
     assert.deepEqual(result.package.host.contract.engine, {
       packs: ['command-pack'],
-      graphs: [{ id: 'main', nodes: 1, connections: 0 }],
-      bindings: [{
-        id: 'command-action-run',
-        panelType: 'command',
-        surface: 'action',
-        sourceId: 'run',
-        graphId: 'main',
-        nodeId: 'route-command',
-      }],
+      graphs: [{ id: 'main', nodes: 2, connections: 0 }],
+      bindings: [
+        {
+          id: 'command-action-run',
+          panelType: 'command',
+          surface: 'action',
+          sourceId: 'run',
+          graphId: 'main',
+          nodeId: 'route-command',
+        },
+        {
+          id: 'command-state-draft',
+          panelType: 'command',
+          surface: 'state',
+          sourceId: 'draft',
+          graphId: 'main',
+          nodeId: 'sync-draft',
+        },
+      ],
     });
     assert.equal(result.package.workspace.config.name, 'Test Workspace');
     assert.doesNotMatch(JSON.stringify(result.package), /https?:|file:\/\/|\/Users\//);

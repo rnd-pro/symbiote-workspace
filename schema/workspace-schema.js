@@ -229,6 +229,35 @@ const DATA_BINDING_SCHEMA = Object.freeze({
   },
 });
 
+const STATE_FIELD_SCHEMA = Object.freeze({
+  type: 'object',
+  required: ['panelType', 'component', 'id', 'type'],
+  properties: {
+    panelType: { type: 'string', description: 'Panel type that owns the state field.' },
+    component: { type: 'string', description: 'Custom element tag name that declares the state field.' },
+    id: { type: 'string', description: 'Portable state field identifier from the module descriptor.' },
+    type: {
+      type: 'string',
+      enum: ['string', 'number', 'boolean', 'enum', 'object', 'array', 'color', 'token', 'json'],
+    },
+    default: { description: 'Portable JSON-serializable default state value.' },
+    path: { type: 'string', description: 'Portable workspace state path.' },
+    schema: { type: 'object', description: 'Optional value schema for the state field.' },
+    persistence: { type: 'string', enum: ['session', 'workspace', 'ephemeral'] },
+  },
+});
+
+const STATE_CONFIG_SCHEMA = Object.freeze({
+  type: 'object',
+  properties: {
+    fields: {
+      type: 'array',
+      description: 'Portable module state field declarations selected for host/runtime handoff.',
+      items: STATE_FIELD_SCHEMA,
+    },
+  },
+});
+
 const ENGINE_GRAPH_NODE_SCHEMA = Object.freeze({
   type: 'object',
   required: ['id', 'type'],
@@ -274,8 +303,8 @@ const ENGINE_BINDING_SCHEMA = Object.freeze({
     id: { type: 'string', description: 'Portable workspace engine binding identifier.' },
     panelType: { type: 'string', description: 'Panel type that owns the source surface.' },
     component: { type: 'string', description: 'Custom element tag name that declares the source surface.' },
-    surface: { type: 'string', enum: ['action', 'setting', 'event', 'binding'] },
-    sourceId: { type: 'string', description: 'Source action, setting, event, or data binding identifier.' },
+    surface: { type: 'string', enum: ['action', 'setting', 'state', 'event', 'binding'] },
+    sourceId: { type: 'string', description: 'Source action, setting, state field, event, or data binding identifier.' },
     graphId: { type: 'string', description: 'Target engine graph identifier.' },
     nodeId: { type: 'string', description: 'Target engine node identifier.' },
     input: { type: 'string', description: 'Optional target input socket.' },
@@ -599,7 +628,7 @@ export const WORKSPACE_CONFIG_SCHEMA = Object.freeze({
     },
     data: {
       type: 'object',
-      description: 'Data sources, bindings, and initial state.',
+      description: 'Data sources and portable data binding declarations.',
       properties: {
         bindings: {
           type: 'array',
@@ -607,6 +636,10 @@ export const WORKSPACE_CONFIG_SCHEMA = Object.freeze({
           items: DATA_BINDING_SCHEMA,
         },
       },
+    },
+    state: {
+      ...STATE_CONFIG_SCHEMA,
+      description: 'Portable module state field declarations and defaults.',
     },
     engine: {
       ...ENGINE_CONFIG_SCHEMA,
@@ -734,6 +767,18 @@ export const WORKSPACE_CONFIG_SCHEMA = Object.freeze({
  */
 
 /**
+ * @typedef {Object} StateField
+ * @property {string} panelType
+ * @property {string} component
+ * @property {string} id
+ * @property {'string'|'number'|'boolean'|'enum'|'object'|'array'|'color'|'token'|'json'} type
+ * @property {*} [default]
+ * @property {string} [path]
+ * @property {Object} [schema]
+ * @property {'session'|'workspace'|'ephemeral'} [persistence]
+ */
+
+/**
  * @typedef {Object} WorkspaceConfig
  * @property {string} version - Schema version
  * @property {string} name - Workspace name
@@ -755,5 +800,6 @@ export const WORKSPACE_CONFIG_SCHEMA = Object.freeze({
  * @property {EventBridge[]} [events] - Inter-panel event bridges
  * @property {Object} [components] - Component references
  * @property {{ bindings?: DataBinding[] }} [data] - Data bindings
+ * @property {{ fields?: StateField[] }} [state] - Portable state field declarations
  * @property {Object} [engine] - Engine config
  */

@@ -50,6 +50,11 @@ All notable changes to this project will be documented in this file.
   executing `symbiote-engine`. Validation now checks binding node IDs when
   they target authored graph JSON, while preserving external host-provided
   graph references.
+- **Module state field contract** — workspace configs now define and validate
+  portable top-level `state.fields[]` records. Selected descriptor `state[]`
+  declarations materialize into executable config state fields, and optional
+  state engine metadata materializes into `engine.bindings[]` with
+  `surface: "state"`.
 - **Module setting materialization** — generated constructor panel types and
   selected existing panel types now expose descriptor settings through
   `panelTypes.*.settings` while preserving authored panel settings.
