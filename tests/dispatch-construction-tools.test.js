@@ -931,6 +931,13 @@ describe('construction workflow dispatch', () => {
     assert.equal(result.count >= 1, true);
     assert.equal(session.config.name, 'Applied Name');
     assert.equal(session.config.theme.params.hue, 220);
+    assert.equal(session.config.patches.length, 1);
+    assert.equal(session.config.patches[0].id, 'workspace-patch-validation');
+    assert.equal(session.config.patches[0].status, 'pass');
+    assert.equal(session.config.patches[0].report.nextConfig, undefined);
+    assert.equal(session.config.validation.reports.length, 1);
+    assert.equal(session.config.validation.reports[0].check, 'workspace-patch-validation');
+    assert.equal(session.config.validation.reports[0].status, 'pass');
   });
 
   it('export_workspace mirrors export_config output', async () => {

@@ -212,11 +212,22 @@ describe('MCP Protocol', () => {
     let pluginTemplates = toolList.result.tools.find((tool) => (
       tool.name === 'collect_plugin_workspace_templates'
     ));
+    let workspacePatchTools = [
+      'propose_workspace_patch',
+      'validate_workspace_patch',
+      'apply_workspace_patch',
+    ].map((name) => toolList.result.tools.find((tool) => tool.name === name));
     assert.equal(saveConfig.annotations.readOnlyHint, false);
     assert.equal(startPreview.annotations.readOnlyHint, false);
     assert.equal(listGroups.annotations.readOnlyHint, true);
     assert.equal(pluginModules.annotations.readOnlyHint, true);
     assert.equal(pluginTemplates.annotations.readOnlyHint, true);
+    for (let tool of workspacePatchTools) {
+      assert.deepEqual(tool.inputSchema.anyOf, [
+        { required: ['overlay'] },
+        { required: ['patch'] },
+      ]);
+    }
   });
 
   it('dispatches scaffold_from_scratch via tools/call', async () => {

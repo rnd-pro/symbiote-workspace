@@ -44,6 +44,10 @@ function compactObject(value) {
 }
 
 const WORKSPACE_CONSTRUCTION_HANDOFF_TYPE = 'workspace-construction-handoff';
+const WORKSPACE_PATCH_INPUT_ANY_OF = Object.freeze([
+  { required: ['overlay'] },
+  { required: ['patch'] },
+]);
 
 const CONSTRUCTION_HANDOFF_SCHEMA_PROPERTIES = {
   _type: {
@@ -251,6 +255,7 @@ export const TOOLS = [
         overlay: { type: 'object', description: 'Partial config overlay.' },
         patch: { type: 'object', description: 'Structured construction patch.' },
       },
+      anyOf: WORKSPACE_PATCH_INPUT_ANY_OF,
     },
   },
   {
@@ -262,6 +267,7 @@ export const TOOLS = [
         overlay: { type: 'object', description: 'Partial config overlay.' },
         patch: { type: 'object', description: 'Structured construction patch.' },
       },
+      anyOf: WORKSPACE_PATCH_INPUT_ANY_OF,
     },
   },
   {
@@ -273,6 +279,7 @@ export const TOOLS = [
         overlay: { type: 'object', description: 'Partial config overlay.' },
         patch: { type: 'object', description: 'Structured construction patch.' },
       },
+      anyOf: WORKSPACE_PATCH_INPUT_ANY_OF,
     },
     mutates: true,
   },

@@ -161,6 +161,60 @@ function statusFromDiagnostics(diagnostics) {
   return 'pass';
 }
 
+function appliedPatchStatus(status) {
+  return status === 'warn' ? 'warn' : 'pass';
+}
+
+function validationReportForAppliedPatch(proposal) {
+  let status = appliedPatchStatus(proposal.status);
+  return {
+    id: 'workspace-patch-validation',
+    check: 'workspace-patch-validation',
+    version: proposal.version,
+    status,
+    severity: status === 'warn' ? 'warning' : 'info',
+    message: status === 'warn'
+      ? 'Workspace patch applied with validation warnings.'
+      : 'Workspace patch validated and applied.',
+    diagnostics: deepClone(proposal.diagnostics || []),
+    suggestedPatches: deepClone(proposal.suggestedPatches || []),
+  };
+}
+
+function appliedPatchRecord(proposal) {
+  return {
+    id: 'workspace-patch-validation',
+    surface: proposal.surface,
+    status: appliedPatchStatus(proposal.status),
+    overlay: deepClone(proposal.overlay || {}),
+    operations: deepClone(proposal.changes || []),
+    report: validationReportForAppliedPatch(proposal),
+  };
+}
+
+function upsertValidationReport(reports, report) {
+  let nextReports = reports.filter((item) => item?.id !== report.id);
+  nextReports.push(report);
+  return nextReports;
+}
+
+function persistAppliedPatchEvidence(config, proposal) {
+  let nextConfig = deepClone(config);
+  let validation = isObject(nextConfig.validation) ? deepClone(nextConfig.validation) : {};
+  let reports = Array.isArray(validation.reports) ? validation.reports : [];
+  let report = validationReportForAppliedPatch(proposal);
+
+  nextConfig.patches = [
+    ...(Array.isArray(nextConfig.patches) ? nextConfig.patches : []),
+    appliedPatchRecord(proposal),
+  ];
+  nextConfig.validation = {
+    ...validation,
+    reports: upsertValidationReport(reports, report),
+  };
+  return nextConfig;
+}
+
 /**
  * @returns {Promise<{
  *   deriveDesignConstraints: Function,
@@ -296,7 +350,7 @@ export async function applyWorkspacePatch(config, patch = {}, options = {}) {
   return {
     ...proposal,
     status: proposal.status === 'pass' ? 'ok' : proposal.status,
-    config: proposal.nextConfig,
+    config: persistAppliedPatchEvidence(proposal.nextConfig, proposal),
   };
 }
 

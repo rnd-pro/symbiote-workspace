@@ -1,7 +1,9 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
+import { validateWorkspaceConfig } from '../schema/validate.js';
 import {
+  applyWorkspacePatch,
   loadWorkspaceDesignPolicy,
   normalizeWorkspacePatchReport,
   proposeWorkspacePatch,
@@ -187,6 +189,38 @@ describe('workspace construction patch validation', () => {
       item.path === '/modules/panelTypes/preview/component' &&
       item.severity === 'soft'
     ), true);
+  });
+
+  it('records accepted workspace patch validation in the applied config', async () => {
+    let config = createBaseConfig();
+    let originalConfig = structuredClone(config);
+
+    let result = await applyWorkspacePatch(config, {
+      overlay: {
+        name: 'Patched Builder',
+        theme: {
+          params: {
+            mode: 'dark',
+            hue: 220,
+          },
+        },
+      },
+    });
+
+    assert.equal(result.status, 'ok');
+    assert.equal(result.config.name, 'Patched Builder');
+    assert.equal(result.config.theme.params.hue, 220);
+    assert.equal(result.config.patches.length, 1);
+    assert.equal(result.config.patches[0].id, 'workspace-patch-validation');
+    assert.equal(result.config.patches[0].status, 'pass');
+    assert.equal(result.config.patches[0].report.status, 'pass');
+    assert.equal(result.config.patches[0].report.severity, 'info');
+    assert.equal(result.config.patches[0].report.nextConfig, undefined);
+    assert.equal(result.config.validation.reports.length, 1);
+    assert.equal(result.config.validation.reports[0].check, 'workspace-patch-validation');
+    assert.equal(result.config.validation.reports[0].status, 'pass');
+    assert.equal(validateWorkspaceConfig(result.config, { strict: true }).valid, true);
+    assert.deepEqual(config, originalConfig);
   });
 
   it('normalizes aggregate patch reports for downstream tooling', async () => {
