@@ -220,6 +220,58 @@ describe('validateWorkspaceConfig', () => {
     assert.ok(result.errors.some((error) => error.path === 'data'));
   });
 
+  it('accepts root and scoped cascade theme config', () => {
+    let result = validateWorkspaceConfig({
+      version: '0.2.0',
+      name: 'Theme Workspace',
+      theme: {
+        recipe: 'agent-console',
+        params: { mode: 'dark', hue: 220 },
+        relations: { surfaceStep: 1.15 },
+        overrides: { '--sn-gap': '8px' },
+        subtrees: [{
+          selector: '.sidebar',
+          params: { hue: 180 },
+          relations: { radiusScale: 0.8 },
+          overrides: { '--sn-node-radius': '4px' },
+        }],
+      },
+    }, { strict: true });
+
+    assert.equal(result.valid, true, JSON.stringify(result.errors));
+    assert.equal(result.errors.length, 0);
+  });
+
+  it('rejects invalid cascade theme config', () => {
+    let result = validateWorkspaceConfig({
+      version: '0.2.0',
+      name: 'Broken Theme Workspace',
+      theme: {
+        recipe: '',
+        params: [],
+        relations: { surfaceStep: Infinity },
+        overrides: { gap: 8 },
+        subtrees: [{
+          selector: '',
+          params: 'dark',
+          relations: [],
+          overrides: { '--sn-radius': 4 },
+        }, []],
+      },
+    }, { strict: true });
+
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some((error) => error.path === 'theme.recipe'));
+    assert.ok(result.errors.some((error) => error.path === 'theme.params'));
+    assert.ok(result.errors.some((error) => error.path === 'theme.relations'));
+    assert.ok(result.errors.some((error) => error.path === 'theme.overrides.gap'));
+    assert.ok(result.errors.some((error) => error.path === 'theme.subtrees[0].selector'));
+    assert.ok(result.errors.some((error) => error.path === 'theme.subtrees[0].params'));
+    assert.ok(result.errors.some((error) => error.path === 'theme.subtrees[0].relations'));
+    assert.ok(result.errors.some((error) => error.path === 'theme.subtrees[0].overrides.--sn-radius'));
+    assert.ok(result.errors.some((error) => error.path === 'theme.subtrees[1]'));
+  });
+
   it('accepts portable state fields', () => {
     let result = validateWorkspaceConfig({
       version: '0.2.0',

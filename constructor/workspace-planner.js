@@ -2036,6 +2036,7 @@ export function planWorkspaceConstruction(intent, options = {}) {
       },
       relations: deepClone(config.theme?.relations) || {},
       overrides: deepClone(config.theme?.overrides) || {},
+      subtrees: deepClone(config.theme?.subtrees) || [],
     },
     verification: {
       targets: verificationPlan(verificationScope),

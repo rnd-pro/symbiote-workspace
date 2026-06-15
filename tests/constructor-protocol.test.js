@@ -128,6 +128,46 @@ describe('planWorkspaceConstruction', () => {
     );
   });
 
+  it('carries scoped theme layers into the construction plan and config', () => {
+    let result = planWorkspaceConstruction({
+      brief: 'Build a scoped theme dashboard',
+      template: 'scoped-dashboard',
+    }, {
+      workspaceTemplates: [{
+        name: 'scoped-dashboard',
+        config: {
+          version: '0.3.0',
+          name: 'Scoped Theme Dashboard',
+          register: 'tool',
+          theme: {
+            params: { mode: 'dark', hue: 220 },
+            relations: { surfaceStep: 1.15 },
+            overrides: { '--sn-gap': '8px' },
+            subtrees: [{
+              selector: '.sidebar',
+              params: { hue: 180 },
+              relations: { radiusScale: 0.8 },
+              overrides: { '--sn-node-radius': '4px' },
+            }],
+          },
+          panelTypes: {
+            metrics: { title: 'Metrics', component: 'sn-card' },
+          },
+          layout: { type: 'panel', panelType: 'metrics' },
+        },
+      }],
+    });
+
+    assert.deepEqual(result.plan.theme.subtrees, [{
+      selector: '.sidebar',
+      params: { hue: 180 },
+      relations: { radiusScale: 0.8 },
+      overrides: { '--sn-node-radius': '4px' },
+    }]);
+    assert.deepEqual(result.config.theme.subtrees, result.plan.theme.subtrees);
+    assert.equal(validateWorkspaceConfig(result.config, { strict: true }).valid, true);
+  });
+
   it('carries module capability descriptors into the construction plan', () => {
     let result = planWorkspaceConstruction({
       brief: 'Build a dashboard',

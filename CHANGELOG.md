@@ -55,6 +55,10 @@ All notable changes to this project will be documented in this file.
   declarations materialize into executable config state fields, and optional
   state engine metadata materializes into `engine.bindings[]` with
   `surface: "state"`.
+- **Scoped theme construction contract** — `validateWorkspaceConfig()` now
+  validates cascade theme `params`, `relations`, token `overrides`, and scoped
+  `subtrees[]`; construction plans carry subtree theme layers alongside root
+  theme metadata for portable host mounting.
 - **Module setting materialization** — generated constructor panel types and
   selected existing panel types now expose descriptor settings through
   `panelTypes.*.settings` while preserving authored panel settings.

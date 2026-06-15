@@ -151,8 +151,12 @@ export function validateWorkspaceConfig(config, options = {}) {
     errors.push({ path: 'design', message: 'Field "design" must be an object.', severity: 'error' });
   }
 
-  if (config.theme !== undefined && !isObject(config.theme)) {
-    errors.push({ path: 'theme', message: 'Field "theme" must be an object.', severity: 'error' });
+  if (config.theme !== undefined) {
+    if (!isObject(config.theme)) {
+      errors.push({ path: 'theme', message: 'Field "theme" must be an object.', severity: 'error' });
+    } else {
+      validateTheme(config.theme, 'theme', errors);
+    }
   }
 
   if (config.layout !== undefined && !isObject(config.layout)) {
@@ -393,6 +397,64 @@ function validateValidationReports(validation, errors, warnings) {
   }
   if (validation.reports !== undefined && !Array.isArray(validation.reports)) {
     errors.push({ path: 'validation.reports', message: 'validation.reports must be an array.', severity: 'error' });
+  }
+}
+
+function validateTheme(theme, path, errors) {
+  if (theme.recipe !== undefined && (typeof theme.recipe !== 'string' || !theme.recipe.trim())) {
+    errors.push({ path: `${path}.recipe`, message: 'Theme recipe must be a non-empty string.', severity: 'error' });
+  }
+  validateThemeObject(theme.params, `${path}.params`, 'Theme params', errors);
+  validateThemeObject(theme.relations, `${path}.relations`, 'Theme relations', errors);
+  validateThemeOverrides(theme.overrides, `${path}.overrides`, errors);
+  if (theme.subtrees !== undefined) validateThemeSubtrees(theme.subtrees, `${path}.subtrees`, errors);
+}
+
+function validateThemeObject(value, path, label, errors) {
+  if (value === undefined) return;
+  if (!isObject(value)) {
+    errors.push({ path, message: `${label} must be an object.`, severity: 'error' });
+    return;
+  }
+  if (!isJsonSerializable(value)) {
+    errors.push({ path, message: `${label} must be JSON-serializable.`, severity: 'error' });
+  }
+}
+
+function validateThemeOverrides(overrides, path, errors) {
+  if (overrides === undefined) return;
+  if (!isObject(overrides)) {
+    errors.push({ path, message: 'Theme overrides must be an object.', severity: 'error' });
+    return;
+  }
+  for (let [key, value] of Object.entries(overrides)) {
+    if (!/^--[a-z0-9-]+$/.test(key)) {
+      errors.push({ path: `${path}.${key}`, message: 'Theme override keys must be CSS custom property names.', severity: 'error' });
+    }
+    if (typeof value !== 'string') {
+      errors.push({ path: `${path}.${key}`, message: 'Theme override values must be strings.', severity: 'error' });
+    }
+  }
+}
+
+function validateThemeSubtrees(subtrees, path, errors) {
+  if (!Array.isArray(subtrees)) {
+    errors.push({ path, message: 'Theme subtrees must be an array.', severity: 'error' });
+    return;
+  }
+  for (let i = 0; i < subtrees.length; i++) {
+    let subtree = subtrees[i];
+    let itemPath = `${path}[${i}]`;
+    if (!isObject(subtree)) {
+      errors.push({ path: itemPath, message: 'Theme subtree entry must be an object.', severity: 'error' });
+      continue;
+    }
+    if (typeof subtree.selector !== 'string' || !subtree.selector.trim()) {
+      errors.push({ path: `${itemPath}.selector`, message: 'Theme subtree requires a non-empty selector.', severity: 'error' });
+    }
+    validateThemeObject(subtree.params, `${itemPath}.params`, 'Theme subtree params', errors);
+    validateThemeObject(subtree.relations, `${itemPath}.relations`, 'Theme subtree relations', errors);
+    validateThemeOverrides(subtree.overrides, `${itemPath}.overrides`, errors);
   }
 }
 
