@@ -1435,7 +1435,44 @@ function appendPanelToLayout(layout, panelType) {
   };
 }
 
+function pruneLayoutToPanelTypes(node, selectedPanelTypes) {
+  if (!node || !isObject(node)) return null;
+  if (node.type === 'panel') {
+    return selectedPanelTypes.has(node.panelType) ? deepClone(node) : null;
+  }
+  if (node.type !== 'split') return deepClone(node);
+
+  let first = pruneLayoutToPanelTypes(node.first, selectedPanelTypes);
+  let second = pruneLayoutToPanelTypes(node.second, selectedPanelTypes);
+
+  if (first && second) {
+    return {
+      ...deepClone(node),
+      first,
+      second,
+    };
+  }
+  return first || second;
+}
+
 function materializeSelectedModuleLayout(config, selectedModules) {
+  let selectedPanelTypes = new Set(selectedModules);
+  let prunedLayout = pruneLayoutToPanelTypes(config.layout, selectedPanelTypes);
+  if (prunedLayout) {
+    config.layout = prunedLayout;
+  } else {
+    delete config.layout;
+  }
+
+  for (let [layoutId, layout] of Object.entries(config.layouts || {})) {
+    let pruned = pruneLayoutToPanelTypes(layout, selectedPanelTypes);
+    if (pruned) {
+      config.layouts[layoutId] = pruned;
+    } else {
+      delete config.layouts[layoutId];
+    }
+  }
+
   for (let panelType of selectedModules) {
     if (!config.panelTypes?.[panelType]) continue;
     if (configReferencesPanelType(config, panelType)) continue;

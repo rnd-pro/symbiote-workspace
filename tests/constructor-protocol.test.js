@@ -241,6 +241,11 @@ describe('planWorkspaceConstruction', () => {
     assert.deepEqual(result.plan.answers.moduleSelection, ['metric']);
     assert.deepEqual(result.plan.modules.map((module) => module.panelType), ['metric']);
     assert.equal(result.plan.modules[0].selectionReason, 'user');
+    assert.equal(layoutReferencesPanel(result.config.layout, 'metric'), true);
+    assert.equal(layoutReferencesPanel(result.config.layout, 'records'), false);
+    assert.equal(layoutReferencesPanel(result.config.layout, 'analytics'), false);
+    assert.equal(layoutReferencesPanel(result.config.layout, 'audit'), false);
+    assert.deepEqual(Object.keys(result.config.layouts || {}), []);
     assert.deepEqual(result.plan.capabilities.matched, []);
     assert.deepEqual(result.plan.capabilities.missing, ['admin.records']);
     assert.deepEqual(result.plan.capabilities.byCapability, [
@@ -260,6 +265,28 @@ describe('planWorkspaceConstruction', () => {
         ],
       },
     ]);
+
+    let validation = validateWorkspaceConfig(result.config, { strict: true });
+    assert.deepEqual(validation.errors, []);
+  });
+
+  it('removes executable layouts when module selection is empty', () => {
+    let result = planWorkspaceConstruction({
+      brief: 'Build an admin records workspace',
+      template: 'admin',
+    }, {
+      answers: {
+        'module-selection': [],
+      },
+    });
+
+    assert.deepEqual(result.plan.answers.moduleSelection, []);
+    assert.deepEqual(result.plan.modules, []);
+    assert.equal(result.config.layout, undefined);
+    assert.deepEqual(Object.keys(result.config.layouts || {}), []);
+
+    let validation = validateWorkspaceConfig(result.config, { strict: true });
+    assert.deepEqual(validation.errors, []);
   });
 
   it('rejects malformed module capability option entries', () => {
