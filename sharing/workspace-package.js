@@ -78,6 +78,47 @@ function deepClone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function countCapabilityMapItems(value) {
+  if (!isObject(value)) return 0;
+  return Object.values(value)
+    .filter(Array.isArray)
+    .reduce((total, items) => total + items.length, 0);
+}
+
+function diagnosticCount(items, severity) {
+  if (!Array.isArray(items)) return 0;
+  return items.filter((item) => !severity || item?.severity === severity).length;
+}
+
+/**
+ * @param {Object} input
+ * @returns {Object}
+ */
+export function createPackageReadinessProjection(input = {}) {
+  let warningCount = diagnosticCount(input.warnings);
+  let errorCount = diagnosticCount(input.errors);
+  let missingCount = countCapabilityMapItems(input.missing);
+  let ready = input.valid === true && input.ready === true;
+  let sourceCount = Array.isArray(input.sources)
+    ? input.sources.length
+    : (input.source || input.summary ? 1 : 0);
+  let result = {
+    ready,
+    valid: input.valid === true,
+    source: input.source ? deepClone(input.source) : null,
+    sourceCount,
+    missingCount,
+    warningCount,
+    errorCount,
+    status: ready ? 'ready' : (errorCount > 0 ? 'blocked' : 'warning'),
+    nextAction: ready
+      ? 'construct'
+      : (errorCount > 0 ? 'fix-package-context' : 'review-package-readiness'),
+  };
+  if (input.summary) result.summary = deepClone(input.summary);
+  return result;
+}
+
 function normalizedKey(key) {
   return key.toLowerCase().replace(/[_-]/g, '');
 }
@@ -523,6 +564,7 @@ export function inspectWorkspacePackage(input, options = {}) {
     compatibility: null,
     requirements: null,
     missing: null,
+    readiness: null,
     warnings: [],
     errors: [],
   };
@@ -706,6 +748,7 @@ export function inspectWorkspacePackage(input, options = {}) {
   }
 
   result.ready = result.valid && result.warnings.length === 0;
+  result.readiness = createPackageReadinessProjection(result);
 
   return result;
 }

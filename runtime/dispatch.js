@@ -65,18 +65,25 @@ const CONSTRUCTION_HANDOFF_SCHEMA_PROPERTIES = {
 
 function packageContextFromHandoff(args) {
   if (!isConstructionHandoffArgs(args)) return undefined;
-  return compactObject({
-    valid: args.valid,
-    ready: args.ready,
-    requirements: cloneJson(args.requirements),
-    missing: cloneJson(args.missing),
-    source: cloneJson(args.source),
-    sources: cloneJson(args.sources),
-    summary: cloneJson(args.summary),
-    compatibility: cloneJson(args.compatibility),
-    warnings: cloneJson(args.warnings),
-    errors: cloneJson(args.errors),
-  });
+  let context = isObject(args.options?.packageContext)
+    ? cloneJson(args.options.packageContext)
+    : {};
+  for (let field of [
+    'valid',
+    'ready',
+    'requirements',
+    'missing',
+    'source',
+    'sources',
+    'summary',
+    'compatibility',
+    'warnings',
+    'errors',
+    'readiness',
+  ]) {
+    if (args[field] !== undefined) context[field] = cloneJson(args[field]);
+  }
+  return compactObject(context);
 }
 
 /** @type {ToolDefinition[]} */
@@ -1080,36 +1087,38 @@ function missingRecoverySteps(missing) {
 }
 
 function constructionReadinessFromHandoff(args, overrides = {}) {
-  let warnings = Array.isArray(args.warnings) ? args.warnings : [];
-  let errors = Array.isArray(args.errors) ? args.errors : [];
-  let missing = flatMissingCapabilities(args.missing);
-  let recovery = missingRecoverySteps(args.missing);
+  let context = packageContextFromHandoff(args) || {};
+  let warnings = Array.isArray(context.warnings) ? context.warnings : [];
+  let errors = Array.isArray(context.errors) ? context.errors : [];
+  let missing = flatMissingCapabilities(context.missing);
+  let recovery = missingRecoverySteps(context.missing);
   let errorCount = errors.length;
-  let ready = args.valid === true && args.ready === true && missing.length === 0 && errorCount === 0;
+  let ready = context.valid === true && context.ready === true && missing.length === 0 && errorCount === 0;
 
   return compactObject({
     ready,
-    valid: args.valid === true,
+    valid: context.valid === true,
     status: ready ? 'ready' : (errorCount > 0 ? 'blocked' : 'warning'),
     missingCount: missing.length,
     warningCount: warnings.length,
     errorCount,
-    missing: cloneJson(args.missing),
+    missing: cloneJson(context.missing),
     recovery: recovery.length > 0 ? recovery : undefined,
     warnings: cloneJson(warnings),
     errors: cloneJson(errors),
-    source: cloneJson(args.source),
-    sources: cloneJson(args.sources),
+    source: cloneJson(context.source),
+    sources: cloneJson(context.sources),
     ...overrides,
   });
 }
 
 function assertUsableConstructionHandoff(args, { requireReady = false } = {}) {
   if (!isConstructionHandoffArgs(args)) return;
-  let errors = Array.isArray(args.errors) ? args.errors : [];
-  let warnings = Array.isArray(args.warnings) ? args.warnings : [];
-  let missing = flatMissingCapabilities(args.missing);
-  if (args.valid === false || errors.length > 0) {
+  let context = packageContextFromHandoff(args) || {};
+  let errors = Array.isArray(context.errors) ? context.errors : [];
+  let warnings = Array.isArray(context.warnings) ? context.warnings : [];
+  let missing = flatMissingCapabilities(context.missing);
+  if (context.valid === false || errors.length > 0) {
     let detail = errors
       .map((error) => error?.message || error?.path)
       .filter(Boolean)
@@ -1123,7 +1132,7 @@ function assertUsableConstructionHandoff(args, { requireReady = false } = {}) {
     });
     throw err;
   }
-  if (requireReady && (args.ready === false || (args.ready !== true && (missing.length > 0 || warnings.length > 0)))) {
+  if (requireReady && (context.ready === false || (context.ready !== true && (missing.length > 0 || warnings.length > 0)))) {
     let detail = [
       ...missing,
       ...warnings.map((warning) => warning?.message || warning?.path).filter(Boolean),
@@ -1297,6 +1306,8 @@ export async function dispatch(toolName, args, session) {
       compatibility: raw.compatibility,
       requirements: raw.requirements,
       missing: raw.missing,
+      readiness: raw.readiness,
+      nextAction: raw.readiness?.nextAction,
       warnings: raw.warnings,
       errors: raw.errors,
     };
@@ -1321,6 +1332,8 @@ export async function dispatch(toolName, args, session) {
       requiredCapabilities: result.requiredCapabilities,
       requirements: result.requirements,
       missing: result.missing,
+      readiness: result.readiness,
+      nextAction: result.readiness?.nextAction,
       source: result.source,
       summary: result.summary,
       compatibility: result.compatibility,
@@ -1343,6 +1356,8 @@ export async function dispatch(toolName, args, session) {
       requiredCapabilities: result.requiredCapabilities,
       requirements: result.requirements,
       missing: result.missing,
+      readiness: result.readiness,
+      nextAction: result.readiness?.nextAction,
       source: result.source,
       sources: result.sources,
       summary: result.summary,

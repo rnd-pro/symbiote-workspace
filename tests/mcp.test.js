@@ -1115,6 +1115,13 @@ describe('Package Collection Construction Context via MCP', () => {
     assert.equal(content.status, 'ok');
     assert.equal(content.valid, true);
     assert.equal(content.ready, false);
+    assert.equal(content.nextAction, 'review-package-readiness');
+    assert.equal(content.readiness.status, 'warning');
+    assert.equal(content.readiness.nextAction, 'review-package-readiness');
+    assert.equal(content.readiness.source.packageCount, 2);
+    assert.ok(content.readiness.missingCount > 0);
+    assert.ok(content.readiness.warningCount > 0);
+    assert.equal(content.readiness.errorCount, 0);
     assert.deepEqual(content.source, {
       type: 'workspace-package-collection',
       packageCount: 2,
@@ -1527,6 +1534,43 @@ describe('Construction Handoff via MCP', () => {
     assert.deepEqual(construct.readiness.recovery, [{
       kind: 'components',
       item: 'sn-room-shell',
+      action: 'register-component',
+    }]);
+  });
+
+  it('construct_workspace rejects nested packageContext readiness gaps via tools/call', async () => {
+    let handoff = {
+      _type: 'workspace-construction-handoff',
+      intent: { brief: 'MCP direct package context room', template: 'mcp-voice-video-room' },
+      options: {
+        packageContext: {
+          valid: true,
+          ready: false,
+          missing: { components: ['sn-direct-room-shell'] },
+          warnings: [{ path: 'available.components', message: 'Missing direct room shell.', severity: 'warning' }],
+        },
+      },
+    };
+
+    let responses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: { name: 'construct_workspace', arguments: handoff },
+      },
+    ]);
+
+    let constructResponse = responses.find((r) => r.id === 2);
+    let construct = JSON.parse(constructResponse.result.content[0].text);
+    assert.equal(constructResponse.result.isError, true);
+    assert.equal(construct.status, 'error');
+    assert.equal(construct.code, 'construction_handoff_not_ready');
+    assert.equal(construct.nextAction, 'review-package-readiness');
+    assert.equal(construct.readiness.ready, false);
+    assert.equal(construct.readiness.missingCount, 1);
+    assert.deepEqual(construct.readiness.recovery, [{
+      kind: 'components',
+      item: 'sn-direct-room-shell',
       action: 'register-component',
     }]);
   });

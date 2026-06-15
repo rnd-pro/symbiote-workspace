@@ -599,6 +599,41 @@ describe('construction workflow dispatch', () => {
     assert.equal(session.config.name, 'Existing Config');
   });
 
+  it('construct_workspace rejects not-ready diagnostics from nested packageContext only', async () => {
+    let session = createSession();
+    await dispatch('scaffold_from_scratch', { name: 'Existing Config' }, session);
+    let handoff = {
+      _type: 'workspace-construction-handoff',
+      intent: { brief: 'chat workspace', template: 'chat' },
+      options: {
+        packageContext: {
+          valid: true,
+          ready: false,
+          missing: { components: ['sn-direct-room'] },
+          warnings: [{ path: 'available.components', message: 'Missing direct room shell.', severity: 'warning' }],
+        },
+      },
+    };
+
+    let plan = await dispatch('plan_workspace', handoff, session);
+    let construct = await dispatch('construct_workspace', handoff, session);
+
+    assert.equal(plan.status, 'ok');
+    assert.equal(plan.plan.packageContext.ready, false);
+    assert.deepEqual(plan.plan.packageContext.missing.components, ['sn-direct-room']);
+    assert.equal(construct.status, 'error');
+    assert.equal(construct.code, 'construction_handoff_not_ready');
+    assert.equal(construct.nextAction, 'review-package-readiness');
+    assert.equal(construct.readiness.ready, false);
+    assert.equal(construct.readiness.missingCount, 1);
+    assert.deepEqual(construct.readiness.recovery, [{
+      kind: 'components',
+      item: 'sn-direct-room',
+      action: 'register-component',
+    }]);
+    assert.equal(session.config.name, 'Existing Config');
+  });
+
   it('construct_workspace accepts module capabilities collected from plugins', async () => {
     let pluginCapabilities = collectPluginModuleCapabilities([PLUGIN_PACK]);
     assert.equal(pluginCapabilities.ok, true);
@@ -1870,6 +1905,16 @@ describe('create_workspace_packages_construction_context dispatch', () => {
     assert.equal(result.status, 'ok');
     assert.equal(result.valid, true);
     assert.equal(result.ready, false);
+    assert.equal(result.nextAction, 'review-package-readiness');
+    assert.equal(result.readiness.ready, false);
+    assert.equal(result.readiness.valid, true);
+    assert.equal(result.readiness.status, 'warning');
+    assert.equal(result.readiness.nextAction, 'review-package-readiness');
+    assert.equal(result.readiness.source.packageCount, 2);
+    assert.equal(result.readiness.sourceCount, 2);
+    assert.ok(result.readiness.missingCount > 0);
+    assert.ok(result.readiness.warningCount > 0);
+    assert.equal(result.readiness.errorCount, 0);
     assert.deepEqual(result.source, {
       type: 'workspace-package-collection',
       packageCount: 2,

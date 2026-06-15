@@ -17,15 +17,17 @@ All notable changes to this project will be documented in this file.
 - **Package inspection helper** — `inspectWorkspacePackage(input, options)`
   inspects a workspace package object or JSON string and returns `valid`,
   `ready`, structured summary, compatibility, dependency requirements, and
-  missing items. Accepts an optional host-neutral `options.available` inventory
-  for capability gap detection without marketplace or install semantics.
-  Exposed as `inspect_workspace_package` in the unified dispatch registry, CLI,
-  and MCP surface.
+  missing items plus compact `readiness.nextAction` diagnostics. Accepts an
+  optional host-neutral `options.available` inventory for capability gap
+  detection without marketplace or install semantics. Exposed as
+  `inspect_workspace_package` in the unified dispatch registry, CLI, and MCP
+  surface.
 - **Package construction context helper** —
   `createWorkspacePackageConstructionContext(input, options)` projects valid
   workspace packages into constructor-ready `workspaceTemplates`,
-  `moduleCapabilities`, required capability tags, and source metadata without
-  installing packages, activating plugins, or applying marketplace semantics.
+  `moduleCapabilities`, required capability tags, source metadata, and compact
+  readiness diagnostics without installing packages, activating plugins, or
+  applying marketplace semantics.
 - **Constructor capability diagnostics** — construction plans now include
   `capabilities.byCapability` with selected coverage and ranked unselected
   module alternatives for unmet required capabilities.

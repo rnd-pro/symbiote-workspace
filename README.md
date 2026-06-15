@@ -748,9 +748,12 @@ workspace config output.
 multiple package entries (`{ package, templateName }` or `{ json, templateName }`)
 into one constructor-ready context. Duplicate workspace template names or module
 `tagName` descriptors are blocking conflicts; host availability gaps remain
-warnings and keep the context structurally valid but not ready. The same helper
-is exposed through dispatch/MCP as `create_workspace_packages_construction_context`
-and through the CLI as `create-workspace-packages-construction-context`.
+warnings and keep the context structurally valid but not ready. Package
+inspection and construction-context helpers expose a compact `readiness` summary
+with `status`, counts, and `nextAction` so agents can choose construct, review,
+or fix flows before creating a handoff. The same helper is exposed through
+dispatch/MCP as `create_workspace_packages_construction_context` and through the
+CLI as `create-workspace-packages-construction-context`.
 
 `createWorkspaceConstructionHandoff(context, intent)` converts a single-package
 or package-collection construction context into a handoff envelope with

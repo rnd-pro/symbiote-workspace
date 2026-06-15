@@ -619,6 +619,18 @@ describe('inspectWorkspacePackage', () => {
     ]);
     assert.deepEqual(inspection.requirements.runtimeSlots, ['agent-runtime']);
     assert.deepEqual(inspection.missing?.components, []);
+    assert.deepEqual(inspection.readiness, {
+      ready: true,
+      valid: true,
+      source: null,
+      sourceCount: 1,
+      missingCount: 0,
+      warningCount: 0,
+      errorCount: 0,
+      status: 'ready',
+      nextAction: 'construct',
+      summary: inspection.summary,
+    });
   });
 
   it('accepts JSON string input', () => {
@@ -914,6 +926,9 @@ describe('createWorkspacePackageConstructionContext', () => {
 
     assert.ok(ctx.summary);
     assert.equal(ctx.summary.id, 'command-room-package');
+    assert.equal(ctx.readiness.status, 'ready');
+    assert.equal(ctx.readiness.nextAction, 'construct');
+    assert.equal(ctx.readiness.source.packageId, 'command-room-package');
     assert.ok(ctx.compatibility);
     assert.equal(ctx.compatibility.compatible, true);
     assert.ok(ctx.requirements);
@@ -1452,6 +1467,15 @@ describe('createWorkspacePackagesConstructionContext', () => {
     assert.ok(ctx.missing.plugins.includes('gap-alpha-package-plugin'));
     assert.ok(ctx.missing.plugins.includes('gap-beta-package-plugin'));
     assert.ok(ctx.missing.hostServices.includes('storage.project'));
+    assert.equal(ctx.readiness.ready, false);
+    assert.equal(ctx.readiness.valid, true);
+    assert.equal(ctx.readiness.status, 'warning');
+    assert.equal(ctx.readiness.nextAction, 'review-package-readiness');
+    assert.equal(ctx.readiness.source.packageCount, 2);
+    assert.equal(ctx.readiness.sourceCount, 2);
+    assert.equal(ctx.readiness.errorCount, 0);
+    assert.ok(ctx.readiness.warningCount > 0);
+    assert.ok(ctx.readiness.missingCount > 0);
   });
 
   it('blocks duplicate template names as aggregate conflicts', () => {

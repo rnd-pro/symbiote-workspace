@@ -1,4 +1,7 @@
-import { inspectWorkspacePackage } from './workspace-package.js';
+import {
+  createPackageReadinessProjection,
+  inspectWorkspacePackage,
+} from './workspace-package.js';
 
 function isObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -294,6 +297,7 @@ function finalizeCollectionResult(result, templates, modules, requiredCapabiliti
 
   result.valid = result.errors.length === 0;
   result.ready = result.valid && result.warnings.length === 0;
+  result.readiness = createPackageReadinessProjection(result);
 
   if (result.valid) {
     result.workspaceTemplates = templates.sort((a, b) => a.name.localeCompare(b.name));
@@ -356,6 +360,7 @@ function handoffSources(context) {
  *   requiredCapabilities: Array,
  *   requirements: Object|null,
  *   missing: Object|null,
+ *   readiness: Object|null,
  *   source: Object|null,
  *   summary: Object|null,
  *   compatibility: Object|null,
@@ -379,6 +384,7 @@ export function createWorkspacePackageConstructionContext(input, options = {}) {
     requiredCapabilities: [],
     requirements: inspection.requirements ? deepClone(inspection.requirements) : null,
     missing: inspection.missing ? deepClone(inspection.missing) : null,
+    readiness: inspection.readiness ? deepClone(inspection.readiness) : null,
     source: null,
     summary: inspection.summary ? deepClone(inspection.summary) : null,
     compatibility: inspection.compatibility ? deepClone(inspection.compatibility) : null,
@@ -404,6 +410,10 @@ export function createWorkspacePackageConstructionContext(input, options = {}) {
     : 'External workspace template.';
 
   result.source = createSource(inspection, templateName);
+  result.readiness = createPackageReadinessProjection({
+    ...result,
+    source: result.source,
+  });
   result.workspaceTemplates = [{
     name: templateName,
     description: templateDescription,
@@ -432,6 +442,7 @@ export function createWorkspacePackageConstructionContext(input, options = {}) {
  *   options: { workspaceTemplates: Array, moduleCapabilities: Array, packageContext: Object },
  *   requirements: Object|null,
  *   missing: Object|null,
+ *   readiness: Object|null,
  *   source: Object|null,
  *   sources: Array,
  *   summary: Object|null,
@@ -456,11 +467,23 @@ export function createWorkspaceConstructionHandoff(context, intent = {}) {
   let compatibility = optionalClone(context, 'compatibility');
   let warnings = isObject(context) && Array.isArray(context.warnings) ? deepClone(context.warnings) : [];
   let errors = contextDiagnostics(context);
+  let ready = valid && context.ready === true;
+  let readiness = optionalClone(context, 'readiness') || createPackageReadinessProjection({
+    valid,
+    ready,
+    missing,
+    source,
+    sources,
+    summary,
+    warnings,
+    errors,
+  });
   let packageContext = {
     valid,
-    ready: valid && context.ready === true,
+    ready,
     requirements,
     missing,
+    readiness,
     source,
     sources,
     summary,
@@ -471,7 +494,7 @@ export function createWorkspaceConstructionHandoff(context, intent = {}) {
 
   return {
     valid,
-    ready: valid && context.ready === true,
+    ready,
     intent: {
       ...baseIntent,
       requiredCapabilities,
@@ -487,6 +510,7 @@ export function createWorkspaceConstructionHandoff(context, intent = {}) {
     },
     requirements,
     missing,
+    readiness,
     source,
     sources,
     summary,
@@ -508,6 +532,7 @@ export function createWorkspaceConstructionHandoff(context, intent = {}) {
  *   requiredCapabilities: Array,
  *   requirements: Object,
  *   missing: Object,
+ *   readiness: Object|null,
  *   summary: Object|null,
  *   compatibility: Object|null,
  *   source: Object,
@@ -535,6 +560,7 @@ export function createWorkspacePackagesConstructionContext(input, options = {}) 
     requiredCapabilities: [],
     requirements: emptyCapabilityMap(),
     missing: emptyCapabilityMap(),
+    readiness: null,
     summary: null,
     compatibility: null,
     source,
