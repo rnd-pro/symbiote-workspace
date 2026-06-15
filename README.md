@@ -275,6 +275,16 @@ server:
 node examples/visual-demo/preview.mjs --write-only --output-dir tmp/visual-demo-preview
 ```
 
+Use the opt-in browser smoke when a release gate needs real render evidence:
+
+```bash
+npm run test:visual-demo-browser
+```
+
+It launches the visual demo server and a Chrome-compatible browser, then checks
+that the preview mounts without `[data-preview-error]` and renders the expected
+workspace and panel DOM.
+
 ## Portable Relaunch And Host Contract
 
 Use strict export for configs that must be saved, shared, and relaunched by a

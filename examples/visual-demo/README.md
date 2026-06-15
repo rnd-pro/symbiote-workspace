@@ -16,3 +16,14 @@ server:
 ```bash
 node examples/visual-demo/preview.mjs --write-only --output-dir tmp/visual-demo-preview
 ```
+
+For opt-in browser evidence, run the real-browser smoke. It starts the demo
+server, launches a Chrome-compatible browser through the DevTools Protocol, and
+asserts that the mounted workspace DOM has no preview error:
+
+```bash
+npm run test:visual-demo-browser
+```
+
+Set `SYMBIOTE_BROWSER_BIN` or pass `--browser` when Chrome is not installed in
+the standard macOS application locations.

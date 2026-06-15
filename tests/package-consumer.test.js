@@ -79,6 +79,10 @@ function assertNoForbiddenPackEntries(pack) {
     assert.equal(file.path.startsWith('tests/'), false, `${file.path} must not be packed`);
     assert.equal(file.path.includes('npm-cache'), false, `${file.path} must not be packed`);
     assert.equal(file.path.endsWith('.tgz'), false, `${file.path} must not be packed`);
+    assert.equal(file.path.includes('chrome-profile'), false, `${file.path} must not be packed`);
+    assert.equal(file.path.includes('visual-demo-browser-smoke/'), false, `${file.path} must not be packed`);
+    assert.equal(file.path.endsWith('screenshot.png'), false, `${file.path} must not be packed`);
+    assert.equal(file.path.endsWith('dom.html'), false, `${file.path} must not be packed`);
   }
 }
 
@@ -122,6 +126,11 @@ function assertWorkspacePackList(pack) {
     paths.has('examples/visual-demo/preview.mjs'),
     true,
     'Package must include the visual demo script',
+  );
+  assert.equal(
+    paths.has('examples/visual-demo/browser-smoke.mjs'),
+    true,
+    'Package must include the opt-in visual demo browser smoke script',
   );
   assert.equal(
     paths.has('examples/visual-demo/README.md'),

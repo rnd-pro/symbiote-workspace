@@ -88,7 +88,8 @@
   "scripts": {
     "test": "node --test tests/*.test.js",
     "test:package-consumer": "node --test tests/package-consumer.test.js",
-    "demo:visual": "node examples/visual-demo/preview.mjs"
+    "demo:visual": "node examples/visual-demo/preview.mjs",
+    "test:visual-demo-browser": "node examples/visual-demo/browser-smoke.mjs"
   },
   "keywords": [
     "workspace",
