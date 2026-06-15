@@ -27,6 +27,7 @@ describe('realtime builder demo', () => {
 
     assert.equal(demo.stages.length, 4);
     assert.equal(demo.acceptanceMatrix.every((item) => item.status === 'pass'), true);
+    assert.ok(demo.acceptanceMatrix.some((item) => item.id === 'construction-tool-lineage'));
     assert.deepEqual(demo.requiredWidgets, [
       'agent-chat',
       'service-blueprint',
@@ -37,13 +38,36 @@ describe('realtime builder demo', () => {
       'validation-checklist',
       'theme-editor',
     ]);
+    assert.deepEqual(demo.constructionTrace.canonicalQuestionIds, [
+      'workspace-name',
+      'target-register',
+      'layout-topology',
+      'module-selection',
+      'theme-mode',
+      'theme-hue',
+      'verification-scope',
+    ]);
+    assert.deepEqual(demo.constructionTrace.capabilityCoverage.missing, []);
+    assert.equal(demo.constructionTrace.exportImportEvidence.valid, true);
+    assert.deepEqual(
+      demo.constructionTrace.selectedModules.map((item) => item.panelType).sort(),
+      demo.requiredWidgets.slice().sort()
+    );
     for (let stage of demo.stages) {
       assert.equal(validateWorkspaceConfig(stage.config, { strict: true }).valid, true);
       assert.ok(stage.chat.length > 0);
       assert.ok(stage.config.construction.questions.length > 0);
       assert.equal(stage.chatState.activeQuestionId, stage.activeQuestionId);
       assert.ok(stage.chatState.nextPatch);
+      assert.ok(stage.chatState.decisionTrace.length > 0);
     }
+    let answeredQuestionIds = finalStage.config.construction.questions
+      .filter((question) => question.status === 'answered')
+      .map((question) => question.id);
+    assert.deepEqual(
+      finalStage.chatState.decisionTrace.map((decision) => decision.questionId),
+      answeredQuestionIds
+    );
     for (let required of demo.requiredWidgets) {
       assert.ok(panels.includes(required), `${required} panel is registered`);
     }
@@ -72,10 +96,13 @@ describe('realtime builder demo', () => {
       assert.equal(contract.requiredWidgets.includes('theme-editor'), true);
       assert.equal(contract.acceptanceMatrix.every((item) => item.status === 'pass'), true);
       assert.deepEqual(contract.playStages, ['intent', 'questionnaire', 'builder', 'validation']);
+      assert.deepEqual(contract.constructionTrace.capabilityCoverage.missing, []);
+      assert.equal(contract.constructionTrace.exportImportEvidence.valid, true);
       assert.deepEqual(contract.buildStreamTimeline.map((item) => item.progress), [25, 50, 75, 100]);
       assert.equal(contract.buildStreamTimeline.at(-1).operations.length, 4);
       assert.equal(contract.chatStateTimeline.length, 4);
       assert.equal(contract.chatStateTimeline.at(-1).requiredElements.includes('theme-editor'), true);
+      assert.equal(contract.chatStateTimeline.at(-1).decisionTrace.length, 5);
       assert.match(html, /<script type="importmap">/);
       assert.match(app, /mountWorkspace/);
       assert.match(app, /Play/);
@@ -85,6 +112,8 @@ describe('realtime builder demo', () => {
       assert.match(app, /dataset\.buildKind/);
       assert.match(app, /Service blueprint/);
       assert.match(app, /Widget registry/);
+      assert.match(app, /Questionnaire decisions/);
+      assert.match(app, /Construction tool trace/);
       assert.doesNotMatch(app, /\/Users\//);
       assert.doesNotMatch(states, /localhost|\/Users\//);
       assert.equal(config.panelTypes['theme-editor'].component, 'sn-theme-editor-widget');

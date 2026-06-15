@@ -25,6 +25,7 @@ function buildStreamOperations(stage) {
   let required = chatState.requiredElements || [];
   let roles = Object.keys(chatState.layoutRoles || {});
   let adaptive = chatState.adaptiveBehavior?.collapseOrder || [];
+  let latestDecision = chatState.decisionTrace?.at(-1);
   return [
     {
       label: 'Read chat state',
@@ -33,7 +34,9 @@ function buildStreamOperations(stage) {
     },
     {
       label: 'Apply workspace patch',
-      value: chatState.nextPatch || 'Waiting for next questionnaire answer.',
+      value: latestDecision
+        ? `${latestDecision.questionId}: ${latestDecision.operations.join(' -> ')}`
+        : chatState.nextPatch || 'Waiting for next questionnaire answer.',
       status: 'active',
     },
     {
@@ -487,6 +490,7 @@ function buildOperations(stage) {
   let required = chatState.requiredElements || [];
   let roles = Object.keys(chatState.layoutRoles || {});
   let adaptive = chatState.adaptiveBehavior?.collapseOrder || [];
+  let latestDecision = chatState.decisionTrace?.at(-1);
   return [
     {
       label: 'Read chat state',
@@ -495,7 +499,9 @@ function buildOperations(stage) {
     },
     {
       label: 'Apply workspace patch',
-      value: chatState.nextPatch || 'Waiting for next questionnaire answer.',
+      value: latestDecision
+        ? \`\${latestDecision.questionId}: \${latestDecision.operations.join(' -> ')}\`
+        : chatState.nextPatch || 'Waiting for next questionnaire answer.',
       status: 'active',
     },
     {
@@ -611,6 +617,8 @@ function renderInspector(stage) {
   let registry = chatState.widgetRegistry || [];
   let adaptive = chatState.adaptiveBehavior || {};
   let theme = chatState.themeCascade || {};
+  let decisions = chatState.decisionTrace || [];
+  let constructionTrace = demo.constructionTrace || {};
   inspector.textContent = '';
 
   let heading = document.createElement('h2');
@@ -664,6 +672,38 @@ function renderInspector(stage) {
     { label: 'Pinned', value: (adaptive.pinned || []).join(', ') || 'none' },
     { label: 'Theme source', value: theme.source || 'pending' },
     { label: 'Theme editor', value: \`\${theme.editorWidget || 'missing'} / \${theme.status || 'pending'}\` },
+  ]);
+
+  appendContractSection(
+    inspector,
+    'Questionnaire decisions',
+    decisions.map((decision) => ({
+      label: decision.questionId,
+      value: \`\${decision.operations.join(' -> ')}; evidence: \${decision.evidencePaths.join(', ')}\`,
+    }))
+  );
+
+  appendContractSection(inspector, 'Construction tool trace', [
+    {
+      label: 'Tool sequence',
+      value: (constructionTrace.toolSequence || []).join(' -> ') || 'pending',
+    },
+    {
+      label: 'Canonical questions',
+      value: (constructionTrace.canonicalQuestionIds || []).join(', ') || 'pending',
+    },
+    {
+      label: 'Capability coverage',
+      value: constructionTrace.capabilityCoverage?.missing?.length === 0
+        ? 'all required capabilities covered'
+        : \`missing: \${constructionTrace.capabilityCoverage?.missing?.join(', ') || 'unknown'}\`,
+    },
+    {
+      label: 'Export/import',
+      value: constructionTrace.exportImportEvidence?.valid
+        ? \`\${constructionTrace.exportImportEvidence.importedName} imported\`
+        : 'not verified',
+    },
   ]);
 
   let reportsList = document.createElement('div');
@@ -772,6 +812,7 @@ export async function writeRealtimeChatStateDemo(options = {}) {
     acceptanceMatrix: demo.acceptanceMatrix,
     playStages: demo.stages.map((stage) => stage.id),
     requiredWidgets: demo.requiredWidgets,
+    constructionTrace: demo.constructionTrace,
     buildStreamTimeline: demo.stages.map((stage, index) => ({
       stage: stage.id,
       progress: progressPercent(index, demo.stages.length),
@@ -782,6 +823,7 @@ export async function writeRealtimeChatStateDemo(options = {}) {
       activeQuestionId: stage.chatState.activeQuestionId,
       questionnaireStatus: stage.chatState.questionnaireStatus,
       requiredElements: stage.chatState.requiredElements,
+      decisionTrace: stage.chatState.decisionTrace,
       nextPatch: stage.chatState.nextPatch,
     })),
     imports,

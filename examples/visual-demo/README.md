@@ -29,8 +29,11 @@ widget registration, bindings, adaptive collapse priorities, validation state,
 and the required theme editor widget.
 
 The generated `demo.contract.json` includes the play stages, required widgets,
-acceptance matrix, build stream timeline, and chat-state timeline so the staged
-transformation is inspectable without reading the browser DOM.
+acceptance matrix, build stream timeline, chat-state timeline, questionnaire
+decision trace, and construction trace. The construction trace records canonical
+questionnaire IDs, required module capability coverage, verification reports,
+and strict export/import evidence so the staged transformation is inspectable
+without reading the browser DOM.
 
 For opt-in browser evidence, run the real-browser smoke. It starts the demo
 server, launches a Chrome-compatible browser through the DevTools Protocol, and

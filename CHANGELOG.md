@@ -14,6 +14,9 @@ All notable changes to this project will be documented in this file.
   so Play visibly applies staged workspace patches from the mock chat state.
 - Extended the opt-in browser smoke harness with a realtime-builder mode that
   clicks Play and verifies the final operation-level build state through CDP.
+- Added construction lineage evidence to the realtime builder demo contract,
+  including canonical questionnaire IDs, module capability coverage, decision
+  traces, verification reports, and strict export/import evidence.
 - Added an opt-in visual-demo browser smoke script that launches the packaged
   demo through a Chrome-compatible DevTools Protocol session and verifies the
   mounted workspace DOM without changing the default test command.

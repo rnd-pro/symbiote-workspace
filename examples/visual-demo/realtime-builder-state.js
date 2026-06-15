@@ -1,5 +1,6 @@
 import { validateWorkspaceConfig } from '../../schema/index.js';
-import { exportConfig } from '../../sharing/index.js';
+import { planWorkspaceConstruction } from '../../constructor/index.js';
+import { exportConfig, importConfig } from '../../sharing/index.js';
 
 function panelType(title, component, icon, options = {}) {
   return {
@@ -47,6 +48,15 @@ function question(id, title, type, status, answer, answerSource = 'derived') {
   };
 }
 
+function decision(questionId, answer, operations, evidencePaths) {
+  return {
+    questionId,
+    answer,
+    operations,
+    evidencePaths,
+  };
+}
+
 function eventBridge(id, sourcePanel, event, options = {}) {
   return {
     id,
@@ -77,6 +87,19 @@ function stateField(panelType, component, id, type, path, persistence) {
   };
 }
 
+function moduleCapability(panelTypeName, title, component, capabilities, icon) {
+  return {
+    tagName: component,
+    capabilities,
+    placement: {
+      panelType: panelTypeName,
+      title,
+      icon,
+      behavior: basePanelTypes()[panelTypeName]?.behavior,
+    },
+  };
+}
+
 function chatState(options) {
   return {
     activeIntent: options.activeIntent,
@@ -89,6 +112,7 @@ function chatState(options) {
     adaptiveBehavior: options.adaptiveBehavior || null,
     themeCascade: options.themeCascade || null,
     validationChecklist: options.validationChecklist || [],
+    decisionTrace: options.decisionTrace || [],
     nextPatch: options.nextPatch,
   };
 }
@@ -336,6 +360,18 @@ function createStages() {
           { id: 'intent', status: 'pass' },
           { id: 'required-widgets', status: 'pending' },
         ],
+        decisionTrace: [
+          decision(
+            'service-goal',
+            'AI service builder',
+            [
+              'set intent.brief',
+              'select agent-workspace register',
+              'mount conversation and blueprint panels',
+            ],
+            ['config.intent.brief', 'config.register', 'config.panelTypes.agent-chat']
+          ),
+        ],
         nextPatch: 'Resolve mandatory widgets from questionnaire answers.',
       }),
       config: baseConfig('Realtime Builder - Intent', {
@@ -442,6 +478,50 @@ function createStages() {
           { id: 'intent', status: 'pass' },
           { id: 'required-widgets', status: 'pass' },
           { id: 'theme-editor', status: 'pending' },
+        ],
+        decisionTrace: [
+          decision(
+            'service-goal',
+            'AI service builder',
+            [
+              'set intent.brief',
+              'extend service blueprint entities',
+              'keep agent chat as pinned primary region',
+            ],
+            ['config.intent.brief', 'chatState.serviceBlueprint.entities', 'chatState.adaptiveBehavior.pinned']
+          ),
+          decision(
+            'required-widgets',
+            [
+              'service-blueprint',
+              'layout-builder',
+              'widget-registry',
+              'bindings-inspector',
+              'validation-checklist',
+              'theme-editor',
+            ],
+            [
+              'register mandatory panel types',
+              'mount widget registry',
+              'mark builder, inspector, validation, and theme widgets as planned',
+            ],
+            ['config.panelTypes', 'chatState.widgetRegistry', 'config.construction.plan.selectedPanels']
+          ),
+          decision(
+            'layout-roles',
+            [
+              'conversation-primary',
+              'builder-canvas',
+              'inspection-sidecar',
+              'quality-footer',
+            ],
+            [
+              'assign semantic layout roles',
+              'prepare builder layout template',
+              'set initial collapse order',
+            ],
+            ['chatState.layoutRoles', 'config.construction.plan.roleMap', 'chatState.adaptiveBehavior']
+          ),
         ],
         nextPatch: 'Mount layout builder, bindings inspector, and theme editor.',
       }),
@@ -604,6 +684,59 @@ function createStages() {
           { id: 'bindings', status: 'pass' },
           { id: 'theme-editor', status: 'pass' },
           { id: 'adaptive-rules', status: 'pending' },
+        ],
+        decisionTrace: [
+          decision(
+            'service-goal',
+            'AI service builder',
+            [
+              'set builder workspace audience',
+              'keep service blueprint as source model',
+            ],
+            ['config.intent.audience', 'chatState.serviceBlueprint.workflows']
+          ),
+          decision(
+            'required-widgets',
+            [
+              'service-blueprint',
+              'layout-builder',
+              'widget-registry',
+              'bindings-inspector',
+              'validation-checklist',
+              'theme-editor',
+            ],
+            [
+              'mount layout builder',
+              'mount bindings inspector',
+              'mount theme editor',
+            ],
+            ['config.panelTypes.layout-builder', 'config.panelTypes.bindings-inspector', 'config.panelTypes.theme-editor']
+          ),
+          decision(
+            'layout-roles',
+            [
+              'conversation-primary',
+              'builder-canvas',
+              'inspection-sidecar',
+              'quality-footer',
+            ],
+            [
+              'materialize builder BSP layout',
+              'wire blueprint to layout canvas',
+              'rank sidecar panels below builder canvas',
+            ],
+            ['config.layout', 'config.events', 'config.construction.plan.adaptivePriorities']
+          ),
+          decision(
+            'theme-mode',
+            'default-light',
+            [
+              'apply default Symbiote UI theme cascade',
+              'mount theme editor as required widget',
+              'bind theme editor to workspace theme state',
+            ],
+            ['config.theme', 'chatState.themeCascade', 'config.data.bindings']
+          ),
         ],
         nextPatch: 'Add adaptive rules and final validation checklist.',
       }),
@@ -815,6 +948,70 @@ function createStages() {
           { id: 'layout-roles', status: 'pass' },
           { id: 'event-bridges', status: 'pass' },
           { id: 'theme-cascade', status: 'pass' },
+        ],
+        decisionTrace: [
+          decision(
+            'service-goal',
+            'AI service builder',
+            [
+              'preserve service-builder intent',
+              'export host-neutral agent-workspace config',
+            ],
+            ['config.intent', 'config.register', 'workspace.config.json']
+          ),
+          decision(
+            'required-widgets',
+            [
+              'service-blueprint',
+              'layout-builder',
+              'widget-registry',
+              'bindings-inspector',
+              'adaptive-rules',
+              'validation-checklist',
+              'theme-editor',
+            ],
+            [
+              'register every mandatory panel type',
+              'expose all required widgets in builder contract',
+              'validate required widget coverage',
+            ],
+            ['config.panelTypes', 'chatState.requiredElements', 'config.validation.reports']
+          ),
+          decision(
+            'layout-roles',
+            [
+              'conversation-primary',
+              'builder-canvas',
+              'inspection-sidecar',
+              'quality-footer',
+            ],
+            [
+              'assign layout role map',
+              'materialize final BSP layout',
+              'set adaptive collapse priorities',
+            ],
+            ['chatState.layoutRoles', 'config.layout', 'config.construction.plan.adaptivePriorities']
+          ),
+          decision(
+            'theme-mode',
+            'default-light',
+            [
+              'apply default Symbiote UI cascade theme',
+              'keep theme editor mounted',
+              'validate theme cascade handoff',
+            ],
+            ['config.theme', 'chatState.themeCascade', 'config.data.bindings']
+          ),
+          decision(
+            'handoff-ready',
+            true,
+            [
+              'run strict workspace validation',
+              'write portable workspace config export',
+              'publish demo contract evidence',
+            ],
+            ['config.validation.reports', 'workspace.config.json', 'demo.contract.json']
+          ),
         ],
         nextPatch: 'Ready for host-neutral workspace export.',
       }),
@@ -1028,6 +1225,135 @@ function validateStage(stage) {
   }
 }
 
+function demoModuleCapabilities() {
+  return [
+    moduleCapability(
+      'agent-chat',
+      'Agent Chat',
+      'sn-agent-chat-panel',
+      ['agent.chat', 'questionnaire.flow'],
+      'forum'
+    ),
+    moduleCapability(
+      'service-blueprint',
+      'Service Blueprint',
+      'sn-service-blueprint-panel',
+      ['service.blueprint', 'service.model'],
+      'account_tree'
+    ),
+    moduleCapability(
+      'layout-builder',
+      'Layout Builder Surface',
+      'sn-layout-builder-surface',
+      ['workspace.layout-builder', 'layout.bsp'],
+      'dashboard_customize'
+    ),
+    moduleCapability(
+      'widget-registry',
+      'Widget Registry',
+      'sn-widget-registry-panel',
+      ['workspace.widget-registry', 'module.discovery'],
+      'widgets'
+    ),
+    moduleCapability(
+      'bindings-inspector',
+      'Bindings Inspector',
+      'sn-bindings-inspector-panel',
+      ['workspace.bindings-inspector', 'binding.inspect'],
+      'hub'
+    ),
+    moduleCapability(
+      'adaptive-rules',
+      'Adaptive Rules',
+      'sn-adaptive-rules-panel',
+      ['workspace.adaptive-rules', 'layout.collapse-priority'],
+      'collapse_content'
+    ),
+    moduleCapability(
+      'validation-checklist',
+      'Validation Checklist',
+      'sn-validation-checklist-panel',
+      ['workspace.validation-checklist', 'validation.report'],
+      'task_alt'
+    ),
+    moduleCapability(
+      'theme-editor',
+      'Theme Editor',
+      'sn-theme-editor-widget',
+      ['workspace.theme-editor', 'theme.cascade'],
+      'palette'
+    ),
+  ];
+}
+
+function buildConstructionTrace(finalStage) {
+  let moduleCapabilities = demoModuleCapabilities();
+  let requiredCapabilities = moduleCapabilities.flatMap((item) => item.capabilities.slice(0, 1));
+  let result = planWorkspaceConstruction({
+    brief: 'AI agent tool that creates a service UI from guided questionnaire answers.',
+    template: 'dashboard',
+    targetRegister: 'agent-workspace',
+    audience: ['service builders', 'AI agent operators'],
+    constraints: ['mock data only', 'host neutral workspace config'],
+    requiredCapabilities,
+  }, {
+    moduleCapabilities,
+    answers: {
+      'workspace-name': finalStage.config.name,
+      'target-register': 'agent-workspace',
+      'layout-topology': 'workbench',
+      'module-selection': Object.keys(finalStage.config.panelTypes),
+      'theme-mode': 'light',
+      'verification-scope': ['layout', 'modules', 'theme', 'portability'],
+    },
+  });
+  let exported = exportConfig(result.config, { strict: true });
+  let imported = importConfig(exported.json);
+  let selectedModules = result.plan.capabilities.selectedModules || [];
+  return {
+    toolSequence: [
+      'normalizeConstructionIntent',
+      'buildConstructionQuestions',
+      'answerConstructionQuestion',
+      'planWorkspaceConstruction',
+      'exportConfig',
+      'importConfig',
+    ],
+    normalizedIntent: result.intent,
+    canonicalQuestionIds: result.questions.map((item) => item.id),
+    answeredQuestions: result.questions
+      .filter((item) => item.status === 'answered')
+      .map((item) => ({
+        id: item.id,
+        answer: item.answer,
+        answerSource: item.answerSource,
+      })),
+    moduleCapabilities: moduleCapabilities.map((item) => ({
+      panelType: item.placement.panelType,
+      component: item.tagName,
+      capabilities: item.capabilities,
+    })),
+    selectedModules,
+    capabilityCoverage: {
+      required: requiredCapabilities,
+      missing: result.plan.capabilities.missing,
+      selected: selectedModules.map((item) => ({
+        panelType: item.panelType,
+        component: item.component,
+        matchedCapabilities: item.matchedCapabilities,
+        coverageStatus: item.coverageStatus,
+      })),
+    },
+    verificationReports: result.plan.verification.reports,
+    exportImportEvidence: {
+      exportedBytes: exported.json.length,
+      importedName: imported.config?.name,
+      importedPanelCount: Object.keys(imported.config?.panelTypes || {}).length,
+      valid: imported.errors.length === 0,
+    },
+  };
+}
+
 function buildAcceptanceMatrix(demo) {
   let finalStage = demo.stages.at(-1);
   let finalConfig = finalStage.config;
@@ -1075,12 +1401,25 @@ function buildAcceptanceMatrix(demo) {
       status: finalChatState.themeCascade?.editorWidget === 'theme-editor' ? 'pass' : 'fail',
       evidence: finalChatState.themeCascade,
     },
+    {
+      id: 'construction-tool-lineage',
+      status: demo.constructionTrace?.capabilityCoverage?.missing?.length === 0 &&
+        demo.constructionTrace?.exportImportEvidence?.valid === true
+        ? 'pass'
+        : 'fail',
+      evidence: {
+        tools: demo.constructionTrace?.toolSequence,
+        questions: demo.constructionTrace?.canonicalQuestionIds,
+        selectedModules: demo.constructionTrace?.selectedModules?.map((item) => item.panelType),
+      },
+    },
   ];
 }
 
 export function buildRealtimeChatStateDemo() {
   let stages = createStages();
   for (let stage of stages) validateStage(stage);
+  let finalStage = stages.at(-1);
   let demo = {
     schemaVersion: '0.1.0',
     name: 'Realtime Chat-State UI Builder',
@@ -1096,6 +1435,7 @@ export function buildRealtimeChatStateDemo() {
       'theme-editor',
     ],
     stages,
+    constructionTrace: buildConstructionTrace(finalStage),
   };
   return {
     ...demo,
