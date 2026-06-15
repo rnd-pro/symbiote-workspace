@@ -72,11 +72,17 @@ describe('realtime builder demo', () => {
       assert.equal(contract.requiredWidgets.includes('theme-editor'), true);
       assert.equal(contract.acceptanceMatrix.every((item) => item.status === 'pass'), true);
       assert.deepEqual(contract.playStages, ['intent', 'questionnaire', 'builder', 'validation']);
+      assert.deepEqual(contract.buildStreamTimeline.map((item) => item.progress), [25, 50, 75, 100]);
+      assert.equal(contract.buildStreamTimeline.at(-1).operations.length, 4);
       assert.equal(contract.chatStateTimeline.length, 4);
       assert.equal(contract.chatStateTimeline.at(-1).requiredElements.includes('theme-editor'), true);
       assert.match(html, /<script type="importmap">/);
       assert.match(app, /mountWorkspace/);
       assert.match(app, /Play/);
+      assert.match(app, /Build stream/);
+      assert.match(app, /demo-build-progress/);
+      assert.match(app, /operationIndex/);
+      assert.match(app, /dataset\.buildKind/);
       assert.match(app, /Service blueprint/);
       assert.match(app, /Widget registry/);
       assert.doesNotMatch(app, /\/Users\//);

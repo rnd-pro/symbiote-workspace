@@ -10,6 +10,8 @@ All notable changes to this project will be documented in this file.
 - Added an inspectable realtime demo contract with a chat-state timeline and
   acceptance matrix covering the required builder panels, adaptive behavior,
   validation checklist, and theme editor widget.
+- Added a realtime build stream and progress indicator to the chat-state demo
+  so Play visibly applies staged workspace patches from the mock chat state.
 - Added an opt-in visual-demo browser smoke script that launches the packaged
   demo through a Chrome-compatible DevTools Protocol session and verifies the
   mounted workspace DOM without changing the default test command.

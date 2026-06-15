@@ -16,6 +16,41 @@ function escapeScriptJson(value) {
   return JSON.stringify(value, null, 2).replaceAll('</script', '<\\/script');
 }
 
+function progressPercent(index, total) {
+  return Math.round(((index + 1) / total) * 100);
+}
+
+function buildStreamOperations(stage) {
+  let chatState = stage.chatState || {};
+  let required = chatState.requiredElements || [];
+  let roles = Object.keys(chatState.layoutRoles || {});
+  let adaptive = chatState.adaptiveBehavior?.collapseOrder || [];
+  return [
+    {
+      label: 'Read chat state',
+      value: chatState.questionnaireStatus || stage.activeQuestionId,
+      status: 'done',
+    },
+    {
+      label: 'Apply workspace patch',
+      value: chatState.nextPatch || 'Waiting for next questionnaire answer.',
+      status: 'active',
+    },
+    {
+      label: 'Resolve required UI',
+      value: required.length ? required.join(', ') : 'Intent panels only',
+      status: required.length >= 4 ? 'done' : 'active',
+    },
+    {
+      label: 'Rank layout behavior',
+      value: roles.length
+        ? `${roles.length} roles, collapse: ${adaptive.join(' -> ') || 'pending'}`
+        : 'Waiting for layout roles',
+      status: adaptive.length >= 3 ? 'done' : 'active',
+    },
+  ];
+}
+
 function generateIndexHtml(title, imports) {
   return `<!DOCTYPE html>
 <html lang="en">
@@ -41,6 +76,7 @@ import { applyCascadeTheme } from '${BROWSER_THEME_IMPORT}';
 
 let demo = ${escapeScriptJson(demo)};
 let stageIndex = 0;
+let operationIndex = 0;
 let mounted = null;
 let playTimer = null;
 
@@ -144,6 +180,35 @@ styles.replaceSync(\`
     border-color: var(--demo-accent);
     color: var(--demo-accent);
   }
+  .demo-build-progress {
+    display: grid;
+    gap: 0.25rem;
+    flex: 0 1 14rem;
+    min-width: 10rem;
+  }
+  .demo-build-progress span {
+    color: var(--demo-muted);
+    font-size: 0.72rem;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+  .demo-build-progress i {
+    display: block;
+    width: 100%;
+    height: 0.4rem;
+    overflow: hidden;
+    border-radius: 999px;
+    background: color-mix(in srgb, CanvasText 12%, transparent);
+  }
+  .demo-build-progress i::before {
+    content: "";
+    display: block;
+    width: var(--demo-progress, 0%);
+    height: 100%;
+    border-radius: inherit;
+    background: var(--demo-accent);
+    transition: width 240ms ease;
+  }
   .demo-chat {
     min-width: 0;
     min-height: 0;
@@ -200,6 +265,45 @@ styles.replaceSync(\`
   .demo-question span {
     color: var(--demo-muted);
     font-size: 0.74rem;
+  }
+  .demo-build-stream {
+    display: grid;
+    gap: 0.5rem;
+    margin-top: 1rem;
+  }
+  .demo-build-stream h2 {
+    margin: 0;
+    font-size: 0.86rem;
+    line-height: 1.25;
+  }
+  .demo-build-step {
+    display: grid;
+    gap: 0.25rem;
+    padding: 0.625rem;
+    border: 1px solid var(--demo-border);
+    border-left: 4px solid color-mix(in srgb, var(--demo-accent) 54%, CanvasText 16%);
+    border-radius: 8px;
+    background: Canvas;
+  }
+  .demo-build-step[data-status="done"] {
+    border-left-color: var(--demo-pass);
+  }
+  .demo-build-step[data-status="active"] {
+    border-color: color-mix(in srgb, var(--demo-accent) 70%, CanvasText 12%);
+    border-left-color: var(--demo-accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--demo-accent) 12%, transparent);
+  }
+  .demo-build-step[data-status="pending"] {
+    opacity: 0.62;
+  }
+  .demo-build-step strong {
+    font-size: 0.8rem;
+    line-height: 1.25;
+  }
+  .demo-build-step span {
+    color: var(--demo-muted);
+    font-size: 0.74rem;
+    line-height: 1.3;
   }
   .demo-main {
     display: grid;
@@ -324,6 +428,9 @@ styles.replaceSync(\`
     .demo-stage-rail {
       flex: 1 1 100%;
     }
+    .demo-build-progress {
+      flex: 1 1 100%;
+    }
   }
 \`);
 document.adoptedStyleSheets = [...document.adoptedStyleSheets, styles];
@@ -340,6 +447,10 @@ shell.innerHTML = \`
       <span class="demo-icon" aria-hidden="true">play_arrow</span>
       <span>Play</span>
     </button>
+    <div class="demo-build-progress" aria-label="Build progress">
+      <span></span>
+      <i aria-hidden="true"></i>
+    </div>
     <div class="demo-stage-rail" role="tablist" aria-label="Demo stages"></div>
   </header>
   <aside class="demo-chat" aria-label="Chat and questionnaire"></aside>
@@ -353,6 +464,7 @@ document.body.appendChild(shell);
 let title = shell.querySelector('.demo-title strong');
 let subtitle = shell.querySelector('.demo-title span');
 let playButton = shell.querySelector('[data-action="play"]');
+let buildProgress = shell.querySelector('.demo-build-progress');
 let stageRail = shell.querySelector('.demo-stage-rail');
 let chat = shell.querySelector('.demo-chat');
 let workspace = shell.querySelector('.demo-workspace');
@@ -360,6 +472,51 @@ let inspector = shell.querySelector('.demo-inspector');
 
 function plural(value, label) {
   return \`\${value} \${label}\`;
+}
+
+function buildProgressPercent(index) {
+  let total = demo.stages.reduce((sum, stage) => sum + buildOperations(stage).length, 0);
+  let previous = demo.stages
+    .slice(0, index)
+    .reduce((sum, stage) => sum + buildOperations(stage).length, 0);
+  return Math.round(((previous + operationIndex + 1) / total) * 100);
+}
+
+function buildOperations(stage) {
+  let chatState = stage.chatState || {};
+  let required = chatState.requiredElements || [];
+  let roles = Object.keys(chatState.layoutRoles || {});
+  let adaptive = chatState.adaptiveBehavior?.collapseOrder || [];
+  return [
+    {
+      label: 'Read chat state',
+      value: chatState.questionnaireStatus || stage.activeQuestionId,
+      status: 'done',
+    },
+    {
+      label: 'Apply workspace patch',
+      value: chatState.nextPatch || 'Waiting for next questionnaire answer.',
+      status: 'active',
+    },
+    {
+      label: 'Resolve required UI',
+      value: required.length ? required.join(', ') : 'Intent panels only',
+      status: required.length >= 4 ? 'done' : 'active',
+    },
+    {
+      label: 'Rank layout behavior',
+      value: roles.length
+        ? \`\${roles.length} roles, collapse: \${adaptive.join(' -> ') || 'pending'}\`
+        : 'Waiting for layout roles',
+      status: adaptive.length >= 3 ? 'done' : 'active',
+    },
+  ];
+}
+
+function operationStatus(index) {
+  if (index < operationIndex) return 'done';
+  if (index === operationIndex) return 'active';
+  return 'pending';
 }
 
 function appendContractSection(parent, title, rows) {
@@ -394,6 +551,7 @@ function renderStageRail() {
     if (index === stageIndex) button.setAttribute('aria-current', 'step');
     button.addEventListener('click', () => {
       stopPlayback();
+      operationIndex = 0;
       renderStage(index);
     });
     stageRail.appendChild(button);
@@ -425,6 +583,20 @@ function renderChat(stage) {
     list.appendChild(question);
   }
   chat.appendChild(list);
+
+  let stream = document.createElement('section');
+  stream.className = 'demo-build-stream';
+  let streamHeading = document.createElement('h2');
+  streamHeading.textContent = 'Build stream';
+  stream.appendChild(streamHeading);
+  buildOperations(stage).forEach((step, index) => {
+    let item = document.createElement('article');
+    item.className = 'demo-build-step';
+    item.dataset.status = operationStatus(index);
+    item.innerHTML = \`<strong>\${step.label}</strong><span>\${step.value}</span>\`;
+    stream.appendChild(item);
+  });
+  chat.appendChild(stream);
 }
 
 function renderInspector(stage) {
@@ -522,8 +694,14 @@ function renderWorkspace(stage) {
 function renderStage(index) {
   stageIndex = index;
   let stage = demo.stages[stageIndex];
+  let progress = buildProgressPercent(stageIndex);
+  let activeOperation = buildOperations(stage)[operationIndex];
+  shell.dataset.stage = stage.id;
+  shell.dataset.buildKind = activeOperation?.label.toLowerCase().replaceAll(' ', '-') || 'stage';
   title.textContent = demo.name;
   subtitle.textContent = \`\${stage.clock} - \${stage.title}\`;
+  buildProgress.querySelector('span').textContent = \`Build \${progress}%\`;
+  buildProgress.style.setProperty('--demo-progress', \`\${progress}%\`);
   renderStageRail();
   renderChat(stage);
   renderWorkspace(stage);
@@ -542,14 +720,22 @@ function startPlayback() {
   stopPlayback();
   playButton.querySelector('.demo-icon').textContent = 'pause';
   playButton.querySelector('span:last-child').textContent = 'Playing';
+  operationIndex = 0;
   renderStage(0);
   playTimer = setInterval(() => {
+    let operations = buildOperations(demo.stages[stageIndex]);
+    if (operationIndex < operations.length - 1) {
+      operationIndex += 1;
+      renderStage(stageIndex);
+      return;
+    }
     if (stageIndex >= demo.stages.length - 1) {
       stopPlayback();
       return;
     }
+    operationIndex = 0;
     renderStage(stageIndex + 1);
-  }, 1100);
+  }, 620);
 }
 
 playButton.addEventListener('click', () => {
@@ -586,6 +772,11 @@ export async function writeRealtimeChatStateDemo(options = {}) {
     acceptanceMatrix: demo.acceptanceMatrix,
     playStages: demo.stages.map((stage) => stage.id),
     requiredWidgets: demo.requiredWidgets,
+    buildStreamTimeline: demo.stages.map((stage, index) => ({
+      stage: stage.id,
+      progress: progressPercent(index, demo.stages.length),
+      operations: buildStreamOperations(stage),
+    })),
     chatStateTimeline: demo.stages.map((stage) => ({
       stage: stage.id,
       activeQuestionId: stage.chatState.activeQuestionId,
