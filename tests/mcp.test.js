@@ -1027,6 +1027,62 @@ describe('Plugin Metadata Collection via MCP', () => {
       version: '1.0.0',
     });
   });
+
+  it('plugin collector tools isolate unrelated section errors through MCP', async () => {
+    let responses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: {
+          name: 'collect_plugin_module_capabilities',
+          arguments: {
+            plugins: [{
+              name: '@acme/mcp-section-isolated-components',
+              version: '1.0.0',
+              components: [EXTERNAL_SENTIMENT_MODULE],
+              workspace: {
+                templates: [{ name: 'Broken Template', config: EXTERNAL_ROOM_TEMPLATE.config }],
+              },
+            }],
+          },
+        },
+      },
+      {
+        jsonrpc: '2.0', id: 3, method: 'tools/call',
+        params: {
+          name: 'collect_plugin_workspace_templates',
+          arguments: {
+            plugins: [{
+              name: '@acme/mcp-section-isolated-templates',
+              version: '1.0.0',
+              components: [{ tagName: 'Broken Component', actions: [{ id: 'open' }] }],
+              workspace: {
+                templates: [EXTERNAL_ROOM_TEMPLATE],
+              },
+            }],
+          },
+        },
+      },
+    ]);
+
+    let moduleResult = responses.find((r) => r.id === 2);
+    let templateResult = responses.find((r) => r.id === 3);
+    assert.ok(moduleResult);
+    assert.ok(templateResult);
+
+    let moduleContent = JSON.parse(moduleResult.result.content[0].text);
+    let templateContent = JSON.parse(templateResult.result.content[0].text);
+    assert.equal(moduleContent.status, 'ok');
+    assert.deepEqual(moduleContent.errors, []);
+    assert.deepEqual(moduleContent.moduleCapabilities.map((item) => item.tagName), [
+      'acme-sentiment-panel',
+    ]);
+    assert.equal(templateContent.status, 'ok');
+    assert.deepEqual(templateContent.errors, []);
+    assert.deepEqual(templateContent.templates.map((template) => template.name), [
+      'mcp-voice-video-room',
+    ]);
+  });
 });
 
 describe('Package Collection Construction Context via MCP', () => {

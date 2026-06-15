@@ -400,6 +400,24 @@ describe('plugin module capability collection', () => {
     assert.ok(result.errors.some((error) => error.path === 'plugins[1].components[0].tagName'));
   });
 
+  it('collects module descriptors when unrelated workspace templates are invalid', () => {
+    let result = collectPluginModuleCapabilities([{
+      name: '@acme/section-isolated-components',
+      version: '1.0.0',
+      components: [{
+        tagName: 'acme-valid-panel',
+        capabilities: ['valid.panel'],
+      }],
+      workspace: {
+        templates: [{ name: 'Broken Template', config: workspaceConfig('Broken Template') }],
+      },
+    }]);
+
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.errors, []);
+    assert.deepEqual(result.moduleCapabilities.map((item) => item.tagName), ['acme-valid-panel']);
+  });
+
   it('lists module capabilities from the plugin registry', async () => {
     registerPlugin({
       name: '@acme/inactive',
@@ -484,6 +502,18 @@ describe('plugin workspace template collection', () => {
     )));
   });
 
+  it('returns prefixed validation errors for invalid workspace sections', () => {
+    let result = collectPluginWorkspaceTemplates([{
+      name: '@acme/broken-workspace-section',
+      version: '1.0.0',
+      workspace: 'invalid',
+    }]);
+
+    assert.equal(result.ok, false);
+    assert.deepEqual(result.templates, []);
+    assert.ok(result.errors.some((error) => error.path === 'plugins[0].workspace'));
+  });
+
   it('rejects duplicate workspace template names across plugin inputs', () => {
     let result = collectPluginWorkspaceTemplates([
       {
@@ -507,6 +537,21 @@ describe('plugin workspace template collection', () => {
     assert.ok(result.errors.some((error) => (
       error.path === 'plugins[1].workspace.templates[0].name'
     )));
+  });
+
+  it('collects workspace templates when unrelated component descriptors are invalid', () => {
+    let result = collectPluginWorkspaceTemplates([{
+      name: '@acme/section-isolated-templates',
+      version: '1.0.0',
+      components: [{ tagName: 'Broken Component', actions: [{ id: 'open' }] }],
+      workspace: {
+        templates: [{ name: 'valid-room', config: workspaceConfig('Valid Room') }],
+      },
+    }]);
+
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.errors, []);
+    assert.deepEqual(result.templates.map((template) => template.name), ['valid-room']);
   });
 
   it('lists workspace templates from the plugin registry', async () => {

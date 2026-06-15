@@ -5,10 +5,10 @@
  */
 
 import {
-  validatePluginDefinition,
   validatePluginWorkspaceTemplate,
 } from './plugin-schema.js';
 import { getPlugin, listPlugins } from './plugin-registry.js';
+import { validateModuleCapabilityDescriptor } from '../schema/module-capability.js';
 
 function isObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -29,11 +29,59 @@ function normalizePluginInput(plugins, errors) {
   return [];
 }
 
-function prefixValidationError(index, error) {
-  return {
-    ...error,
-    path: error.path ? `plugins[${index}].${error.path}` : `plugins[${index}]`,
-  };
+function validatePluginIdentity(plugin, path, errors) {
+  if (!plugin || typeof plugin !== 'object' || Array.isArray(plugin)) {
+    errors.push({ path, message: 'Plugin must be a non-null object.' });
+    return false;
+  }
+
+  let before = errors.length;
+  if (typeof plugin.name !== 'string' || !plugin.name.trim()) {
+    errors.push({
+      path: `${path}.name`,
+      message: 'Plugin name is required and must be a non-empty string.',
+    });
+  }
+
+  if (typeof plugin.version !== 'string' || !plugin.version.trim()) {
+    errors.push({
+      path: `${path}.version`,
+      message: 'Plugin version is required and must be a non-empty string.',
+    });
+  }
+
+  return errors.length === before;
+}
+
+function validatePluginComponents(plugin, index, errors) {
+  let components = plugin.components || [];
+  if (plugin.components !== undefined && !Array.isArray(plugin.components)) {
+    errors.push({
+      path: `plugins[${index}].components`,
+      message: 'components must be an array of strings or module descriptors.',
+    });
+    return [];
+  }
+
+  for (let j = 0; j < components.length; j++) {
+    let component = components[j];
+    if (typeof component === 'string') continue;
+    if (component && typeof component === 'object' && !Array.isArray(component)) {
+      validateModuleCapabilityDescriptor(
+        component,
+        `plugins[${index}].components[${j}]`,
+        errors,
+        { severity: false },
+      );
+    } else {
+      errors.push({
+        path: `plugins[${index}].components[${j}]`,
+        message: 'Component entry must be a string or module descriptor.',
+      });
+    }
+  }
+
+  return components;
 }
 
 function matchesStatus(entry, status) {
@@ -54,14 +102,17 @@ export function collectPluginModuleCapabilities(plugins) {
 
   for (let i = 0; i < pluginList.length; i++) {
     let plugin = pluginList[i];
-    let validation = validatePluginDefinition(plugin);
-    if (!validation.valid) {
-      errors.push(...validation.errors.map((error) => prefixValidationError(i, error)));
+    let pluginPath = `plugins[${i}]`;
+    if (!validatePluginIdentity(plugin, pluginPath, errors)) continue;
+
+    let before = errors.length;
+    let components = validatePluginComponents(plugin, i, errors);
+    if (errors.length !== before) {
       continue;
     }
 
-    for (let j = 0; j < (plugin.components || []).length; j++) {
-      let component = plugin.components[j];
+    for (let j = 0; j < components.length; j++) {
+      let component = components[j];
       if (typeof component === 'string') continue;
 
       let path = `plugins[${i}].components[${j}].tagName`;
@@ -121,9 +172,14 @@ export function collectPluginWorkspaceTemplates(plugins) {
 
   for (let i = 0; i < pluginList.length; i++) {
     let plugin = pluginList[i];
-    let validation = validatePluginDefinition(plugin);
-    if (!validation.valid) {
-      errors.push(...validation.errors.map((error) => prefixValidationError(i, error)));
+    let pluginPath = `plugins[${i}]`;
+    if (!validatePluginIdentity(plugin, pluginPath, errors)) continue;
+
+    if (plugin.workspace !== undefined && !isObject(plugin.workspace)) {
+      errors.push({
+        path: `${pluginPath}.workspace`,
+        message: 'workspace must be an object.',
+      });
       continue;
     }
 

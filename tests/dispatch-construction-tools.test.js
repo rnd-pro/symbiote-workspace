@@ -764,6 +764,41 @@ describe('construction workflow dispatch', () => {
     assert.equal(session.config, null);
   });
 
+  it('plugin collector tools isolate unrelated plugin section errors', async () => {
+    let session = createSession();
+    let moduleResult = await dispatch('collect_plugin_module_capabilities', {
+      plugins: [{
+        name: '@acme/section-isolated-components',
+        version: '1.0.0',
+        components: [{
+          tagName: 'acme-valid-panel',
+          capabilities: ['valid.panel'],
+        }],
+        workspace: {
+          templates: [{ name: 'Broken Template', config: TEAM_ROOM_TEMPLATE.config }],
+        },
+      }],
+    }, session);
+    let templateResult = await dispatch('collect_plugin_workspace_templates', {
+      plugins: [{
+        name: '@acme/section-isolated-templates',
+        version: '1.0.0',
+        components: [{ tagName: 'Broken Component', actions: [{ id: 'open' }] }],
+        workspace: {
+          templates: [{ name: 'valid-room', config: TEAM_ROOM_TEMPLATE.config }],
+        },
+      }],
+    }, session);
+
+    assert.equal(moduleResult.status, 'ok');
+    assert.deepEqual(moduleResult.moduleCapabilities.map((item) => item.tagName), ['acme-valid-panel']);
+    assert.deepEqual(moduleResult.errors, []);
+    assert.equal(templateResult.status, 'ok');
+    assert.deepEqual(templateResult.templates.map((template) => template.name), ['valid-room']);
+    assert.deepEqual(templateResult.errors, []);
+    assert.equal(session.config, null);
+  });
+
   it('propose_workspace_patch previews overlay changes without mutating session', async () => {
     let session = createSession();
     await dispatch('scaffold_from_scratch', { name: 'Base Name' }, session);
