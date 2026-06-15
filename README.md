@@ -1,7 +1,7 @@
 # symbiote-workspace
 
 Agent-driven workspace orchestration with plugin system:
-**intent → questions → plan → validate → build → export**.
+**intent → questionnaire → plan → validate → build → export**.
 
 Portable workspace configs over [symbiote-ui](https://github.com/RND-PRO/symbiote-ui) primitives. Optional server mode via [symbiote-engine](https://github.com/RND-PRO/symbiote-engine).
 
@@ -311,7 +311,7 @@ Start as MCP server:
 npx symbiote-workspace mcp
 ```
 
-Exposes all 66 tools from the unified runtime registry via JSON-RPC over stdio.
+Exposes all 68 tools from the unified runtime registry via JSON-RPC over stdio.
 Agents can classify, plan,
 propose, validate, apply, export, mutate, and query workspaces
 programmatically.
@@ -885,6 +885,9 @@ next action (`construct`, `review-package-readiness`, or
 recovery summary as top-level `readiness`: package readiness when package
 context is invalid or not ready, and required-module-capability readiness when a
 ready package context still leaves unmatched required capabilities.
+Not-ready package readiness includes missing capability groups, recovery steps,
+diagnostics, and package source metadata at that top level so orchestrators can
+route follow-up work without parsing nested plan internals.
 Package readiness is only `ready` when the package context is valid, explicitly
 ready, and has no missing requirements, warnings, or errors. `plan_workspace`
 exposes top-level blocked readiness for missing required module capabilities so

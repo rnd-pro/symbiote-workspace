@@ -1130,8 +1130,7 @@ function missingRecoverySteps(missing) {
   return steps;
 }
 
-function constructionReadinessFromHandoff(args, overrides = {}) {
-  let context = packageContextFromHandoff(args) || {};
+function constructionReadinessFromPackageContext(context = {}, overrides = {}) {
   let warnings = Array.isArray(context.warnings) ? context.warnings : [];
   let errors = Array.isArray(context.errors) ? context.errors : [];
   let missing = flatMissingCapabilities(context.missing);
@@ -1154,6 +1153,10 @@ function constructionReadinessFromHandoff(args, overrides = {}) {
     sources: cloneJson(context.sources),
     ...overrides,
   });
+}
+
+function constructionReadinessFromHandoff(args, overrides = {}) {
+  return constructionReadinessFromPackageContext(packageContextFromHandoff(args) || {}, overrides);
 }
 
 function constructionReadinessFromPlan(plan, overrides = {}) {
@@ -1185,7 +1188,10 @@ function topLevelConstructionReadiness(plan) {
   let packageReadiness = cloneJson(plan?.readiness?.package);
   let capabilityReadiness = constructionReadinessFromPlan(plan);
   if (!packageReadiness) return capabilityReadiness.ready ? undefined : capabilityReadiness;
-  if (!packageReadiness.ready) return packageReadiness;
+  if (!packageReadiness.ready) {
+    let context = plan?.packageContext;
+    return context ? constructionReadinessFromPackageContext(context, packageReadiness) : packageReadiness;
+  }
   if (capabilityReadiness.ready) return packageReadiness;
   return capabilityReadiness;
 }

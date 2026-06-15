@@ -8,7 +8,7 @@ import { dispatch, TOOLS, isMutating, createSession } from '../runtime/index.js'
 
 let ROOT = resolve(import.meta.dirname, '..');
 let TMP_ROOT = resolve(ROOT, 'tmp');
-let EXPECTED_TOOL_COUNT = 66;
+let EXPECTED_TOOL_COUNT = 68;
 
 async function withTempPath(prefix, filename, run) {
   await mkdir(TMP_ROOT, { recursive: true });

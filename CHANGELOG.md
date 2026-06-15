@@ -126,7 +126,8 @@ All notable changes to this project will be documented in this file.
   `construct_workspace` responses expose the highest-priority recovery summary
   as top-level `readiness`: package readiness for package gaps, or required
   module capability readiness when a ready package still leaves unmatched
-  capabilities.
+  capabilities. Not-ready package readiness now carries missing capability
+  groups, recovery steps, diagnostics, and source metadata at the top level.
 - **Construction readiness hardening** — package readiness is no longer marked
   ready when missing requirements, warnings, or errors are still present, and
   `plan_workspace` now exposes blocked top-level readiness for missing required
@@ -222,7 +223,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
-- **Unified dispatch surface** — CLI and MCP now expose 66 tools from the same
+- **Unified dispatch surface** — CLI and MCP now expose 68 tools from the same
   `runtime/dispatch.js` registry.
 - **CLI help source** — CLI tool-command help is now generated from the
   unified `TOOLS` registry descriptions, with CLI-only aliases documented from

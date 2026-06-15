@@ -2,7 +2,7 @@
   "name": "symbiote-workspace",
   "version": "0.3.0-alpha.2",
   "type": "module",
-  "description": "Agent-driven workspace orchestration with plugin system: intent → questions → plan → validate → build → export. Portable workspace configs, plugin registry, and server mode.",
+  "description": "Agent-driven workspace orchestration with plugin system: intent → questionnaire → plan → validate → build → export. Portable workspace configs, plugin registry, and server mode.",
   "main": "index.js",
   "exports": {
     ".": {

@@ -607,7 +607,6 @@ describe('construction workflow dispatch', () => {
     assert.equal(planResult.plan.packageContext.ready, false);
     assert.equal(planResult.plan.packageContext.source.packageId, 'gapped-team-room');
     assert.deepEqual(planResult.plan.packageContext.missing.components, ['sn-team-room']);
-    assert.deepEqual(planResult.readiness, planResult.plan.readiness.package);
     assert.deepEqual(planResult.plan.readiness.package, {
       ready: false,
       valid: true,
@@ -619,6 +618,19 @@ describe('construction workflow dispatch', () => {
       status: 'warning',
       nextAction: 'review-package-readiness',
     });
+    assert.equal(planResult.readiness.ready, false);
+    assert.equal(planResult.readiness.valid, true);
+    assert.equal(planResult.readiness.status, 'warning');
+    assert.equal(planResult.readiness.missingCount, 1);
+    assert.equal(planResult.readiness.warningCount, 1);
+    assert.equal(planResult.readiness.errorCount, 0);
+    assert.deepEqual(planResult.readiness.missing.components, ['sn-team-room']);
+    assert.deepEqual(planResult.readiness.recovery, [{
+      kind: 'components',
+      item: 'sn-team-room',
+      action: 'register-component',
+    }]);
+    assert.equal(planResult.readiness.source.packageId, 'gapped-team-room');
     let report = planResult.verification.reports.find((item) => item.check === 'package-readiness');
     assert.equal(report.status, 'warn');
     assert.equal(report.severity, 'warning');
