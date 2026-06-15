@@ -6,6 +6,7 @@ import {
   WORKSPACE_REGISTER_VALUES,
   WORKSPACE_CONFIG_SCHEMA,
   MODULE_CAPABILITY_DESCRIPTOR_SCHEMA,
+  validatePortableStringArray,
   validateWorkspaceConfig,
   isCompatibleVersion,
 } from '../schema/index.js';
@@ -33,6 +34,13 @@ describe('schema', () => {
   it('exports module capability descriptor schema', () => {
     assert.ok(Object.isFrozen(MODULE_CAPABILITY_DESCRIPTOR_SCHEMA));
     assert.deepEqual(MODULE_CAPABILITY_DESCRIPTOR_SCHEMA.required, ['tagName']);
+  });
+
+  it('exports portable string array validation helper', () => {
+    let errors = [];
+    validatePortableStringArray(['valid.id', 'Invalid Label'], 'capabilities', errors);
+    assert.equal(errors.length, 1);
+    assert.equal(errors[0].path, 'capabilities[1]');
   });
 });
 

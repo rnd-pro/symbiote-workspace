@@ -572,11 +572,15 @@ export default {
 
 ```javascript
 import {
+  MODULE_CAPABILITY_DESCRIPTOR_SCHEMA,
+  MODULE_CAPABILITY_SCHEMA_VERSION,
   registerPlugin,
   activatePlugin,
   unregisterPlugin,
   listPlugins,
   validatePlugin,
+  validateModuleCapabilityDescriptor,
+  validatePortableStringArray,
   collectPluginModuleCapabilities,
   collectPluginWorkspaceTemplates,
 } from 'symbiote-workspace/plugins';
@@ -596,6 +600,13 @@ if (!capabilities.ok) {
 
 // Pass plugin-provided module descriptors into constructor or dispatch APIs.
 console.log(capabilities.moduleCapabilities);
+console.log(MODULE_CAPABILITY_SCHEMA_VERSION);
+validateModuleCapabilityDescriptor(
+  capabilities.moduleCapabilities[0],
+  'moduleCapabilities[0]',
+  []
+);
+validatePortableStringArray(['analysis.sentiment'], 'capabilities', []);
 
 let templates = collectPluginWorkspaceTemplates([myPlugin]);
 if (!templates.ok) {
@@ -610,6 +621,11 @@ console.log(templates.templates);
 entries, but they are not converted into module capability descriptors.
 Plugin-level `capabilities` and `requiredHostServices` describe the plugin
 itself and are not copied onto individual components.
+The same module capability schema helpers are exported from
+`symbiote-workspace/schema`, the root entrypoint, the browser entrypoint, and
+`symbiote-workspace/plugins` for consumers that validate descriptors at package
+boundaries, including `validatePortableStringArray()` for portable capability
+and service ID lists.
 
 `collectPluginWorkspaceTemplates()` returns validated entries from
 `plugin.workspace.templates`. Each entry uses `{ name, description?, config }`,

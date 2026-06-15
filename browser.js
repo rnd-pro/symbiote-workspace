@@ -11,6 +11,10 @@ export {
   WORKSPACE_SCHEMA_VERSION,
   WORKSPACE_REGISTER_VALUES,
   WORKSPACE_CONFIG_SCHEMA,
+  MODULE_CAPABILITY_SCHEMA_VERSION,
+  MODULE_CAPABILITY_DESCRIPTOR_SCHEMA,
+  validateModuleCapabilityDescriptor,
+  validatePortableStringArray,
   validateWorkspaceConfig,
   isCompatibleVersion,
 } from './schema/index.js';

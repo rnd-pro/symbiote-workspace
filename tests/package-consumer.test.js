@@ -254,13 +254,37 @@ describe('packed package consumer', () => {
         import { applyWorkspacePatch } from 'symbiote-workspace';
         import { checkDesignGuardrails } from 'symbiote-workspace';
         import { collectPluginModuleCapabilities as fromRoot } from 'symbiote-workspace';
+        import {
+          MODULE_CAPABILITY_DESCRIPTOR_SCHEMA as rootModuleCapabilitySchema,
+          MODULE_CAPABILITY_SCHEMA_VERSION as rootModuleCapabilitySchemaVersion,
+          validateModuleCapabilityDescriptor as validateRootModuleCapabilityDescriptor,
+          validatePortableStringArray as validateRootPortableStringArray,
+        } from 'symbiote-workspace';
         import { proposeWorkspacePatch } from 'symbiote-workspace';
         import { collectPluginWorkspaceTemplates as templatesFromRoot } from 'symbiote-workspace';
         import { listPluginWorkspaceTemplates as listTemplatesFromRoot } from 'symbiote-workspace';
         import { collectPluginModuleCapabilities as fromPlugins } from 'symbiote-workspace/plugins';
+        import {
+          MODULE_CAPABILITY_DESCRIPTOR_SCHEMA as pluginModuleCapabilitySchema,
+          MODULE_CAPABILITY_SCHEMA_VERSION as pluginModuleCapabilitySchemaVersion,
+          validateModuleCapabilityDescriptor as validatePluginModuleCapabilityDescriptor,
+          validatePortableStringArray as validatePluginPortableStringArray,
+        } from 'symbiote-workspace/plugins';
+        import {
+          MODULE_CAPABILITY_DESCRIPTOR_SCHEMA as schemaModuleCapabilitySchema,
+          MODULE_CAPABILITY_SCHEMA_VERSION as schemaModuleCapabilitySchemaVersion,
+          validateModuleCapabilityDescriptor as validateSchemaModuleCapabilityDescriptor,
+          validatePortableStringArray as validateSchemaPortableStringArray,
+        } from 'symbiote-workspace/schema';
         import { collectPluginWorkspaceTemplates as templatesFromPlugins } from 'symbiote-workspace/plugins';
         import { listPluginWorkspaceTemplates as listTemplatesFromPlugins } from 'symbiote-workspace/plugins';
         import { collectPluginModuleCapabilities as fromBrowser } from 'symbiote-workspace/browser';
+        import {
+          MODULE_CAPABILITY_DESCRIPTOR_SCHEMA as browserModuleCapabilitySchema,
+          MODULE_CAPABILITY_SCHEMA_VERSION as browserModuleCapabilitySchemaVersion,
+          validateModuleCapabilityDescriptor as validateBrowserModuleCapabilityDescriptor,
+          validatePortableStringArray as validateBrowserPortableStringArray,
+        } from 'symbiote-workspace/browser';
         import { collectPluginWorkspaceTemplates as templatesFromBrowser } from 'symbiote-workspace/browser';
         import { listPluginWorkspaceTemplates as listTemplatesFromBrowser } from 'symbiote-workspace/browser';
 
@@ -286,6 +310,44 @@ describe('packed package consumer', () => {
         ]) {
           if (typeof helper !== 'function') {
             throw new Error('root validation helper export missing');
+          }
+        }
+        if (rootModuleCapabilitySchemaVersion !== '0.1.0') {
+          throw new Error('root MODULE_CAPABILITY_SCHEMA_VERSION export missing');
+        }
+        if (browserModuleCapabilitySchemaVersion !== '0.1.0') {
+          throw new Error('browser MODULE_CAPABILITY_SCHEMA_VERSION export missing');
+        }
+        if (pluginModuleCapabilitySchemaVersion !== '0.1.0') {
+          throw new Error('plugins MODULE_CAPABILITY_SCHEMA_VERSION export missing');
+        }
+        if (schemaModuleCapabilitySchemaVersion !== '0.1.0') {
+          throw new Error('schema MODULE_CAPABILITY_SCHEMA_VERSION export missing');
+        }
+        if (!rootModuleCapabilitySchema?.properties?.tagName) {
+          throw new Error('root MODULE_CAPABILITY_DESCRIPTOR_SCHEMA export missing');
+        }
+        if (!browserModuleCapabilitySchema?.properties?.tagName) {
+          throw new Error('browser MODULE_CAPABILITY_DESCRIPTOR_SCHEMA export missing');
+        }
+        if (!pluginModuleCapabilitySchema?.properties?.tagName) {
+          throw new Error('plugins MODULE_CAPABILITY_DESCRIPTOR_SCHEMA export missing');
+        }
+        if (!schemaModuleCapabilitySchema?.properties?.tagName) {
+          throw new Error('schema MODULE_CAPABILITY_DESCRIPTOR_SCHEMA export missing');
+        }
+        for (let helper of [
+          validateRootModuleCapabilityDescriptor,
+          validateBrowserModuleCapabilityDescriptor,
+          validatePluginModuleCapabilityDescriptor,
+          validateSchemaModuleCapabilityDescriptor,
+          validateRootPortableStringArray,
+          validateBrowserPortableStringArray,
+          validatePluginPortableStringArray,
+          validateSchemaPortableStringArray,
+        ]) {
+          if (typeof helper !== 'function') {
+            throw new Error('module capability validator export missing');
           }
         }
 

@@ -31,6 +31,10 @@ All notable changes to this project will be documented in this file.
 - **Constructor capability diagnostics** — construction plans now include
   `capabilities.byCapability` with selected coverage and ranked unselected
   module alternatives for unmet required capabilities.
+- **Module capability schema exports** — module capability schema constants and
+  validator helpers are now available from the schema, root, browser, and
+  plugins entrypoints so consumers can validate plugin-provided descriptors
+  without reaching into private files.
 - **Package readiness propagation** — package construction handoffs now carry
   `options.packageContext`, and construction plans preserve it as
   `plan.packageContext` plus `config.construction.packageContext` so agents can

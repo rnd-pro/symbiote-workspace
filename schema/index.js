@@ -8,6 +8,7 @@ export {
   MODULE_CAPABILITY_SCHEMA_VERSION,
   MODULE_CAPABILITY_DESCRIPTOR_SCHEMA,
   validateModuleCapabilityDescriptor,
+  validatePortableStringArray,
 } from './module-capability.js';
 
 export {
