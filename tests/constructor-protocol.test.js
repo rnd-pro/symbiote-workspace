@@ -711,6 +711,24 @@ describe('planWorkspaceConstruction', () => {
         matchedCapabilities: ['automation.reply-template'],
       },
     ]);
+    assert.deepEqual(result.plan.capabilities.selectedModules, [
+      {
+        panelType: 'imports',
+        component: 'sn-file-upload',
+        matchedCapabilities: ['data.import'],
+        missingCapabilities: ['automation.reply-template'],
+        coverageStatus: 'matched',
+        selectionReason: 'required-capability',
+      },
+      {
+        panelType: 'reply',
+        component: 'sn-rich-text-editor',
+        matchedCapabilities: ['automation.reply-template'],
+        missingCapabilities: ['data.import'],
+        coverageStatus: 'matched',
+        selectionReason: 'required-capability',
+      },
+    ]);
     assert.deepEqual(result.plan.modules[0].matchedCapabilities, ['data.import']);
     assert.equal(result.plan.modules[0].selectionReason, 'required-capability');
   });
@@ -736,6 +754,16 @@ describe('planWorkspaceConstruction', () => {
     assert.deepEqual(Object.keys(result.config.layouts || {}), []);
     assert.deepEqual(result.plan.capabilities.matched, []);
     assert.deepEqual(result.plan.capabilities.missing, ['admin.records']);
+    assert.deepEqual(result.plan.capabilities.selectedModules, [
+      {
+        panelType: 'metric',
+        component: 'sn-metric',
+        matchedCapabilities: [],
+        missingCapabilities: ['admin.records'],
+        coverageStatus: 'missing',
+        selectionReason: 'user',
+      },
+    ]);
     assert.deepEqual(result.plan.capabilities.byCapability, [
       {
         capability: 'admin.records',

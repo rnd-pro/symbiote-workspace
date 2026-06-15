@@ -488,9 +488,14 @@ and any uncovered requirements are reported in
 `config.construction.plan.capabilities.missing`. The plan also records
 `capabilities.byCapability` so agents can see which selected modules cover each
 requirement and which ranked unselected modules are available as alternatives.
+`capabilities.selectedModules` lists every selected module, including explicit
+selections that matched none of the required capabilities, with matched and
+missing capability diagnostics plus the module selection reason.
 When `plan_workspace` or `construct_workspace` report missing module
 capabilities, top-level `readiness.recovery[]` entries include those ranked
-alternatives when the planner found compatible unselected modules.
+alternatives when the planner found compatible unselected modules. Failed
+`construct_workspace` responses also include the rejected construction `plan`
+so callers can inspect selected-module diagnostics without re-planning.
 
 External descriptors that do not already have a matching `panelTypes` entry are
 materialized from `placement.panelType` or `tagName`. The constructor copies

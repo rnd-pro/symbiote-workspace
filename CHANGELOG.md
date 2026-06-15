@@ -40,10 +40,14 @@ All notable changes to this project will be documented in this file.
   handoff.
 - **Constructor capability diagnostics** — construction plans now include
   `capabilities.byCapability` with selected coverage and ranked unselected
-  module alternatives for unmet required capabilities.
+  module alternatives for unmet required capabilities. Plans also include
+  `capabilities.selectedModules` so explicit selected modules that do not cover
+  a required capability remain visible to orchestration diagnostics.
 - **Construction readiness alternatives** — `plan_workspace` and
   `construct_workspace` now include ranked module alternatives in top-level
   `readiness.recovery[]` entries when required module capabilities are missing.
+  Failed `construct_workspace` responses also include the rejected construction
+  `plan` for selected-module diagnostics.
 - **Module capability schema exports** — module capability schema constants and
   validator helpers are now available from the schema, root, browser, and
   plugins entrypoints so consumers can validate plugin-provided descriptors

@@ -309,6 +309,14 @@ describe('construction workflow dispatch', () => {
 
     assert.equal(result.status, 'ok');
     assert.deepEqual(result.plan.capabilities.missing, ['admin.records']);
+    assert.deepEqual(result.plan.capabilities.selectedModules, [{
+      panelType: 'metric',
+      component: 'sn-metric',
+      matchedCapabilities: [],
+      missingCapabilities: ['admin.records'],
+      coverageStatus: 'missing',
+      selectionReason: 'user',
+    }]);
     assert.deepEqual(result.readiness.missing.moduleCapabilities, ['admin.records']);
     assert.deepEqual(result.readiness.recovery, [{
       kind: 'moduleCapabilities',
@@ -550,6 +558,14 @@ describe('construction workflow dispatch', () => {
     assert.equal(construct.status, 'error');
     assert.equal(construct.tool, 'construct_workspace');
     assert.equal(construct.code, 'construction_capabilities_missing');
+    assert.deepEqual(construct.plan.capabilities.selectedModules, [{
+      panelType: 'metric',
+      component: 'sn-metric',
+      matchedCapabilities: [],
+      missingCapabilities: ['admin.records'],
+      coverageStatus: 'missing',
+      selectionReason: 'user',
+    }]);
     assert.deepEqual(construct.readiness.missing.moduleCapabilities, ['admin.records']);
     assert.deepEqual(construct.readiness.recovery, [{
       kind: 'moduleCapabilities',

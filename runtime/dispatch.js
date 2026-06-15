@@ -1248,6 +1248,7 @@ function assertConstructiblePlan(result) {
   err.code = 'construction_capabilities_missing';
   err.nextAction = 'provide-module-capabilities';
   err.readiness = constructionReadinessFromPlan(result.plan, { ready: false });
+  err.plan = result.plan;
   throw err;
 }
 
@@ -1259,6 +1260,7 @@ function constructionError(toolName, err) {
     code: err.code,
     nextAction: err.nextAction,
     readiness: cloneJson(err.readiness),
+    plan: cloneJson(err.plan),
   });
 }
 

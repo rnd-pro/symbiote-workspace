@@ -1480,10 +1480,22 @@ function moduleSelectionReason(matchedCapabilities, requiredCapabilities, select
 function capabilityCoverage(requiredCapabilities, modules, availableModules = modules) {
   let matched = new Set();
   let byModule = [];
+  let selectedModules = modules.map((module) => {
+    let matchedCapabilities = matchingCapabilities(module, requiredCapabilities);
+    return {
+      panelType: module.panelType,
+      component: module.component,
+      matchedCapabilities,
+      missingCapabilities: requiredCapabilities
+        .filter((capability) => !matchedCapabilities.includes(capability)),
+      coverageStatus: matchedCapabilities.length > 0 ? 'matched' : 'missing',
+      selectionReason: module.selectionReason || null,
+    };
+  });
   let selectedPanelTypes = new Set(modules.map((module) => module.panelType));
 
-  for (let module of modules) {
-    let matchedCapabilities = matchingCapabilities(module, requiredCapabilities);
+  for (let module of selectedModules) {
+    let { matchedCapabilities } = module;
     if (!matchedCapabilities.length) continue;
     for (let capability of matchedCapabilities) matched.add(capability);
     byModule.push({
@@ -1514,6 +1526,7 @@ function capabilityCoverage(requiredCapabilities, modules, availableModules = mo
     matched: requiredCapabilities.filter((capability) => matched.has(capability)),
     missing: requiredCapabilities.filter((capability) => !matched.has(capability)),
     byModule,
+    selectedModules,
     byCapability,
   };
 }

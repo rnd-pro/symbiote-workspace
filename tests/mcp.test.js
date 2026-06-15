@@ -399,7 +399,7 @@ describe('MCP Protocol', () => {
       {
         jsonrpc: '2.0', id: 3, method: 'tools/call',
         params: {
-          name: 'construct_workspace',
+          name: 'plan_workspace',
           arguments: {
             intent: 'admin records workspace',
             template: 'admin',
@@ -410,11 +410,36 @@ describe('MCP Protocol', () => {
       },
       {
         jsonrpc: '2.0', id: 4, method: 'tools/call',
+        params: {
+          name: 'construct_workspace',
+          arguments: {
+            intent: 'admin records workspace',
+            template: 'admin',
+            requiredCapabilities: ['admin.records'],
+            answers: { 'module-selection': ['metric'] },
+          },
+        },
+      },
+      {
+        jsonrpc: '2.0', id: 5, method: 'tools/call',
         params: { name: 'export_workspace', arguments: {} },
       },
     ], 5000);
 
-    let constructResult = responses.find((r) => r.id === 3);
+    let planResult = responses.find((r) => r.id === 3);
+    assert.ok(planResult);
+    let planContent = JSON.parse(planResult.result.content[0].text);
+    assert.equal(planContent.status, 'ok');
+    assert.deepEqual(planContent.plan.capabilities.selectedModules, [{
+      panelType: 'metric',
+      component: 'sn-metric',
+      matchedCapabilities: [],
+      missingCapabilities: ['admin.records'],
+      coverageStatus: 'missing',
+      selectionReason: 'user',
+    }]);
+
+    let constructResult = responses.find((r) => r.id === 4);
     assert.ok(constructResult);
     assert.equal(constructResult.result.isError, true);
     let constructContent = JSON.parse(constructResult.result.content[0].text);
@@ -425,6 +450,14 @@ describe('MCP Protocol', () => {
       constructContent.readiness.missing.moduleCapabilities,
       ['admin.records'],
     );
+    assert.deepEqual(constructContent.plan.capabilities.selectedModules, [{
+      panelType: 'metric',
+      component: 'sn-metric',
+      matchedCapabilities: [],
+      missingCapabilities: ['admin.records'],
+      coverageStatus: 'missing',
+      selectionReason: 'user',
+    }]);
     assert.deepEqual(constructContent.readiness.recovery, [{
       kind: 'moduleCapabilities',
       item: 'admin.records',
@@ -439,7 +472,7 @@ describe('MCP Protocol', () => {
       }],
     }]);
 
-    let exportResult = responses.find((r) => r.id === 4);
+    let exportResult = responses.find((r) => r.id === 5);
     assert.ok(exportResult);
     let exportContent = JSON.parse(exportResult.result.content[0].text);
     let exportedConfig = JSON.parse(exportContent.json);
