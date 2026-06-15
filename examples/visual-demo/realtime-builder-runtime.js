@@ -222,7 +222,8 @@ styles.replaceSync(\`
     background: var(--demo-soft);
   }
   .demo-metric-grid,
-  .demo-report-list {
+  .demo-report-list,
+  .demo-contract-section {
     display: grid;
     gap: 0.5rem;
   }
@@ -254,6 +255,38 @@ styles.replaceSync(\`
   }
   .demo-report[data-status="warn"] {
     border-left-color: var(--demo-warn);
+  }
+  .demo-contract-section {
+    margin-top: 1rem;
+  }
+  .demo-contract-section h3 {
+    margin: 0.25rem 0;
+    font-size: 0.82rem;
+    line-height: 1.25;
+  }
+  .demo-contract-list {
+    display: grid;
+    gap: 0.375rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .demo-contract-list li {
+    padding: 0.5rem;
+    border: 1px solid var(--demo-border);
+    border-radius: 7px;
+    background: Canvas;
+    color: CanvasText;
+    font-size: 0.78rem;
+    line-height: 1.3;
+  }
+  .demo-contract-list strong {
+    display: block;
+    font-size: 0.75rem;
+    line-height: 1.25;
+  }
+  .demo-contract-list span {
+    color: var(--demo-muted);
   }
   .symbiote-workspace__panel {
     transition: border-color 180ms ease, transform 180ms ease;
@@ -329,6 +362,27 @@ function plural(value, label) {
   return \`\${value} \${label}\`;
 }
 
+function appendContractSection(parent, title, rows) {
+  let section = document.createElement('section');
+  section.className = 'demo-contract-section';
+  let heading = document.createElement('h3');
+  heading.textContent = title;
+  section.appendChild(heading);
+  let list = document.createElement('ul');
+  list.className = 'demo-contract-list';
+  for (let row of rows.filter(Boolean)) {
+    let item = document.createElement('li');
+    if (typeof row === 'string') {
+      item.textContent = row;
+    } else {
+      item.innerHTML = \`<strong>\${row.label}</strong><span>\${row.value}</span>\`;
+    }
+    list.appendChild(item);
+  }
+  section.appendChild(list);
+  parent.appendChild(section);
+}
+
 function renderStageRail() {
   stageRail.textContent = '';
   demo.stages.forEach((stage, index) => {
@@ -375,11 +429,16 @@ function renderChat(stage) {
 
 function renderInspector(stage) {
   let config = stage.config;
+  let chatState = stage.chatState || {};
   let validation = validateWorkspaceConfig(config, { strict: true });
   let bindings = config.data?.bindings || [];
   let events = config.events || [];
   let reports = config.validation?.reports || [];
   let panels = Object.keys(config.panelTypes || {});
+  let roleEntries = Object.entries(chatState.layoutRoles || {});
+  let registry = chatState.widgetRegistry || [];
+  let adaptive = chatState.adaptiveBehavior || {};
+  let theme = chatState.themeCascade || {};
   inspector.textContent = '';
 
   let heading = document.createElement('h2');
@@ -394,6 +453,7 @@ function renderInspector(stage) {
     ['Bindings', plural(bindings.length, 'wired')],
     ['Events', plural(events.length, 'bridged')],
     ['Adaptive mode', config.rootBehavior?.responsiveMode || 'preserve'],
+    ['Chat state', chatState.questionnaireStatus || 'pending'],
     ['Theme editor', panels.includes('theme-editor') ? 'required widget present' : 'missing'],
     ['Validation', validation.valid ? 'strict config pass' : 'strict config fail'],
   ];
@@ -404,6 +464,35 @@ function renderInspector(stage) {
     metrics.appendChild(card);
   }
   inspector.appendChild(metrics);
+
+  appendContractSection(inspector, 'Service blueprint', [
+    { label: 'Intent', value: chatState.activeIntent || 'pending' },
+    { label: 'Entities', value: (chatState.serviceBlueprint?.entities || []).join(', ') || 'pending' },
+    { label: 'Workflows', value: (chatState.serviceBlueprint?.workflows || []).join(' -> ') || 'pending' },
+    { label: 'Next patch', value: chatState.nextPatch || 'none' },
+  ]);
+
+  appendContractSection(
+    inspector,
+    'Layout roles',
+    roleEntries.map(([panel, role]) => ({ label: panel, value: role }))
+  );
+
+  appendContractSection(
+    inspector,
+    'Widget registry',
+    registry.map((widget) => ({
+      label: widget.id,
+      value: \`\${widget.status} / \${widget.role}\`,
+    }))
+  );
+
+  appendContractSection(inspector, 'Adaptive and theme state', [
+    { label: 'Collapse order', value: (adaptive.collapseOrder || []).join(' -> ') || 'none' },
+    { label: 'Pinned', value: (adaptive.pinned || []).join(', ') || 'none' },
+    { label: 'Theme source', value: theme.source || 'pending' },
+    { label: 'Theme editor', value: \`\${theme.editorWidget || 'missing'} / \${theme.status || 'pending'}\` },
+  ]);
 
   let reportsList = document.createElement('div');
   reportsList.className = 'demo-report-list';
@@ -494,8 +583,16 @@ export async function writeRealtimeChatStateDemo(options = {}) {
   await writeFile(join(outputDir, 'demo.contract.json'), JSON.stringify({
     schemaVersion: demo.schemaVersion,
     name: demo.name,
+    acceptanceMatrix: demo.acceptanceMatrix,
     playStages: demo.stages.map((stage) => stage.id),
     requiredWidgets: demo.requiredWidgets,
+    chatStateTimeline: demo.stages.map((stage) => ({
+      stage: stage.id,
+      activeQuestionId: stage.chatState.activeQuestionId,
+      questionnaireStatus: stage.chatState.questionnaireStatus,
+      requiredElements: stage.chatState.requiredElements,
+      nextPatch: stage.chatState.nextPatch,
+    })),
     imports,
   }, null, 2));
 

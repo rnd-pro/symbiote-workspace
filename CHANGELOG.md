@@ -7,6 +7,9 @@ All notable changes to this project will be documented in this file.
 - Added a realtime chat-state visual demo that plays mock questionnaire state
   into service-builder workspace layouts, required widgets, bindings, adaptive
   metadata, validation reports, and the required theme editor widget.
+- Added an inspectable realtime demo contract with a chat-state timeline and
+  acceptance matrix covering the required builder panels, adaptive behavior,
+  validation checklist, and theme editor widget.
 - Added an opt-in visual-demo browser smoke script that launches the packaged
   demo through a Chrome-compatible DevTools Protocol session and verifies the
   mounted workspace DOM without changing the default test command.

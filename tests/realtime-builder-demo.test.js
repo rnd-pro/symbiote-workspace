@@ -26,6 +26,7 @@ describe('realtime builder demo', () => {
     let panels = Object.keys(finalStage.config.panelTypes);
 
     assert.equal(demo.stages.length, 4);
+    assert.equal(demo.acceptanceMatrix.every((item) => item.status === 'pass'), true);
     assert.deepEqual(demo.requiredWidgets, [
       'agent-chat',
       'service-blueprint',
@@ -40,6 +41,8 @@ describe('realtime builder demo', () => {
       assert.equal(validateWorkspaceConfig(stage.config, { strict: true }).valid, true);
       assert.ok(stage.chat.length > 0);
       assert.ok(stage.config.construction.questions.length > 0);
+      assert.equal(stage.chatState.activeQuestionId, stage.activeQuestionId);
+      assert.ok(stage.chatState.nextPatch);
     }
     for (let required of demo.requiredWidgets) {
       assert.ok(panels.includes(required), `${required} panel is registered`);
@@ -47,6 +50,12 @@ describe('realtime builder demo', () => {
     assert.ok(finalStage.config.events.length >= 4);
     assert.ok(finalStage.config.data.bindings.length >= 6);
     assert.ok(finalStage.config.validation.reports.some((report) => report.check === 'theme'));
+    assert.deepEqual(
+      finalStage.chatState.requiredElements,
+      demo.requiredWidgets
+    );
+    assert.equal(finalStage.chatState.themeCascade.editorWidget, 'theme-editor');
+    assert.ok(finalStage.chatState.adaptiveBehavior.collapseOrder.includes('adaptive-rules'));
     assert.equal(finalStage.config.rootBehavior.responsiveMode, 'drawer');
   });
 
@@ -61,9 +70,15 @@ describe('realtime builder demo', () => {
 
       assert.equal(result.status, 'ok');
       assert.equal(contract.requiredWidgets.includes('theme-editor'), true);
+      assert.equal(contract.acceptanceMatrix.every((item) => item.status === 'pass'), true);
+      assert.deepEqual(contract.playStages, ['intent', 'questionnaire', 'builder', 'validation']);
+      assert.equal(contract.chatStateTimeline.length, 4);
+      assert.equal(contract.chatStateTimeline.at(-1).requiredElements.includes('theme-editor'), true);
       assert.match(html, /<script type="importmap">/);
       assert.match(app, /mountWorkspace/);
       assert.match(app, /Play/);
+      assert.match(app, /Service blueprint/);
+      assert.match(app, /Widget registry/);
       assert.doesNotMatch(app, /\/Users\//);
       assert.doesNotMatch(states, /localhost|\/Users\//);
       assert.equal(config.panelTypes['theme-editor'].component, 'sn-theme-editor-widget');

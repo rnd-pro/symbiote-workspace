@@ -28,6 +28,10 @@ step from intent capture into service blueprint, dynamic layout assembly,
 widget registration, bindings, adaptive collapse priorities, validation state,
 and the required theme editor widget.
 
+The generated `demo.contract.json` includes the play stages, required widgets,
+acceptance matrix, and chat-state timeline so the staged transformation is
+inspectable without reading the browser DOM.
+
 For opt-in browser evidence, run the real-browser smoke. It starts the demo
 server, launches a Chrome-compatible browser through the DevTools Protocol, and
 asserts that the mounted workspace DOM has no preview error:
