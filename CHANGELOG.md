@@ -33,6 +33,14 @@ All notable changes to this project will be documented in this file.
   `options.packageContext`, and construction plans preserve it as
   `plan.packageContext` plus `config.construction.packageContext` so agents can
   see source, readiness, missing capabilities, and warnings after planning.
+- **Package readiness summary** — construction plans now include
+  `plan.readiness.package` with validity, readiness, source count,
+  missing/warning/error counts, and a next-action hint for package-driven
+  workspace assembly.
+- **CLI construction handoff ingestion** — `plan-workspace` and
+  `construct-workspace` now accept a full `{ intent, options }` construction
+  handoff object as a single positional JSON argument, matching dispatch and
+  MCP behavior.
 - **Package collection construction context helper** —
   `createWorkspacePackagesConstructionContext({ packages, available })`
   aggregates package objects and JSON entries into one constructor-ready context

@@ -415,12 +415,25 @@ describe('construction workflow dispatch', () => {
     assert.equal(planResult.plan.packageContext.ready, false);
     assert.equal(planResult.plan.packageContext.source.packageId, 'gapped-team-room');
     assert.deepEqual(planResult.plan.packageContext.missing.components, ['sn-team-room']);
+    assert.deepEqual(planResult.plan.readiness.package, {
+      ready: false,
+      valid: true,
+      source,
+      sourceCount: 1,
+      missingCount: 1,
+      warningCount: 1,
+      errorCount: 0,
+      status: 'warning',
+      nextAction: 'review-package-readiness',
+    });
     assert.equal(session.config, null);
 
     let constructResult = await dispatch('construct_workspace', handoff, session);
     assert.equal(constructResult.status, 'ok');
     assert.equal(constructResult.plan.packageContext.ready, false);
+    assert.equal(constructResult.plan.readiness.package.status, 'warning');
     assert.equal(session.config.construction.packageContext.source.packageId, 'gapped-team-room');
+    assert.equal(session.config.construction.plan.readiness.package.nextAction, 'review-package-readiness');
     assert.deepEqual(session.config.construction.packageContext.missing.components, ['sn-team-room']);
   });
 

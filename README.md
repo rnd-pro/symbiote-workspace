@@ -749,6 +749,10 @@ handoff also carries `options.packageContext`, which construction plans copy to
 `plan.packageContext` and `config.construction.packageContext` so agents can see
 package source, requirements, missing capability gaps, warnings, and readiness
 without re-inspecting the package.
+Plans also include `plan.readiness.package`, a compact summary with package
+validity, readiness status, source count, missing/warning/error counts, and the
+next action (`construct`, `review-package-readiness`, or
+`fix-package-context`).
 It is exposed through dispatch/MCP as `create_workspace_construction_handoff`
 and through the CLI as `create-workspace-construction-handoff`.
 
@@ -772,8 +776,13 @@ await dispatch('plan_workspace', handoff, session);
 await dispatch('construct_workspace', handoff, session);
 ```
 
-The CLI exposes constructor options with `--options <json-object>` for cases
-where agents pass a handoff options object through shell arguments.
+The CLI accepts the same handoff object as a single positional JSON argument,
+or constructor options with `--options <json-object>` when agents pass only the
+handoff options through shell arguments:
+
+```bash
+npx symbiote-workspace plan-workspace '{"intent":{"brief":"Build a review queue workspace","template":"review-package"},"options":{"workspaceTemplates":[],"moduleCapabilities":[]}}'
+```
 
 The manifest rejects host, identity, and marketplace state:
 

@@ -1496,6 +1496,42 @@ function packageContextPlan(options) {
   return Object.keys(result).length > 0 ? result : null;
 }
 
+function countCapabilityMapItems(value) {
+  if (!isObject(value)) return 0;
+  return Object.values(value)
+    .filter(Array.isArray)
+    .reduce((total, items) => total + items.length, 0);
+}
+
+function diagnosticCount(items, severity) {
+  if (!Array.isArray(items)) return 0;
+  return items.filter((item) => !severity || item?.severity === severity).length;
+}
+
+function packageReadinessSummary(packageContext) {
+  if (!packageContext) return null;
+  let warningCount = diagnosticCount(packageContext.warnings);
+  let errorCount = diagnosticCount(packageContext.errors);
+  let missingCount = countCapabilityMapItems(packageContext.missing);
+  let ready = packageContext.valid === true && packageContext.ready === true;
+
+  return {
+    ready,
+    valid: packageContext.valid === true,
+    source: deepClone(packageContext.source) || null,
+    sourceCount: Array.isArray(packageContext.sources)
+      ? packageContext.sources.length
+      : (packageContext.source ? 1 : 0),
+    missingCount,
+    warningCount,
+    errorCount,
+    status: ready ? 'ready' : (errorCount > 0 ? 'blocked' : 'warning'),
+    nextAction: ready
+      ? 'construct'
+      : (errorCount > 0 ? 'fix-package-context' : 'review-package-readiness'),
+  };
+}
+
 /**
  * @param {string|Object} intent
  * @param {Object} [options]
@@ -1587,6 +1623,7 @@ export function planWorkspaceConstruction(intent, options = {}) {
     moduleSelectionSource,
   );
   let packageContext = packageContextPlan(options);
+  let packageReadiness = packageReadinessSummary(packageContext);
 
   let plan = {
     name: workspaceName,
@@ -1634,6 +1671,7 @@ export function planWorkspaceConstruction(intent, options = {}) {
     },
   };
   if (packageContext) plan.packageContext = packageContext;
+  if (packageReadiness) plan.readiness = { package: packageReadiness };
 
   config.name = workspaceName;
   config.register = register;

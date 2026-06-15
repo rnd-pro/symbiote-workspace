@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 
 import { TOOLS } from '../runtime/index.js';
+import { WORKSPACE_SCHEMA_VERSION } from '../schema/index.js';
 
 let __dirname = dirname(fileURLToPath(import.meta.url));
 let CLI = resolve(__dirname, '../cli.js');
@@ -44,6 +45,42 @@ async function withTempPath(prefix, filename, run) {
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+}
+
+function constructionHandoffJson() {
+  return JSON.stringify({
+    intent: {
+      brief: 'CLI handoff room',
+      template: 'cli-handoff-room',
+    },
+    options: {
+      workspaceTemplates: [{
+        name: 'cli-handoff-room',
+        config: {
+          version: WORKSPACE_SCHEMA_VERSION,
+          name: 'CLI Handoff Room',
+          register: 'agent-workspace',
+          groups: [{ id: 'room', name: 'Room' }],
+          sections: [{ id: 'main', label: 'Main', groupId: 'room' }],
+          panelTypes: {
+            command: {
+              title: 'Command',
+              component: 'cli-command-panel',
+            },
+          },
+          layout: { type: 'panel', panelType: 'command' },
+          components: {
+            catalog: ['cli-command-panel'],
+            modules: [{
+              tagName: 'cli-command-panel',
+              capabilities: ['room.command'],
+            }],
+          },
+        },
+      }],
+      moduleCapabilities: [],
+    },
+  });
 }
 
 describe('CLI help', () => {
@@ -116,6 +153,30 @@ describe('CLI tool commands', () => {
     assert.ok(Array.isArray(result.questions));
     assert.ok(Array.isArray(result.plan.modules));
     assert.ok(Array.isArray(result.plan.verification.targets));
+  });
+
+  it('plan alias accepts a full construction handoff JSON positional', async () => {
+    let { stdout } = await exec('plan', constructionHandoffJson());
+    let result = JSON.parse(stdout);
+
+    assert.equal(result.status, 'ok');
+    assert.equal(result.intent.brief, 'CLI handoff room');
+    assert.equal(result.intent.template, 'cli-handoff-room');
+    assert.equal(result.config.name, 'CLI Handoff Room');
+  });
+
+  it('construct alias accepts a full construction handoff JSON positional', async () => {
+    await withTempPath('cli-handoff', 'workspace.json', async (tmpFile) => {
+      let { stdout } = await exec('construct', constructionHandoffJson(), '--config', tmpFile);
+      let result = JSON.parse(stdout);
+      let saved = JSON.parse(await readFile(tmpFile, 'utf8'));
+
+      assert.equal(result.status, 'ok');
+      assert.equal(result.intent.brief, 'CLI handoff room');
+      assert.equal(result.intent.template, 'cli-handoff-room');
+      assert.equal(saved.intent.template, 'cli-handoff-room');
+      assert.equal(saved.name, 'CLI Handoff Room');
+    });
   });
 });
 

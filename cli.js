@@ -268,6 +268,27 @@ const POSITIONAL_MAP = {
   load_config: 'filePath',
 };
 
+function maybeParseJsonObject(value) {
+  if (typeof value !== 'string') return null;
+  let trimmed = value.trim();
+  if (!trimmed.startsWith('{')) return null;
+  try {
+    let parsed = JSON.parse(trimmed);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function isConstructionHandoffPositional(toolName, value) {
+  return (toolName === 'plan_workspace' || toolName === 'construct_workspace') &&
+    value &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    value.intent !== undefined &&
+    value.options !== undefined;
+}
+
 async function runToolCommand() {
   let { flags, positionals } = parseArgs(argv.slice(1));
   let configFile = flags.config;
@@ -298,7 +319,13 @@ async function runToolCommand() {
       // Load config from positional file path
       configFile = configFile || positionals.join(' ');
     } else {
-      toolArgs[positionalField] = positionals.join(' ');
+      let positionalValue = positionals.join(' ');
+      let positionalObject = maybeParseJsonObject(positionals.length === 1 ? positionalValue : '');
+      if (isConstructionHandoffPositional(toolName, positionalObject)) {
+        toolArgs = { ...positionalObject, ...toolArgs };
+      } else {
+        toolArgs[positionalField] = positionalValue;
+      }
     }
   }
 
