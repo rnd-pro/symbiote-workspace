@@ -251,7 +251,10 @@ describe('packed package consumer', () => {
       `);
 
       await runNode(consumerDir, `
+        import { applyWorkspacePatch } from 'symbiote-workspace';
+        import { checkDesignGuardrails } from 'symbiote-workspace';
         import { collectPluginModuleCapabilities as fromRoot } from 'symbiote-workspace';
+        import { proposeWorkspacePatch } from 'symbiote-workspace';
         import { collectPluginWorkspaceTemplates as templatesFromRoot } from 'symbiote-workspace';
         import { listPluginWorkspaceTemplates as listTemplatesFromRoot } from 'symbiote-workspace';
         import { collectPluginModuleCapabilities as fromPlugins } from 'symbiote-workspace/plugins';
@@ -275,6 +278,36 @@ describe('packed package consumer', () => {
           if (typeof helper !== 'function') {
             throw new Error('plugin collection export missing');
           }
+        }
+        for (let helper of [
+          applyWorkspacePatch,
+          checkDesignGuardrails,
+          proposeWorkspacePatch,
+        ]) {
+          if (typeof helper !== 'function') {
+            throw new Error('root validation helper export missing');
+          }
+        }
+
+        let config = {
+          version: '0.2.0',
+          name: 'Packed Validation Helpers',
+          register: 'tool',
+          layout: { type: 'panel', panelType: 'main' },
+          panelTypes: { main: { title: 'Main', component: 'sn-panel' } },
+          components: { catalog: ['sn-panel'] },
+        };
+        let guardrails = checkDesignGuardrails(config);
+        if (guardrails.pass !== true) throw new Error('root checkDesignGuardrails failed');
+        let proposal = await proposeWorkspacePatch(config, {
+          theme: { params: { mode: 'dark' } },
+        });
+        if (!proposal.accepted || !proposal.overlay?.theme) {
+          throw new Error('root proposeWorkspacePatch failed');
+        }
+        let applied = await applyWorkspacePatch(config, proposal.overlay);
+        if (applied.config.theme.params.mode !== 'dark') {
+          throw new Error('root applyWorkspacePatch failed');
         }
 
         try {

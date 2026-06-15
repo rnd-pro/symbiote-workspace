@@ -65,7 +65,6 @@ function countLeafPanels(layout) {
   if (layout.type === 'split') {
     return countLeafPanels(layout.first) + countLeafPanels(layout.second);
   }
-  // Fallback: legacy children[] format
   if (Array.isArray(layout.children)) {
     let count = 0;
     for (let child of layout.children) count += countLeafPanels(child);
@@ -113,7 +112,6 @@ function checkMinRatios(layout, minRatio, register, issues) {
     checkMinRatios(layout.second, minRatio, register, issues);
     return;
   }
-  // Legacy children[] format
   if (Array.isArray(layout.ratio)) {
     for (let i = 0; i < layout.ratio.length; i++) {
       if (layout.ratio[i] < minRatio) {
@@ -142,7 +140,6 @@ function getLayoutDepth(layout, depth = 1) {
     let secondDepth = layout.second ? getLayoutDepth(layout.second, depth + 1) : depth;
     return Math.max(firstDepth, secondDepth);
   }
-  // Legacy children[] format
   if (Array.isArray(layout.children)) {
     let maxChild = depth;
     for (let child of layout.children) {
