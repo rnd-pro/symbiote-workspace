@@ -20,7 +20,8 @@ capability is missing from the available catalog.
 Selected module descriptors are materialized into executable workspace
 surfaces: placement creates panel types, actions/menus/toolbars become panel
 shell actions, `events.emits` become portable broadcast event bridges, and
-bindings are copied into `data.bindings` for host/runtime handoff.
+bindings are copied into validated `data.bindings` records for host/runtime
+handoff.
 
 ## Install
 
@@ -491,6 +492,12 @@ into `config.construction.plan.modules`. Selected modules also expose
 `config.construction.plan.capabilities`.
 `validation.reports` and `patches` can persist machine-readable review results
 from patch validation.
+
+Selected descriptor bindings are also materialized into `config.data.bindings`.
+Each binding record carries `panelType`, `component`, `id`, `direction`, and
+optional `path`/`schema`; `direction` must be `input`, `output`, or `two-way`.
+This is a portable declaration for host/runtime handoff, not an embedded server
+endpoint or execution engine.
 
 ## Browser Theme Mounting
 

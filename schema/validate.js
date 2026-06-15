@@ -6,6 +6,7 @@ import {
   RESPONSIVE_MODES,
   MOBILE_DOCKS,
   SWIPE_CONTROLS,
+  DATA_BINDING_DIRECTIONS,
 } from './workspace-schema.js';
 import { validateModuleCapabilityDescriptor } from './module-capability.js';
 
@@ -36,6 +37,9 @@ let BLOCKED_VALUE_PATTERNS = new Set([
 function isObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
+
+let PORTABLE_ID_PATTERN = /^[a-z][a-z0-9]*(?:[./:_-][a-z0-9]+)*$/;
+let CUSTOM_ELEMENT_PATTERN = /^[a-z][a-z0-9]*(-[a-z0-9]+)+$/;
 
 function collectKeys(obj, prefix = '', result = []) {
   if (!isObject(obj)) return result;
@@ -198,6 +202,14 @@ export function validateWorkspaceConfig(config, options = {}) {
       errors.push({ path: 'events', message: 'Field "events" must be an array.', severity: 'error' });
     } else {
       validateEvents(config.events, errors, warnings);
+    }
+  }
+
+  if (config.data !== undefined) {
+    if (!isObject(config.data)) {
+      errors.push({ path: 'data', message: 'Field "data" must be an object.', severity: 'error' });
+    } else {
+      validateData(config.data, errors);
     }
   }
 
@@ -542,6 +554,83 @@ function validateEvents(events, errors, warnings) {
       ids.add(ev.id);
     }
   }
+}
+
+function validateData(data, errors) {
+  if (data.bindings === undefined) return;
+  if (!Array.isArray(data.bindings)) {
+    errors.push({ path: 'data.bindings', message: 'data.bindings must be an array.', severity: 'error' });
+    return;
+  }
+
+  let bindingKeys = new Set();
+  for (let i = 0; i < data.bindings.length; i++) {
+    let binding = data.bindings[i];
+    let path = `data.bindings[${i}]`;
+    if (!isObject(binding)) {
+      errors.push({ path, message: 'Data binding entry must be an object.', severity: 'error' });
+      continue;
+    }
+
+    validatePortableIdField(binding.panelType, `${path}.panelType`, 'Data binding requires a portable "panelType".', errors);
+    validateCustomElementField(binding.component, `${path}.component`, errors);
+    validatePortableIdField(binding.id, `${path}.id`, 'Data binding requires a portable "id".', errors);
+
+    if (typeof binding.direction !== 'string' || !DATA_BINDING_DIRECTIONS.includes(binding.direction)) {
+      errors.push({
+        path: `${path}.direction`,
+        message: `Data binding direction must be one of: ${DATA_BINDING_DIRECTIONS.join(', ')}.`,
+        severity: 'error',
+      });
+    }
+
+    if (binding.path !== undefined) {
+      if (typeof binding.path !== 'string' || !binding.path.trim()) {
+        errors.push({ path: `${path}.path`, message: 'Data binding path must be a non-empty string.', severity: 'error' });
+      } else if (isNonPortableDataPath(binding.path)) {
+        errors.push({ path: `${path}.path`, message: 'Data binding path must be a portable config or state path, not a URL or local filesystem path.', severity: 'error' });
+      }
+    }
+
+    if (binding.schema !== undefined && !isObject(binding.schema)) {
+      errors.push({ path: `${path}.schema`, message: 'Data binding schema must be an object.', severity: 'error' });
+    }
+
+    if (binding.panelType && binding.id) {
+      let key = `${binding.panelType}:${binding.id}`;
+      if (bindingKeys.has(key)) {
+        errors.push({ path: `${path}.id`, message: `Duplicate data binding for panel/id: "${key}".`, severity: 'error' });
+      }
+      bindingKeys.add(key);
+    }
+  }
+}
+
+function validatePortableIdField(value, path, message, errors) {
+  if (typeof value !== 'string' || !value.trim()) {
+    errors.push({ path, message, severity: 'error' });
+    return;
+  }
+  if (!PORTABLE_ID_PATTERN.test(value)) {
+    errors.push({ path, message: `Value "${value}" must be a portable identifier, not a URL, path, or display label.`, severity: 'error' });
+  }
+}
+
+function validateCustomElementField(value, path, errors) {
+  if (typeof value !== 'string' || !value.trim()) {
+    errors.push({ path, message: 'Data binding requires a "component" custom element tag name.', severity: 'error' });
+    return;
+  }
+  if (!CUSTOM_ELEMENT_PATTERN.test(value)) {
+    errors.push({ path, message: `Component tag "${value}" must be a valid custom element name.`, severity: 'error' });
+  }
+}
+
+function isNonPortableDataPath(value) {
+  let lower = value.toLowerCase();
+  if (BLOCKED_VALUE_PATTERNS.has(lower)) return true;
+  if ([...BLOCKED_VALUE_PATTERNS].some((pattern) => lower.startsWith(pattern))) return true;
+  return value.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(value);
 }
 
 function validateComponents(components, errors, warnings) {

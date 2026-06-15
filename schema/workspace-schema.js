@@ -49,6 +49,8 @@ export const MOBILE_DOCKS = Object.freeze(['auto', 'primary', 'start', 'end']);
  */
 export const SWIPE_CONTROLS = Object.freeze(['edge', 'island', 'none']);
 
+export const DATA_BINDING_DIRECTIONS = Object.freeze(['input', 'output', 'two-way']);
+
 /** LayoutBehavior sub-schema (matches LayoutTree.js LayoutBehavior typedef) */
 const LAYOUT_BEHAVIOR_SCHEMA = Object.freeze({
   type: 'object',
@@ -188,6 +190,19 @@ const EVENT_BRIDGE_SCHEMA = Object.freeze({
     targetMethod: { type: 'string', description: 'Method to call on target component.' },
     targetProperty: { type: 'string', description: 'Property to set on target component.' },
     mapping: { type: 'object', description: 'e.detail field → target param mapping.' },
+  },
+});
+
+const DATA_BINDING_SCHEMA = Object.freeze({
+  type: 'object',
+  required: ['panelType', 'component', 'id', 'direction'],
+  properties: {
+    panelType: { type: 'string', description: 'Panel type that owns the binding.' },
+    component: { type: 'string', description: 'Custom element tag name that declares the binding.' },
+    id: { type: 'string', description: 'Portable binding identifier from the module descriptor.' },
+    direction: { type: 'string', enum: DATA_BINDING_DIRECTIONS },
+    path: { type: 'string', description: 'Portable config or state path for the binding.' },
+    schema: { type: 'object', description: 'Optional value schema for the binding payload.' },
   },
 });
 
@@ -485,6 +500,13 @@ export const WORKSPACE_CONFIG_SCHEMA = Object.freeze({
     data: {
       type: 'object',
       description: 'Data sources, bindings, and initial state.',
+      properties: {
+        bindings: {
+          type: 'array',
+          description: 'Portable module binding declarations selected for host/runtime handoff.',
+          items: DATA_BINDING_SCHEMA,
+        },
+      },
     },
     engine: {
       type: 'object',
@@ -602,6 +624,16 @@ export const WORKSPACE_CONFIG_SCHEMA = Object.freeze({
  */
 
 /**
+ * @typedef {Object} DataBinding
+ * @property {string} panelType
+ * @property {string} component
+ * @property {string} id
+ * @property {'input'|'output'|'two-way'} direction
+ * @property {string} [path]
+ * @property {Object} [schema]
+ */
+
+/**
  * @typedef {Object} WorkspaceConfig
  * @property {string} version - Schema version
  * @property {string} name - Workspace name
@@ -622,6 +654,6 @@ export const WORKSPACE_CONFIG_SCHEMA = Object.freeze({
  * @property {LayoutBehavior} [rootBehavior] - Root layout behavior
  * @property {EventBridge[]} [events] - Inter-panel event bridges
  * @property {Object} [components] - Component references
- * @property {Object} [data] - Data bindings
+ * @property {{ bindings?: DataBinding[] }} [data] - Data bindings
  * @property {Object} [engine] - Engine config
  */

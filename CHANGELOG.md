@@ -43,6 +43,10 @@ All notable changes to this project will be documented in this file.
   descriptors now expose emitted events as top-level broadcast bridges and
   copy selected binding declarations into `data.bindings` for portable
   host/runtime handoff.
+- **Data binding contract validation** — workspace schema and
+  `validateWorkspaceConfig()` now define and validate portable
+  `data.bindings[]` records with panel, component, binding ID, direction, path,
+  and value schema metadata.
 - **Package readiness propagation** — package construction handoffs now carry
   `options.packageContext`, and construction plans preserve it as
   `plan.packageContext` plus `config.construction.packageContext` so agents can

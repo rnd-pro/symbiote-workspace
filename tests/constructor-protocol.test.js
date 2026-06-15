@@ -338,7 +338,7 @@ describe('planWorkspaceConstruction', () => {
               component: 'acme-review-panel',
               id: 'rows',
               direction: 'input',
-              path: 'data.rows',
+              path: 'data.authoredRows',
             }],
           },
           events: [
@@ -400,7 +400,7 @@ describe('planWorkspaceConstruction', () => {
         component: 'acme-review-panel',
         id: 'rows',
         direction: 'input',
-        path: 'data.rows',
+        path: 'data.authoredRows',
       },
       {
         panelType: 'detail',

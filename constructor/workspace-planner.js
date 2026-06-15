@@ -1083,10 +1083,7 @@ function materializeSelectedDescriptorEventBridges(config, selectedModules) {
 function dataBindingKey(binding) {
   return [
     binding.panelType || '',
-    binding.component || '',
     binding.id || '',
-    binding.direction || '',
-    binding.path || '',
   ].join('\u0000');
 }
 

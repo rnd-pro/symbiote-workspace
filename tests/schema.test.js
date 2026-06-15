@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   WORKSPACE_SCHEMA_VERSION,
   WORKSPACE_REGISTER_VALUES,
+  DATA_BINDING_DIRECTIONS,
   WORKSPACE_CONFIG_SCHEMA,
   MODULE_CAPABILITY_DESCRIPTOR_SCHEMA,
   validatePortableStringArray,
@@ -24,11 +25,19 @@ describe('schema', () => {
     assert.ok(WORKSPACE_REGISTER_VALUES.includes('presentation'));
   });
 
+  it('exports data binding directions', () => {
+    assert.deepEqual(DATA_BINDING_DIRECTIONS, ['input', 'output', 'two-way']);
+  });
+
   it('exports frozen schema object', () => {
     assert.ok(Object.isFrozen(WORKSPACE_CONFIG_SCHEMA));
     assert.equal(WORKSPACE_CONFIG_SCHEMA.type, 'object');
     assert.ok(WORKSPACE_CONFIG_SCHEMA.required.includes('version'));
     assert.ok(WORKSPACE_CONFIG_SCHEMA.required.includes('name'));
+    assert.deepEqual(
+      WORKSPACE_CONFIG_SCHEMA.properties.data.properties.bindings.items.required,
+      ['panelType', 'component', 'id', 'direction'],
+    );
   });
 
   it('exports module capability descriptor schema', () => {
@@ -111,6 +120,104 @@ describe('validateWorkspaceConfig', () => {
     });
     assert.equal(result.valid, true);
     assert.ok(result.warnings.some((w) => w.message.includes('server URLs')));
+  });
+
+  it('accepts portable data bindings', () => {
+    let result = validateWorkspaceConfig({
+      version: '0.2.0',
+      name: 'Binding Workspace',
+      data: {
+        bindings: [{
+          panelType: 'sn-data-table',
+          component: 'sn-data-table',
+          id: 'rows',
+          direction: 'input',
+          path: 'data.rows',
+          schema: { type: 'array' },
+        }, {
+          panelType: 'sn-editor',
+          component: 'sn-code-editor',
+          id: 'draft',
+          direction: 'two-way',
+        }],
+      },
+    }, { strict: true });
+
+    assert.equal(result.valid, true);
+    assert.equal(result.errors.length, 0);
+  });
+
+  it('rejects invalid data binding shape', () => {
+    let result = validateWorkspaceConfig({
+      version: '0.2.0',
+      name: 'Broken Binding Workspace',
+      data: {
+        bindings: [{
+          panelType: 'Data Table',
+          component: 'DataTable',
+          id: 'rows list',
+          direction: 'read',
+          path: '/tmp/rows.json',
+          schema: 'array',
+        }, {
+          component: 'sn-chart',
+          id: 'series',
+          direction: 'output',
+        }],
+      },
+    }, { strict: true });
+
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some((error) => error.path === 'data.bindings[0].panelType'));
+    assert.ok(result.errors.some((error) => error.path === 'data.bindings[0].component'));
+    assert.ok(result.errors.some((error) => error.path === 'data.bindings[0].id'));
+    assert.ok(result.errors.some((error) => error.path === 'data.bindings[0].direction'));
+    assert.ok(result.errors.some((error) => error.path === 'data.bindings[0].path'));
+    assert.ok(result.errors.some((error) => error.path === 'data.bindings[0].schema'));
+    assert.ok(result.errors.some((error) => error.path === 'data.bindings[1].panelType'));
+  });
+
+  it('rejects non-array and duplicate data bindings', () => {
+    let nonArray = validateWorkspaceConfig({
+      version: '0.2.0',
+      name: 'Non-array Binding Workspace',
+      data: { bindings: { id: 'rows' } },
+    });
+
+    assert.equal(nonArray.valid, false);
+    assert.ok(nonArray.errors.some((error) => error.path === 'data.bindings'));
+
+    let duplicate = validateWorkspaceConfig({
+      version: '0.2.0',
+      name: 'Duplicate Binding Workspace',
+      data: {
+        bindings: [{
+          panelType: 'sn-data-table',
+          component: 'sn-data-table',
+          id: 'rows',
+          direction: 'input',
+        }, {
+          panelType: 'sn-data-table',
+          component: 'sn-data-table',
+          id: 'rows',
+          direction: 'output',
+        }],
+      },
+    });
+
+    assert.equal(duplicate.valid, false);
+    assert.ok(duplicate.errors.some((error) => error.path === 'data.bindings[1].id'));
+  });
+
+  it('rejects non-object data config', () => {
+    let result = validateWorkspaceConfig({
+      version: '0.2.0',
+      name: 'Broken Data Workspace',
+      data: [],
+    });
+
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some((error) => error.path === 'data'));
   });
 
   it('validates layout node types', () => {
