@@ -457,6 +457,10 @@ describe('portable workspace relaunch', () => {
     let result = exportConfig({
       ...config,
       host: { sessionId: 'abc123' },
+      runtime: {
+        server_url: 'prod-primary',
+        apiEndpoint: 'internal-api',
+      },
       construction: {
         ...config.construction,
         plan: {
@@ -468,6 +472,8 @@ describe('portable workspace relaunch', () => {
 
     assert.equal(result.json, null);
     assert.ok(result.errors.some((error) => error.path === 'host'));
+    assert.ok(result.errors.some((error) => error.path === 'runtime.server_url'));
+    assert.ok(result.errors.some((error) => error.path === 'runtime.apiEndpoint'));
     assert.ok(result.errors.some((error) => error.path === 'construction.plan.localFile'));
   });
 });

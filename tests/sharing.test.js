@@ -165,6 +165,24 @@ describe('exportConfig', () => {
     assert.ok(result.errors.some((error) => error.path === 'runtime.profile'));
   });
 
+  it('strict mode rejects normalized host-only and local fields before sanitizing output', () => {
+    let result = exportConfig({
+      ...BASE_CONFIG,
+      runtime: {
+        server_url: 'prod-primary',
+        workspace_root: 'local-checkout',
+        file_path: 'private-config',
+        apiEndpoint: 'internal-api',
+      },
+    }, { strict: true });
+
+    assert.equal(result.json, null);
+    assert.ok(result.errors.some((error) => error.path === 'runtime.server_url'));
+    assert.ok(result.errors.some((error) => error.path === 'runtime.workspace_root'));
+    assert.ok(result.errors.some((error) => error.path === 'runtime.file_path'));
+    assert.ok(result.errors.some((error) => error.path === 'runtime.apiEndpoint'));
+  });
+
   it('preserves construction metadata, validation reports, and theme relations', () => {
     let result = exportConfig(EXTENDED_CONFIG);
     assert.ok(result.json);
@@ -198,6 +216,31 @@ describe('exportConfig', () => {
     assert.equal(parsed.construction.plan.localFile, undefined);
     assert.equal(parsed.construction.plan.previewUrl, undefined);
     assert.equal(parsed.construction.plan.layoutTemplate, 'video-studio');
+  });
+
+  it('strips normalized host-only fields while preserving portable module binding paths', () => {
+    let result = exportConfig({
+      ...PACKAGE_CONFIG,
+      runtime: {
+        server_url: 'prod-primary',
+        workspace_root: 'local-checkout',
+        path: 'data.runtime',
+      },
+      components: {
+        ...PACKAGE_CONFIG.components,
+        modules: [{
+          ...PACKAGE_CONFIG.components.modules[0],
+          bindings: [{ id: 'rows', direction: 'input', path: 'data.rows' }],
+        }],
+      },
+    });
+
+    assert.ok(result.json);
+    let parsed = JSON.parse(result.json);
+    assert.equal(parsed.runtime.server_url, undefined);
+    assert.equal(parsed.runtime.workspace_root, undefined);
+    assert.equal(parsed.runtime.path, 'data.runtime');
+    assert.equal(parsed.components.modules[0].bindings[0].path, 'data.rows');
   });
 });
 
@@ -423,6 +466,24 @@ describe('importConfig', () => {
     assert.ok(result.errors.some((error) => error.path === 'runtime.userId'));
     assert.ok(result.errors.some((error) => error.path === 'runtime.accountId'));
     assert.ok(result.errors.some((error) => error.path === 'runtime.profile'));
+  });
+
+  it('rejects normalized host-only and local fields', () => {
+    let result = importConfig(JSON.stringify({
+      ...EXTENDED_CONFIG,
+      runtime: {
+        server_url: 'prod-primary',
+        workspace_root: 'local-checkout',
+        file_path: 'private-config',
+        apiEndpoint: 'internal-api',
+      },
+    }));
+
+    assert.equal(result.config, null);
+    assert.ok(result.errors.some((error) => error.path === 'runtime.server_url'));
+    assert.ok(result.errors.some((error) => error.path === 'runtime.workspace_root'));
+    assert.ok(result.errors.some((error) => error.path === 'runtime.file_path'));
+    assert.ok(result.errors.some((error) => error.path === 'runtime.apiEndpoint'));
   });
 });
 

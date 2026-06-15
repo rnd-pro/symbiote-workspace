@@ -46,6 +46,8 @@ let USER_IDENTITY_KEYS = new Set([
   'orgid',
 ]);
 
+let NORMALIZED_EXPORT_STRIP_KEYS = new Set([...EXPORT_STRIP_KEYS].map(normalizedKey));
+
 const PORTABLE_ID_PATTERN = /^[a-z][a-z0-9]*(?:[./:_-][a-z0-9]+)*$/;
 
 const CHAT_CONSTRUCTION_TOOLS = Object.freeze([
@@ -98,8 +100,13 @@ function normalizedKey(key) {
   return key.toLowerCase().replace(/[_-]/g, '');
 }
 
+function isHostLocalFieldKey(key) {
+  let normalized = normalizedKey(key);
+  return NORMALIZED_EXPORT_STRIP_KEYS.has(normalized) || normalized.endsWith('endpoint');
+}
+
 function isNonPortableFieldKey(key) {
-  return EXPORT_STRIP_KEYS.has(key) || USER_IDENTITY_KEYS.has(normalizedKey(key));
+  return isHostLocalFieldKey(key) || USER_IDENTITY_KEYS.has(normalizedKey(key));
 }
 
 function collectNonPortableFields(value, path = '', result = []) {

@@ -128,6 +128,10 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- **Export/import portability aliases** — strict export/import checks now
+  reject normalized host/local field aliases such as `server_url`,
+  `workspace_root`, `file_path`, and `apiEndpoint`, while preserving portable
+  module binding `path` fields.
 - **Test artifact hygiene** — package-consumer tests now isolate npm cache
   inside ignored per-test `tmp` directories, and CLI/dispatch file I/O tests
   no longer write scratch JSON files at the repository root.
