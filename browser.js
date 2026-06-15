@@ -198,6 +198,87 @@ function updateThemeParams(config, state, targetSelector) {
   updateThemeScope(config.theme, state);
 }
 
+function appendTextElement(document, parent, tagName, className, text) {
+  let element = document.createElement(tagName);
+  element.className = className;
+  element.textContent = text;
+  parent.appendChild(element);
+  return element;
+}
+
+function firstLayout(config) {
+  if (config.layout) return config.layout;
+  let firstNamedLayout = Object.values(config.layouts || {})[0];
+  return firstNamedLayout || null;
+}
+
+function renderPreviewPanel(config, node, document) {
+  let panel = config.panelTypes?.[node.panelType] || {};
+  let element = document.createElement('section');
+  element.className = 'symbiote-workspace__panel';
+  element.dataset.panelType = node.panelType || 'unknown';
+  if (panel.component) element.dataset.component = panel.component;
+
+  appendTextElement(document, element, 'h2', 'symbiote-workspace__panel-title', (
+    panel.title || node.panelType || 'Panel'
+  ));
+  if (panel.component) {
+    appendTextElement(document, element, 'p', 'symbiote-workspace__panel-component', panel.component);
+  }
+
+  let slots = Array.isArray(panel.slots) ? panel.slots : [];
+  if (slots.length > 0) {
+    let slotList = document.createElement('ul');
+    slotList.className = 'symbiote-workspace__panel-slots';
+    for (let slot of slots) {
+      let item = document.createElement('li');
+      item.className = 'symbiote-workspace__panel-slot';
+      item.dataset.slotId = slot.id || 'slot';
+      item.textContent = slot.role ? `${slot.id || 'slot'} (${slot.role})` : slot.id || 'slot';
+      slotList.appendChild(item);
+    }
+    element.appendChild(slotList);
+  }
+
+  return element;
+}
+
+function renderPreviewLayout(config, node, document) {
+  if (!isObject(node)) return null;
+  if (node.type === 'panel') return renderPreviewPanel(config, node, document);
+  if (node.type !== 'split') return null;
+
+  let element = document.createElement('div');
+  element.className = 'symbiote-workspace__split';
+  element.dataset.direction = node.direction || 'horizontal';
+  if (node.ratio !== undefined) {
+    element.style.setProperty('--symbiote-workspace-preview-ratio', String(node.ratio));
+  }
+
+  let first = renderPreviewLayout(config, node.first, document);
+  let second = renderPreviewLayout(config, node.second, document);
+  if (first) element.appendChild(first);
+  if (second) element.appendChild(second);
+  return element;
+}
+
+function renderDefaultWorkspacePreview(config, wrapper) {
+  let layout = firstLayout(config);
+  if (!layout) return null;
+
+  let document = wrapper.ownerDocument;
+  let preview = document.createElement('div');
+  preview.className = 'symbiote-workspace__preview';
+  let renderedLayout = renderPreviewLayout(config, layout, document);
+  if (renderedLayout) preview.appendChild(renderedLayout);
+  wrapper.appendChild(preview);
+  return {
+    destroy() {
+      preview.remove();
+    },
+  };
+}
+
 /**
  * Applies workspace theme layers to a root element.
  * @param {import('./schema/workspace-schema.js').WorkspaceConfig} config
@@ -258,6 +339,7 @@ export function applyWorkspaceTheme(config, root, options = {}) {
  * @param {Object} [options]
  * @param {Object} [options.catalog] - Component catalog
  * @param {Object} [options.runtimeController] - Optional symbiote-ui runtime controller
+ * @param {boolean} [options.renderDefaultPreview] - Render portable layout/panel DOM when no runtime controller is supplied
  * @param {Object} [options.themeAdapter] - Object with applyCascadeTheme(element, options, eventOptions)
  * @param {function(Object): void} [options.onThemeChange] - Called after editor/widget theme changes
  * @param {boolean} [options.writeThemeChanges] - Persist cascade-theme-change state into config
@@ -294,6 +376,9 @@ export function mountWorkspace(config, container, options = {}) {
     element: wrapper,
     loaderResult,
   });
+  if (!runtimeMount && options.renderDefaultPreview !== false) {
+    runtimeHandle = renderDefaultWorkspacePreview(config, wrapper);
+  }
 
   let theme = applyWorkspaceTheme(config, wrapper, options);
   let writeThemeChanges = options.writeThemeChanges !== false;

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { execFile } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
@@ -117,6 +117,17 @@ function assertWorkspacePackList(pack) {
   for (let target of Object.values(PACKAGE_META.bin)) {
     assertPackIncludesTarget(paths, target);
   }
+
+  assert.equal(
+    paths.has('examples/visual-demo/preview.mjs'),
+    true,
+    'Package must include the visual demo script',
+  );
+  assert.equal(
+    paths.has('examples/visual-demo/README.md'),
+    true,
+    'Package must include the visual demo README',
+  );
 }
 
 async function runNode(consumerDir, source) {
@@ -230,6 +241,31 @@ describe('packed package consumer', () => {
         ];
         for (let spec of specs) await import(spec);
       `);
+
+      let demoDir = join(consumerDir, 'visual-demo-preview');
+      let demo = await run('node', [
+        join(
+          consumerDir,
+          'node_modules',
+          'symbiote-workspace',
+          'examples',
+          'visual-demo',
+          'preview.mjs',
+        ),
+        '--write-only',
+        '--output-dir',
+        demoDir,
+      ], withNpmEnv({ cwd: consumerDir }, npmEnv));
+      let demoSummary = JSON.parse(demo.stdout);
+      assert.equal(demoSummary.status, 'ok');
+      assert.equal(demoSummary.template, 'video-studio');
+      assert.equal(demoSummary.writeOnly, true);
+      assert.equal(demoSummary.panels, 4);
+      let previewContract = JSON.parse(await readFile(join(demoDir, 'preview.contract.json'), 'utf8'));
+      assert.equal(previewContract.browser.entrypoint, 'symbiote-workspace/browser');
+      await readFile(join(demoDir, 'index.html'), 'utf8');
+      await readFile(join(demoDir, 'app.js'), 'utf8');
+      await readFile(join(demoDir, 'workspace.config.json'), 'utf8');
 
       await runNode(consumerDir, `
         import packageMeta from 'symbiote-workspace/package.json' with { type: 'json' };

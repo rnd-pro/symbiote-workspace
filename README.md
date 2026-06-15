@@ -259,6 +259,24 @@ loading bare modules, renders loader warnings with `data-preview-warning`, and
 reports import-map, module-load, and mount failures separately. Runtime errors
 include the original error message instead of a broad fallback.
 
+### Visual Demo Process
+
+The packaged visual demo runs the same portable construction path that agents
+use: classify intent, create a construction handoff, plan and construct the
+workspace, validate it, strictly export/import the config, write preview files,
+and serve the generated browser preview.
+
+```bash
+npm run demo:visual
+```
+
+For CI or package smoke checks, write the preview artifacts without starting a
+server:
+
+```bash
+node examples/visual-demo/preview.mjs --write-only --output-dir tmp/visual-demo-preview
+```
+
 ## Portable Relaunch And Host Contract
 
 Use strict export for configs that must be saved, shared, and relaunched by a

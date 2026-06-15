@@ -70,6 +70,7 @@
     "handlers/",
     "mcp/",
     "runtime/",
+    "examples/",
     "README.md",
     "LICENSE",
     "CHANGELOG.md"
@@ -86,7 +87,8 @@
   },
   "scripts": {
     "test": "node --test tests/*.test.js",
-    "test:package-consumer": "node --test tests/package-consumer.test.js"
+    "test:package-consumer": "node --test tests/package-consumer.test.js",
+    "demo:visual": "node examples/visual-demo/preview.mjs"
   },
   "keywords": [
     "workspace",

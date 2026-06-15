@@ -378,6 +378,45 @@ describe('mountWorkspace', () => {
     }), /Missing components: sn-editor-panel/);
   });
 
+  it('renders portable layout and panel previews without a runtime controller', () => {
+    let container = createContainer();
+    let mounted = mountWorkspace({
+      version: '0.3.0',
+      name: 'Visual Demo',
+      panelTypes: {
+        timeline: {
+          title: 'Timeline',
+          component: 'sn-video-timeline',
+          slots: [{ id: 'tracks', role: 'content' }],
+        },
+        preview: {
+          title: 'Preview',
+          component: 'sn-video-preview',
+        },
+      },
+      layout: {
+        type: 'split',
+        direction: 'horizontal',
+        ratio: 0.65,
+        first: { type: 'panel', panelType: 'timeline' },
+        second: { type: 'panel', panelType: 'preview' },
+      },
+    }, container);
+
+    let panels = mounted.element.querySelectorAll('.symbiote-workspace__panel');
+    let split = mounted.element.querySelectorAll('.symbiote-workspace__split')[0];
+
+    assert.equal(panels.length, 2);
+    assert.equal(split.dataset.direction, 'horizontal');
+    assert.equal(split.style.getPropertyValue('--symbiote-workspace-preview-ratio'), '0.65');
+    assert.equal(panels[0].dataset.panelType, 'timeline');
+    assert.equal(panels[0].dataset.component, 'sn-video-timeline');
+    assert.equal(panels[0].children[0].textContent, 'Timeline');
+    assert.equal(panels[0].querySelectorAll('.symbiote-workspace__panel-slot')[0].dataset.slotId, 'tracks');
+    assert.equal(panels[1].dataset.panelType, 'preview');
+    assert.equal(panels[1].children[0].textContent, 'Preview');
+  });
+
   it('cleans up runtime handles and stops writeback after destroy', () => {
     let container = createContainer();
     let config = {
