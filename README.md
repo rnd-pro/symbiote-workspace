@@ -203,7 +203,7 @@ npx symbiote-workspace preview workspace.json --output-dir .workspace-preview
 # Server
 npx symbiote-workspace serve --port 3100 --plugins-dir ./plugins
 
-# MCP mode (for AI agents)
+# MCP mode
 npx symbiote-workspace mcp
 ```
 
@@ -292,7 +292,7 @@ credentials, user identity, URLs, local paths, or product code.
 
 ## MCP (Model Context Protocol)
 
-Start as MCP server for AI agent integration:
+Start as MCP server:
 
 ```bash
 npx symbiote-workspace mcp
@@ -823,7 +823,7 @@ The manifest rejects host, identity, and marketplace state:
 
 ## Related Packages
 
-- [`symbiote-ui`](https://github.com/RND-PRO/symbiote-ui) - Web Components, provider catalogs, layout metadata, and WebMCP descriptors.
+- [`symbiote-ui`](https://github.com/RND-PRO/symbiote-ui) - Web Components, provider catalogs, layout metadata, and component descriptors.
 - [`symbiote-engine`](https://github.com/RND-PRO/symbiote-engine) - runtime execution, CLI commands, server helpers, persistence, and handlers.
 - [`symbiote-node`](https://github.com/RND-PRO/symbiote-node) - terminal migration facade for older imports.
 

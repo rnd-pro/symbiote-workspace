@@ -50,11 +50,11 @@ function getAliasRows() {
 
 function printUsage() {
   console.log(`
-symbiote-workspace CLI — one API, two entries
+symbiote-workspace CLI — unified dispatch for CLI and MCP
 
 Special Commands:
   serve               Start workspace HTTP server
-  mcp                 Start MCP server (stdio transport, for AI agents)
+  mcp                 Start MCP server (stdio transport)
 
 Tool Commands (all dispatch to unified API):
 ${formatHelpRows(getToolCommandRows())}

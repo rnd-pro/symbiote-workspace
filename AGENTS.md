@@ -31,7 +31,7 @@ Project-specific rules documented in:
 npm test    # node --test tests/*.test.js
 ```
 
-All 450 tests must pass before commit. No Jest, Mocha, or Vitest.
+All tests must pass before commit. No Jest, Mocha, or Vitest.
 Use Node.js built-in test runner (`node:test`).
 
 ## Boundary Rules
