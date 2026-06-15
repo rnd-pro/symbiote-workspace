@@ -219,7 +219,7 @@ export const TOOLS = [
   },
   {
     name: 'construct_workspace',
-    description: 'Generate a construction plan and store the executable config; rejects not-ready construction handoffs with structured readiness diagnostics.',
+    description: 'Generate a construction plan and store the executable config; rejects missing required capabilities and not-ready construction handoffs with structured readiness diagnostics.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -1112,6 +1112,30 @@ function constructionReadinessFromHandoff(args, overrides = {}) {
   });
 }
 
+function constructionReadinessFromPlan(plan, overrides = {}) {
+  let capabilities = plan?.capabilities || {};
+  let missing = Array.isArray(capabilities.missing) ? capabilities.missing : [];
+  return compactObject({
+    ready: missing.length === 0,
+    valid: true,
+    status: missing.length > 0 ? 'blocked' : 'ready',
+    missingCount: missing.length,
+    warningCount: 0,
+    errorCount: 0,
+    missing: missing.length > 0 ? { moduleCapabilities: cloneJson(missing) } : undefined,
+    recovery: missing.length > 0
+      ? missing.map((item) => ({
+        kind: 'moduleCapabilities',
+        item,
+        action: 'provide-module-capability',
+      }))
+      : undefined,
+    requiredCapabilities: cloneJson(capabilities.required),
+    matchedCapabilities: cloneJson(capabilities.matched),
+    ...overrides,
+  });
+}
+
 function assertUsableConstructionHandoff(args, { requireReady = false } = {}) {
   if (!isConstructionHandoffArgs(args)) return;
   let context = packageContextFromHandoff(args) || {};
@@ -1147,6 +1171,16 @@ function assertUsableConstructionHandoff(args, { requireReady = false } = {}) {
     });
     throw err;
   }
+}
+
+function assertConstructiblePlan(result) {
+  let missing = result?.plan?.capabilities?.missing;
+  if (!Array.isArray(missing) || missing.length === 0) return;
+  let err = new Error(`Construction plan is missing required capabilities: ${missing.join(', ')}.`);
+  err.code = 'construction_capabilities_missing';
+  err.nextAction = 'provide-module-capabilities';
+  err.readiness = constructionReadinessFromPlan(result.plan, { ready: false });
+  throw err;
 }
 
 function constructionError(toolName, err) {
@@ -1225,6 +1259,7 @@ export async function dispatch(toolName, args, session) {
         constructionIntent,
         constructionOptionsFromArgs(args, constructionIntent),
       );
+      assertConstructiblePlan(result);
     } catch (err) {
       return constructionError(toolName, err);
     }

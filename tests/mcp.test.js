@@ -293,6 +293,49 @@ describe('MCP Protocol', () => {
     assert.deepEqual(exportedConfig.construction.plan.capabilities.missing, []);
   });
 
+  it('rejects missing construction capabilities through tools/call without replacing session state', async () => {
+    let responses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: { name: 'scaffold_from_scratch', arguments: { name: 'Existing MCP Config' } },
+      },
+      {
+        jsonrpc: '2.0', id: 3, method: 'tools/call',
+        params: {
+          name: 'construct_workspace',
+          arguments: {
+            intent: 'dashboard with unknown module requirement',
+            template: 'dashboard',
+            requiredCapabilities: ['capability.that.does.not.exist'],
+          },
+        },
+      },
+      {
+        jsonrpc: '2.0', id: 4, method: 'tools/call',
+        params: { name: 'export_workspace', arguments: {} },
+      },
+    ], 5000);
+
+    let constructResult = responses.find((r) => r.id === 3);
+    assert.ok(constructResult);
+    assert.equal(constructResult.result.isError, true);
+    let constructContent = JSON.parse(constructResult.result.content[0].text);
+    assert.equal(constructContent.status, 'error');
+    assert.equal(constructContent.code, 'construction_capabilities_missing');
+    assert.equal(constructContent.nextAction, 'provide-module-capabilities');
+    assert.deepEqual(
+      constructContent.readiness.missing.moduleCapabilities,
+      ['capability.that.does.not.exist'],
+    );
+
+    let exportResult = responses.find((r) => r.id === 4);
+    assert.ok(exportResult);
+    let exportContent = JSON.parse(exportResult.result.content[0].text);
+    let exportedConfig = JSON.parse(exportContent.json);
+    assert.equal(exportedConfig.name, 'Existing MCP Config');
+  });
+
   it('constructs external module descriptors through tools/call and exports executable config', async () => {
     let responses = await mcpSession([
       { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },

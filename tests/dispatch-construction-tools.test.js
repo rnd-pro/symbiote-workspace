@@ -317,6 +317,41 @@ describe('construction workflow dispatch', () => {
     assert.equal(exportedConfig.intent.template, 'team-ai-room');
   });
 
+  it('construct_workspace rejects missing required capabilities without replacing session state', async () => {
+    let session = createSession();
+    await dispatch('scaffold_from_scratch', { name: 'Existing Config' }, session);
+
+    let plan = await dispatch('plan_workspace', {
+      intent: 'dashboard with unknown module requirement',
+      template: 'dashboard',
+      requiredCapabilities: ['capability.that.does.not.exist'],
+    }, session);
+    let construct = await dispatch('construct_workspace', {
+      intent: 'dashboard with unknown module requirement',
+      template: 'dashboard',
+      requiredCapabilities: ['capability.that.does.not.exist'],
+    }, session);
+
+    assert.equal(plan.status, 'ok');
+    assert.deepEqual(plan.plan.capabilities.missing, ['capability.that.does.not.exist']);
+    assert.equal(construct.status, 'error');
+    assert.equal(construct.tool, 'construct_workspace');
+    assert.equal(construct.code, 'construction_capabilities_missing');
+    assert.equal(construct.nextAction, 'provide-module-capabilities');
+    assert.match(construct.hint, /capability\.that\.does\.not\.exist/);
+    assert.equal(construct.readiness.ready, false);
+    assert.equal(construct.readiness.valid, true);
+    assert.equal(construct.readiness.status, 'blocked');
+    assert.equal(construct.readiness.missingCount, 1);
+    assert.deepEqual(construct.readiness.missing.moduleCapabilities, ['capability.that.does.not.exist']);
+    assert.deepEqual(construct.readiness.recovery, [{
+      kind: 'moduleCapabilities',
+      item: 'capability.that.does.not.exist',
+      action: 'provide-module-capability',
+    }]);
+    assert.equal(session.config.name, 'Existing Config');
+  });
+
   it('plan_workspace accepts a construction handoff object without mutating', async () => {
     let session = createSession();
     let handoff = await dispatch('create_workspace_construction_handoff', {
@@ -459,6 +494,7 @@ describe('construction workflow dispatch', () => {
     handoff.options.packageContext.ready = true;
     handoff.options.packageContext.missing = {};
     handoff.options.packageContext.warnings = [];
+    handoff.intent.template = 'team-ai-room';
     let readyConstructResult = await dispatch('construct_workspace', handoff, session);
     assert.equal(readyConstructResult.status, 'ok');
     assert.deepEqual(readyConstructResult.readiness, readyConstructResult.plan.readiness.package);
@@ -1013,6 +1049,45 @@ describe('construction workflow CLI commands', () => {
       assert.equal(exportedConfig.name, 'CLI Constructed');
       assert.equal(exportedConfig.intent.template, 'social-automation');
       assert.deepEqual(exportedConfig.construction.plan.capabilities.missing, []);
+    });
+  });
+
+  it('construct-workspace rejects missing required capabilities without overwriting CLI config', async () => {
+    await withTempDir('construct-cli-missing-capabilities', async (dir) => {
+      let tmpFile = join(dir, 'workspace.json');
+      await execCli('scaffold-from-scratch', '--config', tmpFile, '--name', 'Existing CLI Config');
+
+      let error;
+      try {
+        await execCli(
+          'construct-workspace',
+          '--config',
+          tmpFile,
+          'dashboard with unknown module requirement',
+          '--template',
+          'dashboard',
+          '--required-capabilities',
+          '["capability.that.does.not.exist"]',
+        );
+      } catch (err) {
+        error = err;
+      }
+
+      assert.ok(error);
+      assert.equal(error.code, 1);
+      let result = JSON.parse(error.stdout);
+      assert.equal(result.status, 'error');
+      assert.equal(result.code, 'construction_capabilities_missing');
+      assert.equal(result.nextAction, 'provide-module-capabilities');
+      assert.deepEqual(
+        result.readiness.missing.moduleCapabilities,
+        ['capability.that.does.not.exist'],
+      );
+
+      let exportResult = await execCli('export-workspace', '--config', tmpFile);
+      let parsedExport = JSON.parse(exportResult.stdout);
+      let exportedConfig = JSON.parse(parsedExport.json);
+      assert.equal(exportedConfig.name, 'Existing CLI Config');
     });
   });
 
