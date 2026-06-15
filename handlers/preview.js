@@ -7,6 +7,7 @@ import { writeFile, mkdir } from 'node:fs/promises';
 import { join, relative, resolve, sep } from 'node:path';
 import {
   BROWSER_REQUIRED_IMPORTS,
+  BROWSER_THEME_IMPORT,
   createBrowserRuntimeContract,
 } from '../sharing/browser-contract.js';
 import { exportConfig } from '../sharing/config-portability.js';
@@ -50,7 +51,7 @@ function createPreviewImports(outputDir, serveRoot, imports = {}) {
   if (isObject(imports) && Object.keys(imports).length > 0) return { ...imports };
   return {
     'symbiote-workspace/browser': toBrowserPath(outputDir, join(serveRoot, 'browser.js')),
-    'symbiote-ui': toBrowserPath(outputDir, join(serveRoot, 'node_modules', 'symbiote-ui', 'index.js')),
+    [BROWSER_THEME_IMPORT]: toBrowserPath(outputDir, join(serveRoot, 'node_modules', 'symbiote-ui', 'themes', 'Theme.js')),
   };
 }
 
@@ -185,14 +186,14 @@ function assertImportMapSupport() {
   let supported = typeof HTMLScriptElement !== 'undefined'
     && HTMLScriptElement.supports?.('importmap') === true;
   if (supported) return;
-  throw new Error('Import maps are not supported in this browser. Preview requires <script type="importmap"> for symbiote-workspace/browser and symbiote-ui.');
+  throw new Error('Import maps are not supported in this browser. Preview requires <script type="importmap"> for symbiote-workspace/browser and ${BROWSER_THEME_IMPORT}.');
 }
 
 async function loadPreviewModules() {
   try {
     return await Promise.all([
       import('symbiote-workspace/browser'),
-      import('symbiote-ui'),
+      import('${BROWSER_THEME_IMPORT}'),
     ]);
   } catch (error) {
     renderPreviewError('Failed to load preview modules', error);
@@ -213,7 +214,7 @@ async function startPreview() {
       throw new Error('symbiote-workspace/browser did not export mountWorkspace().');
     }
     if (typeof applyCascadeTheme !== 'function') {
-      throw new Error('symbiote-ui did not export applyCascadeTheme().');
+      throw new Error('${BROWSER_THEME_IMPORT} did not export applyCascadeTheme().');
     }
     let mounted = mountWorkspace(config, document.body, {
       themeAdapter: { applyCascadeTheme },

@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { dispatch, createSession } from '../../runtime/index.js';
 import { startPreview } from '../../handlers/preview.js';
 import { exportConfig, importConfig } from '../../sharing/index.js';
+import { BROWSER_THEME_IMPORT } from '../../sharing/browser-contract.js';
 
 let MIME_TYPES = {
   '.css': 'text/css; charset=utf-8',
@@ -176,7 +177,7 @@ let preview = await startPreview(demo.config, {
   port,
   imports: {
     'symbiote-workspace/browser': '/__workspace__/browser.js',
-    'symbiote-ui': '/__symbiote_ui__/index.js',
+    [BROWSER_THEME_IMPORT]: '/__symbiote_ui__/themes/Theme.js',
   },
 });
 

@@ -8,6 +8,7 @@ export {
 
 export {
   BROWSER_REQUIRED_IMPORTS,
+  BROWSER_THEME_IMPORT,
   createBrowserRuntimeContract,
 } from './browser-contract.js';
 

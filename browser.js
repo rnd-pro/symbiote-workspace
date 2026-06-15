@@ -44,6 +44,7 @@ export {
   WORKSPACE_PACKAGE_KIND,
   WORKSPACE_PACKAGE_SCHEMA_VERSION,
   BROWSER_REQUIRED_IMPORTS,
+  BROWSER_THEME_IMPORT,
   exportConfig,
   exportWorkspacePackage,
   importConfig,

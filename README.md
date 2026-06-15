@@ -235,7 +235,7 @@ await startPreview(config, {
   outputDir: '.workspace-preview',
   imports: {
     'symbiote-workspace/browser': './mock-workspace-browser.js',
-    'symbiote-ui': './mock-symbiote-ui.js',
+    'symbiote-ui/themes/Theme.js': './mock-symbiote-theme.js',
   },
 });
 ```
@@ -246,13 +246,14 @@ copied into preview runtime state.
 
 When `imports` is omitted, preview defaults to local workspace paths and the
 returned `hint` serves the repository root so `symbiote-workspace/browser` and
-`symbiote-ui` can resolve from the generated import map.
+`symbiote-ui/themes/Theme.js` can resolve from the generated import map.
 
-The generated runtime imports `applyCascadeTheme` from `symbiote-ui`, passes it
-as `themeAdapter` to `mountWorkspace()`, verifies import-map support before
-loading bare modules, renders loader warnings with `data-preview-warning`, and
-reports import-map, module-load, and mount failures separately. Runtime errors
-include the original error message instead of a broad fallback.
+The generated runtime imports `applyCascadeTheme` from
+`symbiote-ui/themes/Theme.js`, passes it as `themeAdapter` to
+`mountWorkspace()`, verifies import-map support before loading bare modules,
+renders loader warnings with `data-preview-warning`, and reports import-map,
+module-load, and mount failures separately. Runtime errors include the original
+error message instead of a broad fallback.
 
 ### Visual Demo Process
 
@@ -306,8 +307,9 @@ for a portable config:
 - chat construction tools: `classify_workspace`, `plan_workspace`,
   `construct_workspace`, patch validation/application, import, and export;
 - standalone browser requirements: import-map entries for
-  `symbiote-workspace/browser` and `symbiote-ui`, `<script type="importmap">`
-  ordering, `mountWorkspace()`, and `symbiote-ui.applyCascadeTheme`;
+  `symbiote-workspace/browser` and `symbiote-ui/themes/Theme.js`,
+  `<script type="importmap">` ordering, `mountWorkspace()`, and
+  `symbiote-ui/themes/Theme.js.applyCascadeTheme`;
 - persistence requirements: `export_config`, `import_config`, and
   `requiredEngineServices` derived from module-declared host services such as
   `storage.project`;
@@ -611,7 +613,7 @@ The browser entrypoint applies workspace theme config when mounting:
 
 ```javascript
 import { mountWorkspace } from 'symbiote-workspace/browser';
-import { applyCascadeTheme } from 'symbiote-ui';
+import { applyCascadeTheme } from 'symbiote-ui/themes/Theme.js';
 
 let mounted = mountWorkspace(config, document.querySelector('#workspace'), {
   themeAdapter: { applyCascadeTheme },

@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 import { startPreview } from '../handlers/preview.js';
+import { BROWSER_THEME_IMPORT } from '../sharing/browser-contract.js';
 
 let PREVIEW_CONFIG = {
   version: '0.3.0',
@@ -40,7 +41,7 @@ describe('startPreview', () => {
         port: 3999,
         imports: {
           'symbiote-workspace/browser': './mock-workspace-browser.js',
-          'symbiote-ui': './mock-symbiote-ui.js',
+          [BROWSER_THEME_IMPORT]: './mock-symbiote-theme.js',
         },
       });
 
@@ -53,7 +54,7 @@ describe('startPreview', () => {
       assert.ok(moduleScriptIndex > -1);
       assert.ok(importMapIndex < moduleScriptIndex);
       assert.match(html, /"symbiote-workspace\/browser": "\.\/mock-workspace-browser\.js"/);
-      assert.match(html, /"symbiote-ui": "\.\/mock-symbiote-ui\.js"/);
+      assert.match(html, /"symbiote-ui\/themes\/Theme\.js": "\.\/mock-symbiote-theme\.js"/);
     });
   });
 
@@ -69,10 +70,10 @@ describe('startPreview', () => {
       assert.equal(result.status, 'ok');
       assert.deepEqual(result.contract.importMap.imports, {
         'symbiote-workspace/browser': './browser.js',
-        'symbiote-ui': './node_modules/symbiote-ui/index.js',
+        [BROWSER_THEME_IMPORT]: './node_modules/symbiote-ui/themes/Theme.js',
       });
       assert.match(html, /"symbiote-workspace\/browser": "\.\/browser\.js"/);
-      assert.match(html, /"symbiote-ui": "\.\/node_modules\/symbiote-ui\/index\.js"/);
+      assert.match(html, /"symbiote-ui\/themes\/Theme\.js": "\.\/node_modules\/symbiote-ui\/themes\/Theme\.js"/);
     });
   });
 
@@ -89,7 +90,7 @@ describe('startPreview', () => {
         outputDir: dir,
         imports: {
           'symbiote-workspace/browser': './mock-workspace-browser.js',
-          'symbiote-ui': './mock-symbiote-ui.js',
+          [BROWSER_THEME_IMPORT]: './mock-symbiote-theme.js',
         },
       });
 
@@ -113,14 +114,14 @@ describe('startPreview', () => {
         outputDir: dir,
         imports: {
           'symbiote-workspace/browser': './mock-workspace-browser.js',
-          'symbiote-ui': './mock-symbiote-ui.js',
+          [BROWSER_THEME_IMPORT]: './mock-symbiote-theme.js',
         },
       });
 
       let app = await readFile(join(dir, 'app.js'), 'utf8');
 
       assert.match(app, /import\('symbiote-workspace\/browser'\)/);
-      assert.match(app, /import\('symbiote-ui'\)/);
+      assert.match(app, /import\('symbiote-ui\/themes\/Theme\.js'\)/);
       assert.match(app, /themeAdapter: \{ applyCascadeTheme \}/);
       assert.match(app, /mountWorkspace\(config, document\.body,/);
       assert.doesNotMatch(app, /browser not available/);
@@ -134,7 +135,7 @@ describe('startPreview', () => {
         outputDir: dir,
         imports: {
           'symbiote-workspace/browser': './mock-workspace-browser.js',
-          'symbiote-ui': './mock-symbiote-ui.js',
+          [BROWSER_THEME_IMPORT]: './mock-symbiote-theme.js',
         },
       });
 
@@ -155,7 +156,7 @@ describe('startPreview', () => {
         outputDir: dir,
         imports: {
           'symbiote-workspace/browser': './mock-workspace-browser.js',
-          'symbiote-ui': './mock-symbiote-ui.js',
+          [BROWSER_THEME_IMPORT]: './mock-symbiote-theme.js',
         },
       });
 
@@ -166,7 +167,7 @@ describe('startPreview', () => {
       assert.equal(result.contract.browser.importMap.scriptType, 'importmap');
       assert.deepEqual(result.contract.browser.requiredImports, [
         'symbiote-workspace/browser',
-        'symbiote-ui',
+        BROWSER_THEME_IMPORT,
       ]);
       assert.deepEqual(contract.browser.errorSurfaces, [
         'import-map-support',
@@ -187,7 +188,7 @@ describe('startPreview', () => {
       });
 
       assert.equal(missing.status, 'error');
-      assert.ok(missing.errors.some((error) => error.path === 'imports.symbiote-ui'));
+      assert.ok(missing.errors.some((error) => error.path === `imports.${BROWSER_THEME_IMPORT}`));
       assert.equal(await exists(join(dir, 'index.html')), false);
       assert.equal(await exists(join(dir, 'app.js')), false);
       assert.equal(await exists(join(dir, 'preview.contract.json')), false);
@@ -196,12 +197,12 @@ describe('startPreview', () => {
         outputDir: dir,
         imports: {
           'symbiote-workspace/browser': './mock-workspace-browser.js',
-          'symbiote-ui': 'symbiote-ui',
+          [BROWSER_THEME_IMPORT]: BROWSER_THEME_IMPORT,
         },
       });
 
       assert.equal(invalid.status, 'error');
-      assert.ok(invalid.errors.some((error) => error.path === 'imports.symbiote-ui'));
+      assert.ok(invalid.errors.some((error) => error.path === `imports.${BROWSER_THEME_IMPORT}`));
     });
   });
 
@@ -211,7 +212,7 @@ describe('startPreview', () => {
         outputDir: dir,
         imports: {
           'symbiote-workspace/browser': './mock-workspace-browser.js',
-          'symbiote-ui': './mock-symbiote-ui.js',
+          [BROWSER_THEME_IMPORT]: './mock-symbiote-theme.js',
         },
       });
 

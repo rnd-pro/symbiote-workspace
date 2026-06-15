@@ -1,6 +1,8 @@
+export const BROWSER_THEME_IMPORT = 'symbiote-ui/themes/Theme.js';
+
 export const BROWSER_REQUIRED_IMPORTS = Object.freeze([
   'symbiote-workspace/browser',
-  'symbiote-ui',
+  BROWSER_THEME_IMPORT,
 ]);
 
 const BROWSER_IMPORT_MAP_CONTRACT = Object.freeze({
@@ -16,7 +18,9 @@ export function createBrowserRuntimeContract(extra = {}) {
   return {
     entrypoint: 'symbiote-workspace/browser',
     mountFunction: 'mountWorkspace',
-    themeAdapter: 'symbiote-ui.applyCascadeTheme',
+    themeAdapter: `${BROWSER_THEME_IMPORT}.applyCascadeTheme`,
+    themeAdapterModule: BROWSER_THEME_IMPORT,
+    themeAdapterExport: 'applyCascadeTheme',
     requiredImports: [...BROWSER_REQUIRED_IMPORTS],
     importMap: {
       ...BROWSER_IMPORT_MAP_CONTRACT,
