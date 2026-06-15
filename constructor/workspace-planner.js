@@ -2113,6 +2113,32 @@ function packageReadinessSummary(packageContext) {
   };
 }
 
+function reportKey(report) {
+  if (!isObject(report)) return null;
+  return [
+    report.id || '',
+    report.check || '',
+    report.status || '',
+    report.severity || '',
+    report.message || '',
+  ].join('\u0000');
+}
+
+function mergeVerificationReports(...reportGroups) {
+  let reports = [];
+  let seen = new Set();
+  for (let group of reportGroups) {
+    if (!Array.isArray(group)) continue;
+    for (let report of group) {
+      let key = reportKey(report);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      reports.push(deepClone(report));
+    }
+  }
+  return reports;
+}
+
 /**
  * @param {string|Object} intent
  * @param {Object} [options]
@@ -2216,6 +2242,8 @@ export function planWorkspaceConstruction(intent, options = {}) {
   );
   let packageContext = packageContextPlan(options);
   let packageReadiness = packageReadinessSummary(packageContext);
+  let sourceValidationReports = deepClone(config.validation?.reports) || [];
+  let sourceConstructionReports = deepClone(config.construction?.plan?.verification?.reports) || [];
 
   let plan = {
     name: workspaceName,
@@ -2291,10 +2319,14 @@ export function planWorkspaceConstruction(intent, options = {}) {
     },
   };
   let verificationReports = constructionVerificationReports(config, plan, packageReadiness, verificationScope);
-  plan.verification.reports = verificationReports;
+  plan.verification.reports = mergeVerificationReports(
+    sourceValidationReports,
+    sourceConstructionReports,
+    verificationReports,
+  );
   config.validation = {
     ...(deepClone(config.validation) || {}),
-    reports: verificationReports,
+    reports: plan.verification.reports,
   };
   config.construction.plan = plan;
 

@@ -2311,6 +2311,18 @@ describe('create_workspace_construction_handoff dispatch', () => {
       requiredCapabilities: ['analysis.sentiment', 'review.queue'],
       moduleCapabilities: [EXTERNAL_SENTIMENT_MODULE],
     }, sourceSession);
+    let sourceOnlyReport = {
+      id: 'source-package-audit',
+      check: 'source-package-audit',
+      status: 'pass',
+      severity: 'info',
+      message: 'Source package validation was preserved.',
+    };
+    sourceSession.config.construction.plan.verification.reports = [
+      ...sourceSession.config.construction.plan.verification.reports,
+      sourceOnlyReport,
+    ];
+    sourceSession.config.validation.reports = sourceSession.config.construction.plan.verification.reports;
 
     let exportResult = await dispatch('export_workspace_package', {
       manifest: { id: 'com.example.handoff-real-package' },
@@ -2357,6 +2369,18 @@ describe('create_workspace_construction_handoff dispatch', () => {
     assert.deepEqual(constructResult.plan.capabilities.missing, []);
     assert.equal(constructResult.plan.packageContext.readiness.nextAction, 'construct');
     assert.equal(constructResult.config.construction.packageContext.readiness.nextAction, 'construct');
+    assert.deepEqual(
+      constructResult.config.validation.reports,
+      constructResult.plan.verification.reports,
+    );
+    assert.ok(
+      constructResult.plan.verification.reports.some((item) => (
+        item.id === sourceOnlyReport.id &&
+        item.check === sourceOnlyReport.check &&
+        item.message === sourceOnlyReport.message
+      )),
+      'preserves source package validation reports through package-derived construction',
+    );
     assert.equal(targetSession.config.panelTypes.sentiment.component, 'acme-sentiment-panel');
     assert.ok(targetSession.config.components.catalog.includes('acme-sentiment-panel'));
     assert.ok(layoutReferencesPanel(targetSession.config.layout, 'sentiment'));

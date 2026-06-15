@@ -9,6 +9,7 @@ import {
   BROWSER_REQUIRED_IMPORTS,
   createBrowserRuntimeContract,
 } from '../sharing/browser-contract.js';
+import { exportConfig } from '../sharing/config-portability.js';
 
 const PREVIEW_ERROR_SURFACES = [
   'import-map-support',
@@ -244,9 +245,22 @@ export async function startPreview(config, options = {}) {
   let serveRoot = resolve(options.serveRoot || (
     isObject(options.imports) ? outputDir : process.cwd()
   ));
+  let portable = exportConfig(config);
   let imports = createPreviewImports(outputDir, serveRoot, options.imports);
   let contract = createPreviewContract(imports);
   let importErrors = validatePreviewImportMap(imports);
+
+  if (!portable.json) {
+    return {
+      url: '',
+      outputDir,
+      serveRoot,
+      status: 'error',
+      hint: 'Workspace config is not portable enough for preview output.',
+      errors: portable.errors,
+      contract,
+    };
+  }
 
   if (importErrors.length > 0) {
     return {
@@ -262,9 +276,9 @@ export async function startPreview(config, options = {}) {
 
   try {
     await mkdir(outputDir, { recursive: true });
-    await writeFile(join(outputDir, 'index.html'), generateIndexHtml(config, imports));
-    await writeFile(join(outputDir, 'app.js'), generateAppJs(config));
-    await writeFile(join(outputDir, 'workspace.config.json'), JSON.stringify(config, null, 2));
+    await writeFile(join(outputDir, 'index.html'), generateIndexHtml(portable.config, imports));
+    await writeFile(join(outputDir, 'app.js'), generateAppJs(portable.config));
+    await writeFile(join(outputDir, 'workspace.config.json'), portable.json);
     await writeFile(join(outputDir, 'preview.contract.json'), JSON.stringify(contract, null, 2));
   } catch (err) {
     return {

@@ -173,12 +173,15 @@ All notable changes to this project will be documented in this file.
 - **Segmented browser preview** — `start_preview` now validates import maps,
   writes `preview.contract.json`, checks browser import-map support, passes
   `symbiote-ui.applyCascadeTheme` into `mountWorkspace()`, renders loader
-  warnings, and preserves separate import-map, module-load, and mount error
-  messages.
+  warnings, writes sanitized portable config into preview runtime files, and
+  preserves separate import-map, module-load, and mount error messages.
 - **Host integration contract** — `createHostIntegrationContract()` describes
   chat construction tools, browser import-map requirements, derived
   engine-backed persistence services, module host services, and portable
   runtime slots for a portable workspace config.
+- **Package-derived relaunch preservation** — constructing from package-derived
+  templates now preserves source validation reports alongside newly generated
+  construction verification reports.
 - **Theme relations** — workspace config now carries future-compatible
   `theme.relations` and subtree relations alongside params and token overrides.
 - **Package consumer verification** — `npm run test:package-consumer` now packs

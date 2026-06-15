@@ -76,6 +76,37 @@ describe('startPreview', () => {
     });
   });
 
+  it('writes portable preview config without host or local state', async () => {
+    await withPreviewDir(async (dir) => {
+      let result = await startPreview({
+        ...PREVIEW_CONFIG,
+        previewUrl: 'http://localhost:3456',
+        host: { sessionId: 'local-session' },
+        runtime: {
+          cwd: '/Users/example/private-workspace',
+        },
+      }, {
+        outputDir: dir,
+        imports: {
+          'symbiote-workspace/browser': './mock-workspace-browser.js',
+          'symbiote-ui': './mock-symbiote-ui.js',
+        },
+      });
+
+      let configJson = await readFile(join(dir, 'workspace.config.json'), 'utf8');
+      let app = await readFile(join(dir, 'app.js'), 'utf8');
+      let writtenConfig = JSON.parse(configJson);
+
+      assert.equal(result.status, 'ok');
+      assert.equal(writtenConfig.name, PREVIEW_CONFIG.name);
+      assert.equal(writtenConfig.previewUrl, undefined);
+      assert.equal(writtenConfig.host, undefined);
+      assert.deepEqual(writtenConfig.runtime, {});
+      assert.doesNotMatch(configJson, /localhost|local-session|\/Users\/example/);
+      assert.doesNotMatch(app, /localhost|local-session|\/Users\/example/);
+    });
+  });
+
   it('generates a runtime that passes the symbiote-ui cascade theme adapter', async () => {
     await withPreviewDir(async (dir) => {
       await startPreview(PREVIEW_CONFIG, {

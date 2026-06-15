@@ -245,6 +245,10 @@ await startPreview(config, {
 });
 ```
 
+The generated `app.js` and `workspace.config.json` use the same portable config
+sanitizer as export/import flows, so host/session fields and local paths are not
+copied into preview runtime state.
+
 When `imports` is omitted, preview defaults to local workspace paths and the
 returned `hint` serves the repository root so `symbiote-workspace/browser` and
 `symbiote-ui` can resolve from the generated import map.
