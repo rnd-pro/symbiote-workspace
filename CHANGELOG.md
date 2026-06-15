@@ -52,18 +52,25 @@ All notable changes to this project will be documented in this file.
   validator helpers are now available from the schema, root, browser, and
   plugins entrypoints so consumers can validate plugin-provided descriptors
   without reaching into private files.
+- **Module provider portability validation** — module descriptor `provider` and
+  `descriptor.package` references now reject URL, file, and local path values
+  before plugin-provided descriptors reach construction or package handoff
+  surfaces.
 - **Module action shell materialization** — generated constructor panel types
   now expose descriptor actions, toolbar items, and menu items through
   `panelTypes.*.menuActions`, preserving authored menu actions on existing
   panel types while carrying command/event metadata for host shells.
+- **Layout topology materialization** — constructor `layout-topology` answers
+  now shape the executable BSP `config.layout` for selected module panels
+  instead of living only in construction plan metadata.
 - **Module slot shell materialization** — workspace configs now define and
   validate `panelTypes.*.slots`; selected constructor module descriptors
   materialize portable `slots[]` onto generated and selected existing panel
   types while preserving authored panel slots.
 - **Module event and binding materialization** — selected constructor module
   descriptors now expose emitted events as top-level broadcast bridges and
-  copy selected binding declarations into `data.bindings` for portable
-  host/runtime handoff.
+  matching selected event consumers as targeted bridges, and copy selected
+  binding declarations into `data.bindings` for portable host/runtime handoff.
 - **Module engine handoff metadata** — workspace configs now define and
   validate portable `engine.packs[]`, `engine.graphs[]`, and
   `engine.bindings[]`; selected descriptor actions, settings, events, and

@@ -381,6 +381,27 @@ describe('plugin module capability collection', () => {
     assert.ok(result.errors.some((error) => error.path === 'plugins[0].components[0].actions[0].label'));
   });
 
+  it('rejects non-portable provider references in plugin module descriptors', () => {
+    let result = collectPluginModuleCapabilities([{
+      name: '@acme/nonportable-provider',
+      version: '1.0.0',
+      components: [{
+        tagName: 'acme-nonportable-panel',
+        provider: 'https://provider.example.com/package',
+        descriptor: {
+          package: 'file:///tmp/provider-descriptor.js',
+          export: 'descriptor',
+          component: 'acme-nonportable-panel',
+        },
+      }],
+    }]);
+
+    assert.equal(result.ok, false);
+    assert.deepEqual(result.moduleCapabilities, []);
+    assert.ok(result.errors.some((error) => error.path === 'plugins[0].components[0].provider'));
+    assert.ok(result.errors.some((error) => error.path === 'plugins[0].components[0].descriptor.package'));
+  });
+
   it('rejects duplicate descriptor tag names across plugin inputs', () => {
     let result = collectPluginModuleCapabilities([
       {

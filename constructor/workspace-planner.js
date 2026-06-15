@@ -1072,11 +1072,17 @@ function materializeSelectedDescriptorPanelSlots(config, selectedModules) {
   }
 }
 
-function descriptorEventNames(descriptor, direction) {
+function descriptorEvents(descriptor, direction) {
   return (descriptor?.events?.[direction] || [])
-    .map((event) => event?.name)
-    .filter((name) => typeof name === 'string' && name.trim())
-    .map((name) => name.trim());
+    .filter((event) => isObject(event) && typeof event.name === 'string' && event.name.trim())
+    .map((event) => ({
+      ...event,
+      name: event.name.trim(),
+    }));
+}
+
+function descriptorEventNames(descriptor, direction) {
+  return descriptorEvents(descriptor, direction).map((event) => event.name);
 }
 
 function eventBridgeKey(bridge) {
@@ -1098,6 +1104,22 @@ function uniqueEventBridgeId(config, baseId) {
   }
 }
 
+function eventRouteKey(bridge) {
+  return [
+    bridge.sourcePanel || '',
+    bridge.event || '',
+    bridge.targetPanel || '',
+  ].join('\u0000');
+}
+
+function descriptorEventTargetFields(event) {
+  return {
+    ...(typeof event.targetMethod === 'string' && event.targetMethod.trim() ? { targetMethod: event.targetMethod.trim() } : {}),
+    ...(typeof event.targetProperty === 'string' && event.targetProperty.trim() ? { targetProperty: event.targetProperty.trim() } : {}),
+    ...(isObject(event.mapping) ? { mapping: deepClone(event.mapping) } : {}),
+  };
+}
+
 function selectedDescriptorPanelEntries(config, selectedModules) {
   let descriptors = moduleDescriptorMap(config);
   let selected = new Set(selectedModules);
@@ -1114,6 +1136,7 @@ function selectedDescriptorPanelEntries(config, selectedModules) {
 function materializeSelectedDescriptorEventBridges(config, selectedModules) {
   let selectedPanels = selectedDescriptorPanelEntries(config, selectedModules);
   let existingKeys = new Set((config.events || []).map(eventBridgeKey));
+  let existingRoutes = new Set((config.events || []).filter((bridge) => bridge?.targetPanel).map(eventRouteKey));
   let additions = [];
 
   for (let source of selectedPanels) {
@@ -1124,10 +1147,32 @@ function materializeSelectedDescriptorEventBridges(config, selectedModules) {
         event: eventName,
       };
       let key = eventBridgeKey(bridge);
-      if (existingKeys.has(key)) continue;
-      bridge.id = uniqueEventBridgeId(config, bridge.id);
-      existingKeys.add(key);
-      additions.push(bridge);
+      if (!existingKeys.has(key)) {
+        bridge.id = uniqueEventBridgeId(config, bridge.id);
+        existingKeys.add(key);
+        additions.push(bridge);
+      }
+
+      for (let target of selectedPanels) {
+        for (let consumedEvent of descriptorEvents(target.descriptor, 'consumes')) {
+          if (consumedEvent.name !== eventName) continue;
+          let targetedBridge = {
+            id: `${source.panelType}-${eventName}-to-${target.panelType}`,
+            sourcePanel: source.panelType,
+            event: eventName,
+            targetPanel: target.panelType,
+            ...descriptorEventTargetFields(consumedEvent),
+          };
+          let routeKey = eventRouteKey(targetedBridge);
+          if (existingRoutes.has(routeKey)) continue;
+          let targetedKey = eventBridgeKey(targetedBridge);
+          if (existingKeys.has(targetedKey)) continue;
+          targetedBridge.id = uniqueEventBridgeId(config, targetedBridge.id);
+          existingKeys.add(targetedKey);
+          existingRoutes.add(routeKey);
+          additions.push(targetedBridge);
+        }
+      }
     }
   }
 
@@ -1793,19 +1838,6 @@ function sectionLayoutPlan(config) {
     .sort((a, b) => a.sectionId.localeCompare(b.sectionId));
 }
 
-function layoutReferencesPanelType(node, panelType) {
-  if (!node) return false;
-  if (node.type === 'panel') return node.panelType === panelType;
-  return layoutReferencesPanelType(node.first, panelType) ||
-    layoutReferencesPanelType(node.second, panelType);
-}
-
-function configReferencesPanelType(config, panelType) {
-  if (layoutReferencesPanelType(config.layout, panelType)) return true;
-  return Object.values(config.layouts || {})
-    .some((layout) => layoutReferencesPanelType(layout, panelType));
-}
-
 function recordReferencesOnlySelectedPanels(record, selectedPanelTypes, fields) {
   for (let field of fields) {
     let panelType = record?.[field];
@@ -1837,16 +1869,44 @@ function pruneSelectedModuleSurfaces(config, selectedPanelTypes) {
   }
 }
 
-function appendPanelToLayout(layout, panelType) {
-  let panel = { type: 'panel', panelType };
-  if (!layout) return panel;
+function panelLayoutNode(panelType) {
+  return { type: 'panel', panelType };
+}
+
+function splitLayoutNode(first, second, direction, ratio = 0.5) {
   return {
     type: 'split',
-    direction: 'horizontal',
-    ratio: 0.72,
-    first: layout,
-    second: panel,
+    direction,
+    ratio,
+    first,
+    second,
   };
+}
+
+function balancedPanelLayout(panelTypes, direction = 'horizontal') {
+  if (panelTypes.length === 0) return null;
+  if (panelTypes.length === 1) return panelLayoutNode(panelTypes[0]);
+  let pivot = Math.ceil(panelTypes.length / 2);
+  let nextDirection = direction === 'horizontal' ? 'vertical' : 'horizontal';
+  return splitLayoutNode(
+    balancedPanelLayout(panelTypes.slice(0, pivot), nextDirection),
+    balancedPanelLayout(panelTypes.slice(pivot), nextDirection),
+    direction,
+  );
+}
+
+function linearPanelLayout(panelTypes, direction = 'horizontal', ratio = 0.72) {
+  return panelTypes.reduce((layout, panelType) => (
+    layout ? splitLayoutNode(layout, panelLayoutNode(panelType), direction, ratio) : panelLayoutNode(panelType)
+  ), null);
+}
+
+function topologyPanelLayout(panelTypes, topology) {
+  if (topology === 'grid') return balancedPanelLayout(panelTypes);
+  if (topology === 'workbench') return linearPanelLayout(panelTypes, 'horizontal', 0.36);
+  if (topology === 'focus-canvas') return linearPanelLayout(panelTypes, 'horizontal', 0.78);
+  if (topology === 'studio') return linearPanelLayout(panelTypes, 'vertical', 0.72);
+  return linearPanelLayout(panelTypes, 'horizontal', 0.72);
 }
 
 function pruneLayoutToPanelTypes(node, selectedPanelTypes) {
@@ -1869,7 +1929,7 @@ function pruneLayoutToPanelTypes(node, selectedPanelTypes) {
   return first || second;
 }
 
-function materializeSelectedModuleLayout(config, selectedModules, generatedPanelTypes = new Set()) {
+function materializeSelectedModuleLayout(config, selectedModules, generatedPanelTypes = new Set(), topology = 'grid') {
   let selectedPanelTypes = new Set(selectedModules);
   let prunedLayout = pruneLayoutToPanelTypes(config.layout, selectedPanelTypes);
   if (prunedLayout) {
@@ -1901,10 +1961,9 @@ function materializeSelectedModuleLayout(config, selectedModules, generatedPanel
   }
   pruneSelectedModuleSurfaces(config, selectedPanelTypes);
 
-  for (let panelType of selectedModules) {
-    if (!config.panelTypes?.[panelType]) continue;
-    if (configReferencesPanelType(config, panelType)) continue;
-    config.layout = appendPanelToLayout(config.layout, panelType);
+  let selectedExecutablePanelTypes = selectedModules.filter((panelType) => config.panelTypes?.[panelType]);
+  if (selectedExecutablePanelTypes.length) {
+    config.layout = topologyPanelLayout(selectedExecutablePanelTypes, topology);
   }
 }
 
@@ -2262,7 +2321,7 @@ export function planWorkspaceConstruction(intent, options = {}) {
   let defaults = themeDefaults(config, register, normalized.preferredTheme);
   let hue = mode === 'custom' ? (answers.get('theme-hue') ?? defaults.hue) : defaults.hue;
   let verificationScope = answers.get('verification-scope') || [];
-  materializeSelectedModuleLayout(config, modules, generatedPanelTypes);
+  materializeSelectedModuleLayout(config, modules, generatedPanelTypes, topology);
   materializeSelectedDescriptorPanelMenuActions(config, modules);
   materializeSelectedDescriptorPanelSettings(config, modules);
   materializeSelectedDescriptorPanelSlots(config, modules);

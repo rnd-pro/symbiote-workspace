@@ -735,6 +735,8 @@ describe('validateWorkspaceConfig', () => {
       components: {
         modules: [{
           tagName: 'Data Table',
+          provider: '/tmp/provider-pack',
+          descriptor: { package: 'file:///tmp/provider.js' },
           capabilities: ['data table'],
           actions: [{ id: 'refresh', engine: { graphId: 'main graph', nodeId: 'refresh' } }],
           state: [{ id: 'Selected State', type: 'record', default: NaN, schema: 'object', persistence: 'local', engine: { graphId: 'main', nodeId: '/tmp/state' } }],
@@ -746,6 +748,8 @@ describe('validateWorkspaceConfig', () => {
 
     assert.equal(result.valid, false);
     assert.ok(result.errors.some((error) => error.path === 'components.modules[0].tagName'));
+    assert.ok(result.errors.some((error) => error.path === 'components.modules[0].provider'));
+    assert.ok(result.errors.some((error) => error.path === 'components.modules[0].descriptor.package'));
     assert.ok(result.errors.some((error) => error.path === 'components.modules[0].capabilities[0]'));
     assert.ok(result.errors.some((error) => error.path === 'components.modules[0].actions[0].label'));
     assert.ok(result.errors.some((error) => error.path === 'components.modules[0].actions[0].engine.graphId'));

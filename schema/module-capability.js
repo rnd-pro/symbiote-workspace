@@ -76,6 +76,9 @@ const MODULE_EVENT_SCHEMA = Object.freeze({
     name: stringProperty('DOM event name.'),
     detailSchema: { type: 'object' },
     description: stringProperty('Event description.'),
+    targetMethod: stringProperty('Method to call when this descriptor consumes the event.'),
+    targetProperty: stringProperty('Property to set when this descriptor consumes the event.'),
+    mapping: { type: 'object' },
     engine: MODULE_ENGINE_REFERENCE_SCHEMA,
   },
 });
@@ -192,6 +195,24 @@ function validatePortableId(value, path, errors, options) {
   }
   if (!PORTABLE_ID_PATTERN.test(value)) {
     pushError(errors, path, `Value "${value}" must be a portable identifier, not a URL, path, or display label.`, options);
+  }
+}
+
+function validatePortablePackageReference(value, path, errors, options) {
+  if (typeof value !== 'string' || !value.trim()) {
+    pushError(errors, path, 'Value must be a non-empty package or registry identifier.', options);
+    return;
+  }
+
+  let trimmed = value.trim();
+  let scopedPackage = /^@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*$/;
+  let barePackage = /^[a-z0-9][a-z0-9._-]*$/;
+  let hasPathOrProtocol = /^(?:[a-z][a-z0-9+.-]*:|\/|~\/|\.{1,2}\/|[A-Za-z]:[\\/])/.test(trimmed) ||
+    trimmed.includes('\\') ||
+    (trimmed.includes('/') && !scopedPackage.test(trimmed));
+
+  if (/\s/.test(trimmed) || hasPathOrProtocol || (!barePackage.test(trimmed) && !scopedPackage.test(trimmed))) {
+    pushError(errors, path, `Value "${value}" must be a portable package or registry identifier, not a URL or path.`, options);
   }
 }
 
@@ -329,6 +350,15 @@ function validateEvents(value, path, errors, options) {
         if (event.engine !== undefined) {
           validateEngineReference(event.engine, `${itemPath}.engine`, errors, options);
         }
+        if (event.targetMethod !== undefined && (typeof event.targetMethod !== 'string' || !event.targetMethod.trim())) {
+          pushError(errors, `${itemPath}.targetMethod`, 'Event targetMethod must be a non-empty string.', options);
+        }
+        if (event.targetProperty !== undefined && (typeof event.targetProperty !== 'string' || !event.targetProperty.trim())) {
+          pushError(errors, `${itemPath}.targetProperty`, 'Event targetProperty must be a non-empty string.', options);
+        }
+        if (event.mapping !== undefined && !isObject(event.mapping)) {
+          pushError(errors, `${itemPath}.mapping`, 'Event mapping must be an object.', options);
+        }
       }
     }
   }
@@ -459,11 +489,21 @@ export function validateModuleCapabilityDescriptor(descriptor, path, errors, opt
   if (descriptor.schemaVersion !== undefined && typeof descriptor.schemaVersion !== 'string') {
     pushError(errors, `${path}.schemaVersion`, 'schemaVersion must be a string.', options);
   }
-  if (descriptor.provider !== undefined && typeof descriptor.provider !== 'string') {
-    pushError(errors, `${path}.provider`, 'provider must be a string.', options);
+  if (descriptor.provider !== undefined) {
+    validatePortablePackageReference(descriptor.provider, `${path}.provider`, errors, options);
   }
   if (descriptor.descriptor !== undefined && !isObject(descriptor.descriptor)) {
     pushError(errors, `${path}.descriptor`, 'descriptor must be an object.', options);
+  } else if (descriptor.descriptor !== undefined) {
+    if (descriptor.descriptor.package !== undefined) {
+      validatePortablePackageReference(descriptor.descriptor.package, `${path}.descriptor.package`, errors, options);
+    }
+    if (descriptor.descriptor.export !== undefined && (typeof descriptor.descriptor.export !== 'string' || !descriptor.descriptor.export.trim())) {
+      pushError(errors, `${path}.descriptor.export`, 'descriptor.export must be a non-empty string.', options);
+    }
+    if (descriptor.descriptor.component !== undefined && (typeof descriptor.descriptor.component !== 'string' || !descriptor.descriptor.component.trim())) {
+      pushError(errors, `${path}.descriptor.component`, 'descriptor.component must be a non-empty string.', options);
+    }
   }
 
   if (descriptor.capabilities !== undefined) {

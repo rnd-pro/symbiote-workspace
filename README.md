@@ -491,6 +491,10 @@ requirement and which ranked unselected modules are available as alternatives.
 `capabilities.selectedModules` lists every selected module, including explicit
 selections that matched none of the required capabilities, with matched and
 missing capability diagnostics plus the module selection reason.
+Descriptor `provider` and `descriptor.package` references must be portable
+package or registry identifiers such as `symbiote-ui` or `@acme/workspace-pack`;
+URLs, file references, and local paths are rejected before descriptors reach
+construction or plugin handoff surfaces.
 When `plan_workspace` or `construct_workspace` report missing module
 capabilities, top-level `readiness.recovery[]` entries include those ranked
 alternatives when the planner found compatible unselected modules. Failed
@@ -517,6 +521,11 @@ preserved, so templates can keep authored shell commands and controls while
 external descriptors still expose executable declarations when they create
 panels.
 
+The selected `layout-topology` answer is applied to the executable BSP
+`config.layout` for the selected module panels. Topologies remain portable
+constructor semantics; the emitted workspace layout still uses the stable
+`panel` and `split` node types required by the runtime schema.
+
 The constructor copies matching descriptor capabilities, actions, settings,
 state fields, events, bindings, slots, runtime slots, placement hints, and
 required host service IDs into `config.construction.plan.modules`. Selected
@@ -542,6 +551,12 @@ Each binding record carries `panelType`, `component`, `id`, `direction`, and
 optional `path`/`schema`; `direction` must be `input`, `output`, or `two-way`.
 This is a portable declaration for host/runtime handoff, not an embedded server
 endpoint or execution engine.
+
+Selected descriptor event declarations are materialized into `config.events`.
+Emitted events create broadcast bridges from the source panel, and matching
+selected descriptor consumers create targeted bridges with optional
+`targetMethod`, `targetProperty`, and `mapping` metadata. Authored bridges are
+preserved, and unselected panels do not receive generated event routes.
 
 Selected descriptor state declarations are materialized into
 `config.state.fields`. Each state field record carries `panelType`, `component`,
@@ -720,6 +735,9 @@ console.log(templates.templates);
 entries, but they are not converted into module capability descriptors.
 Plugin-level `capabilities` and `requiredHostServices` describe the plugin
 itself and are not copied onto individual components.
+Descriptor provider references are validated with the same portability rules as
+workspace module descriptors, so plugin packs cannot introduce URL, file, or
+local path provider metadata through component declarations.
 The same module capability schema helpers are exported from
 `symbiote-workspace/schema`, the root entrypoint, the browser entrypoint, and
 `symbiote-workspace/plugins` for consumers that validate descriptors at package

@@ -128,6 +128,47 @@ describe('planWorkspaceConstruction', () => {
     );
   });
 
+  it('materializes the selected layout topology into executable layout', () => {
+    let result = planWorkspaceConstruction({
+      brief: 'Build a review detail workspace',
+      requiredCapabilities: ['review.queue', 'review.detail'],
+    }, {
+      workspaceTemplates: [{
+        name: 'review-detail',
+        config: {
+          version: '0.3.0',
+          name: 'Review Detail',
+          panelTypes: {
+            review: { title: 'Review', component: 'acme-review-panel' },
+            detail: { title: 'Detail', component: 'acme-detail-panel' },
+          },
+          layout: {
+            type: 'split',
+            direction: 'horizontal',
+            ratio: 0.72,
+            first: { type: 'panel', panelType: 'review' },
+            second: { type: 'panel', panelType: 'detail' },
+          },
+        },
+      }],
+      moduleCapabilities: [
+        { tagName: 'acme-review-panel', capabilities: ['review.queue'] },
+        { tagName: 'acme-detail-panel', capabilities: ['review.detail'] },
+      ],
+      answers: {
+        'layout-topology': 'grid',
+      },
+    });
+
+    assert.equal(result.plan.answers.layoutTopology, 'grid');
+    assert.equal(result.config.layout.type, 'split');
+    assert.equal(result.config.layout.direction, 'horizontal');
+    assert.equal(result.config.layout.ratio, 0.5);
+    assert.deepEqual(result.config.layout.first, { type: 'panel', panelType: 'detail' });
+    assert.deepEqual(result.config.layout.second, { type: 'panel', panelType: 'review' });
+    assert.deepEqual(validateWorkspaceConfig(result.config, { strict: true }).errors, []);
+  });
+
   it('rejects malformed construction answers before planning', () => {
     assert.throws(() => planWorkspaceConstruction('Build a graph workspace', {
       answers: null,
@@ -552,7 +593,7 @@ describe('planWorkspaceConstruction', () => {
         {
           tagName: 'acme-detail-panel',
           capabilities: ['review.detail'],
-          events: { consumes: [{ name: 'row-select' }, { name: 'existing-select' }] },
+          events: { consumes: [{ name: 'row-select', targetProperty: 'selection' }, { name: 'existing-select' }] },
           settings: [{ id: 'selection-mode', label: 'Selection mode', type: 'string' }],
           slots: [{ id: 'detail-aside', role: 'aside', accepts: ['acme-detail-aside'], required: true }],
           state: [{ id: 'expanded', type: 'boolean', default: true, path: 'state.detail.expanded', persistence: 'workspace' }],
@@ -583,6 +624,13 @@ describe('planWorkspaceConstruction', () => {
         id: 'review-row-select',
         sourcePanel: 'review',
         event: 'row-select',
+      },
+      {
+        id: 'review-row-select-to-detail',
+        sourcePanel: 'review',
+        event: 'row-select',
+        targetPanel: 'detail',
+        targetProperty: 'selection',
       },
       {
         id: 'review-existing-select',
