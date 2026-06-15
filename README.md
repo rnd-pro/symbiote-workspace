@@ -713,7 +713,11 @@ and its workspace config as separate objects.
 `validateWorkspacePackage(packageObject)` validates a workspace package object
 in isolation, checking the package kind and schema version, workspace config
 validity, manifest portability, and host contract integrity, without requiring
-JSON serialization.
+JSON serialization. Dispatch/MCP `validate_workspace_package` returns
+`status: "ok"` for valid packages; invalid packages keep `valid: false` and
+`errors`, and also return `status: "error"`,
+`code: "workspace_package_invalid"`, and
+`nextAction: "fix-workspace-package"` so transports can signal failure.
 
 `inspectWorkspacePackage(input, options)` inspects a workspace package
 object or JSON string without requiring a full host. Returns `valid` (no

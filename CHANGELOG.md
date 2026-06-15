@@ -50,6 +50,10 @@ All notable changes to this project will be documented in this file.
 - **Stale handoff ready gate** — `construct_workspace` now rejects older
   handoff payloads that omit `ready` but still carry missing capabilities or
   warning diagnostics.
+- **Package validation transport errors** — invalid
+  `validate_workspace_package` results now include `status: "error"`, `code`,
+  and `nextAction` while preserving `valid: false` and validation `errors`, so
+  CLI and MCP transports can signal failure consistently.
 - **Invalid handoff diagnostics** — invalid construction handoff errors now
   include `code`, `nextAction`, and a blocked `readiness` payload so agents can
   route recovery to package-context fixes instead of readiness review.

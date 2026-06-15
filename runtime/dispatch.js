@@ -1243,11 +1243,15 @@ export async function dispatch(toolName, args, session) {
   if (toolName === 'validate_workspace_package') {
     let { validateWorkspacePackage } = await import('../sharing/index.js');
     let result = validateWorkspacePackage(args.package);
-    return {
+    return compactObject({
+      status: result.valid ? 'ok' : 'error',
+      tool: result.valid ? undefined : toolName,
       valid: result.valid,
       errors: result.errors,
+      code: result.valid ? undefined : 'workspace_package_invalid',
+      nextAction: result.valid ? undefined : 'fix-workspace-package',
       hint: result.valid ? 'Workspace package is valid.' : 'Workspace package has validation errors.',
-    };
+    });
   }
 
   if (toolName === 'inspect_workspace_package') {

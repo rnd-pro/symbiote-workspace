@@ -551,6 +551,8 @@ describe('Workspace Package via MCP', () => {
 
     let validateResult = validateResponses.find((r) => r.id === 2);
     let validateContent = JSON.parse(validateResult.result.content[0].text);
+    assert.equal(validateResult.result.isError, undefined);
+    assert.equal(validateContent.status, 'ok');
     assert.equal(validateContent.valid, true);
     assert.equal(validateContent.errors.length, 0);
   });
@@ -569,7 +571,12 @@ describe('Workspace Package via MCP', () => {
 
     let result = responses.find((r) => r.id === 2);
     let content = JSON.parse(result.result.content[0].text);
+    assert.equal(result.result.isError, true);
+    assert.equal(content.status, 'error');
+    assert.equal(content.tool, 'validate_workspace_package');
     assert.equal(content.valid, false);
+    assert.equal(content.code, 'workspace_package_invalid');
+    assert.equal(content.nextAction, 'fix-workspace-package');
     assert.ok(content.errors.length > 0);
     assert.ok(content.errors.some((e) => e.path === 'kind'));
   });

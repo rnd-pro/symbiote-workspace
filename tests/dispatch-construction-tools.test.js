@@ -1068,6 +1068,7 @@ describe('workspace package dispatch', () => {
       package: packageObj,
     }, session);
 
+    assert.equal(validateResult.status, 'ok');
     assert.equal(validateResult.valid, true);
     assert.equal(validateResult.errors.length, 0);
   });
@@ -1078,7 +1079,11 @@ describe('workspace package dispatch', () => {
       package: { kind: 'other-kind', schemaVersion: PACKAGE_SCHEMA_VERSION },
     }, session);
 
+    assert.equal(result.status, 'error');
+    assert.equal(result.tool, 'validate_workspace_package');
     assert.equal(result.valid, false);
+    assert.equal(result.code, 'workspace_package_invalid');
+    assert.equal(result.nextAction, 'fix-workspace-package');
     assert.ok(result.errors.some((e) => e.path === 'kind'));
   });
 
@@ -1098,7 +1103,11 @@ describe('workspace package dispatch', () => {
       package: packageObj,
     }, session);
 
+    assert.equal(validateResult.status, 'error');
+    assert.equal(validateResult.tool, 'validate_workspace_package');
     assert.equal(validateResult.valid, false);
+    assert.equal(validateResult.code, 'workspace_package_invalid');
+    assert.equal(validateResult.nextAction, 'fix-workspace-package');
     assert.ok(validateResult.errors.some((e) => e.path === 'host.contract'));
   });
 
@@ -1242,6 +1251,28 @@ describe('workspace package CLI commands', () => {
       assert.deepEqual(roundtripPkg.workspace.config, originalPkg.workspace.config);
       assert.equal(roundtripPkg.host.contract.schemaVersion, '0.1.0');
     });
+  });
+
+  it('validate-workspace-package exits nonzero for invalid packages', async () => {
+    let error;
+    try {
+      await execCli(
+        'validate-workspace-package',
+        '--package',
+        JSON.stringify({ kind: 'not-a-workspace-package' }),
+      );
+    } catch (err) {
+      error = err;
+    }
+    assert.ok(error);
+    assert.equal(error.code, 1);
+    let result = JSON.parse(error.stdout);
+    assert.equal(result.status, 'error');
+    assert.equal(result.tool, 'validate_workspace_package');
+    assert.equal(result.valid, false);
+    assert.equal(result.code, 'workspace_package_invalid');
+    assert.equal(result.nextAction, 'fix-workspace-package');
+    assert.ok(result.errors.some((item) => item.path === 'kind'));
   });
 
   it('inspect-workspace-package is listed in help', async () => {
