@@ -741,7 +741,8 @@ is exposed through dispatch/MCP as `create_workspace_packages_construction_conte
 and through the CLI as `create-workspace-packages-construction-context`.
 
 `createWorkspaceConstructionHandoff(context, intent)` converts a single-package
-or package-collection construction context into the exact `{ intent, options }`
+or package-collection construction context into a handoff envelope with
+`_type: "workspace-construction-handoff"` plus the exact `{ intent, options }`
 shape consumed by `planWorkspaceConstruction(handoff.intent, handoff.options)`.
 It merges package `requiredCapabilities` into the supplied construction intent
 and passes only valid package templates and module descriptors through. The
@@ -753,6 +754,9 @@ Plans also include `plan.readiness.package`, a compact summary with package
 validity, readiness status, source count, missing/warning/error counts, and the
 next action (`construct`, `review-package-readiness`, or
 `fix-package-context`).
+`plan_workspace` accepts not-ready handoffs for diagnostics, but
+`construct_workspace` rejects `ready: false` handoffs so agents cannot
+materialize a degraded package workspace without resolving readiness gaps first.
 It is exposed through dispatch/MCP as `create_workspace_construction_handoff`
 and through the CLI as `create-workspace-construction-handoff`.
 

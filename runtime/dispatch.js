@@ -38,6 +38,26 @@ function compactObject(value) {
   return result;
 }
 
+const WORKSPACE_CONSTRUCTION_HANDOFF_TYPE = 'workspace-construction-handoff';
+
+const CONSTRUCTION_HANDOFF_SCHEMA_PROPERTIES = {
+  _type: {
+    type: 'string',
+    enum: [WORKSPACE_CONSTRUCTION_HANDOFF_TYPE],
+    description: 'Construction handoff sentinel returned by create_workspace_construction_handoff.',
+  },
+  valid: { type: 'boolean', description: 'Whether the source construction context is structurally valid.' },
+  ready: { type: 'boolean', description: 'Whether the handoff can be constructed without readiness gaps.' },
+  requirements: { type: 'object', description: 'Package or package-collection capability requirements.' },
+  missing: { type: 'object', description: 'Missing package capabilities grouped by kind.' },
+  source: { type: 'object', description: 'Primary package source metadata.' },
+  sources: { type: 'array', items: { type: 'object' }, description: 'Package source metadata list.' },
+  summary: { type: 'object', description: 'Package construction context summary.' },
+  compatibility: { type: 'object', description: 'Package compatibility diagnostics.' },
+  warnings: { type: 'array', items: { type: 'object' }, description: 'Non-blocking handoff diagnostics.' },
+  errors: { type: 'array', items: { type: 'object' }, description: 'Blocking handoff diagnostics.' },
+};
+
 function packageContextFromHandoff(args) {
   if (!isConstructionHandoffArgs(args)) return undefined;
   return compactObject({
@@ -177,6 +197,7 @@ export const TOOLS = [
         requiredCapabilities: { type: 'array', items: { type: 'string' } },
         preferredTheme: { type: 'object' },
         options: { type: 'object', description: 'Constructor options, such as handoff.options.' },
+        ...CONSTRUCTION_HANDOFF_SCHEMA_PROPERTIES,
         moduleCapabilities: { type: 'array', items: { type: 'object' } },
         workspaceTemplates: { type: 'array', items: { type: 'object' } },
         answers: { type: 'object', description: 'Question answers keyed by question ID.' },
@@ -200,6 +221,7 @@ export const TOOLS = [
         requiredCapabilities: { type: 'array', items: { type: 'string' } },
         preferredTheme: { type: 'object' },
         options: { type: 'object', description: 'Constructor options, such as handoff.options.' },
+        ...CONSTRUCTION_HANDOFF_SCHEMA_PROPERTIES,
         moduleCapabilities: { type: 'array', items: { type: 'object' } },
         workspaceTemplates: { type: 'array', items: { type: 'object' } },
         answers: { type: 'object', description: 'Question answers keyed by question ID.' },
@@ -1010,7 +1032,8 @@ function isConstructionHandoffArgs(args) {
     && isObject(args.intent)
     && isObject(args.options)
     && (
-      args.valid !== undefined
+      args._type === WORKSPACE_CONSTRUCTION_HANDOFF_TYPE
+      || args.valid !== undefined
       || args.ready !== undefined
       || Array.isArray(args.errors)
       || Array.isArray(args.warnings)
@@ -1019,7 +1042,7 @@ function isConstructionHandoffArgs(args) {
     );
 }
 
-function assertUsableConstructionHandoff(args) {
+function assertUsableConstructionHandoff(args, { requireReady = false } = {}) {
   if (!isConstructionHandoffArgs(args)) return;
   let errors = Array.isArray(args.errors) ? args.errors : [];
   if (args.valid === false || errors.length > 0) {
@@ -1029,6 +1052,21 @@ function assertUsableConstructionHandoff(args) {
       .join('; ');
     throw new Error(
       `Construction handoff is invalid${detail ? `: ${detail}` : '.'}`,
+    );
+  }
+  if (requireReady && args.ready === false) {
+    let warnings = Array.isArray(args.warnings) ? args.warnings : [];
+    let missing = isObject(args.missing)
+      ? Object.values(args.missing)
+        .filter(Array.isArray)
+        .flat()
+      : [];
+    let detail = [
+      ...missing,
+      ...warnings.map((warning) => warning?.message || warning?.path).filter(Boolean),
+    ].join('; ');
+    throw new Error(
+      `Construction handoff is not ready${detail ? `: ${detail}` : '.'}`,
     );
   }
 }
@@ -1099,7 +1137,7 @@ export async function dispatch(toolName, args, session) {
     let c = await getConstructor();
     let result;
     try {
-      assertUsableConstructionHandoff(args);
+      assertUsableConstructionHandoff(args, { requireReady: true });
       let constructionIntent = constructionIntentFromArgs(args);
       result = c.planWorkspaceConstruction(
         constructionIntent,
@@ -1229,6 +1267,7 @@ export async function dispatch(toolName, args, session) {
     let raw = createWorkspaceConstructionHandoff(args.context, args.intent);
     return {
       status: 'ok',
+      _type: WORKSPACE_CONSTRUCTION_HANDOFF_TYPE,
       intent: raw.intent,
       options: raw.options,
       valid: raw.valid,

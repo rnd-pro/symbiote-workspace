@@ -41,6 +41,10 @@ All notable changes to this project will be documented in this file.
   `construct-workspace` now accept a full `{ intent, options }` construction
   handoff object as a single positional JSON argument, matching dispatch and
   MCP behavior.
+- **Construction handoff sentinel and ready gate** —
+  `create_workspace_construction_handoff` now returns
+  `_type: "workspace-construction-handoff"` and `construct_workspace` rejects
+  `ready: false` handoffs while `plan_workspace` still returns diagnostics.
 - **Package collection construction context helper** —
   `createWorkspacePackagesConstructionContext({ packages, available })`
   aggregates package objects and JSON entries into one constructor-ready context

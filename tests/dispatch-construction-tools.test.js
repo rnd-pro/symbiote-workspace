@@ -408,6 +408,7 @@ describe('construction workflow dispatch', () => {
 
     assert.equal(handoff.valid, true);
     assert.equal(handoff.ready, false);
+    assert.equal(handoff._type, 'workspace-construction-handoff');
     assert.equal(handoff.options.packageContext.ready, false);
 
     let planResult = await dispatch('plan_workspace', handoff, session);
@@ -429,12 +430,12 @@ describe('construction workflow dispatch', () => {
     assert.equal(session.config, null);
 
     let constructResult = await dispatch('construct_workspace', handoff, session);
-    assert.equal(constructResult.status, 'ok');
-    assert.equal(constructResult.plan.packageContext.ready, false);
-    assert.equal(constructResult.plan.readiness.package.status, 'warning');
-    assert.equal(session.config.construction.packageContext.source.packageId, 'gapped-team-room');
-    assert.equal(session.config.construction.plan.readiness.package.nextAction, 'review-package-readiness');
-    assert.deepEqual(session.config.construction.packageContext.missing.components, ['sn-team-room']);
+    assert.equal(constructResult.status, 'error');
+    assert.equal(constructResult.tool, 'construct_workspace');
+    assert.match(constructResult.hint, /Construction handoff is not ready/);
+    assert.match(constructResult.hint, /sn-team-room/);
+    assert.match(constructResult.hint, /Package missing available components/);
+    assert.equal(session.config, null);
   });
 
   it('plan_workspace rejects invalid construction handoff diagnostics', async () => {
@@ -1795,6 +1796,7 @@ describe('create_workspace_construction_handoff dispatch', () => {
     }, freshSession);
 
     assert.equal(handoffResult.status, 'ok');
+    assert.equal(handoffResult._type, 'workspace-construction-handoff');
     assert.equal(handoffResult.valid, true);
     assert.equal(handoffResult.ready, true);
     assert.ok(handoffResult.intent);
@@ -1816,6 +1818,7 @@ describe('create_workspace_construction_handoff dispatch', () => {
     }, session);
 
     assert.equal(result.status, 'ok');
+    assert.equal(result._type, 'workspace-construction-handoff');
     assert.equal(result.valid, false);
     assert.equal(result.ready, false);
     assert.deepEqual(result.options.workspaceTemplates, []);

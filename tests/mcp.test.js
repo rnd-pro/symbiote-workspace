@@ -1138,6 +1138,13 @@ describe('Construction Handoff via MCP', () => {
     let constructTool = tools.find((t) => t.name === 'construct_workspace');
     assert.ok(planTool.inputSchema.properties.options);
     assert.ok(constructTool.inputSchema.properties.options);
+    for (let tool of [planTool, constructTool]) {
+      assert.deepEqual(tool.inputSchema.properties._type.enum, ['workspace-construction-handoff']);
+      assert.ok(tool.inputSchema.properties.ready);
+      assert.ok(tool.inputSchema.properties.missing);
+      assert.ok(tool.inputSchema.properties.warnings);
+      assert.ok(tool.inputSchema.properties.errors);
+    }
   });
 
   it('create_workspace_construction_handoff via tools/call returns intent and options', async () => {
@@ -1223,6 +1230,7 @@ describe('Construction Handoff via MCP', () => {
     ]);
     let handoff = JSON.parse(handoffResponses.find((r) => r.id === 2).result.content[0].text);
     assert.equal(handoff.status, 'ok');
+    assert.equal(handoff._type, 'workspace-construction-handoff');
 
     let planResponses = await mcpSession([
       { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
@@ -1275,6 +1283,7 @@ describe('Construction Handoff via MCP', () => {
     let result = responses.find((r) => r.id === 2);
     let content = JSON.parse(result.result.content[0].text);
     assert.equal(content.status, 'ok');
+    assert.equal(content._type, 'workspace-construction-handoff');
     assert.equal(content.valid, false);
     assert.equal(content.ready, false);
     assert.ok(content.errors.length > 0);
@@ -1325,5 +1334,54 @@ describe('Construction Handoff via MCP', () => {
     assert.equal(construct.tool, 'construct_workspace');
     assert.match(construct.hint, /Construction handoff is invalid/);
     assert.match(construct.hint, /Invalid package kind/);
+  });
+
+  it('construct_workspace rejects not-ready handoff objects via tools/call', async () => {
+    let handoffResponses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: {
+          name: 'create_workspace_construction_handoff',
+          arguments: {
+            context: {
+              valid: true,
+              ready: false,
+              workspaceTemplates: [EXTERNAL_ROOM_TEMPLATE],
+              moduleCapabilities: [],
+              requiredCapabilities: ['room.command'],
+              missing: { components: ['sn-room-shell'] },
+              errors: [],
+              warnings: [{ path: 'available.components', message: 'Missing room shell.', severity: 'warning' }],
+            },
+            intent: { brief: 'MCP not ready room', template: 'mcp-voice-video-room' },
+          },
+        },
+      },
+    ]);
+    let handoff = JSON.parse(handoffResponses.find((r) => r.id === 2).result.content[0].text);
+    assert.equal(handoff.valid, true);
+    assert.equal(handoff.ready, false);
+
+    let responses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: { name: 'plan_workspace', arguments: handoff },
+      },
+      {
+        jsonrpc: '2.0', id: 3, method: 'tools/call',
+        params: { name: 'construct_workspace', arguments: handoff },
+      },
+    ]);
+
+    let plan = JSON.parse(responses.find((r) => r.id === 2).result.content[0].text);
+    let construct = JSON.parse(responses.find((r) => r.id === 3).result.content[0].text);
+    assert.equal(plan.status, 'ok');
+    assert.equal(plan.plan.readiness.package.status, 'warning');
+    assert.equal(construct.status, 'error');
+    assert.equal(construct.tool, 'construct_workspace');
+    assert.match(construct.hint, /Construction handoff is not ready/);
+    assert.match(construct.hint, /sn-room-shell/);
   });
 });
