@@ -1219,6 +1219,42 @@ describe('createWorkspaceConstructionHandoff', () => {
     assert.equal(ctx.workspaceTemplates[0].config.name, 'Test Workspace');
   });
 
+  it('preserves warning-only package readiness metadata through construction planning', () => {
+    let exported = exportWorkspacePackage(PACKAGE_CONFIG, {
+      id: 'handoff-gapped-package',
+      version: '1.0.0',
+    });
+    let ctx = createWorkspacePackageConstructionContext(exported.package, {
+      templateName: 'handoff-gapped-room',
+      available: {
+        components: [],
+        plugins: [],
+        packages: [],
+        hostServices: [],
+        runtimeSlots: [],
+      },
+    });
+
+    let handoff = createWorkspaceConstructionHandoff(ctx, {
+      brief: 'Build a command workspace from a package with missing host capabilities.',
+      template: 'handoff-gapped-room',
+    });
+
+    assert.equal(handoff.valid, true);
+    assert.equal(handoff.ready, false);
+    assert.equal(handoff.options.packageContext.ready, false);
+    assert.equal(handoff.options.packageContext.sources.length, 1);
+    assert.equal(handoff.options.packageContext.source.packageId, 'handoff-gapped-package');
+    assert.ok(handoff.options.packageContext.missing.components.length > 0);
+    assert.ok(handoff.options.packageContext.warnings.length > 0);
+
+    let plan = planWorkspaceConstruction(handoff.intent, handoff.options);
+    assert.equal(plan.plan.packageContext.ready, false);
+    assert.equal(plan.plan.packageContext.source.packageId, 'handoff-gapped-package');
+    assert.ok(plan.plan.packageContext.missing.components.length > 0);
+    assert.ok(plan.config.construction.packageContext.warnings.length > 0);
+  });
+
   it('does not pass constructor arrays from invalid package contexts', () => {
     let handoff = createWorkspaceConstructionHandoff({
       valid: false,

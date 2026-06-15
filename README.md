@@ -744,7 +744,11 @@ and through the CLI as `create-workspace-packages-construction-context`.
 or package-collection construction context into the exact `{ intent, options }`
 shape consumed by `planWorkspaceConstruction(handoff.intent, handoff.options)`.
 It merges package `requiredCapabilities` into the supplied construction intent
-and passes only valid package templates and module descriptors through.
+and passes only valid package templates and module descriptors through. The
+handoff also carries `options.packageContext`, which construction plans copy to
+`plan.packageContext` and `config.construction.packageContext` so agents can see
+package source, requirements, missing capability gaps, warnings, and readiness
+without re-inspecting the package.
 It is exposed through dispatch/MCP as `create_workspace_construction_handoff`
 and through the CLI as `create-workspace-construction-handoff`.
 

@@ -1475,6 +1475,27 @@ function verificationPlan(scope) {
   });
 }
 
+function packageContextPlan(options) {
+  if (!isObject(options.packageContext)) return null;
+  let context = options.packageContext;
+  let result = {};
+  for (let field of [
+    'valid',
+    'ready',
+    'requirements',
+    'missing',
+    'source',
+    'sources',
+    'summary',
+    'compatibility',
+    'warnings',
+    'errors',
+  ]) {
+    if (context[field] !== undefined) result[field] = deepClone(context[field]);
+  }
+  return Object.keys(result).length > 0 ? result : null;
+}
+
 /**
  * @param {string|Object} intent
  * @param {Object} [options]
@@ -1565,6 +1586,7 @@ export function planWorkspaceConstruction(intent, options = {}) {
     normalized.requiredCapabilities,
     moduleSelectionSource,
   );
+  let packageContext = packageContextPlan(options);
 
   let plan = {
     name: workspaceName,
@@ -1611,6 +1633,7 @@ export function planWorkspaceConstruction(intent, options = {}) {
       targets: verificationPlan(verificationScope),
     },
   };
+  if (packageContext) plan.packageContext = packageContext;
 
   config.name = workspaceName;
   config.register = register;
@@ -1624,6 +1647,7 @@ export function planWorkspaceConstruction(intent, options = {}) {
     preferredTheme: deepClone(normalized.preferredTheme),
   };
   config.construction = { questions, plan };
+  if (packageContext) config.construction.packageContext = deepClone(packageContext);
   config.theme = {
     ...(deepClone(config.theme) || {}),
     recipe: defaults.recipe,

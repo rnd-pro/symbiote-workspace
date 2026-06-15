@@ -29,6 +29,10 @@ All notable changes to this project will be documented in this file.
 - **Constructor capability diagnostics** — construction plans now include
   `capabilities.byCapability` with selected coverage and ranked unselected
   module alternatives for unmet required capabilities.
+- **Package readiness propagation** — package construction handoffs now carry
+  `options.packageContext`, and construction plans preserve it as
+  `plan.packageContext` plus `config.construction.packageContext` so agents can
+  see source, readiness, missing capabilities, and warnings after planning.
 - **Package collection construction context helper** —
   `createWorkspacePackagesConstructionContext({ packages, available })`
   aggregates package objects and JSON entries into one constructor-ready context

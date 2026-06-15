@@ -365,6 +365,65 @@ describe('construction workflow dispatch', () => {
     assert.equal(session.config.intent.template, 'team-ai-room');
   });
 
+  it('preserves warning-only package context metadata through handoff planning and construction', async () => {
+    let session = createSession();
+    let source = {
+      type: 'workspace-package',
+      packageId: 'gapped-team-room',
+      packageVersion: '1.0.0',
+      templateName: 'team-ai-room',
+    };
+    let handoff = await dispatch('create_workspace_construction_handoff', {
+      context: {
+        valid: true,
+        ready: false,
+        workspaceTemplates: [TEAM_ROOM_TEMPLATE],
+        moduleCapabilities: [],
+        requiredCapabilities: ['room.command'],
+        requirements: {
+          components: ['sn-team-room'],
+          plugins: [],
+          packages: [],
+          hostServices: [],
+          runtimeSlots: [],
+        },
+        missing: {
+          components: ['sn-team-room'],
+          plugins: [],
+          packages: [],
+          hostServices: [],
+          runtimeSlots: [],
+        },
+        source,
+        sources: [source],
+        warnings: [{
+          path: 'available.components',
+          message: 'Package missing available components.',
+          severity: 'warning',
+        }],
+        errors: [],
+      },
+      intent: { brief: 'team AI room', template: 'team-ai-room' },
+    }, session);
+
+    assert.equal(handoff.valid, true);
+    assert.equal(handoff.ready, false);
+    assert.equal(handoff.options.packageContext.ready, false);
+
+    let planResult = await dispatch('plan_workspace', handoff, session);
+    assert.equal(planResult.status, 'ok');
+    assert.equal(planResult.plan.packageContext.ready, false);
+    assert.equal(planResult.plan.packageContext.source.packageId, 'gapped-team-room');
+    assert.deepEqual(planResult.plan.packageContext.missing.components, ['sn-team-room']);
+    assert.equal(session.config, null);
+
+    let constructResult = await dispatch('construct_workspace', handoff, session);
+    assert.equal(constructResult.status, 'ok');
+    assert.equal(constructResult.plan.packageContext.ready, false);
+    assert.equal(session.config.construction.packageContext.source.packageId, 'gapped-team-room');
+    assert.deepEqual(session.config.construction.packageContext.missing.components, ['sn-team-room']);
+  });
+
   it('plan_workspace rejects invalid construction handoff diagnostics', async () => {
     let session = createSession();
     let handoff = await dispatch('create_workspace_construction_handoff', {

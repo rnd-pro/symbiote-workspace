@@ -24,6 +24,36 @@ function toJsonString(value) {
   return typeof value === 'string' ? value : JSON.stringify(value);
 }
 
+function cloneJson(value) {
+  if (value === undefined) return undefined;
+  if (typeof structuredClone === 'function') return structuredClone(value);
+  return JSON.parse(JSON.stringify(value));
+}
+
+function compactObject(value) {
+  let result = {};
+  for (let [key, child] of Object.entries(value)) {
+    if (child !== undefined) result[key] = child;
+  }
+  return result;
+}
+
+function packageContextFromHandoff(args) {
+  if (!isConstructionHandoffArgs(args)) return undefined;
+  return compactObject({
+    valid: args.valid,
+    ready: args.ready,
+    requirements: cloneJson(args.requirements),
+    missing: cloneJson(args.missing),
+    source: cloneJson(args.source),
+    sources: cloneJson(args.sources),
+    summary: cloneJson(args.summary),
+    compatibility: cloneJson(args.compatibility),
+    warnings: cloneJson(args.warnings),
+    errors: cloneJson(args.errors),
+  });
+}
+
 /** @type {ToolDefinition[]} */
 export const TOOLS = [
   // ── Discovery ──
@@ -969,6 +999,8 @@ function constructionOptionsFromArgs(args, intent) {
   for (let field of ['name', 'answers', 'moduleCapabilities', 'workspaceTemplates', 'theme']) {
     if (args[field] !== undefined) options[field] = args[field];
   }
+  let packageContext = packageContextFromHandoff(args);
+  if (packageContext !== undefined) options.packageContext = packageContext;
 
   return options;
 }

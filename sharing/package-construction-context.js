@@ -429,7 +429,7 @@ export function createWorkspacePackageConstructionContext(input, options = {}) {
  *   valid: boolean,
  *   ready: boolean,
  *   intent: Object,
- *   options: { workspaceTemplates: Array, moduleCapabilities: Array },
+ *   options: { workspaceTemplates: Array, moduleCapabilities: Array, packageContext: Object },
  *   requirements: Object|null,
  *   missing: Object|null,
  *   source: Object|null,
@@ -448,6 +448,26 @@ export function createWorkspaceConstructionHandoff(context, intent = {}) {
     ...requiredIntentCapabilities(baseIntent),
     ...(Array.isArray(contextRequired) ? contextRequired : []),
   ]);
+  let source = optionalClone(context, 'source');
+  let sources = handoffSources(context);
+  let requirements = optionalClone(context, 'requirements');
+  let missing = optionalClone(context, 'missing');
+  let summary = optionalClone(context, 'summary');
+  let compatibility = optionalClone(context, 'compatibility');
+  let warnings = isObject(context) && Array.isArray(context.warnings) ? deepClone(context.warnings) : [];
+  let errors = contextDiagnostics(context);
+  let packageContext = {
+    valid,
+    ready: valid && context.ready === true,
+    requirements,
+    missing,
+    source,
+    sources,
+    summary,
+    compatibility,
+    warnings,
+    errors,
+  };
 
   return {
     valid,
@@ -463,15 +483,16 @@ export function createWorkspaceConstructionHandoff(context, intent = {}) {
       moduleCapabilities: valid && Array.isArray(context.moduleCapabilities)
         ? deepClone(context.moduleCapabilities)
         : [],
+      packageContext: deepClone(packageContext),
     },
-    requirements: optionalClone(context, 'requirements'),
-    missing: optionalClone(context, 'missing'),
-    source: optionalClone(context, 'source'),
-    sources: handoffSources(context),
-    summary: optionalClone(context, 'summary'),
-    compatibility: optionalClone(context, 'compatibility'),
-    warnings: isObject(context) && Array.isArray(context.warnings) ? deepClone(context.warnings) : [],
-    errors: contextDiagnostics(context),
+    requirements,
+    missing,
+    source,
+    sources,
+    summary,
+    compatibility,
+    warnings,
+    errors,
   };
 }
 
