@@ -23,6 +23,17 @@ All notable changes to this project will be documented in this file.
 - Added stable adaptive/theme runtime evidence attributes and contract metadata
   for responsive mode, breakpoint, theme mode, theme editor state, and theme
   editor subtree binding.
+- Updated the realtime builder demo runtime to mount the generated workspace
+  through Symbiote UI `panel-layout` with chat-driven custom element modules
+  and the default cascade theme instead of showing only fallback preview cards.
+- Reworked the realtime builder demo shell to match the playground/studio
+  pattern: compact header controls plus a full-viewport Symbiote UI layout
+  built from library elements including `chat-workspace`,
+  `cascade-theme-editor`, `sn-card`, `sn-description-list`, `sn-badge`,
+  `sn-button`, and `sn-segmented-control`.
+- Updated visual demo serving to prefer the canonical dev-plane
+  `symbiote-ui`/`symbiote-engine` checkouts and to serve
+  `@symbiotejs/symbiote` from a stable dependency route for browser imports.
 - Added an opt-in visual-demo browser smoke script that launches the packaged
   demo through a Chrome-compatible DevTools Protocol session and verifies the
   mounted workspace DOM without changing the default test command.

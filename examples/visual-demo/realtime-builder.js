@@ -4,6 +4,8 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import {
   startStaticServer,
+  symbioteEngineRoot,
+  symbioteJsRoot,
   symbioteUiRoot,
   workspacePackageRoot,
 } from './server-utils.js';
@@ -25,6 +27,8 @@ function hasArg(name) {
 async function main() {
   let workspaceRoot = workspacePackageRoot(import.meta.url);
   let uiRoot = await symbioteUiRoot(workspaceRoot);
+  let engineRoot = await symbioteEngineRoot(workspaceRoot);
+  let symbioteRoot = await symbioteJsRoot(workspaceRoot);
   let outputDir = resolve(readArg('--output-dir', join(process.cwd(), 'tmp', 'realtime-builder-demo')));
   let port = Number(readArg('--port', '4567'));
   let writeOnly = hasArg('--write-only');
@@ -35,7 +39,7 @@ async function main() {
     return;
   }
 
-  await startStaticServer({ outputDir, workspaceRoot, uiRoot, port });
+  await startStaticServer({ outputDir, workspaceRoot, uiRoot, engineRoot, symbioteRoot, port });
   console.log(`Symbiote realtime builder demo: ${summary.url}`);
   console.log(`Preview files: ${summary.outputDir}`);
 }

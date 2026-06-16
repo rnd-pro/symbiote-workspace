@@ -7,6 +7,8 @@ import { exportConfig, importConfig } from '../../sharing/index.js';
 import { BROWSER_THEME_IMPORT } from '../../sharing/browser-contract.js';
 import {
   startStaticServer,
+  symbioteEngineRoot,
+  symbioteJsRoot,
   symbioteUiRoot,
   workspacePackageRoot,
 } from './server-utils.js';
@@ -100,6 +102,8 @@ async function buildDemoConfig() {
 
 let workspaceRoot = workspacePackageRoot();
 let uiRoot = await symbioteUiRoot(workspaceRoot);
+let engineRoot = await symbioteEngineRoot(workspaceRoot);
+let symbioteRoot = await symbioteJsRoot(workspaceRoot);
 let outputDir = resolve(readArg('--output-dir', join(process.cwd(), 'tmp', 'visual-demo-preview')));
 let port = Number(readArg('--port', '3456'));
 let writeOnly = hasArg('--write-only');
@@ -132,7 +136,7 @@ let summary = {
 if (writeOnly) {
   console.log(JSON.stringify(summary, null, 2));
 } else {
-  await startStaticServer({ outputDir, workspaceRoot, uiRoot, port });
+  await startStaticServer({ outputDir, workspaceRoot, uiRoot, engineRoot, symbioteRoot, port });
   console.log(`Symbiote visual demo: ${summary.url}`);
   console.log(`Preview files: ${outputDir}`);
 }

@@ -245,12 +245,12 @@ function baseConfig(name, overrides = {}) {
     },
     theme: {
       recipe: 'agent-console',
-      params: { mode: 'light', hue: 218, chroma: 44, brightness: 96, contrast: 66 },
+      params: { mode: 'dark', hue: 218, chroma: 30, brightness: 0, contrast: 58 },
       relations: { surfaceStep: 1.08, radiusScale: 0.82 },
       overrides: { '--sn-workspace-gap': '12px' },
       subtrees: [
         {
-          selector: '.symbiote-workspace__panel[data-panel-type="theme-editor"]',
+          selector: 'sn-theme-editor-widget',
           params: { hue: 280, chroma: 46 },
           relations: { surfaceStep: 1.16 },
         },
@@ -391,7 +391,7 @@ function createStages() {
         },
         themeCascade: {
           source: 'symbiote-ui/default',
-          mode: 'light',
+          mode: 'dark',
           editorWidget: 'theme-editor',
           status: 'required-not-mounted',
         },
@@ -509,7 +509,7 @@ function createStages() {
         },
         themeCascade: {
           source: 'symbiote-ui/default',
-          mode: 'light',
+          mode: 'dark',
           editorWidget: 'theme-editor',
           status: 'required-not-mounted',
         },
@@ -714,7 +714,7 @@ function createStages() {
         },
         themeCascade: {
           source: 'symbiote-ui/default',
-          mode: 'light',
+          mode: 'dark',
           editorWidget: 'theme-editor',
           status: 'mounted',
         },
@@ -977,7 +977,7 @@ function createStages() {
         },
         themeCascade: {
           source: 'symbiote-ui/default',
-          mode: 'light',
+          mode: 'dark',
           editorWidget: 'theme-editor',
           statePath: 'state.workspace.theme',
           status: 'validated',
@@ -1347,7 +1347,7 @@ function buildConstructionTrace(finalStage) {
       'target-register': 'agent-workspace',
       'layout-topology': 'workbench',
       'module-selection': Object.keys(finalStage.config.panelTypes),
-      'theme-mode': 'light',
+      'theme-mode': 'dark',
       'verification-scope': ['layout', 'modules', 'theme', 'portability'],
     },
   });

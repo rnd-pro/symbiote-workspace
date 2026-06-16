@@ -50,7 +50,7 @@ describe('realtime builder demo', () => {
     assert.deepEqual(demo.constructionTrace.capabilityCoverage.missing, []);
     assert.equal(demo.constructionTrace.exportImportEvidence.valid, true);
     assert.equal(demo.constructionTrace.adaptiveThemeEvidence.responsiveMode, 'drawer');
-    assert.equal(demo.constructionTrace.adaptiveThemeEvidence.themeParams.mode, 'light');
+    assert.equal(demo.constructionTrace.adaptiveThemeEvidence.themeParams.mode, 'dark');
     assert.equal(
       demo.constructionTrace.adaptiveThemeEvidence.themeEditorBinding.path,
       'theme'
@@ -135,20 +135,40 @@ describe('realtime builder demo', () => {
       assert.equal(contract.chatStateTimeline.at(-1).decisionTrace.length, 5);
       assert.match(html, /<script type="importmap">/);
       assert.match(app, /mountWorkspace/);
+      assert.equal(app.includes("symbiote-ui/layout/Layout/Layout.js"), true);
+      assert.equal(app.includes("symbiote-ui/chat/ChatWorkspace/ChatWorkspace.js"), true);
+      assert.equal(app.includes("symbiote-ui/themes/CascadeThemeEditor/CascadeThemeEditor.js"), true);
+      assert.equal(app.includes("symbiote-ui/themes/CascadeThemeWidget/CascadeThemeWidget.js"), true);
+      assert.equal(app.includes("symbiote-ui/control/Button/Button.js"), true);
+      assert.equal(app.includes('CASCADE_THEME_DEFAULTS'), true);
+      assert.match(app, /createSymbioteLayoutRuntime/);
+      assert.equal(app.includes("document.createElement('panel-layout')"), true);
+      assert.equal(app.includes('customElements.define'), true);
+      assert.match(app, /chat-workspace/);
+      assert.match(app, /cascade-theme-editor/);
+      assert.match(app, /cascade-theme-widget/);
+      assert.match(app, /sn-card/);
+      assert.match(app, /sn-description-list/);
+      assert.match(app, /sn-segmented-control/);
+      assert.match(app, /sn-agent-chat-panel/);
+      assert.match(app, /sn-theme-editor-widget/);
       assert.match(app, /Play/);
-      assert.match(app, /Build stream/);
       assert.match(app, /demo-build-progress/);
       assert.match(app, /operationIndex/);
       assert.match(app, /dataset\.buildKind/);
       assert.match(app, /Service blueprint/);
       assert.match(app, /Widget registry/);
-      assert.match(app, /Adaptive preview/);
       assert.match(app, /dataset\.collapsedPanels/);
       assert.match(app, /dataset\.themeEditorState/);
       assert.match(app, /applyAdaptiveScenario/);
+      assert.match(app, /renderStage\(demo\.stages\.length - 1\)/);
       assert.match(app, /data-adaptive-state="collapsed"/);
-      assert.match(app, /Questionnaire decisions/);
-      assert.match(app, /Construction tool trace/);
+      assert.doesNotMatch(app, /class="demo-chat"/);
+      assert.doesNotMatch(app, /class="demo-inspector"/);
+      assert.equal(html.includes('"symbiote-ui/"'), true);
+      assert.equal(html.includes('"symbiote-ui/ui"'), true);
+      assert.equal(html.includes('"symbiote-engine/"'), true);
+      assert.equal(html.includes('"@symbiotejs/symbiote"'), true);
       assert.doesNotMatch(app, /\/Users\//);
       assert.doesNotMatch(states, /localhost|\/Users\//);
       assert.equal(config.panelTypes['theme-editor'].component, 'sn-theme-editor-widget');

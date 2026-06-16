@@ -75,7 +75,16 @@ ${escapeScriptJson({ imports })}
 
 function generateAppJs(demo) {
   return `import { mountWorkspace, validateWorkspaceConfig } from 'symbiote-workspace/browser';
-import { applyCascadeTheme } from '${BROWSER_THEME_IMPORT}';
+import { applyCascadeTheme, CASCADE_THEME_DEFAULTS } from '${BROWSER_THEME_IMPORT}';
+import 'symbiote-ui/layout/Layout/Layout.js';
+import 'symbiote-ui/chat/ChatWorkspace/ChatWorkspace.js';
+import 'symbiote-ui/themes/CascadeThemeEditor/CascadeThemeEditor.js';
+import 'symbiote-ui/themes/CascadeThemeWidget/CascadeThemeWidget.js';
+import 'symbiote-ui/control/Button/Button.js';
+import 'symbiote-ui/control/SegmentedControl/SegmentedControl.js';
+import 'symbiote-ui/surface/Card/Card.js';
+import 'symbiote-ui/display/Badge/Badge.js';
+import 'symbiote-ui/display/DescriptionList/DescriptionList.js';
 
 let demo = ${escapeScriptJson(demo)};
 let stageIndex = 0;
@@ -83,33 +92,311 @@ let operationIndex = 0;
 let viewportMode = 'wide';
 let mounted = null;
 let playTimer = null;
+let demoModulesDefined = false;
+
+applyCascadeTheme(document.documentElement, CASCADE_THEME_DEFAULTS, {
+  notify: false,
+  source: 'realtime-builder-default',
+});
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;');
+}
+
+function normalizeLayoutNode(node, path = 'root') {
+  if (!node || typeof node !== 'object') return null;
+  if (node.type === 'panel') {
+    return {
+      ...node,
+      id: node.id || \`\${path}-\${node.panelType || 'panel'}\`,
+    };
+  }
+  if (node.type === 'split') {
+    return {
+      ...node,
+      id: node.id || \`\${path}-split\`,
+      first: normalizeLayoutNode(node.first, \`\${path}-a\`),
+      second: normalizeLayoutNode(node.second, \`\${path}-b\`),
+    };
+  }
+  return node;
+}
+
+function moduleField(label, value) {
+  let display = Array.isArray(value) ? value.join(', ') : value;
+  return \`<sn-description-item label="\${escapeHtml(label)}">\${escapeHtml(display || 'pending')}</sn-description-item>\`;
+}
+
+function card(title, body, options = {}) {
+  let icon = options.icon || 'widgets';
+  let status = options.status ? \`<sn-badge>\${escapeHtml(options.status)}</sn-badge>\` : '';
+  return \`
+    <sn-card class="demo-library-card">
+      <div class="demo-card-title">
+        <span class="material-symbols-outlined">\${escapeHtml(icon)}</span>
+        <strong>\${escapeHtml(title)}</strong>
+        \${status}
+      </div>
+      \${body}
+    </sn-card>
+  \`;
+}
+
+function chatMessageItems(stage) {
+  return (stage.chat || []).map((turn, index) => ({
+    id: \`demo-\${stage.id}-\${index}\`,
+    role: turn.role === 'assistant' || turn.speaker === 'agent' ? 'assistant' : 'user',
+    text: turn.text,
+  }));
+}
+
+function buildWorkspaceState(stage) {
+  let chatState = stage.chatState || {};
+  return {
+    sidebar: 'hidden',
+    chats: [{
+      id: 'realtime-builder',
+      title: demo.name,
+      subtitle: chatState.questionnaireStatus || stage.title,
+    }],
+    activeChatId: 'realtime-builder',
+    messages: chatMessageItems(stage),
+    messagesOptions: { scrollToBottom: true },
+    composer: {
+      placeholder: chatState.nextPatch || 'Describe the workspace to build...',
+      value: '',
+      attachedContext: [
+        { id: 'stage', label: stage.title },
+        { id: 'question', label: chatState.activeQuestionId || 'questionnaire' },
+      ],
+      footerControls: [
+        { id: 'layout', kind: 'button', icon: 'view_quilt', label: 'Layout', value: stage.config.layout?.type || 'split' },
+        { id: 'theme', kind: 'button', icon: 'palette', label: 'Theme', value: stage.config.theme?.params?.mode || 'default' },
+      ],
+    },
+    liveStatus: {
+      phase: 'running',
+      title: 'Realtime builder',
+      text: chatState.nextPatch || stage.title,
+    },
+    backgroundState: 'activity',
+  };
+}
+
+function hydratePanelContent(root, panelType, stage) {
+  if (panelType === 'agent-chat') {
+    let workspace = root.querySelector('chat-workspace');
+    workspace?.setWorkspaceState?.(buildWorkspaceState(stage));
+  }
+  if (panelType === 'theme-editor') {
+    let params = stage.config.theme?.params || CASCADE_THEME_DEFAULTS;
+    let editor = root.querySelector('cascade-theme-editor');
+    editor?.setThemeState?.(params);
+  }
+}
+
+function buildModuleBody(panelType, context) {
+  let stage = context.stage;
+  let chatState = stage.chatState || {};
+  let config = stage.config || {};
+  if (panelType === 'agent-chat') {
+    return \`
+      <chat-workspace class="demo-chat-workspace" sidebar="hidden"></chat-workspace>
+      <sn-description-list class="demo-panel-facts">
+        \${moduleField('Question', chatState.activeQuestionId)}
+        \${moduleField('Patch', chatState.nextPatch)}
+      </sn-description-list>
+    \`;
+  }
+  if (panelType === 'service-blueprint') {
+    let blueprint = chatState.serviceBlueprint || {};
+    return card('Service blueprint', \`
+      <sn-description-list class="demo-panel-facts">
+        \${moduleField('Intent', chatState.activeIntent)}
+        \${moduleField('Entities', blueprint.entities)}
+        \${moduleField('Workflows', blueprint.workflows)}
+        \${moduleField('Outputs', blueprint.outputs)}
+      </sn-description-list>
+    \`, { icon: 'schema', status: chatState.questionnaireStatus });
+  }
+  if (panelType === 'layout-builder') {
+    return card('Layout roles', \`
+      <div class="sn-demo-layout-map" data-layout-kind="\${escapeHtml(config.layout?.type || 'panel')}">
+        \${Object.entries(chatState.layoutRoles || {}).map(([id, role]) => \`
+          <sn-card data-panel-role="\${escapeHtml(id)}"><strong>\${escapeHtml(id)}</strong><span>\${escapeHtml(role)}</span></sn-card>
+        \`).join('')}
+      </div>
+      <sn-description-list class="demo-panel-facts">
+        \${moduleField('Topology', config.construction?.answers?.['layout-topology'])}
+        \${moduleField('Responsive', config.rootBehavior?.responsiveMode)}
+      </sn-description-list>
+    \`, { icon: 'view_quilt', status: config.rootBehavior?.responsiveMode || 'layout' });
+  }
+  if (panelType === 'widget-registry') {
+    return card('Widget registry', \`
+      <div class="sn-demo-widget-registry">
+        \${(chatState.widgetRegistry || []).map((widget) => \`
+          <sn-card data-widget-status="\${escapeHtml(widget.status)}">
+            <i class="material-symbols-outlined">widgets</i>
+            <strong>\${escapeHtml(widget.id)}</strong>
+            <b>\${escapeHtml(widget.role)}</b>
+            <sn-badge>\${escapeHtml(widget.status)}</sn-badge>
+          </sn-card>
+        \`).join('')}
+      </div>
+    \`, { icon: 'widgets', status: \`\${(chatState.widgetRegistry || []).length} modules\` });
+  }
+  if (panelType === 'bindings-inspector') {
+    return card('Bindings', \`
+      <div class="sn-demo-module-list">
+        \${(config.data?.bindings || []).slice(0, 6).map((binding) => \`
+          <sn-card><b>\${escapeHtml(binding.panelType)}</b><span>\${escapeHtml(binding.id)} -> \${escapeHtml(binding.path)}</span></sn-card>
+        \`).join('')}
+      </div>
+    \`, { icon: 'hub', status: \`\${(config.data?.bindings || []).length} wired\` });
+  }
+  if (panelType === 'adaptive-rules') {
+    let adaptive = chatState.adaptiveBehavior || {};
+    return card('Adaptive rules', \`
+      <sn-description-list class="demo-panel-facts">
+        \${moduleField('Mode', adaptive.mode)}
+        \${moduleField('Breakpoint', adaptive.breakpoint)}
+        \${moduleField('Pinned', adaptive.pinned)}
+        \${moduleField('Collapse order', adaptive.collapseOrder)}
+      </sn-description-list>
+    \`, { icon: 'responsive_layout', status: viewportMode });
+  }
+  if (panelType === 'validation-checklist') {
+    let validation = validateWorkspaceConfig(config, { strict: true });
+    return card('Builder contract', \`
+      <div class="sn-demo-module-list">
+        <sn-card class="demo-validation-row">
+          <span class="demo-validation-label">Strict validation</span>
+          <sn-badge>\${validation.valid ? 'pass' : 'fail'}</sn-badge>
+        </sn-card>
+        \${(chatState.validationChecklist || []).map((item) => \`
+          <sn-card class="demo-validation-row" data-status="\${escapeHtml(item.status)}">
+            <span class="demo-validation-label">\${escapeHtml(item.id)}</span>
+            <sn-badge>\${escapeHtml(item.status)}</sn-badge>
+          </sn-card>
+        \`).join('')}
+      </div>
+    \`, { icon: 'fact_check', status: validation.valid ? 'strict pass' : 'strict fail' });
+  }
+  if (panelType === 'theme-editor') {
+    let theme = chatState.themeCascade || {};
+    return \`
+      <cascade-theme-editor class="demo-theme-editor"></cascade-theme-editor>
+      <sn-description-list class="demo-panel-facts">
+          \${moduleField('Cascade', theme.source)}
+          \${moduleField('Mode', theme.mode || config.theme?.params?.mode)}
+          \${moduleField('State path', theme.statePath)}
+      </sn-description-list>
+    \`;
+  }
+  return card('Module', '<sn-badge>Waiting for chat-state patch</sn-badge>');
+}
+
+function defineDemoWorkspaceModules() {
+  if (demoModulesDefined) return;
+  demoModulesDefined = true;
+  let finalPanelTypes = demo.stages.at(-1).config.panelTypes || {};
+  for (let tagName of demo.requiredWidgets.map((id) => finalPanelTypes[id]?.component).filter(Boolean)) {
+    if (customElements.get(tagName)) continue;
+    customElements.define(tagName, class extends HTMLElement {
+      set demoContext(value) {
+        this._demoContext = value;
+        this.render();
+      }
+      connectedCallback() {
+        this.render();
+      }
+      render() {
+        if (!this.isConnected || !this._demoContext) return;
+        let panelType = this._demoContext.panelType;
+        let panel = this._demoContext.stage.config.panelTypes[panelType] || {};
+        this.dataset.panelType = panelType;
+        this.innerHTML = \`
+          <article class="sn-demo-module" data-module="\${escapeHtml(panelType)}">
+            <header>
+              <span class="material-symbols-outlined">\${escapeHtml(panel.icon || 'widgets')}</span>
+              <strong>\${escapeHtml(panel.title || panelType)}</strong>
+            </header>
+            \${buildModuleBody(panelType, this._demoContext)}
+          </article>
+        \`;
+        hydratePanelContent(this, panelType, this._demoContext.stage);
+      }
+    });
+  }
+}
+
+function hydrateDemoModules(root, stage) {
+  for (let [panelType, panel] of Object.entries(stage.config.panelTypes || {})) {
+    if (!panel.component) continue;
+    for (let component of root.querySelectorAll(panel.component)) {
+      component.demoContext = { panelType, stage };
+      hydratePanelContent(component, panelType, stage);
+    }
+  }
+}
+
+function createSymbioteLayoutRuntime(stage) {
+  return {
+    mountWorkspace({ config, element }) {
+      defineDemoWorkspaceModules();
+      let layout = document.createElement('panel-layout');
+      layout.className = 'demo-symbiote-layout';
+      layout.setAttribute('responsive-mode', config.rootBehavior?.responsiveMode || 'drawer');
+      layout.setAttribute('responsive-breakpoint', String(config.rootBehavior?.responsiveBreakpoint || 860));
+      layout.setAttribute('swipe-control', config.rootBehavior?.swipeControl || 'edge');
+      element.appendChild(layout);
+      requestAnimationFrame(() => {
+        layout.$.panelTypes = config.panelTypes || {};
+        layout.$.layoutTree = normalizeLayoutNode(config.layout);
+        requestAnimationFrame(() => {
+          hydrateDemoModules(layout, stage);
+          applyAdaptiveScenario(stage);
+        });
+      });
+      return {
+        destroy() {
+          layout.remove();
+        },
+      };
+    },
+  };
+}
 
 let styles = new CSSStyleSheet();
 styles.replaceSync(\`
   :root {
-    color-scheme: light;
-    --demo-border: color-mix(in srgb, CanvasText 16%, transparent);
-    --demo-muted: color-mix(in srgb, CanvasText 58%, transparent);
-    --demo-soft: color-mix(in srgb, Canvas 92%, CanvasText 8%);
-    --demo-accent: #2764d8;
-    --demo-pass: #147a43;
-    --demo-warn: #9a5b00;
+    color-scheme: dark;
+    --demo-border: var(--sn-layout-border, var(--sn-outline-color));
+    --demo-muted: var(--sn-text-dim);
+    --demo-soft: var(--sn-panel-bg);
+    --demo-accent: var(--sn-node-selected);
+    --demo-pass: hsl(var(--sn-hue-success) var(--sn-theme-chroma) 46%);
+    --demo-warn: hsl(var(--sn-hue-warning) var(--sn-theme-chroma) 52%);
   }
   html, body {
     width: 100%;
     height: 100%;
     margin: 0;
     overflow: hidden;
-    background: Canvas;
-    color: CanvasText;
-    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--sn-bg);
+    color: var(--sn-text);
+    font-family: var(--sn-font, Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
   }
   button {
     font: inherit;
   }
   .demo-shell {
     display: grid;
-    grid-template-columns: minmax(20rem, 25rem) minmax(0, 1fr);
     grid-template-rows: auto minmax(0, 1fr);
     width: 100vw;
     height: 100vh;
@@ -120,43 +407,46 @@ styles.replaceSync(\`
     grid-column: 1 / -1;
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: 0.5rem;
     min-width: 0;
-    padding: 0.75rem 1rem;
+    min-height: 2.25rem;
+    padding: 0 0.5rem;
     border-bottom: 1px solid var(--demo-border);
-    background: color-mix(in srgb, Canvas 96%, CanvasText 4%);
+    background: var(--sn-bg);
+    overflow: hidden;
   }
   .demo-title {
-    display: flex;
-    flex-direction: column;
-    gap: 0.125rem;
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    flex: 0 1 18rem;
     min-width: 0;
-    margin-right: auto;
   }
   .demo-title strong {
-    font-size: 0.95rem;
+    flex: 0 0 auto;
+    font-size: 0.82rem;
     line-height: 1.25;
+    white-space: nowrap;
   }
   .demo-title span {
     color: var(--demo-muted);
-    font-size: 0.78rem;
+    font-size: 0.72rem;
     line-height: 1.2;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .demo-action {
+  .demo-action,
+  .demo-stage-chip,
+  .demo-viewport-button {
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    box-sizing: border-box;
+  }
+  .demo-action {
     gap: 0.375rem;
-    min-height: 2.25rem;
-    padding: 0 0.875rem;
-    border: 1px solid color-mix(in srgb, var(--demo-accent) 70%, CanvasText 20%);
-    border-radius: 7px;
-    background: var(--demo-accent);
-    color: white;
-    cursor: pointer;
+    min-height: 2rem;
   }
   .demo-icon {
     font-family: "Material Symbols Outlined";
@@ -166,40 +456,40 @@ styles.replaceSync(\`
   }
   .demo-stage-rail {
     display: flex;
-    gap: 0.375rem;
+    gap: 0.25rem;
+    flex: 1 1 auto;
     min-width: 0;
     overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .demo-stage-rail::-webkit-scrollbar {
+    display: none;
   }
   .demo-stage-chip {
     flex: 0 0 auto;
-    min-height: 2rem;
-    padding: 0 0.625rem;
-    border: 1px solid var(--demo-border);
-    border-radius: 999px;
-    background: Canvas;
-    color: CanvasText;
-    cursor: pointer;
+    max-width: 11rem;
+    min-height: 1.75rem;
+    --sn-button-padding: 2px 8px;
+    --sn-button-font-size: 11px;
+    --sn-button-active-bg: color-mix(in srgb, var(--sn-node-selected) 20%, transparent);
+    --sn-button-active-color: var(--sn-text);
+    --sn-button-active-border: var(--sn-node-selected);
   }
   .demo-stage-chip[aria-current="step"] {
     border-color: var(--demo-accent);
     color: var(--demo-accent);
   }
+  .demo-theme-widget {
+    flex: 0 0 auto;
+  }
   .demo-viewport-controls {
-    display: flex;
-    gap: 0.25rem;
-    padding: 0.2rem;
-    border: 1px solid var(--demo-border);
-    border-radius: 8px;
-    background: Canvas;
+    flex: 0 0 auto;
+    --sn-segmented-padding: 2px 8px;
+    --sn-segmented-item-min-height: 1.5rem;
+    --sn-segmented-font-size: 11px;
   }
   .demo-viewport-button {
-    min-height: 1.75rem;
-    padding: 0 0.5rem;
-    border: 0;
-    border-radius: 6px;
-    background: transparent;
-    color: CanvasText;
-    cursor: pointer;
+    min-height: 1.5rem;
     font-size: 0.78rem;
   }
   .demo-viewport-button[aria-pressed="true"] {
@@ -209,8 +499,8 @@ styles.replaceSync(\`
   .demo-build-progress {
     display: grid;
     gap: 0.25rem;
-    flex: 0 1 14rem;
-    min-width: 10rem;
+    flex: 0 1 10rem;
+    min-width: 7rem;
   }
   .demo-build-progress span {
     color: var(--demo-muted);
@@ -235,188 +525,10 @@ styles.replaceSync(\`
     background: var(--demo-accent);
     transition: width 240ms ease;
   }
-  .demo-chat {
-    min-width: 0;
-    min-height: 0;
-    overflow: auto;
-    padding: 1rem;
-    border-right: 1px solid var(--demo-border);
-    background: color-mix(in srgb, Canvas 98%, CanvasText 2%);
-  }
-  .demo-chat h1,
-  .demo-inspector h2 {
-    margin: 0 0 0.75rem;
-    font-size: 1rem;
-    line-height: 1.25;
-  }
-  .demo-message {
-    display: grid;
-    gap: 0.25rem;
-    margin: 0 0 0.75rem;
-    padding: 0.75rem;
-    border: 1px solid var(--demo-border);
-    border-radius: 8px;
-    background: Canvas;
-  }
-  .demo-message span {
-    color: var(--demo-muted);
-    font-size: 0.72rem;
-    text-transform: uppercase;
-  }
-  .demo-message p {
-    margin: 0;
-    font-size: 0.88rem;
-    line-height: 1.35;
-  }
-  .demo-questions {
-    display: grid;
-    gap: 0.5rem;
-    margin-top: 1rem;
-  }
-  .demo-question {
-    display: grid;
-    gap: 0.25rem;
-    padding: 0.625rem;
-    border: 1px solid var(--demo-border);
-    border-radius: 8px;
-    background: Canvas;
-  }
-  .demo-question[data-active="true"] {
-    border-color: var(--demo-accent);
-  }
-  .demo-question strong {
-    font-size: 0.82rem;
-    line-height: 1.25;
-  }
-  .demo-question span {
-    color: var(--demo-muted);
-    font-size: 0.74rem;
-  }
-  .demo-build-stream {
-    display: grid;
-    gap: 0.5rem;
-    margin-top: 1rem;
-  }
-  .demo-build-stream h2 {
-    margin: 0;
-    font-size: 0.86rem;
-    line-height: 1.25;
-  }
-  .demo-build-step {
-    display: grid;
-    gap: 0.25rem;
-    padding: 0.625rem;
-    border: 1px solid var(--demo-border);
-    border-left: 4px solid color-mix(in srgb, var(--demo-accent) 54%, CanvasText 16%);
-    border-radius: 8px;
-    background: Canvas;
-  }
-  .demo-build-step[data-status="done"] {
-    border-left-color: var(--demo-pass);
-  }
-  .demo-build-step[data-status="active"] {
-    border-color: color-mix(in srgb, var(--demo-accent) 70%, CanvasText 12%);
-    border-left-color: var(--demo-accent);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--demo-accent) 12%, transparent);
-  }
-  .demo-build-step[data-status="pending"] {
-    opacity: 0.62;
-  }
-  .demo-build-step strong {
-    font-size: 0.8rem;
-    line-height: 1.25;
-  }
-  .demo-build-step span {
-    color: var(--demo-muted);
-    font-size: 0.74rem;
-    line-height: 1.3;
-  }
-  .demo-main {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(18rem, 23rem);
-    gap: 0;
-    min-width: 0;
-    min-height: 0;
-  }
   .demo-workspace {
     min-width: 0;
     min-height: 0;
     overflow: hidden;
-  }
-  .demo-inspector {
-    min-width: 0;
-    min-height: 0;
-    overflow: auto;
-    padding: 1rem;
-    border-left: 1px solid var(--demo-border);
-    background: var(--demo-soft);
-  }
-  .demo-metric-grid,
-  .demo-report-list,
-  .demo-contract-section {
-    display: grid;
-    gap: 0.5rem;
-  }
-  .demo-metric {
-    display: grid;
-    gap: 0.25rem;
-    padding: 0.625rem;
-    border: 1px solid var(--demo-border);
-    border-radius: 8px;
-    background: Canvas;
-  }
-  .demo-metric span {
-    color: var(--demo-muted);
-    font-size: 0.72rem;
-    text-transform: uppercase;
-  }
-  .demo-metric strong {
-    font-size: 0.88rem;
-    line-height: 1.25;
-  }
-  .demo-report {
-    padding: 0.625rem;
-    border: 1px solid var(--demo-border);
-    border-left: 4px solid var(--demo-pass);
-    border-radius: 8px;
-    background: Canvas;
-    font-size: 0.82rem;
-    line-height: 1.3;
-  }
-  .demo-report[data-status="warn"] {
-    border-left-color: var(--demo-warn);
-  }
-  .demo-contract-section {
-    margin-top: 1rem;
-  }
-  .demo-contract-section h3 {
-    margin: 0.25rem 0;
-    font-size: 0.82rem;
-    line-height: 1.25;
-  }
-  .demo-contract-list {
-    display: grid;
-    gap: 0.375rem;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-  .demo-contract-list li {
-    padding: 0.5rem;
-    border: 1px solid var(--demo-border);
-    border-radius: 7px;
-    background: Canvas;
-    color: CanvasText;
-    font-size: 0.78rem;
-    line-height: 1.3;
-  }
-  .demo-contract-list strong {
-    display: block;
-    font-size: 0.75rem;
-    line-height: 1.25;
-  }
-  .demo-contract-list span {
-    color: var(--demo-muted);
   }
   .symbiote-workspace__panel {
     transition: border-color 180ms ease, transform 180ms ease;
@@ -428,29 +540,174 @@ styles.replaceSync(\`
     border-color: var(--demo-accent);
     box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--demo-accent) 42%, transparent);
   }
+  .demo-workspace > .symbiote-workspace {
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+  }
+  .demo-symbiote-layout {
+    display: block;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    --sn-layout-border: color-mix(in srgb, var(--sn-text, CanvasText) 14%, transparent);
+    --sn-layout-gap-bg: color-mix(in srgb, var(--sn-bg) 86%, var(--sn-node-selected) 14%);
+    --sn-layout-header-block-size: 32px;
+  }
+  .demo-symbiote-layout .layout-root {
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+  }
+  .demo-symbiote-layout layout-node[data-adaptive-state="collapsed"] {
+    display: none;
+  }
+  .demo-symbiote-layout layout-node[data-adaptive-state="docked"] {
+    outline: 2px solid var(--sn-node-selected, var(--demo-accent));
+    outline-offset: -2px;
+  }
+  .sn-demo-module {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 0.75rem;
+    height: 100%;
+    min-height: 0;
+    padding: 0.75rem;
+    box-sizing: border-box;
+    background: var(--sn-panel-bg, color-mix(in srgb, Canvas 94%, CanvasText 6%));
+    color: var(--sn-text, CanvasText);
+    font: 12px/1.35 var(--sn-font, inherit);
+    overflow: hidden;
+  }
+  .sn-demo-module > .demo-chat-workspace,
+  .sn-demo-module > .demo-theme-editor {
+    min-height: 0;
+    height: 100%;
+  }
+  .demo-library-card,
+  .demo-panel-facts,
+  .demo-validation-row {
+    min-width: 0;
+  }
+  .demo-validation-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .demo-validation-label {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .demo-card-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+    margin-bottom: 0.625rem;
+  }
+  .demo-card-title strong {
+    flex: 1 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sn-demo-module header {
+    display: flex;
+    gap: 0.625rem;
+    align-items: center;
+    min-width: 0;
+  }
+  .sn-demo-module header > span {
+    display: grid;
+    place-items: center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: var(--sn-radius-md, 8px);
+    background: color-mix(in srgb, var(--sn-node-selected, var(--demo-accent)) 16%, transparent);
+    color: var(--sn-node-selected, var(--demo-accent));
+  }
+  .sn-demo-module strong,
+  .sn-demo-module span,
+  .sn-demo-module p {
+    min-width: 0;
+  }
+  .sn-demo-module-list,
+  .sn-demo-module-grid,
+  .sn-demo-widget-registry,
+  .sn-demo-layout-map {
+    min-height: 0;
+    overflow: auto;
+  }
+  .sn-demo-module-list {
+    display: grid;
+    align-content: start;
+    gap: 0.5rem;
+  }
+  .sn-demo-module-list p {
+    display: grid;
+    gap: 0.25rem;
+    margin: 0;
+    padding: 0.5rem;
+    border: 1px solid var(--sn-node-border, color-mix(in srgb, currentColor 12%, transparent));
+    border-radius: var(--sn-radius-md, 8px);
+    background: var(--sn-node-bg, color-mix(in srgb, Canvas 96%, CanvasText 4%));
+  }
+  .sn-demo-module-grid,
+  .sn-demo-module-strip {
+    display: grid;
+    gap: 0.5rem;
+  }
+  .sn-demo-module-grid span,
+  .sn-demo-module-strip span {
+    display: grid;
+    gap: 0.125rem;
+    padding: 0.5rem;
+    border-radius: var(--sn-radius-md, 8px);
+    background: var(--sn-node-bg, color-mix(in srgb, Canvas 96%, CanvasText 4%));
+  }
+  .sn-demo-layout-map,
+  .sn-demo-widget-registry {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+    align-content: start;
+    gap: 0.5rem;
+  }
+  .sn-demo-layout-map sn-card,
+  .sn-demo-widget-registry sn-card {
+    display: grid;
+    gap: 0.25rem;
+  }
+  .sn-demo-theme-editor {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 0.75rem;
+    align-items: start;
+    min-height: 0;
+  }
+  .sn-demo-theme-editor > span {
+    width: 3rem;
+    height: 3rem;
+    border-radius: 50%;
+    background: hsl(var(--swatch-hue) 70% 52%);
+    box-shadow: inset 0 0 0 6px color-mix(in srgb, Canvas 44%, transparent);
+  }
   @media (max-width: 980px) {
     .demo-shell {
-      grid-template-columns: 1fr;
-      grid-template-rows: auto minmax(13rem, 0.42fr) minmax(0, 1fr);
-    }
-    .demo-chat {
-      border-right: 0;
-      border-bottom: 1px solid var(--demo-border);
-    }
-    .demo-main {
-      grid-template-columns: 1fr;
-      grid-template-rows: minmax(22rem, 1fr) auto;
-    }
-    .demo-inspector {
-      border-left: 0;
-      border-top: 1px solid var(--demo-border);
-      max-height: 18rem;
+      grid-template-rows: auto minmax(0, 1fr);
     }
   }
   @media (max-width: 680px) {
     .demo-toolbar {
       align-items: stretch;
       flex-wrap: wrap;
+      min-height: 0;
+      padding: 0.5rem;
     }
     .demo-title {
       flex: 1 1 100%;
@@ -479,22 +736,19 @@ shell.innerHTML = \`
       <strong></strong>
       <span></span>
     </div>
-    <button class="demo-action" type="button" data-action="play">
+    <sn-button class="demo-action" data-action="play" variant="primary">
       <span class="demo-icon" aria-hidden="true">play_arrow</span>
       <span>Play</span>
-    </button>
+    </sn-button>
     <div class="demo-build-progress" aria-label="Build progress">
       <span></span>
       <i aria-hidden="true"></i>
     </div>
-    <div class="demo-viewport-controls" role="group" aria-label="Adaptive preview"></div>
+    <sn-segmented-control class="demo-viewport-controls" role="group" aria-label="Adaptive preview"></sn-segmented-control>
+    <cascade-theme-widget class="demo-theme-widget"></cascade-theme-widget>
     <div class="demo-stage-rail" role="tablist" aria-label="Demo stages"></div>
   </header>
-  <aside class="demo-chat" aria-label="Chat and questionnaire"></aside>
-  <section class="demo-main">
-    <div class="demo-workspace" aria-label="Generated workspace"></div>
-    <aside class="demo-inspector" aria-label="Workspace metadata"></aside>
-  </section>
+  <div class="demo-workspace" aria-label="Generated workspace"></div>
 \`;
 document.body.appendChild(shell);
 
@@ -504,13 +758,7 @@ let playButton = shell.querySelector('[data-action="play"]');
 let buildProgress = shell.querySelector('.demo-build-progress');
 let viewportControls = shell.querySelector('.demo-viewport-controls');
 let stageRail = shell.querySelector('.demo-stage-rail');
-let chat = shell.querySelector('.demo-chat');
 let workspace = shell.querySelector('.demo-workspace');
-let inspector = shell.querySelector('.demo-inspector');
-
-function plural(value, label) {
-  return \`\${value} \${label}\`;
-}
 
 function buildProgressPercent(index) {
   let total = demo.stages.reduce((sum, stage) => sum + buildOperations(stage).length, 0);
@@ -554,33 +802,6 @@ function buildOperations(stage) {
   ];
 }
 
-function operationStatus(index) {
-  if (index < operationIndex) return 'done';
-  if (index === operationIndex) return 'active';
-  return 'pending';
-}
-
-function appendContractSection(parent, title, rows) {
-  let section = document.createElement('section');
-  section.className = 'demo-contract-section';
-  let heading = document.createElement('h3');
-  heading.textContent = title;
-  section.appendChild(heading);
-  let list = document.createElement('ul');
-  list.className = 'demo-contract-list';
-  for (let row of rows.filter(Boolean)) {
-    let item = document.createElement('li');
-    if (typeof row === 'string') {
-      item.textContent = row;
-    } else {
-      item.innerHTML = \`<strong>\${row.label}</strong><span>\${row.value}</span>\`;
-    }
-    list.appendChild(item);
-  }
-  section.appendChild(list);
-  parent.appendChild(section);
-}
-
 function adaptiveScenario(stage) {
   let scenarios = stage.chatState?.adaptiveScenarios || [];
   return scenarios.find((item) => item.mode === viewportMode) || scenarios[0] || null;
@@ -589,10 +810,11 @@ function adaptiveScenario(stage) {
 function renderViewportControls(stage) {
   let scenarios = stage.chatState?.adaptiveScenarios || [];
   viewportControls.textContent = '';
+  viewportControls.value = viewportMode;
   for (let scenario of scenarios) {
-    let button = document.createElement('button');
+    let button = document.createElement('sn-button');
     button.className = 'demo-viewport-button';
-    button.type = 'button';
+    button.setAttribute('value', scenario.mode);
     button.dataset.viewportMode = scenario.mode;
     button.textContent = scenario.mode;
     button.setAttribute('aria-pressed', String(scenario.mode === viewportMode));
@@ -607,12 +829,15 @@ function renderViewportControls(stage) {
 function renderStageRail() {
   stageRail.textContent = '';
   demo.stages.forEach((stage, index) => {
-    let button = document.createElement('button');
+    let button = document.createElement('sn-button');
     button.className = 'demo-stage-chip';
-    button.type = 'button';
     button.textContent = \`\${stage.clock} \${stage.title}\`;
     button.setAttribute('role', 'tab');
-    if (index === stageIndex) button.setAttribute('aria-current', 'step');
+    button.setAttribute('size', 'sm');
+    if (index === stageIndex) {
+      button.setAttribute('aria-current', 'step');
+      button.setAttribute('selected', '');
+    }
     button.addEventListener('click', () => {
       stopPlayback();
       operationIndex = 0;
@@ -622,174 +847,6 @@ function renderStageRail() {
   });
 }
 
-function renderChat(stage) {
-  let questions = stage.config.construction?.questions || [];
-  chat.textContent = '';
-  let heading = document.createElement('h1');
-  heading.textContent = 'Chat-state questionnaire';
-  chat.appendChild(heading);
-
-  for (let turn of stage.chat) {
-    let message = document.createElement('article');
-    message.className = 'demo-message';
-    message.innerHTML = \`<span>\${turn.role}</span><p>\${turn.text}</p>\`;
-    chat.appendChild(message);
-  }
-
-  let list = document.createElement('div');
-  list.className = 'demo-questions';
-  for (let item of questions) {
-    let question = document.createElement('section');
-    question.className = 'demo-question';
-    question.dataset.active = String(item.id === stage.activeQuestionId);
-    let value = Array.isArray(item.answer) ? item.answer.join(', ') : item.answer ?? item.status;
-    question.innerHTML = \`<strong>\${item.title}</strong><span>\${item.status}: \${value}</span>\`;
-    list.appendChild(question);
-  }
-  chat.appendChild(list);
-
-  let stream = document.createElement('section');
-  stream.className = 'demo-build-stream';
-  let streamHeading = document.createElement('h2');
-  streamHeading.textContent = 'Build stream';
-  stream.appendChild(streamHeading);
-  buildOperations(stage).forEach((step, index) => {
-    let item = document.createElement('article');
-    item.className = 'demo-build-step';
-    item.dataset.status = operationStatus(index);
-    item.innerHTML = \`<strong>\${step.label}</strong><span>\${step.value}</span>\`;
-    stream.appendChild(item);
-  });
-  chat.appendChild(stream);
-}
-
-function renderInspector(stage) {
-  let config = stage.config;
-  let chatState = stage.chatState || {};
-  let validation = validateWorkspaceConfig(config, { strict: true });
-  let bindings = config.data?.bindings || [];
-  let events = config.events || [];
-  let reports = config.validation?.reports || [];
-  let panels = Object.keys(config.panelTypes || {});
-  let roleEntries = Object.entries(chatState.layoutRoles || {});
-  let registry = chatState.widgetRegistry || [];
-  let adaptive = chatState.adaptiveBehavior || {};
-  let theme = chatState.themeCascade || {};
-  let decisions = chatState.decisionTrace || [];
-  let constructionTrace = demo.constructionTrace || {};
-  let scenario = adaptiveScenario(stage);
-  inspector.textContent = '';
-
-  let heading = document.createElement('h2');
-  heading.textContent = 'Builder contract';
-  inspector.appendChild(heading);
-
-  let metrics = document.createElement('div');
-  metrics.className = 'demo-metric-grid';
-  let metricValues = [
-    ['Stage', stage.title],
-    ['Panels', plural(panels.length, 'registered')],
-    ['Bindings', plural(bindings.length, 'wired')],
-    ['Events', plural(events.length, 'bridged')],
-    ['Adaptive mode', config.rootBehavior?.responsiveMode || 'preserve'],
-    ['Viewport preview', scenario ? \`\${scenario.mode} / \${scenario.inlineSize}px\` : 'pending'],
-    ['Chat state', chatState.questionnaireStatus || 'pending'],
-    ['Theme editor', panels.includes('theme-editor') ? 'required widget present' : 'missing'],
-    ['Validation', validation.valid ? 'strict config pass' : 'strict config fail'],
-  ];
-  for (let [label, value] of metricValues) {
-    let card = document.createElement('div');
-    card.className = 'demo-metric';
-    card.innerHTML = \`<span>\${label}</span><strong>\${value}</strong>\`;
-    metrics.appendChild(card);
-  }
-  inspector.appendChild(metrics);
-
-  appendContractSection(inspector, 'Service blueprint', [
-    { label: 'Intent', value: chatState.activeIntent || 'pending' },
-    { label: 'Entities', value: (chatState.serviceBlueprint?.entities || []).join(', ') || 'pending' },
-    { label: 'Workflows', value: (chatState.serviceBlueprint?.workflows || []).join(' -> ') || 'pending' },
-    { label: 'Next patch', value: chatState.nextPatch || 'none' },
-  ]);
-
-  appendContractSection(
-    inspector,
-    'Layout roles',
-    roleEntries.map(([panel, role]) => ({ label: panel, value: role }))
-  );
-
-  appendContractSection(
-    inspector,
-    'Widget registry',
-    registry.map((widget) => ({
-      label: widget.id,
-      value: \`\${widget.status} / \${widget.role}\`,
-    }))
-  );
-
-  appendContractSection(inspector, 'Adaptive and theme state', [
-    { label: 'Collapse order', value: (adaptive.collapseOrder || []).join(' -> ') || 'none' },
-    { label: 'Pinned', value: (adaptive.pinned || []).join(', ') || 'none' },
-    { label: 'Theme source', value: theme.source || 'pending' },
-    { label: 'Theme editor', value: \`\${theme.editorWidget || 'missing'} / \${theme.status || 'pending'}\` },
-  ]);
-
-  if (scenario) {
-    appendContractSection(inspector, 'Adaptive preview', [
-      { label: 'Visible panels', value: scenario.visiblePanels.join(', ') || 'none' },
-      { label: 'Docked panels', value: scenario.dockedPanels.join(', ') || 'none' },
-      { label: 'Collapsed panels', value: scenario.collapsedPanels.join(', ') || 'none' },
-      { label: 'Protected panels', value: scenario.protectedPanels.join(', ') || 'none' },
-      { label: 'Theme editor', value: scenario.themeEditor },
-      { label: 'Collapse rule', value: scenario.collapseRule },
-    ]);
-  }
-
-  appendContractSection(
-    inspector,
-    'Questionnaire decisions',
-    decisions.map((decision) => ({
-      label: decision.questionId,
-      value: \`\${decision.operations.join(' -> ')}; evidence: \${decision.evidencePaths.join(', ')}\`,
-    }))
-  );
-
-  appendContractSection(inspector, 'Construction tool trace', [
-    {
-      label: 'Tool sequence',
-      value: (constructionTrace.toolSequence || []).join(' -> ') || 'pending',
-    },
-    {
-      label: 'Canonical questions',
-      value: (constructionTrace.canonicalQuestionIds || []).join(', ') || 'pending',
-    },
-    {
-      label: 'Capability coverage',
-      value: constructionTrace.capabilityCoverage?.missing?.length === 0
-        ? 'all required capabilities covered'
-        : \`missing: \${constructionTrace.capabilityCoverage?.missing?.join(', ') || 'unknown'}\`,
-    },
-    {
-      label: 'Export/import',
-      value: constructionTrace.exportImportEvidence?.valid
-        ? \`\${constructionTrace.exportImportEvidence.importedName} imported\`
-        : 'not verified',
-    },
-  ]);
-
-  let reportsList = document.createElement('div');
-  reportsList.className = 'demo-report-list';
-  reportsList.style.marginTop = '1rem';
-  for (let item of reports) {
-    let report = document.createElement('div');
-    report.className = 'demo-report';
-    report.dataset.status = item.status;
-    report.textContent = \`\${item.check}: \${item.message}\`;
-    reportsList.appendChild(report);
-  }
-  inspector.appendChild(reportsList);
-}
-
 function renderWorkspace(stage) {
   if (mounted) {
     mounted.destroy();
@@ -797,6 +854,7 @@ function renderWorkspace(stage) {
   }
   workspace.textContent = '';
   mounted = mountWorkspace(stage.config, workspace, {
+    runtimeController: createSymbioteLayoutRuntime(stage),
     themeAdapter: { applyCascadeTheme },
     strictComponents: false,
   });
@@ -808,14 +866,15 @@ function applyAdaptiveScenario(stage) {
   if (!scenario) return;
   let collapsed = new Set(scenario.collapsedPanels);
   let docked = new Set(scenario.dockedPanels);
-  let visible = [];
-  for (let panel of workspace.querySelectorAll('[data-panel-type]')) {
+  let visible = new Set();
+  for (let panel of workspace.querySelectorAll('[data-panel-type], layout-node[node-type="panel"]')) {
     let panelType = panel.dataset.panelType;
+    if (!panelType && panel.$?.panelType) panelType = panel.$.panelType;
     let state = collapsed.has(panelType) ? 'collapsed' : docked.has(panelType) ? 'docked' : 'visible';
     panel.dataset.adaptiveState = state;
-    if (state !== 'collapsed') visible.push(panelType);
+    if (state !== 'collapsed' && panelType) visible.add(panelType);
   }
-  workspace.dataset.visiblePanels = visible.join(',');
+  workspace.dataset.visiblePanels = [...visible].join(',');
   workspace.dataset.collapsedPanels = scenario.collapsedPanels.join(',');
   workspace.dataset.dockedPanels = scenario.dockedPanels.join(',');
 }
@@ -844,9 +903,7 @@ function renderStage(index) {
   buildProgress.style.setProperty('--demo-progress', \`\${progress}%\`);
   renderViewportControls(stage);
   renderStageRail();
-  renderChat(stage);
   renderWorkspace(stage);
-  renderInspector(stage);
 }
 
 function stopPlayback() {
@@ -887,7 +944,8 @@ playButton.addEventListener('click', () => {
   }
 });
 
-renderStage(0);
+operationIndex = buildOperations(demo.stages.at(-1)).length - 1;
+renderStage(demo.stages.length - 1);
 `;
 }
 
@@ -896,6 +954,12 @@ export async function writeRealtimeChatStateDemo(options = {}) {
   let port = Number(options.port || 4567);
   let imports = {
     'symbiote-workspace/browser': '/__workspace__/browser.js',
+    'symbiote-ui/ui': '/__symbiote_ui__/ui/index.js',
+    'symbiote-ui/': '/__symbiote_ui__/',
+    'symbiote-engine': '/__symbiote_engine__/index.js',
+    'symbiote-engine/': '/__symbiote_engine__/',
+    '@symbiotejs/symbiote': '/__symbiote__/core/index.js',
+    '@symbiotejs/symbiote/': '/__symbiote__/',
     [BROWSER_THEME_IMPORT]: '/__symbiote_ui__/themes/Theme.js',
   };
   let demo = buildRealtimeChatStateDemo();

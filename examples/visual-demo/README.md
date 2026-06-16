@@ -28,6 +28,20 @@ step from intent capture into service blueprint, dynamic layout assembly,
 widget registration, bindings, adaptive collapse priorities, validation state,
 and the required theme editor widget.
 
+The generated workspace preview is mounted through the Symbiote UI
+`panel-layout` runtime instead of the portable fallback cards. The demo shell
+uses only a compact header for controls; the rest of the viewport belongs to
+the generated layout. Registered panel tags are thin module hosts whose visible
+content is built from Symbiote UI elements such as `chat-workspace`,
+`cascade-theme-editor`, `sn-card`, `sn-description-list`, `sn-badge`,
+`sn-button`, and `sn-segmented-control`.
+
+The demo server prefers the canonical developer checkout at
+`../symbiote-dev-plane/repos/symbiote-ui` when it is present, then falls back to
+installed packages. It also serves the matching `symbiote-engine` and
+`@symbiotejs/symbiote` dependencies required by those browser components. The
+default Symbiote UI cascade theme is applied before the workspace mounts.
+
 Use the Wide, Tablet, and Mobile controls to preview the generated adaptive
 layout contract. The preview exposes visible, docked, collapsed, and protected
 panels for each viewport scenario while keeping the theme editor requirement
