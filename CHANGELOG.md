@@ -280,7 +280,7 @@ All notable changes to this project will be documented in this file.
   config.
 - **Segmented browser preview** — `start_preview` now validates import maps,
   writes `preview.contract.json`, checks browser import-map support, passes
-  `symbiote-ui/themes/Theme.js.applyCascadeTheme` into `mountWorkspace()`,
+  `symbiote-ui/ui.applyCascadeTheme` into `mountWorkspace()`,
   renders loader warnings, writes sanitized portable config into preview
   runtime files, and preserves separate import-map, module-load, and mount
   error messages.
