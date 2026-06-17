@@ -116,7 +116,7 @@ describe('createBrowserRuntimeContract', () => {
     assert.equal(contract.importMap.required, true);
     assert.equal(contract.importMap.scriptType, 'importmap');
     assert.equal(contract.importMap.mustLoadBeforeModuleScript, true);
-    assert.equal(contract.themeAdapterModule, 'symbiote-ui/themes/Theme.js');
+    assert.equal(contract.themeAdapterModule, 'symbiote-ui/ui');
     assert.equal(contract.themeAdapterExport, 'applyCascadeTheme');
     assert.deepEqual(contract.importMap.unsupportedContexts, ['workers', 'worklets']);
     assert.doesNotMatch(JSON.stringify(contract), /https?:|file:\/\/|\/Users\//);

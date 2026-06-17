@@ -102,6 +102,31 @@ function killProcess(child) {
   }, 2000).unref();
 }
 
+function waitForProcessExit(child, timeout = 5000) {
+  if (!child || child.exitCode !== null) return Promise.resolve();
+  return new Promise((resolveWait) => {
+    let timer = setTimeout(resolveWait, timeout);
+    child.once('exit', () => {
+      clearTimeout(timer);
+      resolveWait();
+    });
+  });
+}
+
+async function removeTempDir(path) {
+  let lastError = null;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      await rm(path, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      lastError = error;
+      await delay(100 * (attempt + 1));
+    }
+  }
+  throw lastError;
+}
+
 function demoCommand(demo) {
   if (demo === 'realtime-builder') {
     return {
@@ -110,7 +135,7 @@ function demoCommand(demo) {
     };
   }
   return {
-    script: 'preview.mjs',
+    script: 'preview.js',
     readyText: 'Symbiote visual demo:',
   };
 }
@@ -400,17 +425,25 @@ new Promise((resolve, reject) => {
 let realtimeExpression = `
 new Promise((resolve, reject) => {
   let deadline = Date.now() + 14000;
-  let play = document.querySelector('[data-action="play"]');
-  if (!play) {
-    reject(new Error('Realtime builder Play button is missing.'));
-    return;
-  }
-  play.click();
+  let clickedPlay = false;
   let check = () => {
     let error = document.querySelector('[data-preview-error]');
     if (error) {
       reject(new Error(error.textContent || 'Realtime builder rendered data-preview-error.'));
       return;
+    }
+    let play = document.querySelector('[data-action="play"]');
+    if (!play) {
+      if (Date.now() > deadline) {
+        reject(new Error('Realtime builder Play button is missing.'));
+        return;
+      }
+      setTimeout(check, 100);
+      return;
+    }
+    if (!clickedPlay) {
+      clickedPlay = true;
+      play.click();
     }
     let shell = document.querySelector('.demo-shell');
     let workspace = document.querySelector('.demo-workspace');
@@ -445,18 +478,24 @@ new Promise((resolve, reject) => {
     let runtimeInstanceId = layout?.dataset.runtimeInstanceId || workspace?.dataset.runtimeInstanceId || '';
     let updateCount = Number(layout?.dataset.atomicUpdateCount || workspace?.dataset.atomicUpdateCount || '0');
     let lastUpdatedStage = workspace?.dataset.lastUpdatedStage || '';
+    let themeWidget = document.querySelector('cascade-theme-widget');
+    let themeWidgetUsesDefaults = themeWidget &&
+      !themeWidget.hasAttribute('storage-key') &&
+      !themeWidget.hasAttribute('target-selector');
+    let themeEditorDefined = Boolean(customElements.get('cascade-theme-editor'));
     let smokeReady = finalStage &&
       finalKind &&
       progress.includes('100%') &&
       requiredElements.length === 7 &&
       !oldDemoSurfaces &&
       appShadowHosts.length === 0 &&
+      themeWidgetUsesDefaults &&
+      themeEditorDefined &&
       panelsReady &&
       runtimeInstanceId &&
       updateCount > 0 &&
       lastUpdatedStage === 'validation';
     if (smokeReady) {
-      let themeWidget = document.querySelector('cascade-theme-widget');
       themeWidget?.dispatchEvent?.(new CustomEvent('cascade-theme-open-full', {
         bubbles: true,
         composed: true,
@@ -494,6 +533,8 @@ new Promise((resolve, reject) => {
         runtimeInstanceId,
         atomicUpdateCount: updateCount,
         lastUpdatedStage,
+        themeWidgetUsesDefaults,
+        themeEditorDefined,
         requiredElements: requiredElements.map((element) => element.localName),
         modulePanels,
         themeEditorOpenRequest: mobileShell.dataset.themeEditorOpenRequest,
@@ -591,8 +632,12 @@ async function run() {
     cdp?.close();
     killProcess(browserProcess);
     killProcess(preview);
-    await rm(profileDir, { recursive: true, force: true });
-    if (!keepOutput) await rm(outputDir, { recursive: true, force: true });
+    await Promise.all([
+      waitForProcessExit(browserProcess),
+      waitForProcessExit(preview),
+    ]);
+    await removeTempDir(profileDir);
+    if (!keepOutput) await removeTempDir(outputDir);
   }
 }
 

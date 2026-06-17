@@ -190,7 +190,7 @@ All notable changes to this project will be documented in this file.
 - **Config load file error parity** — `load_config` now reports file-read
   failures as structured dispatch/MCP tool errors without initializing session
   state, keeping CLI/MCP recovery behavior aligned with normal tool failures.
-- **Visual demo process** — packaged `examples/visual-demo/preview.mjs` builds
+- **Visual demo process** — packaged `examples/visual-demo/preview.js` builds
   the `video-studio` workspace through the public construction flow, verifies
   strict export/import relaunch, writes preview artifacts, and can serve a local
   browser preview URL. Browser mounting now renders portable layout/panel DOM by

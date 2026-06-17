@@ -190,11 +190,12 @@ describe('realtime builder demo', () => {
       assert.equal(contract.chatStateTimeline.at(-1).decisionTrace.length, 5);
       assert.match(html, /<script type="importmap">/);
       assert.match(app, /mountWorkspace/);
-      assert.equal(app.includes("symbiote-ui/layout/Layout/Layout.js"), true);
-      assert.equal(app.includes("symbiote-ui/chat/ChatWorkspace/ChatWorkspace.js"), true);
-      assert.equal(app.includes("symbiote-ui/themes/CascadeThemeEditor/CascadeThemeEditor.js"), true);
-      assert.equal(app.includes("symbiote-ui/themes/CascadeThemeWidget/CascadeThemeWidget.js"), true);
-      assert.equal(app.includes("symbiote-ui/control/Button/Button.js"), true);
+      assert.match(app, /from 'symbiote-ui\/ui'/);
+      assert.doesNotMatch(app, /symbiote-ui\/layout\/Layout\/Layout\.js/);
+      assert.doesNotMatch(app, /symbiote-ui\/chat\/ChatWorkspace\/ChatWorkspace\.js/);
+      assert.doesNotMatch(app, /symbiote-ui\/themes\/CascadeThemeEditor\/CascadeThemeEditor\.js/);
+      assert.doesNotMatch(app, /symbiote-ui\/themes\/CascadeThemeWidget\/CascadeThemeWidget\.js/);
+      assert.doesNotMatch(app, /symbiote-ui\/control\/Button\/Button\.js/);
       assert.equal(app.includes('CASCADE_THEME_DEFAULTS'), true);
       assert.match(app, /createSymbioteLayoutRuntime/);
       assert.equal(app.includes("document.createElement('panel-layout')"), true);
@@ -241,7 +242,7 @@ describe('realtime builder demo', () => {
   });
 
   it('exposes realtime builder browser smoke mode', async () => {
-    let smoke = await readFile('examples/visual-demo/browser-smoke.mjs', 'utf8');
+    let smoke = await readFile('examples/visual-demo/browser-smoke.js', 'utf8');
 
     assert.match(smoke, /--demo/);
     assert.match(smoke, /realtime-builder/);
@@ -252,6 +253,11 @@ describe('realtime builder demo', () => {
     assert.match(smoke, /chat-workspace/);
     assert.match(smoke, /cascade-theme-widget/);
     assert.match(smoke, /cascade-theme-editor/);
+    assert.match(smoke, /hasAttribute\('storage-key'\)/);
+    assert.match(smoke, /hasAttribute\('target-selector'\)/);
+    assert.match(smoke, /customElements\.get\('cascade-theme-editor'\)/);
+    assert.match(smoke, /themeWidgetUsesDefaults/);
+    assert.match(smoke, /themeEditorDefined/);
     assert.match(smoke, /sn-card/);
     assert.match(smoke, /sn-button/);
     assert.match(smoke, /sn-segmented-control/);

@@ -83,6 +83,7 @@ function assertNoForbiddenPackEntries(pack) {
     assert.equal(file.path.includes('visual-demo-browser-smoke/'), false, `${file.path} must not be packed`);
     assert.equal(file.path.endsWith('screenshot.png'), false, `${file.path} must not be packed`);
     assert.equal(file.path.endsWith('dom.html'), false, `${file.path} must not be packed`);
+    assert.equal(file.path.endsWith('.mjs'), false, `${file.path} must not be packed`);
   }
 }
 
@@ -123,7 +124,7 @@ function assertWorkspacePackList(pack) {
   }
 
   assert.equal(
-    paths.has('examples/visual-demo/preview.mjs'),
+    paths.has('examples/visual-demo/preview.js'),
     true,
     'Package must include the visual demo script',
   );
@@ -148,7 +149,7 @@ function assertWorkspacePackList(pack) {
     'Package must include the realtime builder browser runtime',
   );
   assert.equal(
-    paths.has('examples/visual-demo/browser-smoke.mjs'),
+    paths.has('examples/visual-demo/browser-smoke.js'),
     true,
     'Package must include the opt-in visual demo browser smoke script',
   );
@@ -279,7 +280,7 @@ describe('packed package consumer', () => {
           'symbiote-workspace',
           'examples',
           'visual-demo',
-          'preview.mjs',
+          'preview.js',
         ),
         '--write-only',
         '--output-dir',
@@ -294,13 +295,13 @@ describe('packed package consumer', () => {
       assert.equal(previewContract.browser.entrypoint, 'symbiote-workspace/browser');
       assert.deepEqual(previewContract.browser.requiredImports, [
         'symbiote-workspace/browser',
-        'symbiote-ui/themes/Theme.js',
+        'symbiote-ui/ui',
       ]);
-      assert.equal(previewContract.browser.themeAdapterModule, 'symbiote-ui/themes/Theme.js');
+      assert.equal(previewContract.browser.themeAdapterModule, 'symbiote-ui/ui');
       assert.equal(previewContract.browser.themeAdapterExport, 'applyCascadeTheme');
       assert.equal(
-        previewContract.importMap.imports['symbiote-ui/themes/Theme.js'],
-        '/__symbiote_ui__/themes/Theme.js',
+        previewContract.importMap.imports['symbiote-ui/ui'],
+        '/__symbiote_ui__/ui/index.js',
       );
       await readFile(join(demoDir, 'index.html'), 'utf8');
       await readFile(join(demoDir, 'app.js'), 'utf8');
@@ -834,7 +835,7 @@ describe('packed package consumer', () => {
         if (!BROWSER_REQUIRED_IMPORTS.includes('symbiote-workspace/browser')) {
           throw new Error('BROWSER_REQUIRED_IMPORTS missing browser entrypoint');
         }
-        if (BROWSER_THEME_IMPORT !== 'symbiote-ui/themes/Theme.js') {
+        if (BROWSER_THEME_IMPORT !== 'symbiote-ui/ui') {
           throw new Error('BROWSER_THEME_IMPORT mismatch');
         }
         if (!BROWSER_REQUIRED_IMPORTS.includes(BROWSER_THEME_IMPORT)) {
@@ -867,7 +868,7 @@ describe('packed package consumer', () => {
         if (typeof root.importWorkspacePackage !== 'function') throw new Error('root importWorkspacePackage missing');
         if (typeof root.validateWorkspacePackage !== 'function') throw new Error('root validateWorkspacePackage missing');
         if (!Array.isArray(root.BROWSER_REQUIRED_IMPORTS)) throw new Error('root BROWSER_REQUIRED_IMPORTS missing');
-        if (root.BROWSER_THEME_IMPORT !== 'symbiote-ui/themes/Theme.js') {
+        if (root.BROWSER_THEME_IMPORT !== 'symbiote-ui/ui') {
           throw new Error('root BROWSER_THEME_IMPORT missing');
         }
         if (typeof root.createBrowserRuntimeContract !== 'function') {
@@ -889,7 +890,7 @@ describe('packed package consumer', () => {
 
         let browser = await import('symbiote-workspace/browser');
         if (!Array.isArray(browser.BROWSER_REQUIRED_IMPORTS)) throw new Error('browser BROWSER_REQUIRED_IMPORTS missing');
-        if (browser.BROWSER_THEME_IMPORT !== 'symbiote-ui/themes/Theme.js') {
+        if (browser.BROWSER_THEME_IMPORT !== 'symbiote-ui/ui') {
           throw new Error('browser BROWSER_THEME_IMPORT missing');
         }
         if (typeof browser.createBrowserRuntimeContract !== 'function') {

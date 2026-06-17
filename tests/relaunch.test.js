@@ -553,14 +553,14 @@ describe('host integration contract', () => {
     ]);
     assert.deepEqual(result.contract.browser.requiredImports, [
       'symbiote-workspace/browser',
-      'symbiote-ui/themes/Theme.js',
+      'symbiote-ui/ui',
     ]);
     assert.equal(result.contract.browser.importMap.required, true);
     assert.equal(result.contract.browser.importMap.scriptType, 'importmap');
     assert.equal(result.contract.browser.importMap.mustLoadBeforeModuleScript, true);
     assert.equal(result.contract.browser.mountFunction, 'mountWorkspace');
-    assert.equal(result.contract.browser.themeAdapter, 'symbiote-ui/themes/Theme.js.applyCascadeTheme');
-    assert.equal(result.contract.browser.themeAdapterModule, 'symbiote-ui/themes/Theme.js');
+    assert.equal(result.contract.browser.themeAdapter, 'symbiote-ui/ui.applyCascadeTheme');
+    assert.equal(result.contract.browser.themeAdapterModule, 'symbiote-ui/ui');
     assert.equal(result.contract.browser.themeAdapterExport, 'applyCascadeTheme');
     assert.ok(result.contract.persistence.requiredTools.includes('export_config'));
     assert.ok(result.contract.persistence.requiredTools.includes('import_config'));

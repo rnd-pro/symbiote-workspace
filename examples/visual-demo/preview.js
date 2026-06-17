@@ -113,7 +113,7 @@ let preview = await startPreview(demo.config, {
   port,
   imports: {
     'symbiote-workspace/browser': '/__workspace__/browser.js',
-    [BROWSER_THEME_IMPORT]: '/__symbiote_ui__/themes/Theme.js',
+    [BROWSER_THEME_IMPORT]: '/__symbiote_ui__/ui/index.js',
   },
 });
 

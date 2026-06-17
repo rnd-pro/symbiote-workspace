@@ -54,7 +54,7 @@ describe('startPreview', () => {
       assert.ok(moduleScriptIndex > -1);
       assert.ok(importMapIndex < moduleScriptIndex);
       assert.match(html, /"symbiote-workspace\/browser": "\.\/mock-workspace-browser\.js"/);
-      assert.match(html, /"symbiote-ui\/themes\/Theme\.js": "\.\/mock-symbiote-theme\.js"/);
+      assert.match(html, /"symbiote-ui\/ui": "\.\/mock-symbiote-theme\.js"/);
     });
   });
 
@@ -70,10 +70,10 @@ describe('startPreview', () => {
       assert.equal(result.status, 'ok');
       assert.deepEqual(result.contract.importMap.imports, {
         'symbiote-workspace/browser': './browser.js',
-        [BROWSER_THEME_IMPORT]: './node_modules/symbiote-ui/themes/Theme.js',
+        [BROWSER_THEME_IMPORT]: './node_modules/symbiote-ui/ui/index.js',
       });
       assert.match(html, /"symbiote-workspace\/browser": "\.\/browser\.js"/);
-      assert.match(html, /"symbiote-ui\/themes\/Theme\.js": "\.\/node_modules\/symbiote-ui\/themes\/Theme\.js"/);
+      assert.match(html, /"symbiote-ui\/ui": "\.\/node_modules\/symbiote-ui\/ui\/index\.js"/);
     });
   });
 
@@ -121,7 +121,7 @@ describe('startPreview', () => {
       let app = await readFile(join(dir, 'app.js'), 'utf8');
 
       assert.match(app, /import\('symbiote-workspace\/browser'\)/);
-      assert.match(app, /import\('symbiote-ui\/themes\/Theme\.js'\)/);
+      assert.match(app, /import\('symbiote-ui\/ui'\)/);
       assert.match(app, /themeAdapter: \{ applyCascadeTheme \}/);
       assert.match(app, /mountWorkspace\(config, document\.body,/);
       assert.doesNotMatch(app, /browser not available/);

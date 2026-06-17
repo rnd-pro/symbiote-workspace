@@ -51,7 +51,7 @@ function createPreviewImports(outputDir, serveRoot, imports = {}) {
   if (isObject(imports) && Object.keys(imports).length > 0) return { ...imports };
   return {
     'symbiote-workspace/browser': toBrowserPath(outputDir, join(serveRoot, 'browser.js')),
-    [BROWSER_THEME_IMPORT]: toBrowserPath(outputDir, join(serveRoot, 'node_modules', 'symbiote-ui', 'themes', 'Theme.js')),
+    [BROWSER_THEME_IMPORT]: toBrowserPath(outputDir, join(serveRoot, 'node_modules', 'symbiote-ui', 'ui', 'index.js')),
   };
 }
 

@@ -76,15 +76,6 @@ ${escapeScriptJson({ imports })}
 function generateAppJs(demo) {
   return `import { mountWorkspace, validateWorkspaceConfig } from 'symbiote-workspace/browser';
 import { applyCascadeTheme, CASCADE_THEME_DEFAULTS } from '${BROWSER_THEME_IMPORT}';
-import 'symbiote-ui/layout/Layout/Layout.js';
-import 'symbiote-ui/chat/ChatWorkspace/ChatWorkspace.js';
-import 'symbiote-ui/themes/CascadeThemeEditor/CascadeThemeEditor.js';
-import 'symbiote-ui/themes/CascadeThemeWidget/CascadeThemeWidget.js';
-import 'symbiote-ui/control/Button/Button.js';
-import 'symbiote-ui/control/SegmentedControl/SegmentedControl.js';
-import 'symbiote-ui/surface/Card/Card.js';
-import 'symbiote-ui/display/Badge/Badge.js';
-import 'symbiote-ui/display/DescriptionList/DescriptionList.js';
 
 let demo = ${escapeScriptJson(demo)};
 let stageIndex = 0;
@@ -994,13 +985,12 @@ export async function writeRealtimeChatStateDemo(options = {}) {
   let port = Number(options.port || 4567);
   let imports = {
     'symbiote-workspace/browser': '/__workspace__/browser.js',
-    'symbiote-ui/ui': '/__symbiote_ui__/ui/index.js',
+    [BROWSER_THEME_IMPORT]: '/__symbiote_ui__/ui/index.js',
     'symbiote-ui/': '/__symbiote_ui__/',
     'symbiote-engine': '/__symbiote_engine__/index.js',
     'symbiote-engine/': '/__symbiote_engine__/',
     '@symbiotejs/symbiote': '/__symbiote__/core/index.js',
     '@symbiotejs/symbiote/': '/__symbiote__/',
-    [BROWSER_THEME_IMPORT]: '/__symbiote_ui__/themes/Theme.js',
   };
   let demo = buildRealtimeChatStateDemo();
   let finalStage = demo.stages.at(-1);

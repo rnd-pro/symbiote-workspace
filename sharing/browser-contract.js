@@ -1,4 +1,4 @@
-export const BROWSER_THEME_IMPORT = 'symbiote-ui/themes/Theme.js';
+export const BROWSER_THEME_IMPORT = 'symbiote-ui/ui';
 
 export const BROWSER_REQUIRED_IMPORTS = Object.freeze([
   'symbiote-workspace/browser',

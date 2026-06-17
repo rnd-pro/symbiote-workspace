@@ -14,7 +14,7 @@ For CI or package smoke checks, generate the preview files without starting a
 server:
 
 ```bash
-node examples/visual-demo/preview.mjs --write-only --output-dir tmp/visual-demo-preview
+node examples/visual-demo/preview.js --write-only --output-dir tmp/visual-demo-preview
 ```
 
 Run the realtime chat-state builder demo:
