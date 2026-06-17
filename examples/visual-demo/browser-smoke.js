@@ -216,6 +216,7 @@ class CdpWebSocket {
     this.nextId = 1;
     this.pending = new Map();
     this.events = new Map();
+    this.listeners = new Map();
     socket.on('data', (chunk) => this.onData(chunk));
     socket.on('error', (error) => this.rejectAll(error));
     socket.on('close', () => this.rejectAll(new Error('CDP WebSocket closed.')));
@@ -332,6 +333,9 @@ class CdpWebSocket {
       for (let resolveEvent of this.events.get(message.method)) resolveEvent(message.params || {});
       this.events.delete(message.method);
     }
+    if (message.method && this.listeners.has(message.method)) {
+      for (let listener of this.listeners.get(message.method)) listener(message.params || {});
+    }
   }
 
   writeFrame(opcode, payload) {
@@ -385,10 +389,91 @@ class CdpWebSocket {
     });
   }
 
+  onEvent(method, listener) {
+    let listeners = this.listeners.get(method) || [];
+    listeners.push(listener);
+    this.listeners.set(method, listeners);
+  }
+
   close() {
     this.writeFrame(8, Buffer.alloc(0));
     this.socket.end();
   }
+}
+
+function remoteValuePreview(value = {}) {
+  if ('value' in value) return String(value.value);
+  return value.description || value.unserializableValue || value.type || '';
+}
+
+function exceptionPreview(exceptionDetails = {}) {
+  return exceptionDetails.exception?.description
+    || exceptionDetails.exception?.value
+    || exceptionDetails.text
+    || 'Unknown browser exception';
+}
+
+function createPageDiagnostics(cdp) {
+  let diagnostics = {
+    exceptions: [],
+    console: [],
+    failedRequests: [],
+    badResponses: [],
+  };
+  cdp.onEvent('Runtime.exceptionThrown', (params) => {
+    diagnostics.exceptions.push(exceptionPreview(params.exceptionDetails));
+  });
+  cdp.onEvent('Runtime.consoleAPICalled', (params) => {
+    diagnostics.console.push({
+      type: params.type || 'log',
+      text: (params.args || []).map(remoteValuePreview).filter(Boolean).join(' '),
+    });
+  });
+  cdp.onEvent('Network.loadingFailed', (params) => {
+    diagnostics.failedRequests.push({
+      type: params.type || 'unknown',
+      errorText: params.errorText || 'unknown network failure',
+      canceled: Boolean(params.canceled),
+    });
+  });
+  cdp.onEvent('Network.responseReceived', (params) => {
+    let response = params.response || {};
+    let status = Number(response.status);
+    if (Number.isFinite(status) && status >= 400) {
+      diagnostics.badResponses.push({
+        type: params.type || 'unknown',
+        status,
+        url: response.url || '',
+        mimeType: response.mimeType || '',
+      });
+    }
+  });
+  return diagnostics;
+}
+
+function formatPageDiagnostics(diagnostics = {}) {
+  let lines = [];
+  if (diagnostics.exceptions?.length) {
+    lines.push(`Browser exceptions:\n${diagnostics.exceptions.slice(-5).join('\n---\n')}`);
+  }
+  let consoleErrors = (diagnostics.console || [])
+    .filter((item) => ['error', 'warning', 'assert'].includes(item.type) && item.text)
+    .slice(-8)
+    .map((item) => `[${item.type}] ${item.text}`);
+  if (consoleErrors.length) {
+    lines.push(`Browser console:\n${consoleErrors.join('\n')}`);
+  }
+  if (diagnostics.badResponses?.length) {
+    lines.push(`Network bad responses:\n${diagnostics.badResponses.slice(-8).map((item) => (
+      `[${item.type}] ${item.status} ${item.url} ${item.mimeType}`
+    )).join('\n')}`);
+  }
+  if (diagnostics.failedRequests?.length) {
+    lines.push(`Network failures:\n${diagnostics.failedRequests.slice(-8).map((item) => (
+      `[${item.type}] ${item.errorText}${item.canceled ? ' canceled' : ''}`
+    )).join('\n')}`);
+  }
+  return lines.join('\n\n');
 }
 
 let mountExpression = `
@@ -435,7 +520,11 @@ new Promise((resolve, reject) => {
     let play = document.querySelector('[data-action="play"]');
     if (!play) {
       if (Date.now() > deadline) {
-        reject(new Error('Realtime builder Play button is missing.'));
+        reject(new Error([
+          'Realtime builder Play button is missing.',
+          \`readyState=\${document.readyState}\`,
+          \`body=\${(document.body?.innerHTML || '').slice(0, 800)}\`,
+        ].join('\\n')));
         return;
       }
       setTimeout(check, 100);
@@ -448,6 +537,7 @@ new Promise((resolve, reject) => {
     let shell = document.querySelector('.demo-shell');
     let workspace = document.querySelector('.demo-workspace');
     let layout = workspace?.querySelector('panel-layout');
+    let mountedWorkspace = workspace?.querySelector('.symbiote-workspace');
     let finalStage = shell?.dataset.stage === 'validation';
     let finalKind = shell?.dataset.buildKind === 'rank-layout-behavior';
     let progress = document.querySelector('.demo-build-progress span')?.textContent || '';
@@ -459,7 +549,7 @@ new Promise((resolve, reject) => {
       'sn-card',
       'sn-button',
       'sn-segmented-control',
-    ].filter((selector) => document.querySelector(selector));
+    ].map((selector) => document.querySelector(selector)).filter(Boolean);
     let oldDemoSurfaces = document.querySelector('.demo-chat, .demo-inspector');
     let appShadowHosts = [...document.querySelectorAll('.demo-shell, .demo-workspace, .symbiote-workspace, panel-layout')]
       .filter((element) => element.shadowRoot);
@@ -475,9 +565,19 @@ new Promise((resolve, reject) => {
       'theme-editor',
     ];
     let panelsReady = expectedPanels.every((panel) => modulePanels.includes(panel));
-    let runtimeInstanceId = layout?.dataset.runtimeInstanceId || workspace?.dataset.runtimeInstanceId || '';
-    let updateCount = Number(layout?.dataset.atomicUpdateCount || workspace?.dataset.atomicUpdateCount || '0');
-    let lastUpdatedStage = workspace?.dataset.lastUpdatedStage || '';
+    let runtimeInstanceId = layout?.dataset.runtimeInstanceId
+      || mountedWorkspace?.dataset.runtimeInstanceId
+      || workspace?.dataset.runtimeInstanceId
+      || '';
+    let updateCount = Number(
+      layout?.dataset.atomicUpdateCount
+      || mountedWorkspace?.dataset.atomicUpdateCount
+      || workspace?.dataset.atomicUpdateCount
+      || '0'
+    );
+    let lastUpdatedStage = mountedWorkspace?.dataset.lastUpdatedStage
+      || workspace?.dataset.lastUpdatedStage
+      || '';
     let themeWidget = document.querySelector('cascade-theme-widget');
     let themeWidgetUsesDefaults = themeWidget &&
       !themeWidget.hasAttribute('storage-key') &&
@@ -507,42 +607,81 @@ new Promise((resolve, reject) => {
         return;
       }
       mobile.click();
-      let mobileShell = document.querySelector('.demo-shell');
-      let dockedPanels = mobileShell?.dataset.dockedPanels || '';
-      let collapsedPanels = mobileShell?.dataset.collapsedPanels || '';
-      let dockedTheme = document.querySelector('[data-panel-type="theme-editor"][data-adaptive-state="docked"]');
-      let collapsedAdaptive = document.querySelector('[data-panel-type="adaptive-rules"][data-adaptive-state="collapsed"]');
-      let themeEvidence = mobileShell?.dataset.themeMode === 'dark' &&
-        mobileShell?.dataset.themeEditorState === 'validated' &&
-        mobileShell?.dataset.adaptiveMode === 'drawer';
-      if (mobileShell?.dataset.viewportMode !== 'mobile' || !dockedPanels.includes('theme-editor') || !collapsedPanels.includes('adaptive-rules') || !dockedTheme || !collapsedAdaptive || !themeEvidence || !openRequest) {
-        reject(new Error('Realtime builder mobile adaptive preview did not expose docked/collapsed panels.'));
-        return;
-      }
-      resolve({
-        title: document.title,
-        stage: mobileShell.dataset.stage,
-        buildKind: mobileShell.dataset.buildKind,
-        viewportMode: mobileShell.dataset.viewportMode,
-        adaptiveMode: mobileShell.dataset.adaptiveMode,
-        themeMode: mobileShell.dataset.themeMode,
-        themeEditorState: mobileShell.dataset.themeEditorState,
-        dockedPanels,
-        collapsedPanels,
-        progress,
-        runtimeInstanceId,
-        atomicUpdateCount: updateCount,
-        lastUpdatedStage,
-        themeWidgetUsesDefaults,
-        themeEditorDefined,
-        requiredElements: requiredElements.map((element) => element.localName),
-        modulePanels,
-        themeEditorOpenRequest: mobileShell.dataset.themeEditorOpenRequest,
-      });
+      let checkMobile = () => {
+        let mobileShell = document.querySelector('.demo-shell');
+        let dockedPanels = mobileShell?.dataset.dockedPanels || '';
+        let collapsedPanels = mobileShell?.dataset.collapsedPanels || '';
+        let dockedTheme = document.querySelector('[data-panel-type="theme-editor"][data-adaptive-state="docked"]');
+        let collapsedAdaptive = document.querySelector('[data-panel-type="adaptive-rules"][data-adaptive-state="collapsed"]');
+        let themeEvidence = mobileShell?.dataset.themeMode === 'dark' &&
+          mobileShell?.dataset.themeEditorState === 'validated' &&
+          mobileShell?.dataset.adaptiveMode === 'drawer';
+        if (mobileShell?.dataset.viewportMode === 'mobile' && dockedPanels.includes('theme-editor') && collapsedPanels.includes('adaptive-rules') && dockedTheme && collapsedAdaptive && themeEvidence && openRequest) {
+          resolve({
+            title: document.title,
+            stage: mobileShell.dataset.stage,
+            buildKind: mobileShell.dataset.buildKind,
+            viewportMode: mobileShell.dataset.viewportMode,
+            adaptiveMode: mobileShell.dataset.adaptiveMode,
+            themeMode: mobileShell.dataset.themeMode,
+            themeEditorState: mobileShell.dataset.themeEditorState,
+            dockedPanels,
+            collapsedPanels,
+            progress,
+            runtimeInstanceId,
+            atomicUpdateCount: updateCount,
+            lastUpdatedStage,
+            themeWidgetUsesDefaults,
+            themeEditorDefined,
+            requiredElements: requiredElements.map((element) => element.localName),
+            modulePanels,
+            themeEditorOpenRequest: mobileShell.dataset.themeEditorOpenRequest,
+          });
+          return;
+        }
+        if (Date.now() > deadline) {
+          reject(new Error([
+            'Realtime builder mobile adaptive preview did not expose docked/collapsed panels.',
+            \`viewportMode=\${mobileShell?.dataset.viewportMode || ''}\`,
+            \`dockedPanels=\${dockedPanels}\`,
+            \`collapsedPanels=\${collapsedPanels}\`,
+            \`dockedTheme=\${Boolean(dockedTheme)}\`,
+            \`collapsedAdaptive=\${Boolean(collapsedAdaptive)}\`,
+            \`themeEvidence=\${Boolean(themeEvidence)}\`,
+            \`openRequest=\${Boolean(openRequest)}\`,
+          ].join('\\n')));
+          return;
+        }
+        setTimeout(checkMobile, 100);
+      };
+      checkMobile();
       return;
     }
     if (Date.now() > deadline) {
-      reject(new Error('Realtime builder Play did not reach final operation state.'));
+      let debugState = {
+        finalStage,
+        finalKind,
+        progress,
+        requiredElementCount: requiredElements.length,
+        requiredElements: requiredElements.map((element) => element.localName),
+        oldDemoSurfaceCount: oldDemoSurfaces ? 1 : 0,
+        appShadowHostCount: appShadowHosts.length,
+        themeWidgetUsesDefaults: Boolean(themeWidgetUsesDefaults),
+        themeEditorDefined,
+        panelsReady,
+        modulePanels,
+        runtimeInstanceId,
+        updateCount,
+        lastUpdatedStage,
+      };
+      reject(new Error([
+        'Realtime builder Play did not reach final operation state.',
+        \`readyState=\${document.readyState}\`,
+        \`stage=\${shell?.dataset.stage || ''}\`,
+        \`buildKind=\${shell?.dataset.buildKind || ''}\`,
+        \`debug=\${JSON.stringify(debugState)}\`,
+        \`body=\${(document.body?.innerHTML || '').slice(0, 800)}\`,
+      ].join('\\n')));
       return;
     }
     setTimeout(check, 100);
@@ -607,6 +746,8 @@ async function run() {
     cdp = await CdpWebSocket.connect(target.webSocketDebuggerUrl, timeout);
     await cdp.send('Page.enable', {}, timeout);
     await cdp.send('Runtime.enable', {}, timeout);
+    await cdp.send('Network.enable', {}, timeout);
+    let diagnostics = createPageDiagnostics(cdp);
     await cdp.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/` }, timeout);
     await cdp.waitEvent('Page.loadEventFired', timeout);
     let expression = demo === 'realtime-builder' ? realtimeExpression : mountExpression;
@@ -617,7 +758,8 @@ async function run() {
     }, timeout);
     if (result.exceptionDetails) {
       let text = result.exceptionDetails.exception?.description || result.exceptionDetails.text;
-      throw new Error(text);
+      let diagnosticsText = formatPageDiagnostics(diagnostics);
+      throw new Error([text, diagnosticsText].filter(Boolean).join('\n\n'));
     }
 
     console.log(JSON.stringify({

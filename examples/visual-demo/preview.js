@@ -4,7 +4,11 @@ import { join, resolve } from 'node:path';
 import { dispatch, createSession } from '../../runtime/index.js';
 import { startPreview } from '../../handlers/preview.js';
 import { exportConfig, importConfig } from '../../sharing/index.js';
-import { BROWSER_THEME_IMPORT } from '../../sharing/browser-contract.js';
+import {
+  BROWSER_ENGINE_CONTRACTS_IMPORT,
+  BROWSER_ENGINE_IMPORT,
+  BROWSER_THEME_IMPORT,
+} from '../../sharing/browser-contract.js';
 import {
   startStaticServer,
   symbioteEngineRoot,
@@ -114,6 +118,9 @@ let preview = await startPreview(demo.config, {
   imports: {
     'symbiote-workspace/browser': '/__workspace__/browser.js',
     [BROWSER_THEME_IMPORT]: '/__symbiote_ui__/ui/index.js',
+    [BROWSER_ENGINE_IMPORT]: '/__symbiote_engine__/index.js',
+    [BROWSER_ENGINE_CONTRACTS_IMPORT]: '/__symbiote_engine__/contracts/index.js',
+    'symbiote-engine/': '/__symbiote_engine__/',
   },
 });
 

@@ -26,6 +26,27 @@ function serveFile(root, pathPrefix, requestPath) {
   return file;
 }
 
+function candidateFiles(file) {
+  if (extname(file)) return [file];
+  return [file, `${file}.js`, join(file, 'index.js')];
+}
+
+async function readServedFile(file) {
+  let lastError = null;
+  for (let candidate of candidateFiles(file)) {
+    try {
+      return {
+        file: candidate,
+        body: await readFile(candidate),
+      };
+    } catch (error) {
+      if (error.code !== 'ENOENT' && error.code !== 'EISDIR') throw error;
+      lastError = error;
+    }
+  }
+  throw lastError;
+}
+
 export function workspacePackageRoot(metaUrl = import.meta.url) {
   return resolve(dirname(fileURLToPath(metaUrl)), '../..');
 }
@@ -96,9 +117,9 @@ export async function startStaticServer({ outputDir, workspaceRoot, uiRoot, engi
         res.end('Not found');
         return;
       }
-      let body = await readFile(file);
-      res.writeHead(200, { 'content-type': contentType(file) });
-      res.end(body);
+      let served = await readServedFile(file);
+      res.writeHead(200, { 'content-type': contentType(served.file) });
+      res.end(served.body);
     } catch (error) {
       res.writeHead(error.code === 'ENOENT' ? 404 : 500);
       res.end(error.code === 'ENOENT' ? 'Not found' : error.message);

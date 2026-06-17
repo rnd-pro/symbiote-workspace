@@ -5,7 +5,11 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 import { startPreview } from '../handlers/preview.js';
-import { BROWSER_THEME_IMPORT } from '../sharing/browser-contract.js';
+import {
+  BROWSER_ENGINE_CONTRACTS_IMPORT,
+  BROWSER_ENGINE_IMPORT,
+  BROWSER_THEME_IMPORT,
+} from '../sharing/browser-contract.js';
 
 let PREVIEW_CONFIG = {
   version: '0.3.0',
@@ -13,6 +17,14 @@ let PREVIEW_CONFIG = {
   theme: {
     params: { hue: 220 },
   },
+};
+
+let FULL_PREVIEW_IMPORTS = {
+  'symbiote-workspace/browser': './mock-workspace-browser.js',
+  [BROWSER_THEME_IMPORT]: './mock-symbiote-theme.js',
+  [BROWSER_ENGINE_IMPORT]: './mock-symbiote-engine.js',
+  [BROWSER_ENGINE_CONTRACTS_IMPORT]: './mock-symbiote-engine-contracts.js',
+  'symbiote-engine/': './mock-symbiote-engine/',
 };
 
 async function withPreviewDir(run) {
@@ -39,10 +51,7 @@ describe('startPreview', () => {
       let result = await startPreview(PREVIEW_CONFIG, {
         outputDir: dir,
         port: 3999,
-        imports: {
-          'symbiote-workspace/browser': './mock-workspace-browser.js',
-          [BROWSER_THEME_IMPORT]: './mock-symbiote-theme.js',
-        },
+        imports: FULL_PREVIEW_IMPORTS,
       });
 
       let html = await readFile(join(dir, 'index.html'), 'utf8');
@@ -55,6 +64,8 @@ describe('startPreview', () => {
       assert.ok(importMapIndex < moduleScriptIndex);
       assert.match(html, /"symbiote-workspace\/browser": "\.\/mock-workspace-browser\.js"/);
       assert.match(html, /"symbiote-ui\/ui": "\.\/mock-symbiote-theme\.js"/);
+      assert.match(html, /"symbiote-engine": "\.\/mock-symbiote-engine\.js"/);
+      assert.match(html, /"symbiote-engine\/contracts": "\.\/mock-symbiote-engine-contracts\.js"/);
     });
   });
 
@@ -71,9 +82,13 @@ describe('startPreview', () => {
       assert.deepEqual(result.contract.importMap.imports, {
         'symbiote-workspace/browser': './browser.js',
         [BROWSER_THEME_IMPORT]: './node_modules/symbiote-ui/ui/index.js',
+        [BROWSER_ENGINE_IMPORT]: './node_modules/symbiote-engine/index.js',
+        [BROWSER_ENGINE_CONTRACTS_IMPORT]: './node_modules/symbiote-engine/contracts/index.js',
+        'symbiote-engine/': './node_modules/symbiote-engine/',
       });
       assert.match(html, /"symbiote-workspace\/browser": "\.\/browser\.js"/);
       assert.match(html, /"symbiote-ui\/ui": "\.\/node_modules\/symbiote-ui\/ui\/index\.js"/);
+      assert.match(html, /"symbiote-engine\/contracts": "\.\/node_modules\/symbiote-engine\/contracts\/index\.js"/);
     });
   });
 
@@ -88,10 +103,7 @@ describe('startPreview', () => {
         },
       }, {
         outputDir: dir,
-        imports: {
-          'symbiote-workspace/browser': './mock-workspace-browser.js',
-          [BROWSER_THEME_IMPORT]: './mock-symbiote-theme.js',
-        },
+        imports: FULL_PREVIEW_IMPORTS,
       });
 
       let configJson = await readFile(join(dir, 'workspace.config.json'), 'utf8');
@@ -112,10 +124,7 @@ describe('startPreview', () => {
     await withPreviewDir(async (dir) => {
       await startPreview(PREVIEW_CONFIG, {
         outputDir: dir,
-        imports: {
-          'symbiote-workspace/browser': './mock-workspace-browser.js',
-          [BROWSER_THEME_IMPORT]: './mock-symbiote-theme.js',
-        },
+        imports: FULL_PREVIEW_IMPORTS,
       });
 
       let app = await readFile(join(dir, 'app.js'), 'utf8');
@@ -133,10 +142,7 @@ describe('startPreview', () => {
     await withPreviewDir(async (dir) => {
       await startPreview(PREVIEW_CONFIG, {
         outputDir: dir,
-        imports: {
-          'symbiote-workspace/browser': './mock-workspace-browser.js',
-          [BROWSER_THEME_IMPORT]: './mock-symbiote-theme.js',
-        },
+        imports: FULL_PREVIEW_IMPORTS,
       });
 
       let app = await readFile(join(dir, 'app.js'), 'utf8');
@@ -154,10 +160,7 @@ describe('startPreview', () => {
     await withPreviewDir(async (dir) => {
       let result = await startPreview(PREVIEW_CONFIG, {
         outputDir: dir,
-        imports: {
-          'symbiote-workspace/browser': './mock-workspace-browser.js',
-          [BROWSER_THEME_IMPORT]: './mock-symbiote-theme.js',
-        },
+        imports: FULL_PREVIEW_IMPORTS,
       });
 
       let contract = JSON.parse(await readFile(join(dir, 'preview.contract.json'), 'utf8'));
@@ -168,6 +171,8 @@ describe('startPreview', () => {
       assert.deepEqual(result.contract.browser.requiredImports, [
         'symbiote-workspace/browser',
         BROWSER_THEME_IMPORT,
+        BROWSER_ENGINE_IMPORT,
+        BROWSER_ENGINE_CONTRACTS_IMPORT,
       ]);
       assert.deepEqual(contract.browser.errorSurfaces, [
         'import-map-support',
@@ -198,6 +203,9 @@ describe('startPreview', () => {
         imports: {
           'symbiote-workspace/browser': './mock-workspace-browser.js',
           [BROWSER_THEME_IMPORT]: BROWSER_THEME_IMPORT,
+          [BROWSER_ENGINE_IMPORT]: './mock-symbiote-engine.js',
+          [BROWSER_ENGINE_CONTRACTS_IMPORT]: './mock-symbiote-engine-contracts.js',
+          'symbiote-engine/': './mock-symbiote-engine/',
         },
       });
 
@@ -210,10 +218,7 @@ describe('startPreview', () => {
     await withPreviewDir(async (dir) => {
       await startPreview(PREVIEW_CONFIG, {
         outputDir: dir,
-        imports: {
-          'symbiote-workspace/browser': './mock-workspace-browser.js',
-          [BROWSER_THEME_IMPORT]: './mock-symbiote-theme.js',
-        },
+        imports: FULL_PREVIEW_IMPORTS,
       });
 
       let app = await readFile(join(dir, 'app.js'), 'utf8');

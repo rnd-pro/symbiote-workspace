@@ -6,6 +6,8 @@
 import { writeFile, mkdir } from 'node:fs/promises';
 import { join, relative, resolve, sep } from 'node:path';
 import {
+  BROWSER_ENGINE_CONTRACTS_IMPORT,
+  BROWSER_ENGINE_IMPORT,
   BROWSER_REQUIRED_IMPORTS,
   BROWSER_THEME_IMPORT,
   createBrowserRuntimeContract,
@@ -52,6 +54,9 @@ function createPreviewImports(outputDir, serveRoot, imports = {}) {
   return {
     'symbiote-workspace/browser': toBrowserPath(outputDir, join(serveRoot, 'browser.js')),
     [BROWSER_THEME_IMPORT]: toBrowserPath(outputDir, join(serveRoot, 'node_modules', 'symbiote-ui', 'ui', 'index.js')),
+    [BROWSER_ENGINE_IMPORT]: toBrowserPath(outputDir, join(serveRoot, 'node_modules', 'symbiote-engine', 'index.js')),
+    [BROWSER_ENGINE_CONTRACTS_IMPORT]: toBrowserPath(outputDir, join(serveRoot, 'node_modules', 'symbiote-engine', 'contracts', 'index.js')),
+    'symbiote-engine/': `${toBrowserPath(outputDir, join(serveRoot, 'node_modules', 'symbiote-engine'))}/`,
   };
 }
 

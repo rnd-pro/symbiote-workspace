@@ -554,6 +554,8 @@ describe('host integration contract', () => {
     assert.deepEqual(result.contract.browser.requiredImports, [
       'symbiote-workspace/browser',
       'symbiote-ui/ui',
+      'symbiote-engine',
+      'symbiote-engine/contracts',
     ]);
     assert.equal(result.contract.browser.importMap.required, true);
     assert.equal(result.contract.browser.importMap.scriptType, 'importmap');

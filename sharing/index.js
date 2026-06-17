@@ -7,6 +7,8 @@ export {
 } from './config-portability.js';
 
 export {
+  BROWSER_ENGINE_CONTRACTS_IMPORT,
+  BROWSER_ENGINE_IMPORT,
   BROWSER_REQUIRED_IMPORTS,
   BROWSER_THEME_IMPORT,
   createBrowserRuntimeContract,

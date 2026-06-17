@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { request } from 'node:http';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -8,6 +9,7 @@ import {
   buildRealtimeChatStateDemo,
   writeRealtimeChatStateDemo,
 } from '../examples/visual-demo/realtime-builder.js';
+import { startStaticServer } from '../examples/visual-demo/server-utils.js';
 import { validateWorkspaceConfig } from '../schema/index.js';
 
 async function withTempDir(run) {
@@ -17,6 +19,38 @@ async function withTempDir(run) {
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+}
+
+function httpText(port, path) {
+  return new Promise((resolveText, rejectText) => {
+    let req = request({ host: '127.0.0.1', port, path }, (res) => {
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk) => {
+        body += chunk;
+      });
+      res.on('end', () => {
+        resolveText({
+          statusCode: res.statusCode,
+          contentType: res.headers['content-type'],
+          body,
+        });
+      });
+    });
+    req.on('error', rejectText);
+    req.end();
+  });
+}
+
+function collectLayoutPanels(node, panels = []) {
+  if (!node || typeof node !== 'object') return panels;
+  if (node.type === 'panel' && node.panelType) {
+    panels.push(node.panelType);
+    return panels;
+  }
+  collectLayoutPanels(node.first, panels);
+  collectLayoutPanels(node.second, panels);
+  return panels;
 }
 
 describe('realtime builder demo', () => {
@@ -91,6 +125,10 @@ describe('realtime builder demo', () => {
     for (let required of demo.requiredWidgets) {
       assert.ok(panels.includes(required), `${required} panel is registered`);
     }
+    assert.deepEqual(
+      collectLayoutPanels(finalStage.config.layout).sort(),
+      demo.requiredWidgets.slice().sort()
+    );
     assert.ok(finalStage.config.events.length >= 4);
     assert.ok(finalStage.config.data.bindings.length >= 6);
     assert.equal(finalStage.config.components.modules.length, demo.requiredWidgets.length);
@@ -217,6 +255,7 @@ describe('realtime builder demo', () => {
       assert.match(app, /dataset\.collapsedPanels/);
       assert.match(app, /dataset\.themeEditorState/);
       assert.match(app, /mounted\.updateConfig\(stage\.config/);
+      assert.match(app, /updateConfig\(nextConfig, options = \{\}\)/);
       assert.match(app, /dataset\.runtimeInstanceId/);
       assert.match(app, /dataset\.atomicUpdateCount/);
       assert.match(app, /dataset\.lastUpdatedStage/);
@@ -234,6 +273,8 @@ describe('realtime builder demo', () => {
       assert.equal(html.includes('"symbiote-ui/"'), true);
       assert.equal(html.includes('"symbiote-ui/ui"'), true);
       assert.equal(html.includes('"symbiote-engine/"'), true);
+      assert.equal(html.includes('"symbiote-engine/contracts"'), true);
+      assert.equal(html.includes('"/__symbiote_engine__/contracts/index.js"'), true);
       assert.equal(html.includes('"@symbiotejs/symbiote"'), true);
       assert.doesNotMatch(app, /\/Users\//);
       assert.doesNotMatch(states, /localhost|\/Users\//);
@@ -265,6 +306,8 @@ describe('realtime builder demo', () => {
     assert.match(smoke, /appShadowHosts\.length === 0/);
     assert.match(smoke, /runtimeInstanceId/);
     assert.match(smoke, /atomicUpdateCount/);
+    assert.match(smoke, /mountedWorkspace/);
+    assert.match(smoke, /mountedWorkspace = workspace\?\.querySelector\('\.symbiote-workspace'\)/);
     assert.match(smoke, /lastUpdatedStage === 'validation'/);
     assert.match(smoke, /cascade-theme-open-full/);
     assert.match(smoke, /data-adaptive-state="docked"/);
@@ -274,5 +317,41 @@ describe('realtime builder demo', () => {
     assert.doesNotMatch(smoke, /Adaptive preview/);
     assert.doesNotMatch(smoke, /Construction tool trace/);
     assert.doesNotMatch(smoke, /themeMode === 'light'/);
+  });
+
+  it('serves extensionless package subpaths for browser import maps', async () => {
+    await withTempDir(async (dir) => {
+      let outputDir = join(dir, 'out');
+      let workspaceRoot = join(dir, 'workspace');
+      let uiRoot = join(dir, 'ui');
+      let engineRoot = join(dir, 'engine');
+      let symbioteRoot = join(dir, 'symbiote');
+      await Promise.all([
+        mkdir(outputDir, { recursive: true }),
+        mkdir(workspaceRoot, { recursive: true }),
+        mkdir(uiRoot, { recursive: true }),
+        mkdir(join(engineRoot, 'contracts'), { recursive: true }),
+        mkdir(symbioteRoot, { recursive: true }),
+      ]);
+      await writeFile(join(outputDir, 'index.html'), '<!doctype html>');
+      await writeFile(join(engineRoot, 'contracts', 'index.js'), 'export const contract = true;');
+      let server = await startStaticServer({
+        outputDir,
+        workspaceRoot,
+        uiRoot,
+        engineRoot,
+        symbioteRoot,
+        port: 0,
+      });
+      try {
+        let port = server.address().port;
+        let response = await httpText(port, '/__symbiote_engine__/contracts');
+        assert.equal(response.statusCode, 200);
+        assert.match(response.contentType, /text\/javascript/);
+        assert.equal(response.body, 'export const contract = true;');
+      } finally {
+        await new Promise((resolveClose) => server.close(resolveClose));
+      }
+    });
   });
 });

@@ -378,11 +378,11 @@ function createStages() {
   );
   let validationLayout = split(
     'horizontal',
-    0.24,
+    0.22,
     panel('agent-chat', { importance: 100, collapse: 'never' }),
     split(
       'horizontal',
-      0.5,
+      0.38,
       split(
         'vertical',
         0.54,
@@ -390,10 +390,25 @@ function createStages() {
         panel('adaptive-rules', { importance: 58 })
       ),
       split(
-        'vertical',
-        0.46,
-        panel('theme-editor', { importance: 82, collapse: 'manual' }),
-        panel('validation-checklist', { importance: 78 })
+        'horizontal',
+        0.5,
+        split(
+          'vertical',
+          0.38,
+          panel('service-blueprint', { importance: 90 }),
+          split(
+            'vertical',
+            0.5,
+            panel('widget-registry', { importance: 64 }),
+            panel('bindings-inspector', { importance: 74 })
+          )
+        ),
+        split(
+          'vertical',
+          0.46,
+          panel('theme-editor', { importance: 82, collapse: 'manual' }),
+          panel('validation-checklist', { importance: 78 })
+        )
       )
     )
   );

@@ -296,12 +296,18 @@ describe('packed package consumer', () => {
       assert.deepEqual(previewContract.browser.requiredImports, [
         'symbiote-workspace/browser',
         'symbiote-ui/ui',
+        'symbiote-engine',
+        'symbiote-engine/contracts',
       ]);
       assert.equal(previewContract.browser.themeAdapterModule, 'symbiote-ui/ui');
       assert.equal(previewContract.browser.themeAdapterExport, 'applyCascadeTheme');
       assert.equal(
         previewContract.importMap.imports['symbiote-ui/ui'],
         '/__symbiote_ui__/ui/index.js',
+      );
+      assert.equal(
+        previewContract.importMap.imports['symbiote-engine/contracts'],
+        '/__symbiote_engine__/contracts/index.js',
       );
       await readFile(join(demoDir, 'index.html'), 'utf8');
       await readFile(join(demoDir, 'app.js'), 'utf8');
@@ -817,6 +823,8 @@ describe('packed package consumer', () => {
           importWorkspacePackage,
           validateWorkspacePackage,
           BROWSER_REQUIRED_IMPORTS,
+          BROWSER_ENGINE_CONTRACTS_IMPORT,
+          BROWSER_ENGINE_IMPORT,
           BROWSER_THEME_IMPORT,
           createBrowserRuntimeContract,
           createWorkspaceConstructionHandoff,
@@ -838,8 +846,17 @@ describe('packed package consumer', () => {
         if (BROWSER_THEME_IMPORT !== 'symbiote-ui/ui') {
           throw new Error('BROWSER_THEME_IMPORT mismatch');
         }
+        if (BROWSER_ENGINE_IMPORT !== 'symbiote-engine') {
+          throw new Error('BROWSER_ENGINE_IMPORT mismatch');
+        }
+        if (BROWSER_ENGINE_CONTRACTS_IMPORT !== 'symbiote-engine/contracts') {
+          throw new Error('BROWSER_ENGINE_CONTRACTS_IMPORT mismatch');
+        }
         if (!BROWSER_REQUIRED_IMPORTS.includes(BROWSER_THEME_IMPORT)) {
           throw new Error('BROWSER_REQUIRED_IMPORTS missing theme entrypoint');
+        }
+        if (!BROWSER_REQUIRED_IMPORTS.includes(BROWSER_ENGINE_CONTRACTS_IMPORT)) {
+          throw new Error('BROWSER_REQUIRED_IMPORTS missing engine contracts entrypoint');
         }
         if (typeof createBrowserRuntimeContract !== 'function') {
           throw new Error('createBrowserRuntimeContract not exported from sharing');
@@ -871,6 +888,9 @@ describe('packed package consumer', () => {
         if (root.BROWSER_THEME_IMPORT !== 'symbiote-ui/ui') {
           throw new Error('root BROWSER_THEME_IMPORT missing');
         }
+        if (root.BROWSER_ENGINE_CONTRACTS_IMPORT !== 'symbiote-engine/contracts') {
+          throw new Error('root BROWSER_ENGINE_CONTRACTS_IMPORT missing');
+        }
         if (typeof root.createBrowserRuntimeContract !== 'function') {
           throw new Error('root createBrowserRuntimeContract missing');
         }
@@ -892,6 +912,9 @@ describe('packed package consumer', () => {
         if (!Array.isArray(browser.BROWSER_REQUIRED_IMPORTS)) throw new Error('browser BROWSER_REQUIRED_IMPORTS missing');
         if (browser.BROWSER_THEME_IMPORT !== 'symbiote-ui/ui') {
           throw new Error('browser BROWSER_THEME_IMPORT missing');
+        }
+        if (browser.BROWSER_ENGINE_CONTRACTS_IMPORT !== 'symbiote-engine/contracts') {
+          throw new Error('browser BROWSER_ENGINE_CONTRACTS_IMPORT missing');
         }
         if (typeof browser.createBrowserRuntimeContract !== 'function') {
           throw new Error('browser createBrowserRuntimeContract missing');

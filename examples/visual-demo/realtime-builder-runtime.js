@@ -1,7 +1,11 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { exportConfig } from '../../sharing/index.js';
-import { BROWSER_THEME_IMPORT } from '../../sharing/browser-contract.js';
+import {
+  BROWSER_ENGINE_CONTRACTS_IMPORT,
+  BROWSER_ENGINE_IMPORT,
+  BROWSER_THEME_IMPORT,
+} from '../../sharing/browser-contract.js';
 import { buildRealtimeChatStateDemo } from './realtime-builder-state.js';
 
 function escapeHtml(value) {
@@ -361,12 +365,15 @@ function createSymbioteLayoutRuntime(stage) {
         });
       });
       return {
-        updateConfig(update) {
-          currentStage = update.stage || currentStage;
-          let nextConfig = update.config;
+        updateConfig(nextConfig, options = {}) {
+          if (nextConfig?.config && !options.stage) {
+            options = nextConfig;
+            nextConfig = nextConfig.config;
+          }
+          currentStage = options.stage || currentStage;
           let updateCount = Number(layout.dataset.atomicUpdateCount || '0') + 1;
           layout.dataset.atomicUpdateCount = String(updateCount);
-          layout.dataset.lastUpdateReason = update.reason || 'updateConfig';
+          layout.dataset.lastUpdateReason = options.reason || 'updateConfig';
           layout.dataset.lastStage = currentStage.id || '';
           element.dataset.runtimeInstanceId = layout.dataset.runtimeInstanceId;
           element.dataset.atomicUpdateCount = String(updateCount);
@@ -987,7 +994,8 @@ export async function writeRealtimeChatStateDemo(options = {}) {
     'symbiote-workspace/browser': '/__workspace__/browser.js',
     [BROWSER_THEME_IMPORT]: '/__symbiote_ui__/ui/index.js',
     'symbiote-ui/': '/__symbiote_ui__/',
-    'symbiote-engine': '/__symbiote_engine__/index.js',
+    [BROWSER_ENGINE_IMPORT]: '/__symbiote_engine__/index.js',
+    [BROWSER_ENGINE_CONTRACTS_IMPORT]: '/__symbiote_engine__/contracts/index.js',
     'symbiote-engine/': '/__symbiote_engine__/',
     '@symbiotejs/symbiote': '/__symbiote__/core/index.js',
     '@symbiotejs/symbiote/': '/__symbiote__/',
