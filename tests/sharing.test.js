@@ -19,6 +19,7 @@ import {
 } from '../sharing/index.js';
 
 import { matchTemplate, planWorkspaceConstruction } from '../constructor/index.js';
+import { buildRealtimeChatStateDemo } from '../examples/visual-demo/realtime-builder.js';
 
 let BASE_CONFIG = {
   version: '0.2.0',
@@ -1274,6 +1275,65 @@ describe('createWorkspacePackageConstructionContext', () => {
     assert.ok(plan);
     assert.ok(plan.config);
     assert.equal(typeof plan.config.name, 'string');
+  });
+
+  it('feeds realtime builder package capabilities back into construction planning', () => {
+    let demo = buildRealtimeChatStateDemo();
+    let finalConfig = demo.stages.at(-1).config;
+    let exported = exportWorkspacePackage(finalConfig, {
+      id: 'realtime-builder-package',
+      version: '1.0.0',
+      dependencies: {
+        packages: ['symbiote-engine', 'symbiote-ui'],
+      },
+    });
+    let ctx = createWorkspacePackageConstructionContext(exported.package, {
+      templateName: 'realtime-builder-package',
+    });
+    let expectedCapabilities = finalConfig.components.modules
+      .map((module) => module.capabilities[0])
+      .sort((a, b) => a.localeCompare(b));
+    let legacyCapabilities = [
+      'chat-questionnaire',
+      'dynamic-layout-builder',
+      'service-blueprint',
+      'theme-editor',
+      'validation-state',
+      'widget-registry',
+    ];
+
+    assert.equal(ctx.valid, true);
+    assert.equal(ctx.ready, true);
+    assert.equal(ctx.workspaceTemplates.length, 1);
+    assert.equal(ctx.moduleCapabilities.length, demo.requiredWidgets.length);
+    assert.deepEqual(ctx.requiredCapabilities, expectedCapabilities);
+    for (let capability of legacyCapabilities) {
+      assert.ok(!ctx.requiredCapabilities.includes(capability));
+    }
+
+    let handoff = createWorkspaceConstructionHandoff(ctx, {
+      brief: 'Build the realtime interface builder from its package.',
+      targetRegister: 'agent-workspace',
+      template: 'realtime-builder-package',
+    });
+    assert.equal(handoff.valid, true);
+    assert.equal(handoff.ready, true);
+    assert.equal(handoff.options.packageContext.ready, true);
+    assert.equal(handoff.options.moduleCapabilities.length, demo.requiredWidgets.length);
+
+    let plan = planWorkspaceConstruction(handoff.intent, handoff.options);
+    assert.equal(plan.plan.packageContext.ready, true);
+    assert.deepEqual(plan.plan.capabilities.missing, []);
+    assert.equal(plan.plan.capabilities.selectedModules.length, demo.requiredWidgets.length);
+    assert.deepEqual(
+      plan.config.components.modules.map((module) => module.tagName).sort(),
+      finalConfig.components.modules.map((module) => module.tagName).sort(),
+    );
+    assert.deepEqual(
+      Object.keys(plan.config.panelTypes).sort(),
+      demo.requiredWidgets.slice().sort(),
+    );
+    assert.equal(plan.config.construction.packageContext.readiness.nextAction, 'construct');
   });
 });
 

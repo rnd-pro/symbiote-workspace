@@ -275,14 +275,9 @@ function baseConfig(name, overrides = {}) {
       targetRegister: 'agent-workspace',
       audience: ['service builders', 'AI agent operators'],
       constraints: ['mock data only', 'host neutral workspace config', 'default Symbiote UI theme cascade'],
-      requiredCapabilities: [
-        'chat-questionnaire',
-        'service-blueprint',
-        'dynamic-layout-builder',
-        'widget-registry',
-        'theme-editor',
-        'validation-state',
-      ],
+      requiredCapabilities: unique(moduleDescriptors.flatMap((descriptor) => (
+        descriptor.capabilities.slice(0, 1)
+      ))),
     },
     theme: {
       recipe: 'agent-console',
