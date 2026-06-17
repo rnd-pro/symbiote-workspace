@@ -101,9 +101,35 @@ function assertPackIncludesTarget(paths, target) {
   assert.equal(paths.has(normalized), true, `Package must include ${normalized}`);
 }
 
+function assertPackedPublicDocsUsePublicProviderContracts() {
+  let docs = [
+    'README.md',
+    'CHANGELOG.md',
+    'examples/visual-demo/README.md',
+  ];
+  let forbidden = [
+    {
+      pattern: /symbiote-ui\/(?:themes|src|components|layout\/.+\.js|chat\/.+\.js|control\/.+\.js)/,
+      reason: 'public docs must reference symbiote-ui package exports, not implementation paths',
+    },
+    {
+      pattern: /(?:preview|browser-smoke)\.mjs/,
+      reason: 'public docs must reference the .js visual-demo entrypoints',
+    },
+  ];
+
+  for (let docPath of docs) {
+    let text = readFileSync(resolve(ROOT, docPath), 'utf8');
+    for (let { pattern, reason } of forbidden) {
+      assert.doesNotMatch(text, pattern, `${docPath}: ${reason}`);
+    }
+  }
+}
+
 function assertWorkspacePackList(pack) {
   let paths = packedPaths(pack);
   assertNoForbiddenPackEntries(pack);
+  assertPackedPublicDocsUsePublicProviderContracts();
 
   for (let target of ['package.json', 'README.md', 'LICENSE', 'CHANGELOG.md']) {
     assert.equal(paths.has(target), true, `Package must include ${target}`);
