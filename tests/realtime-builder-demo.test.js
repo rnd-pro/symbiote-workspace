@@ -255,6 +255,7 @@ describe('realtime builder demo', () => {
       assert.match(app, /dataset\.collapsedPanels/);
       assert.match(app, /dataset\.themeEditorState/);
       assert.match(app, /mounted\.updateConfig\(stage\.config/);
+      assert.doesNotMatch(app, /\b(?:attachShadow|shadowRoot)\b/);
       assert.match(app, /updateConfig\(nextConfig, options = \{\}\)/);
       assert.match(app, /dataset\.runtimeInstanceId/);
       assert.match(app, /dataset\.atomicUpdateCount/);
