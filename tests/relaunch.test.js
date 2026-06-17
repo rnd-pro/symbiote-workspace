@@ -6,9 +6,13 @@ import { listTemplates, planWorkspaceConstruction } from '../constructor/index.j
 import { loadWorkspaceConfig } from '../loader/index.js';
 import { createSession, dispatch } from '../runtime/index.js';
 import {
+  BROWSER_REQUIRED_IMPORTS,
   createHostIntegrationContract,
   exportConfig,
+  exportWorkspacePackage,
   importConfig,
+  importWorkspacePackage,
+  validateWorkspacePackage,
 } from '../sharing/index.js';
 import { collectPluginWorkspaceTemplates } from '../plugins/index.js';
 import { WORKSPACE_SCHEMA_VERSION } from '../schema/index.js';
@@ -439,6 +443,61 @@ describe('portable workspace relaunch', () => {
 
     let reexported = exportConfig(imported.config, { strict: true });
     assert.equal(reexported.json, exported.json);
+  });
+
+  it('packages and relaunches the realtime builder handoff with host browser requirements intact', () => {
+    let demo = buildRealtimeChatStateDemo();
+    let finalConfig = demo.stages.at(-1).config;
+    let manifest = {
+      id: 'realtime-builder-package',
+      version: '1.0.0',
+      description: 'Realtime builder package relaunch fixture.',
+      tags: ['agent.workspace', 'realtime.builder'],
+      dependencies: {
+        packages: ['symbiote-engine', 'symbiote-ui'],
+      },
+    };
+
+    let exported = exportWorkspacePackage(finalConfig, manifest);
+    assert.ok(exported.json);
+    assert.deepEqual(exported.errors, []);
+    assert.deepEqual(exported.package.host.contract.browser.requiredImports, [...BROWSER_REQUIRED_IMPORTS]);
+    assert.equal(exported.package.host.contract.browser.themeAdapterModule, 'symbiote-ui/ui');
+    assert.deepEqual(exported.package.manifest.dependencies.packages, [
+      'symbiote-engine',
+      'symbiote-ui',
+    ]);
+    assert.deepEqual(
+      exported.package.workspace.config.construction.plan.modules.map((item) => item.panelType).sort(),
+      demo.requiredWidgets.slice().sort()
+    );
+    assert.deepEqual(
+      exported.package.workspace.config.components.modules.map((item) => item.provider),
+      Array(demo.requiredWidgets.length).fill('symbiote-ui')
+    );
+
+    let imported = importWorkspacePackage(exported.json);
+    assert.deepEqual(imported.errors, []);
+    assert.equal(imported.package.manifest.id, 'realtime-builder-package');
+    assert.deepEqual(
+      imported.config.construction.plan.modules.map((item) => item.panelType).sort(),
+      demo.requiredWidgets.slice().sort()
+    );
+    assert.equal(imported.config.construction.plan.theme.editorPanel, 'theme-editor');
+    assert.equal(
+      imported.config.construction.plan.modules
+        .find((item) => item.panelType === 'agent-chat')
+        .events.emits.some((event) => event.name === 'questionnaire-answer'),
+      true
+    );
+
+    let validation = validateWorkspacePackage(imported.package);
+    assert.equal(validation.valid, true, JSON.stringify(validation.errors));
+
+    let recomputedContract = createHostIntegrationContract(imported.config);
+    assert.equal(recomputedContract.status, 'ok');
+    assert.deepEqual(recomputedContract.contract, imported.package.host.contract);
+    assertRelaunchable(imported.config, 'realtime builder package');
   });
 
   it('relaunches neutral collaboration room templates from plugin metadata', () => {
