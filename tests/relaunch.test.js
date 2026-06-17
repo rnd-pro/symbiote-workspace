@@ -12,6 +12,7 @@ import {
 } from '../sharing/index.js';
 import { collectPluginWorkspaceTemplates } from '../plugins/index.js';
 import { WORKSPACE_SCHEMA_VERSION } from '../schema/index.js';
+import { buildRealtimeChatStateDemo } from '../examples/visual-demo/realtime-builder.js';
 
 class TestStyle {
   values = new Map();
@@ -403,6 +404,40 @@ describe('portable workspace relaunch', () => {
 
     let reexported = await dispatch('export_workspace', { strict: true }, relaunched);
     assert.equal(reexported.status, 'ok');
+    assert.equal(reexported.json, exported.json);
+  });
+
+  it('relaunches the realtime builder handoff with construction metadata intact', () => {
+    let demo = buildRealtimeChatStateDemo();
+    let finalConfig = demo.stages.at(-1).config;
+    let exported = exportConfig(finalConfig, { strict: true });
+    assert.ok(exported.json);
+
+    let imported = importConfig(exported.json);
+    assert.deepEqual(imported.errors, []);
+    assert.equal(imported.config.construction.plan.layout.topology, 'bsp-workbench');
+    assert.deepEqual(
+      imported.config.construction.plan.modules.map((item) => item.panelType).sort(),
+      demo.requiredWidgets.slice().sort()
+    );
+    assert.equal(imported.config.components.modules.length, demo.requiredWidgets.length);
+    assert.equal(imported.config.construction.plan.theme.editorPanel, 'theme-editor');
+    assert.equal(
+      imported.config.construction.plan.modules
+        .find((item) => item.panelType === 'theme-editor')
+        .bindings[0].path,
+      'theme'
+    );
+    assert.equal(
+      imported.config.construction.plan.modules
+        .find((item) => item.panelType === 'agent-chat')
+        .events.emits.some((event) => event.name === 'questionnaire-answer'),
+      true
+    );
+
+    assertRelaunchable(imported.config, 'realtime builder handoff');
+
+    let reexported = exportConfig(imported.config, { strict: true });
     assert.equal(reexported.json, exported.json);
   });
 

@@ -87,21 +87,61 @@ function stateField(panelType, component, id, type, path, persistence) {
   };
 }
 
-function moduleCapability(panelTypeName, title, component, capabilities, icon) {
+function moduleCapability(panelTypeName, title, component, capabilities, icon, options = {}) {
+  let panel = basePanelTypes()[panelTypeName] || {};
   return {
     tagName: component,
+    provider: 'symbiote-ui',
+    descriptor: {
+      schemaVersion: '0.1.0',
+      package: 'symbiote-ui',
+      export: component,
+      component,
+    },
     capabilities,
+    ...(options.actions ? { actions: options.actions } : {}),
+    ...(options.menus ? { menus: options.menus } : {}),
+    ...(options.toolbarItems ? { toolbarItems: options.toolbarItems } : {}),
+    ...(options.settings ? { settings: options.settings } : {}),
+    ...(options.state ? { state: options.state } : {}),
+    ...(options.events ? { events: options.events } : {}),
+    ...(options.bindings ? { bindings: options.bindings } : {}),
+    ...(options.slots ? { slots: options.slots } : {}),
+    ...(options.runtimeSlots ? { runtimeSlots: options.runtimeSlots } : {}),
     placement: {
       panelType: panelTypeName,
       title,
       icon,
-      behavior: basePanelTypes()[panelTypeName]?.behavior,
+      behavior: panel.behavior,
+      registers: ['agent-workspace'],
+      regions: options.regions || ['main'],
     },
   };
 }
 
 function unique(items) {
   return [...new Set(items.filter(Boolean))];
+}
+
+function constructionModulePlan() {
+  return demoModuleCapabilities().map((descriptor) => ({
+    panelType: descriptor.placement.panelType,
+    component: descriptor.tagName,
+    capabilities: descriptor.capabilities,
+    placement: {
+      regions: descriptor.placement.regions,
+      registers: descriptor.placement.registers,
+      behavior: descriptor.placement.behavior,
+    },
+    actions: descriptor.actions || [],
+    menus: descriptor.menus || [],
+    toolbarItems: descriptor.toolbarItems || [],
+    settings: descriptor.settings || [],
+    events: descriptor.events || {},
+    bindings: descriptor.bindings || [],
+    slots: descriptor.slots || [],
+    runtimeSlots: descriptor.runtimeSlots || [],
+  }));
 }
 
 function adaptiveScenarios(options) {
@@ -225,6 +265,7 @@ function basePanelTypes() {
 }
 
 function baseConfig(name, overrides = {}) {
+  let moduleDescriptors = demoModuleCapabilities();
   return {
     version: '0.3.0',
     name,
@@ -293,6 +334,10 @@ function baseConfig(name, overrides = {}) {
       },
     ],
     panelTypes: basePanelTypes(),
+    components: {
+      catalog: moduleDescriptors.map((descriptor) => descriptor.tagName),
+      modules: moduleDescriptors,
+    },
     ...overrides,
   };
 }
@@ -768,7 +813,7 @@ function createStages() {
           ),
           decision(
             'theme-mode',
-            'default-light',
+            'default-dark-cascade',
             [
               'apply default Symbiote UI theme cascade',
               'mount theme editor as required widget',
@@ -808,7 +853,7 @@ function createStages() {
               'Which theme mode should be used?',
               'single-select',
               'answered',
-              'default-light'
+              'default-dark-cascade'
             ),
           ],
           plan: {
@@ -1033,7 +1078,7 @@ function createStages() {
           ),
           decision(
             'theme-mode',
-            'default-light',
+            'default-dark-cascade',
             [
               'apply default Symbiote UI cascade theme',
               'keep theme editor mounted',
@@ -1084,7 +1129,7 @@ function createStages() {
               'Which theme mode should be used?',
               'single-select',
               'answered',
-              'default-light'
+              'default-dark-cascade'
             ),
             question(
               'handoff-ready',
@@ -1111,6 +1156,29 @@ function createStages() {
               'bindings-inspector': 74,
               'widget-registry': 64,
               'adaptive-rules': 58,
+            },
+            layout: {
+              topology: 'bsp-workbench',
+              layoutIds: ['conversation', 'builder', 'quality'],
+              sectionLayouts: [
+                { sectionId: 'conversation', groupId: 'agent', layoutId: 'conversation' },
+                { sectionId: 'builder', groupId: 'service', layoutId: 'builder' },
+                { sectionId: 'quality', groupId: 'service', layoutId: 'quality' },
+              ],
+              regions: {
+                conversation: ['agent-chat'],
+                builder: ['layout-builder', 'adaptive-rules'],
+                supporting: ['service-blueprint', 'widget-registry', 'bindings-inspector'],
+                quality: ['validation-checklist', 'theme-editor'],
+              },
+            },
+            modules: constructionModulePlan(),
+            theme: {
+              recipe: 'agent-console',
+              mode: 'dark',
+              source: 'symbiote-ui/default',
+              editorPanel: 'theme-editor',
+              statePath: 'state.workspace.theme',
             },
           },
         },
@@ -1271,56 +1339,137 @@ function demoModuleCapabilities() {
       'Agent Chat',
       'sn-agent-chat-panel',
       ['agent.chat', 'questionnaire.flow'],
-      'forum'
+      'forum',
+      {
+        actions: [{ id: 'send-answer', label: 'Send answer', event: 'questionnaire-answer' }],
+        toolbarItems: [{ id: 'attach-context', label: 'Attach context', command: 'chat.attach-context' }],
+        events: {
+          emits: [{ name: 'questionnaire-answer' }, { name: 'message-submit' }],
+        },
+        bindings: [
+          { id: 'answers', direction: 'output', path: 'state.agent.answers' },
+          { id: 'questionnaire', direction: 'input', path: 'state.agent.questionnaire' },
+        ],
+        slots: [{ id: 'transcript', role: 'content', required: true }],
+        runtimeSlots: [{ id: 'composer-actions', role: 'toolbar' }],
+        regions: ['conversation'],
+      }
     ),
     moduleCapability(
       'service-blueprint',
       'Service Blueprint',
       'sn-service-blueprint-panel',
       ['service.blueprint', 'service.model'],
-      'account_tree'
+      'account_tree',
+      {
+        events: {
+          emits: [{ name: 'blueprint-change' }],
+          consumes: [{ name: 'questionnaire-answer', targetMethod: 'applyAnswer' }],
+        },
+        bindings: [
+          { id: 'service-entities', direction: 'two-way', path: 'state.service.entities' },
+        ],
+        slots: [{ id: 'entities', role: 'content', required: true }],
+        regions: ['supporting-model'],
+      }
     ),
     moduleCapability(
       'layout-builder',
       'Layout Builder Surface',
       'sn-layout-builder-surface',
       ['workspace.layout-builder', 'layout.bsp'],
-      'dashboard_customize'
+      'dashboard_customize',
+      {
+        actions: [{ id: 'apply-layout', label: 'Apply layout', event: 'layout-change' }],
+        toolbarItems: [{ id: 'fit-panels', label: 'Fit panels', command: 'layout.fit-panels' }],
+        settings: basePanelTypes()['layout-builder'].settings,
+        events: {
+          emits: [{ name: 'layout-change' }],
+          consumes: [{ name: 'blueprint-change', targetMethod: 'syncBlueprint' }],
+        },
+        bindings: [
+          { id: 'layout-tree', direction: 'two-way', path: 'layout' },
+        ],
+        runtimeSlots: [{ id: 'panel-palette', role: 'sidecar' }],
+        regions: ['builder-canvas'],
+      }
     ),
     moduleCapability(
       'widget-registry',
       'Widget Registry',
       'sn-widget-registry-panel',
       ['workspace.widget-registry', 'module.discovery'],
-      'widgets'
+      'widgets',
+      {
+        actions: [{ id: 'insert-widget', label: 'Insert widget', event: 'widget-select' }],
+        events: { emits: [{ name: 'widget-select' }] },
+        bindings: [
+          { id: 'selected-widgets', direction: 'output', path: 'state.workspace.widgets' },
+        ],
+        slots: [{ id: 'widget-cards', role: 'content' }],
+        regions: ['component-source'],
+      }
     ),
     moduleCapability(
       'bindings-inspector',
       'Bindings Inspector',
       'sn-bindings-inspector-panel',
       ['workspace.bindings-inspector', 'binding.inspect'],
-      'hub'
+      'hub',
+      {
+        toolbarItems: [{ id: 'validate-bindings', label: 'Validate bindings', command: 'bindings.validate' }],
+        bindings: [
+          { id: 'binding-list', direction: 'input', path: 'data.bindings' },
+        ],
+        slots: [{ id: 'bindings', role: 'content', required: true }],
+        regions: ['inspection-sidecar'],
+      }
     ),
     moduleCapability(
       'adaptive-rules',
       'Adaptive Rules',
       'sn-adaptive-rules-panel',
       ['workspace.adaptive-rules', 'layout.collapse-priority'],
-      'collapse_content'
+      'collapse_content',
+      {
+        events: {
+          consumes: [{ name: 'layout-change', targetMethod: 'rankCollapse' }],
+        },
+        bindings: [
+          { id: 'collapse-priorities', direction: 'input', path: 'construction.plan.adaptivePriorities' },
+        ],
+        regions: ['responsive-policy'],
+      }
     ),
     moduleCapability(
       'validation-checklist',
       'Validation Checklist',
       'sn-validation-checklist-panel',
       ['workspace.validation-checklist', 'validation.report'],
-      'task_alt'
+      'task_alt',
+      {
+        bindings: [
+          { id: 'validation-reports', direction: 'input', path: 'validation.reports' },
+        ],
+        regions: ['quality-footer'],
+      }
     ),
     moduleCapability(
       'theme-editor',
       'Theme Editor',
       'sn-theme-editor-widget',
       ['workspace.theme-editor', 'theme.cascade'],
-      'palette'
+      'palette',
+      {
+        settings: basePanelTypes()['theme-editor'].settings,
+        events: {
+          emits: [{ name: 'cascade-theme-change' }],
+        },
+        bindings: [
+          { id: 'cascade-theme', direction: 'two-way', path: 'theme' },
+        ],
+        regions: ['theme-control'],
+      }
     ),
   ];
 }
@@ -1376,6 +1525,15 @@ function buildConstructionTrace(finalStage) {
       panelType: item.placement.panelType,
       component: item.tagName,
       capabilities: item.capabilities,
+      placement: item.placement,
+      actions: item.actions || [],
+      menus: item.menus || [],
+      toolbarItems: item.toolbarItems || [],
+      settings: item.settings || [],
+      events: item.events || {},
+      bindings: item.bindings || [],
+      slots: item.slots || [],
+      runtimeSlots: item.runtimeSlots || [],
     })),
     selectedModules,
     capabilityCoverage: {
@@ -1389,6 +1547,28 @@ function buildConstructionTrace(finalStage) {
       })),
     },
     verificationReports: result.plan.verification.reports,
+    constructionPlanEvidence: {
+      topology: finalConfig.construction.plan.layout?.topology,
+      layoutIds: finalConfig.construction.plan.layout?.layoutIds,
+      regionCount: Object.keys(finalConfig.construction.plan.layout?.regions || {}).length,
+      moduleCount: finalConfig.construction.plan.modules?.length || 0,
+      actionCount: finalConfig.construction.plan.modules
+        ?.reduce((sum, item) => sum + (item.actions?.length || 0), 0) || 0,
+      toolbarItemCount: finalConfig.construction.plan.modules
+        ?.reduce((sum, item) => sum + (item.toolbarItems?.length || 0), 0) || 0,
+      settingCount: finalConfig.construction.plan.modules
+        ?.reduce((sum, item) => sum + (item.settings?.length || 0), 0) || 0,
+      eventCount: finalConfig.construction.plan.modules
+        ?.reduce((sum, item) => {
+          let events = item.events || {};
+          return sum + (events.emits?.length || 0) + (events.consumes?.length || 0);
+        }, 0) || 0,
+      bindingCount: finalConfig.construction.plan.modules
+        ?.reduce((sum, item) => sum + (item.bindings?.length || 0), 0) || 0,
+      slotCount: finalConfig.construction.plan.modules
+        ?.reduce((sum, item) => sum + (item.slots?.length || 0) + (item.runtimeSlots?.length || 0), 0) || 0,
+      theme: finalConfig.construction.plan.theme,
+    },
     adaptiveThemeEvidence: {
       responsiveMode: finalConfig.rootBehavior.responsiveMode,
       breakpoint: finalConfig.rootBehavior.responsiveBreakpoint,
@@ -1460,13 +1640,20 @@ function buildAcceptanceMatrix(demo) {
     {
       id: 'construction-tool-lineage',
       status: demo.constructionTrace?.capabilityCoverage?.missing?.length === 0 &&
-        demo.constructionTrace?.exportImportEvidence?.valid === true
+        demo.constructionTrace?.exportImportEvidence?.valid === true &&
+        demo.constructionTrace?.constructionPlanEvidence?.moduleCount >= demo.requiredWidgets.length &&
+        demo.constructionTrace?.constructionPlanEvidence?.regionCount >= 4 &&
+        demo.constructionTrace?.constructionPlanEvidence?.actionCount >= 3 &&
+        demo.constructionTrace?.constructionPlanEvidence?.eventCount >= 6 &&
+        demo.constructionTrace?.constructionPlanEvidence?.bindingCount >= 6 &&
+        demo.constructionTrace?.constructionPlanEvidence?.slotCount >= 4
         ? 'pass'
         : 'fail',
       evidence: {
         tools: demo.constructionTrace?.toolSequence,
         questions: demo.constructionTrace?.canonicalQuestionIds,
         selectedModules: demo.constructionTrace?.selectedModules?.map((item) => item.panelType),
+        constructionPlan: demo.constructionTrace?.constructionPlanEvidence,
       },
     },
   ];

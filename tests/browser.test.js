@@ -421,6 +421,218 @@ describe('mountWorkspace', () => {
     assert.equal(panels[1].children[0].textContent, 'Preview');
   });
 
+  it('updates the mounted default preview without replacing the workspace wrapper', () => {
+    let container = createContainer();
+    let mounted = mountWorkspace({
+      version: '0.3.0',
+      name: 'Initial Workspace',
+      panelTypes: {
+        timeline: {
+          title: 'Timeline',
+          component: 'sn-video-timeline',
+        },
+      },
+      layout: {
+        type: 'panel',
+        panelType: 'timeline',
+      },
+    }, container);
+    let wrapper = mounted.element;
+    let initialPanel = mounted.element.querySelectorAll('.symbiote-workspace__panel')[0];
+
+    mounted.updateConfig({
+      version: '0.3.0',
+      name: 'Updated Workspace',
+      panelTypes: {
+        preview: {
+          title: 'Preview',
+          component: 'sn-video-preview',
+        },
+      },
+      layout: {
+        type: 'panel',
+        panelType: 'preview',
+      },
+      theme: {
+        overrides: { '--sn-panel-bg': 'black' },
+      },
+    });
+
+    let updatedPanel = mounted.element.querySelectorAll('.symbiote-workspace__panel')[0];
+    assert.equal(container.children.length, 1);
+    assert.equal(mounted.element, wrapper);
+    assert.notEqual(updatedPanel, initialPanel);
+    assert.equal(mounted.config.name, 'Updated Workspace');
+    assert.equal(mounted.element.dataset.workspaceName, 'Updated Workspace');
+    assert.equal(updatedPanel.dataset.panelType, 'preview');
+    assert.equal(updatedPanel.dataset.component, 'sn-video-preview');
+    assert.equal(mounted.element.style.getPropertyValue('--sn-panel-bg'), 'black');
+  });
+
+  it('delegates mounted updates to runtime handles without destroying them', () => {
+    let container = createContainer();
+    let destroyCalls = 0;
+    let updates = [];
+    let mounted = mountWorkspace({
+      version: '0.3.0',
+      name: 'Runtime Workspace',
+      theme: { params: { hue: 220 } },
+    }, container, {
+      themeAdapter: createThemeAdapter(),
+      runtimeController: {
+        mountWorkspace() {
+          return {
+            updateConfig(update) {
+              updates.push(update);
+            },
+            destroy() {
+              destroyCalls += 1;
+            },
+          };
+        },
+      },
+    });
+
+    let wrapper = mounted.element;
+    mounted.updateConfig({
+      version: '0.3.0',
+      name: 'Runtime Workspace Updated',
+      theme: { params: { hue: 180 } },
+    });
+
+    assert.equal(mounted.element, wrapper);
+    assert.equal(container.children.length, 1);
+    assert.equal(updates.length, 1);
+    assert.equal(updates[0].config.name, 'Runtime Workspace Updated');
+    assert.equal(updates[0].previousConfig.name, 'Runtime Workspace');
+    assert.equal(destroyCalls, 0);
+
+    mounted.destroy();
+    assert.equal(destroyCalls, 1);
+  });
+
+  it('delegates mounted updates to runtime controllers with the controller context', () => {
+    let container = createContainer();
+    let updates = [];
+    let controller = {
+      name: 'controller',
+      mountWorkspace() {
+        return {};
+      },
+      updateConfig(update) {
+        updates.push({
+          thisValue: this,
+          update,
+        });
+      },
+    };
+    let mounted = mountWorkspace({
+      version: '0.3.0',
+      name: 'Controller Workspace',
+    }, container, {
+      runtimeController: controller,
+    });
+
+    mounted.updateConfig({
+      version: '0.3.0',
+      name: 'Controller Workspace Updated',
+    });
+
+    assert.equal(updates.length, 1);
+    assert.equal(updates[0].thisValue, controller);
+    assert.equal(updates[0].update.config.name, 'Controller Workspace Updated');
+    assert.equal(updates[0].update.previousConfig.name, 'Controller Workspace');
+  });
+
+  it('rejects invalid mounted updates before mutating the existing workspace', () => {
+    let container = createContainer();
+    let mounted = mountWorkspace({
+      version: '0.3.0',
+      name: 'Mounted Workspace',
+      panelTypes: {
+        editor: {
+          title: 'Editor',
+          component: 'sn-editor-panel',
+        },
+      },
+      layout: {
+        type: 'panel',
+        panelType: 'editor',
+      },
+    }, container);
+    let wrapper = mounted.element;
+    let panel = wrapper.querySelectorAll('.symbiote-workspace__panel')[0];
+
+    assert.throws(() => mounted.updateConfig({
+      version: '0.3.0',
+      name: 'Invalid Workspace',
+      panelTypes: {
+        editor: {
+          title: 'Editor',
+          component: 'sn-editor-panel',
+        },
+      },
+      layout: {
+        type: 'panel',
+        panelType: 'editor',
+      },
+    }, {
+      catalog: { has: () => false, list: () => [] },
+      strictComponents: true,
+    }), /Missing components: sn-editor-panel/);
+
+    assert.equal(mounted.element, wrapper);
+    assert.equal(mounted.config.name, 'Mounted Workspace');
+    assert.equal(wrapper.dataset.workspaceName, 'Mounted Workspace');
+    assert.equal(wrapper.querySelectorAll('.symbiote-workspace__panel')[0], panel);
+  });
+
+  it('applies validated workspace patches through the mounted update contract', async () => {
+    let container = createContainer();
+    let mounted = mountWorkspace({
+      version: '0.3.0',
+      name: 'Patch Workspace',
+      panelTypes: {
+        timeline: {
+          title: 'Timeline',
+          component: 'sn-video-timeline',
+        },
+      },
+      layout: {
+        type: 'panel',
+        panelType: 'timeline',
+      },
+    }, container);
+    let wrapper = mounted.element;
+
+    let result = await mounted.applyPatch({
+      overlay: {
+        name: 'Patched Workspace',
+        panelTypes: {
+          preview: {
+            title: 'Preview',
+            component: 'sn-video-preview',
+          },
+        },
+        layout: {
+          type: 'panel',
+          panelType: 'preview',
+        },
+      },
+    });
+
+    assert.equal(result.status, 'ok');
+    assert.equal(result.mounted, mounted);
+    assert.equal(mounted.element, wrapper);
+    assert.equal(mounted.config.name, 'Patched Workspace');
+    assert.equal(mounted.config.patches.length, 1);
+    assert.equal(wrapper.dataset.workspaceName, 'Patched Workspace');
+    assert.equal(
+      wrapper.querySelectorAll('.symbiote-workspace__panel')[0].dataset.panelType,
+      'preview'
+    );
+  });
+
   it('cleans up runtime handles and stops writeback after destroy', () => {
     let container = createContainer();
     let config = {

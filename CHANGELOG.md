@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Added `mountWorkspace().updateConfig()` and `mountWorkspace().applyPatch()`
+  browser APIs for validated no-reload workspace updates that preserve the
+  mounted wrapper, reapply theme state, and delegate updates to runtime
+  controllers when available.
+- Updated the realtime builder demo to advance stages through atomic mounted
+  updates while keeping a stable `panel-layout` instance and exposing
+  `runtimeInstanceId`, `atomicUpdateCount`, and `lastUpdatedStage` DOM evidence.
+- Updated realtime browser smoke assertions to verify the layout/chat/Cascade
+  library primitives, reject old local demo surfaces, check app-level Shadow
+  DOM drift, and validate atomic update evidence plus mobile drawer behavior.
+- Extended the realtime builder handoff with portable `symbiote-ui` module
+  capability descriptors and `construction.plan` metadata for layout topology,
+  regions, actions, toolbar items, settings, events, bindings, slots, adaptive
+  priorities, and dark Cascade theme handoff.
 - Added a realtime chat-state visual demo that plays mock questionnaire state
   into service-builder workspace layouts, required widgets, bindings, adaptive
   metadata, validation reports, and the required theme editor widget.

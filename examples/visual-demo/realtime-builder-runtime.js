@@ -93,6 +93,7 @@ let viewportMode = 'wide';
 let mounted = null;
 let playTimer = null;
 let demoModulesDefined = false;
+let layoutInstanceSeq = 0;
 
 applyCascadeTheme(document.documentElement, CASCADE_THEME_DEFAULTS, {
   notify: false,
@@ -348,22 +349,47 @@ function hydrateDemoModules(root, stage) {
 function createSymbioteLayoutRuntime(stage) {
   return {
     mountWorkspace({ config, element }) {
+      let currentStage = stage;
       defineDemoWorkspaceModules();
       let layout = document.createElement('panel-layout');
       layout.className = 'demo-symbiote-layout';
+      layout.dataset.runtimeInstanceId = \`layout-\${++layoutInstanceSeq}\`;
+      layout.dataset.atomicUpdateCount = '0';
       layout.setAttribute('responsive-mode', config.rootBehavior?.responsiveMode || 'drawer');
       layout.setAttribute('responsive-breakpoint', String(config.rootBehavior?.responsiveBreakpoint || 860));
       layout.setAttribute('swipe-control', config.rootBehavior?.swipeControl || 'edge');
       element.appendChild(layout);
+      element.dataset.runtimeInstanceId = layout.dataset.runtimeInstanceId;
+      element.dataset.atomicUpdateCount = '0';
       requestAnimationFrame(() => {
         layout.$.panelTypes = config.panelTypes || {};
         layout.$.layoutTree = normalizeLayoutNode(config.layout);
         requestAnimationFrame(() => {
-          hydrateDemoModules(layout, stage);
-          applyAdaptiveScenario(stage);
+          hydrateDemoModules(layout, currentStage);
+          applyAdaptiveScenario(currentStage);
         });
       });
       return {
+        updateConfig(update) {
+          currentStage = update.stage || currentStage;
+          let nextConfig = update.config;
+          let updateCount = Number(layout.dataset.atomicUpdateCount || '0') + 1;
+          layout.dataset.atomicUpdateCount = String(updateCount);
+          layout.dataset.lastUpdateReason = update.reason || 'updateConfig';
+          layout.dataset.lastStage = currentStage.id || '';
+          element.dataset.runtimeInstanceId = layout.dataset.runtimeInstanceId;
+          element.dataset.atomicUpdateCount = String(updateCount);
+          element.dataset.lastUpdatedStage = currentStage.id || '';
+          layout.setAttribute('responsive-mode', nextConfig.rootBehavior?.responsiveMode || 'drawer');
+          layout.setAttribute('responsive-breakpoint', String(nextConfig.rootBehavior?.responsiveBreakpoint || 860));
+          layout.setAttribute('swipe-control', nextConfig.rootBehavior?.swipeControl || 'edge');
+          layout.$.panelTypes = nextConfig.panelTypes || {};
+          layout.$.layoutTree = normalizeLayoutNode(nextConfig.layout);
+          requestAnimationFrame(() => {
+            hydrateDemoModules(layout, currentStage);
+            applyAdaptiveScenario(currentStage);
+          });
+        },
         destroy() {
           layout.remove();
         },
@@ -760,6 +786,17 @@ let viewportControls = shell.querySelector('.demo-viewport-controls');
 let stageRail = shell.querySelector('.demo-stage-rail');
 let workspace = shell.querySelector('.demo-workspace');
 
+shell.addEventListener('cascade-theme-open-full', (event) => {
+  event.preventDefault?.();
+  let layout = workspace.querySelector('panel-layout');
+  shell.dataset.themeEditorOpenRequest = 'theme-editor';
+  shell.dataset.themeEditorOpenSource = 'cascade-theme-widget';
+  layout?.openPanel?.('theme-editor', {
+    uiInvoked: true,
+    source: 'cascade-theme-widget',
+  });
+});
+
 function buildProgressPercent(index) {
   let total = demo.stages.reduce((sum, stage) => sum + buildOperations(stage).length, 0);
   let previous = demo.stages
@@ -849,10 +886,13 @@ function renderStageRail() {
 
 function renderWorkspace(stage) {
   if (mounted) {
-    mounted.destroy();
-    mounted = null;
+    mounted.updateConfig(stage.config, {
+      stage,
+      reason: 'realtime-stage',
+    });
+    applyAdaptiveScenario(stage);
+    return;
   }
-  workspace.textContent = '';
   mounted = mountWorkspace(stage.config, workspace, {
     runtimeController: createSymbioteLayoutRuntime(stage),
     themeAdapter: { applyCascadeTheme },

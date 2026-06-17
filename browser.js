@@ -97,6 +97,9 @@ import {
   extractThemeSubtrees,
   loadWorkspaceConfig,
 } from './loader/index.js';
+import {
+  applyWorkspacePatch as applyValidatedWorkspacePatch,
+} from './validation/index.js';
 
 function isObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -353,6 +356,29 @@ function renderDefaultWorkspacePreview(config, wrapper) {
   };
 }
 
+function updateDefaultWorkspacePreview(config, wrapper, runtimeHandle) {
+  if (typeof runtimeHandle?.destroy === 'function') runtimeHandle.destroy();
+  return renderDefaultWorkspacePreview(config, wrapper);
+}
+
+function resolveRuntimeUpdate(runtimeController, runtimeHandle) {
+  for (let name of ['updateConfig', 'updateWorkspace', 'applyConfig']) {
+    if (typeof runtimeHandle?.[name] === 'function') {
+      return { fn: runtimeHandle[name], target: runtimeHandle };
+    }
+    if (typeof runtimeController?.[name] === 'function') {
+      return { fn: runtimeController[name], target: runtimeController };
+    }
+  }
+  return null;
+}
+
+function assignMountedState(target, state) {
+  target.config = state.config;
+  target.loaderResult = state.loaderResult;
+  target.theme = state.theme;
+}
+
 /**
  * Applies workspace theme layers to a root element.
  * @param {import('./schema/workspace-schema.js').WorkspaceConfig} config
@@ -417,7 +443,7 @@ export function applyWorkspaceTheme(config, root, options = {}) {
  * @param {Object} [options.themeAdapter] - Object with applyCascadeTheme(element, options, eventOptions)
  * @param {function(Object): void} [options.onThemeChange] - Called after editor/widget theme changes
  * @param {boolean} [options.writeThemeChanges] - Persist cascade-theme-change state into config
- * @returns {{ destroy: function(): void, element: HTMLElement, config: Object, loaderResult: Object, theme: Object }}
+ * @returns {{ destroy: function(): void, updateConfig: function(Object, Object=): Object, applyPatch: function(Object, Object=): Promise<Object>, element: HTMLElement, config: Object, loaderResult: Object, theme: Object }}
  */
 export function mountWorkspace(config, container, options = {}) {
   if (!container || typeof container.appendChild !== 'function') {
@@ -425,7 +451,8 @@ export function mountWorkspace(config, container, options = {}) {
   }
 
   let loader = options.loader || loadWorkspaceConfig;
-  let loaderResult = loader(config, {
+  let currentConfig = config;
+  let loaderResult = loader(currentConfig, {
     catalog: options.catalog,
     strict: options.strictComponents,
   });
@@ -439,30 +466,108 @@ export function mountWorkspace(config, container, options = {}) {
   let fragment = container.ownerDocument.createDocumentFragment();
   let wrapper = container.ownerDocument.createElement('div');
   wrapper.className = 'symbiote-workspace';
-  wrapper.dataset.workspaceName = config.name || 'workspace';
-  wrapper.dataset.workspaceVersion = config.version || '0.1.0';
+  wrapper.dataset.workspaceName = currentConfig.name || 'workspace';
+  wrapper.dataset.workspaceVersion = currentConfig.version || '0.1.0';
   fragment.appendChild(wrapper);
   container.appendChild(fragment);
 
   let runtimeMount = options.runtimeController?.mountWorkspace || options.runtimeController?.mount;
   let runtimeHandle = runtimeMount?.call(options.runtimeController, {
-    config,
+    config: currentConfig,
     element: wrapper,
     loaderResult,
   });
   if (!runtimeMount && options.renderDefaultPreview !== false) {
-    runtimeHandle = renderDefaultWorkspacePreview(config, wrapper);
+    runtimeHandle = renderDefaultWorkspacePreview(currentConfig, wrapper);
   }
 
-  let theme = applyWorkspaceTheme(config, wrapper, options);
+  let theme = applyWorkspaceTheme(currentConfig, wrapper, options);
   let writeThemeChanges = options.writeThemeChanges !== false;
+  let destroyed = false;
+  let mounted = {
+    element: wrapper,
+    config: currentConfig,
+    loaderResult,
+    theme,
+    updateConfig(nextConfig, updateOptions = {}) {
+      if (destroyed) {
+        throw new Error('mountWorkspace updateConfig() called after destroy().');
+      }
+      let nextLoaderResult = loader(nextConfig, {
+        catalog: updateOptions.catalog || options.catalog,
+        strict: updateOptions.strictComponents ?? options.strictComponents,
+      });
+      if (!nextLoaderResult?.valid) {
+        let message = (nextLoaderResult?.errors || [])
+          .map((error) => `${error.path}: ${error.message}`)
+          .join('; ');
+        throw new Error(`mountWorkspace updateConfig received invalid config: ${message || 'unknown validation error'}`);
+      }
+
+      let runtimeUpdate = resolveRuntimeUpdate(options.runtimeController, runtimeHandle);
+      if (runtimeUpdate) {
+        runtimeUpdate.fn.call(runtimeUpdate.target, {
+          ...updateOptions,
+          config: nextConfig,
+          previousConfig: currentConfig,
+          element: wrapper,
+          loaderResult: nextLoaderResult,
+          previousLoaderResult: loaderResult,
+          reason: updateOptions.reason || 'updateConfig',
+        });
+      } else if (!runtimeMount && options.renderDefaultPreview !== false) {
+        runtimeHandle = updateDefaultWorkspacePreview(nextConfig, wrapper, runtimeHandle);
+      } else if (runtimeMount) {
+        if (typeof runtimeHandle?.destroy === 'function') runtimeHandle.destroy();
+        runtimeHandle = runtimeMount.call(options.runtimeController, {
+          config: nextConfig,
+          element: wrapper,
+          loaderResult: nextLoaderResult,
+        });
+      }
+
+      currentConfig = nextConfig;
+      loaderResult = nextLoaderResult;
+      wrapper.dataset.workspaceName = currentConfig.name || 'workspace';
+      wrapper.dataset.workspaceVersion = currentConfig.version || '0.1.0';
+      theme = applyWorkspaceTheme(currentConfig, wrapper, options);
+      assignMountedState(mounted, { config: currentConfig, loaderResult, theme });
+      return mounted;
+    },
+    async applyPatch(patch, patchOptions = {}) {
+      if (destroyed) {
+        throw new Error('mountWorkspace applyPatch() called after destroy().');
+      }
+      let result = await applyValidatedWorkspacePatch(currentConfig, patch, patchOptions);
+      if (result.status === 'blocked' || !result.config) {
+        let error = new Error('mountWorkspace applyPatch received a blocked workspace patch.');
+        error.report = result;
+        throw error;
+      }
+      mounted.updateConfig(result.config, {
+        ...patchOptions,
+        reason: patchOptions.reason || 'applyPatch',
+      });
+      return {
+        ...result,
+        mounted,
+      };
+    },
+    destroy() {
+      if (destroyed) return;
+      destroyed = true;
+      wrapper.removeEventListener('cascade-theme-change', onThemeChange);
+      if (typeof runtimeHandle?.destroy === 'function') runtimeHandle.destroy();
+      wrapper.remove();
+    },
+  };
   let onThemeChange = (event) => {
     let detail = event.detail || {};
     if (writeThemeChanges) {
-      updateThemeParams(config, detail.state, detail.targetSelector);
+      updateThemeParams(currentConfig, detail.state, detail.targetSelector);
     }
     options.onThemeChange?.({
-      config,
+      config: currentConfig,
       event,
       state: detail.state || null,
       targetSelector: detail.targetSelector || null,
@@ -470,15 +575,5 @@ export function mountWorkspace(config, container, options = {}) {
   };
   wrapper.addEventListener('cascade-theme-change', onThemeChange);
 
-  return {
-    element: wrapper,
-    config,
-    loaderResult,
-    theme,
-    destroy() {
-      wrapper.removeEventListener('cascade-theme-change', onThemeChange);
-      if (typeof runtimeHandle?.destroy === 'function') runtimeHandle.destroy();
-      wrapper.remove();
-    },
-  };
+  return mounted;
 }

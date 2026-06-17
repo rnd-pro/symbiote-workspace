@@ -413,21 +413,55 @@ new Promise((resolve, reject) => {
       return;
     }
     let shell = document.querySelector('.demo-shell');
-    let activeSteps = [...document.querySelectorAll('.demo-build-step[data-status="active"]')];
-    let doneSteps = [...document.querySelectorAll('.demo-build-step[data-status="done"]')];
+    let workspace = document.querySelector('.demo-workspace');
+    let layout = workspace?.querySelector('panel-layout');
     let finalStage = shell?.dataset.stage === 'validation';
     let finalKind = shell?.dataset.buildKind === 'rank-layout-behavior';
     let progress = document.querySelector('.demo-build-progress span')?.textContent || '';
-    let themeEditor = document.body.textContent.includes('theme-editor');
-    let contractSections = [
-      'Service blueprint',
-      'Layout roles',
-      'Widget registry',
-      'Adaptive and theme state',
-      'Adaptive preview',
-      'Construction tool trace',
-    ].every((text) => document.body.textContent.includes(text));
-    if (finalStage && finalKind && progress.includes('100%') && doneSteps.length >= 3 && activeSteps.length === 1 && themeEditor && contractSections) {
+    let requiredElements = [
+      'panel-layout',
+      'chat-workspace',
+      'cascade-theme-widget',
+      'cascade-theme-editor',
+      'sn-card',
+      'sn-button',
+      'sn-segmented-control',
+    ].filter((selector) => document.querySelector(selector));
+    let oldDemoSurfaces = document.querySelector('.demo-chat, .demo-inspector');
+    let appShadowHosts = [...document.querySelectorAll('.demo-shell, .demo-workspace, .symbiote-workspace, panel-layout')]
+      .filter((element) => element.shadowRoot);
+    let modulePanels = [...document.querySelectorAll('[data-module]')].map((element) => element.dataset.module);
+    let expectedPanels = [
+      'agent-chat',
+      'service-blueprint',
+      'layout-builder',
+      'widget-registry',
+      'bindings-inspector',
+      'adaptive-rules',
+      'validation-checklist',
+      'theme-editor',
+    ];
+    let panelsReady = expectedPanels.every((panel) => modulePanels.includes(panel));
+    let runtimeInstanceId = layout?.dataset.runtimeInstanceId || workspace?.dataset.runtimeInstanceId || '';
+    let updateCount = Number(layout?.dataset.atomicUpdateCount || workspace?.dataset.atomicUpdateCount || '0');
+    let lastUpdatedStage = workspace?.dataset.lastUpdatedStage || '';
+    let smokeReady = finalStage &&
+      finalKind &&
+      progress.includes('100%') &&
+      requiredElements.length === 7 &&
+      !oldDemoSurfaces &&
+      appShadowHosts.length === 0 &&
+      panelsReady &&
+      runtimeInstanceId &&
+      updateCount > 0 &&
+      lastUpdatedStage === 'validation';
+    if (smokeReady) {
+      let themeWidget = document.querySelector('cascade-theme-widget');
+      themeWidget?.dispatchEvent?.(new CustomEvent('cascade-theme-open-full', {
+        bubbles: true,
+        composed: true,
+      }));
+      let openRequest = shell?.dataset.themeEditorOpenRequest === 'theme-editor';
       let mobile = document.querySelector('[data-viewport-mode="mobile"]');
       if (!mobile) {
         reject(new Error('Realtime builder mobile adaptive preview button is missing.'));
@@ -439,10 +473,10 @@ new Promise((resolve, reject) => {
       let collapsedPanels = mobileShell?.dataset.collapsedPanels || '';
       let dockedTheme = document.querySelector('[data-panel-type="theme-editor"][data-adaptive-state="docked"]');
       let collapsedAdaptive = document.querySelector('[data-panel-type="adaptive-rules"][data-adaptive-state="collapsed"]');
-      let themeEvidence = mobileShell?.dataset.themeMode === 'light' &&
+      let themeEvidence = mobileShell?.dataset.themeMode === 'dark' &&
         mobileShell?.dataset.themeEditorState === 'validated' &&
         mobileShell?.dataset.adaptiveMode === 'drawer';
-      if (mobileShell?.dataset.viewportMode !== 'mobile' || !dockedPanels.includes('theme-editor') || !collapsedPanels.includes('adaptive-rules') || !dockedTheme || !collapsedAdaptive || !themeEvidence) {
+      if (mobileShell?.dataset.viewportMode !== 'mobile' || !dockedPanels.includes('theme-editor') || !collapsedPanels.includes('adaptive-rules') || !dockedTheme || !collapsedAdaptive || !themeEvidence || !openRequest) {
         reject(new Error('Realtime builder mobile adaptive preview did not expose docked/collapsed panels.'));
         return;
       }
@@ -457,8 +491,12 @@ new Promise((resolve, reject) => {
         dockedPanels,
         collapsedPanels,
         progress,
-        activeStep: activeSteps[0].textContent,
-        doneStepCount: doneSteps.length,
+        runtimeInstanceId,
+        atomicUpdateCount: updateCount,
+        lastUpdatedStage,
+        requiredElements: requiredElements.map((element) => element.localName),
+        modulePanels,
+        themeEditorOpenRequest: mobileShell.dataset.themeEditorOpenRequest,
       });
       return;
     }
