@@ -236,6 +236,8 @@ await startPreview(config, {
   imports: {
     'symbiote-workspace/browser': './mock-workspace-browser.js',
     'symbiote-ui/ui': './mock-symbiote-ui.js',
+    'symbiote-engine': './mock-symbiote-engine.js',
+    'symbiote-engine/contracts': './mock-symbiote-engine-contracts.js',
   },
 });
 ```
@@ -245,8 +247,9 @@ sanitizer as export/import flows, so host/session fields and local paths are not
 copied into preview runtime state.
 
 When `imports` is omitted, preview defaults to local workspace paths and the
-returned `hint` serves the repository root so `symbiote-workspace/browser` and
-`symbiote-ui/ui` can resolve from the generated import map.
+returned `hint` serves the repository root so `symbiote-workspace/browser`,
+`symbiote-ui/ui`, `symbiote-engine`, and `symbiote-engine/contracts` can
+resolve from the generated import map.
 
 The generated runtime imports `applyCascadeTheme` from
 `symbiote-ui/ui`, passes it as `themeAdapter` to
@@ -317,8 +320,9 @@ for a portable config:
 - chat construction tools: `classify_workspace`, `plan_workspace`,
   `construct_workspace`, patch validation/application, import, and export;
 - standalone browser requirements: import-map entries for
-  `symbiote-workspace/browser` and `symbiote-ui/ui`,
-  `<script type="importmap">` ordering, `mountWorkspace()`, and
+  `symbiote-workspace/browser`, `symbiote-ui/ui`, `symbiote-engine`, and
+  `symbiote-engine/contracts`, `<script type="importmap">` ordering,
+  `mountWorkspace()`, and
   `symbiote-ui/ui.applyCascadeTheme`;
 - persistence requirements: `export_config`, `import_config`, and
   `requiredEngineServices` derived from module-declared host services such as
