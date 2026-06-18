@@ -727,6 +727,101 @@ describe('mountWorkspace', () => {
     assert.equal(history.length, initialHistoryLength);
   });
 
+  it('preserves theme writeback across mounted runtime updates', () => {
+    let container = createContainer();
+    let destroyCalls = 0;
+    let runtimeElement;
+    let themeChanges = [];
+    let config = {
+      version: '0.3.0',
+      name: 'Theme Runtime Workspace',
+      theme: { params: { mode: 'light', hue: 220 } },
+      panelTypes: {
+        editor: {
+          title: 'Editor',
+          component: 'sn-editor-panel',
+        },
+      },
+      layout: {
+        type: 'panel',
+        panelType: 'editor',
+      },
+    };
+
+    let mounted = mountWorkspace(config, container, {
+      themeAdapter: createThemeAdapter(),
+      onThemeChange: (change) => themeChanges.push(change),
+      runtimeController: {
+        mountWorkspace({ element }) {
+          runtimeElement = element.ownerDocument.createElement('panel-layout');
+          element.appendChild(runtimeElement);
+          return {
+            updateConfig({ config: nextConfig, element }) {
+              runtimeElement.dataset.updatedThemeMode = nextConfig.theme?.params?.mode || '';
+              element.dataset.updatedThemeMode = runtimeElement.dataset.updatedThemeMode;
+            },
+            destroy() {
+              destroyCalls += 1;
+            },
+          };
+        },
+      },
+    });
+    let wrapper = mounted.element;
+
+    wrapper.dispatchEvent({
+      type: 'cascade-theme-change',
+      bubbles: true,
+      detail: {
+        state: { mode: 'dark', hue: 180 },
+        targetSelector: null,
+      },
+    });
+    assert.deepEqual(mounted.config.theme.params, {
+      mode: 'dark',
+      hue: 180,
+    });
+
+    mounted.updateConfig({
+      ...mounted.config,
+      name: 'Theme Runtime Workspace Updated',
+      theme: { params: { ...mounted.config.theme.params, density: 92 } },
+    }, {
+      stage: { id: 'builder' },
+      reason: 'realtime-stage',
+    });
+    assert.deepEqual(mounted.config.theme.params, {
+      mode: 'dark',
+      hue: 180,
+      density: 92,
+    });
+
+    wrapper.dispatchEvent({
+      type: 'cascade-theme-change',
+      bubbles: true,
+      detail: {
+        state: { mode: 'contrast', hue: 90 },
+        targetSelector: null,
+      },
+    });
+
+    assert.equal(mounted.element, wrapper);
+    assert.equal(container.children[0], wrapper);
+    assert.equal(runtimeElement.parentElement, wrapper);
+    assert.equal(runtimeElement.dataset.updatedThemeMode, 'dark');
+    assert.equal(wrapper.dataset.updatedThemeMode, 'dark');
+    assert.equal(mounted.config.name, 'Theme Runtime Workspace Updated');
+    assert.deepEqual(mounted.config.theme.params, {
+      mode: 'contrast',
+      hue: 90,
+      density: 92,
+    });
+    assert.equal(themeChanges.length, 2);
+    assert.equal(themeChanges[0].state.mode, 'dark');
+    assert.equal(themeChanges[1].state.mode, 'contrast');
+    assert.equal(destroyCalls, 0);
+  });
+
   it('cleans up runtime handles and stops writeback after destroy', () => {
     let container = createContainer();
     let config = {

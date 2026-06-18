@@ -595,6 +595,22 @@ new Promise((resolve, reject) => {
       !themeWidget.hasAttribute('storage-key') &&
       !themeWidget.hasAttribute('target-selector');
     let themeEditorDefined = Boolean(customElements.get('cascade-theme-editor'));
+    let themeTransitionStage = shell?.dataset.themeTransitionStage || '';
+    let themeTransitionSource = shell?.dataset.themeTransitionSource || '';
+    let themeTransitionFromMode = shell?.dataset.themeTransitionFromMode || '';
+    let themeTransitionToMode = shell?.dataset.themeTransitionToMode || '';
+    let themeTransitionFromHue = shell?.dataset.themeTransitionFromHue || '';
+    let themeTransitionToHue = shell?.dataset.themeTransitionToHue || '';
+    let themeTransitionChanged = shell?.dataset.themeTransitionChanged || '';
+    let themeTransitionUpdateCount = Number(shell?.dataset.themeTransitionUpdateCount || '0');
+    let themeTransitionReady =
+      themeTransitionStage === 'builder' &&
+      themeTransitionSource === 'cascade-theme-change' &&
+      themeTransitionChanged === 'true' &&
+      themeTransitionFromMode === 'dark' &&
+      themeTransitionToMode === 'dark' &&
+      Number(themeTransitionFromHue) !== Number(themeTransitionToHue) &&
+      themeTransitionUpdateCount > 0;
     let smokeReady = finalStage &&
       finalKind &&
       progress.includes('100%') &&
@@ -603,6 +619,7 @@ new Promise((resolve, reject) => {
       appShadowHosts.length === 0 &&
       themeWidgetUsesDefaults &&
       themeEditorDefined &&
+      themeTransitionReady &&
       panelsReady &&
       runtimeInstanceId &&
       updateCount > 0 &&
@@ -662,6 +679,14 @@ new Promise((resolve, reject) => {
             noNavigation,
             mobileLayoutIdentityPreserved,
             mobileWorkspaceIdentityPreserved,
+            themeTransitionStage,
+            themeTransitionSource,
+            themeTransitionFromMode,
+            themeTransitionToMode,
+            themeTransitionFromHue,
+            themeTransitionToHue,
+            themeTransitionChanged,
+            themeTransitionUpdateCount,
             themeWidgetUsesDefaults,
             themeEditorDefined,
             requiredElements: requiredElements.map((element) => element.localName),
@@ -701,6 +726,15 @@ new Promise((resolve, reject) => {
         appShadowHostCount: appShadowHosts.length,
         themeWidgetUsesDefaults: Boolean(themeWidgetUsesDefaults),
         themeEditorDefined,
+        themeTransitionStage,
+        themeTransitionSource,
+        themeTransitionFromMode,
+        themeTransitionToMode,
+        themeTransitionFromHue,
+        themeTransitionToHue,
+        themeTransitionChanged,
+        themeTransitionUpdateCount,
+        themeTransitionReady,
         panelsReady,
         modulePanels,
         runtimeInstanceId,

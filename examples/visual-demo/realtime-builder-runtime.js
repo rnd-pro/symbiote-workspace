@@ -783,6 +783,7 @@ let buildProgress = shell.querySelector('.demo-build-progress');
 let viewportControls = shell.querySelector('.demo-viewport-controls');
 let stageRail = shell.querySelector('.demo-stage-rail');
 let workspace = shell.querySelector('.demo-workspace');
+let playbackActive = false;
 
 shell.addEventListener('cascade-theme-open-full', (event) => {
   event.preventDefault?.();
@@ -899,6 +900,44 @@ function renderWorkspace(stage) {
   applyAdaptiveScenario(stage);
 }
 
+function recordThemeTransitionEvidence(stage) {
+  if (
+    !playbackActive ||
+    stage.id !== 'builder' ||
+    shell.dataset.themeTransitionChanged === 'true'
+  ) {
+    return;
+  }
+  let before = { ...(mounted?.config?.theme?.params || {}) };
+  let beforeHue = Number(before.hue || 220);
+  let nextHue = beforeHue === 180 ? 96 : 180;
+  mounted?.element?.dispatchEvent?.(new CustomEvent('cascade-theme-change', {
+    bubbles: true,
+    detail: {
+      state: {
+        mode: before.mode || 'dark',
+        hue: nextHue,
+      },
+      targetSelector: null,
+    },
+  }));
+  let after = mounted?.config?.theme?.params || {};
+  let layout = workspace.querySelector('panel-layout');
+  let updateCount = layout?.dataset.atomicUpdateCount
+    || mounted?.element?.dataset.atomicUpdateCount
+    || '0';
+  shell.dataset.themeTransitionStage = stage.id;
+  shell.dataset.themeTransitionSource = 'cascade-theme-change';
+  shell.dataset.themeTransitionFromMode = String(before.mode || '');
+  shell.dataset.themeTransitionToMode = String(after.mode || '');
+  shell.dataset.themeTransitionFromHue = String(before.hue || '');
+  shell.dataset.themeTransitionToHue = String(after.hue || '');
+  shell.dataset.themeTransitionChanged = String(
+    before.mode !== after.mode || Number(before.hue) !== Number(after.hue)
+  );
+  shell.dataset.themeTransitionUpdateCount = String(updateCount);
+}
+
 function applyAdaptiveScenario(stage) {
   let scenario = adaptiveScenario(stage);
   if (!scenario) return;
@@ -942,12 +981,14 @@ function renderStage(index) {
   renderViewportControls(stage);
   renderStageRail();
   renderWorkspace(stage);
+  recordThemeTransitionEvidence(stage);
 }
 
 function stopPlayback() {
   if (!playTimer) return;
   clearInterval(playTimer);
   playTimer = null;
+  playbackActive = false;
   playButton.querySelector('.demo-icon').textContent = 'play_arrow';
   playButton.querySelector('span:last-child').textContent = 'Play';
 }
@@ -957,6 +998,7 @@ function startPlayback() {
   playButton.querySelector('.demo-icon').textContent = 'pause';
   playButton.querySelector('span:last-child').textContent = 'Playing';
   operationIndex = 0;
+  playbackActive = true;
   renderStage(0);
   playTimer = setInterval(() => {
     let operations = buildOperations(demo.stages[stageIndex]);

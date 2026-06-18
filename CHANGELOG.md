@@ -16,6 +16,9 @@ All notable changes to this project will be documented in this file.
   DOM drift, and validate atomic update evidence plus mobile drawer behavior.
 - Extended realtime browser smoke evidence with explicit no-navigation history
   checks, per-stage atomic update counts, and mobile DOM identity preservation.
+- Extended realtime builder smoke evidence with a mid-stream Cascade theme
+  transition during mounted playback, proving theme writeback survives atomic
+  stage updates without replacing the workspace runtime.
 - Extended the realtime builder handoff with portable `symbiote-ui` module
   capability descriptors and `construction.plan` metadata for layout topology,
   regions, actions, toolbar items, settings, events, bindings, slots, adaptive

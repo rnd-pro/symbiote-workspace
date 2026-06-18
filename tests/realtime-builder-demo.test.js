@@ -262,6 +262,11 @@ describe('realtime builder demo', () => {
       assert.match(app, /dataset\.runtimeInstanceId/);
       assert.match(app, /dataset\.atomicUpdateCount/);
       assert.match(app, /dataset\.lastUpdatedStage/);
+      assert.match(app, /recordThemeTransitionEvidence/);
+      assert.match(app, /dataset\.themeTransitionStage/);
+      assert.match(app, /themeTransitionSource = 'cascade-theme-change'/);
+      assert.match(app, /themeTransitionChanged/);
+      assert.match(app, /themeTransitionUpdateCount/);
       assert.match(app, /layout\.\$\.layoutTree = normalizeLayoutNode\(nextConfig\.layout\)/);
       assert.doesNotMatch(app, /mounted\.destroy\(\);\s*mounted = null;/);
       assert.match(app, /cascade-theme-open-full/);
@@ -316,6 +321,13 @@ describe('realtime builder demo', () => {
     assert.match(smoke, /atomicStageCountsReady/);
     assert.match(smoke, /mobileLayoutIdentityPreserved/);
     assert.match(smoke, /mobileWorkspaceIdentityPreserved/);
+    assert.match(smoke, /themeTransitionStage === 'builder'/);
+    assert.match(smoke, /themeTransitionSource === 'cascade-theme-change'/);
+    assert.match(smoke, /themeTransitionChanged === 'true'/);
+    assert.match(smoke, /themeTransitionFromMode === 'dark'/);
+    assert.match(smoke, /themeTransitionToMode === 'dark'/);
+    assert.match(smoke, /Number\(themeTransitionFromHue\) !== Number\(themeTransitionToHue\)/);
+    assert.match(smoke, /themeTransitionUpdateCount > 0/);
     assert.match(smoke, /mountedWorkspace/);
     assert.match(smoke, /mountedWorkspace = workspace\?\.querySelector\('\.symbiote-workspace'\)/);
     assert.match(smoke, /lastUpdatedStage === 'validation'/);
