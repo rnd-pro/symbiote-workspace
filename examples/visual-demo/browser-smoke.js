@@ -511,6 +511,10 @@ let realtimeExpression = `
 new Promise((resolve, reject) => {
   let deadline = Date.now() + 14000;
   let clickedPlay = false;
+  let initialHistoryLength = history.length;
+  let initialLocationHref = location.href;
+  let atomicStageCounts = {};
+  let expectedAtomicStages = ['intent', 'questionnaire', 'builder', 'validation'];
   let check = () => {
     let error = document.querySelector('[data-preview-error]');
     if (error) {
@@ -578,6 +582,14 @@ new Promise((resolve, reject) => {
     let lastUpdatedStage = mountedWorkspace?.dataset.lastUpdatedStage
       || workspace?.dataset.lastUpdatedStage
       || '';
+    if (shell?.dataset.stage && Number.isFinite(updateCount)) {
+      atomicStageCounts[shell.dataset.stage] = Math.max(
+        atomicStageCounts[shell.dataset.stage] || 0,
+        updateCount
+      );
+    }
+    let noNavigation = history.length === initialHistoryLength && location.href === initialLocationHref;
+    let atomicStageCountsReady = expectedAtomicStages.every((stage) => Number(atomicStageCounts[stage] || 0) > 0);
     let themeWidget = document.querySelector('cascade-theme-widget');
     let themeWidgetUsesDefaults = themeWidget &&
       !themeWidget.hasAttribute('storage-key') &&
@@ -594,6 +606,8 @@ new Promise((resolve, reject) => {
       panelsReady &&
       runtimeInstanceId &&
       updateCount > 0 &&
+      atomicStageCountsReady &&
+      noNavigation &&
       lastUpdatedStage === 'validation';
     if (smokeReady) {
       themeWidget?.dispatchEvent?.(new CustomEvent('cascade-theme-open-full', {
@@ -606,9 +620,18 @@ new Promise((resolve, reject) => {
         reject(new Error('Realtime builder mobile adaptive preview button is missing.'));
         return;
       }
+      let preMobileLayout = layout;
+      let preMobileMountedWorkspace = mountedWorkspace;
       mobile.click();
       let checkMobile = () => {
         let mobileShell = document.querySelector('.demo-shell');
+        let mobileWorkspace = document.querySelector('.demo-workspace');
+        let postMobileLayout = mobileWorkspace?.querySelector('panel-layout');
+        let postMobileMountedWorkspace = mobileWorkspace?.querySelector('.symbiote-workspace');
+        let mobileLayoutIdentityPreserved = Boolean(preMobileLayout && preMobileLayout === postMobileLayout);
+        let mobileWorkspaceIdentityPreserved = Boolean(
+          preMobileMountedWorkspace && preMobileMountedWorkspace === postMobileMountedWorkspace
+        );
         let dockedPanels = mobileShell?.dataset.dockedPanels || '';
         let collapsedPanels = mobileShell?.dataset.collapsedPanels || '';
         let dockedTheme = document.querySelector('[data-panel-type="theme-editor"][data-adaptive-state="docked"]');
@@ -616,7 +639,7 @@ new Promise((resolve, reject) => {
         let themeEvidence = mobileShell?.dataset.themeMode === 'dark' &&
           mobileShell?.dataset.themeEditorState === 'validated' &&
           mobileShell?.dataset.adaptiveMode === 'drawer';
-        if (mobileShell?.dataset.viewportMode === 'mobile' && dockedPanels.includes('theme-editor') && collapsedPanels.includes('adaptive-rules') && dockedTheme && collapsedAdaptive && themeEvidence && openRequest) {
+        if (mobileShell?.dataset.viewportMode === 'mobile' && dockedPanels.includes('theme-editor') && collapsedPanels.includes('adaptive-rules') && dockedTheme && collapsedAdaptive && themeEvidence && openRequest && mobileLayoutIdentityPreserved && mobileWorkspaceIdentityPreserved) {
           resolve({
             title: document.title,
             stage: mobileShell.dataset.stage,
@@ -630,7 +653,15 @@ new Promise((resolve, reject) => {
             progress,
             runtimeInstanceId,
             atomicUpdateCount: updateCount,
+            atomicStageCounts,
             lastUpdatedStage,
+            initialHistoryLength,
+            historyLength: history.length,
+            initialLocationHref,
+            locationHref: location.href,
+            noNavigation,
+            mobileLayoutIdentityPreserved,
+            mobileWorkspaceIdentityPreserved,
             themeWidgetUsesDefaults,
             themeEditorDefined,
             requiredElements: requiredElements.map((element) => element.localName),
@@ -649,6 +680,8 @@ new Promise((resolve, reject) => {
             \`collapsedAdaptive=\${Boolean(collapsedAdaptive)}\`,
             \`themeEvidence=\${Boolean(themeEvidence)}\`,
             \`openRequest=\${Boolean(openRequest)}\`,
+            \`mobileLayoutIdentityPreserved=\${Boolean(mobileLayoutIdentityPreserved)}\`,
+            \`mobileWorkspaceIdentityPreserved=\${Boolean(mobileWorkspaceIdentityPreserved)}\`,
           ].join('\\n')));
           return;
         }
@@ -672,7 +705,14 @@ new Promise((resolve, reject) => {
         modulePanels,
         runtimeInstanceId,
         updateCount,
+        atomicStageCounts,
+        atomicStageCountsReady,
         lastUpdatedStage,
+        initialHistoryLength,
+        historyLength: history.length,
+        initialLocationHref,
+        locationHref: location.href,
+        noNavigation,
       };
       reject(new Error([
         'Realtime builder Play did not reach final operation state.',

@@ -94,6 +94,12 @@ class TestElement {
 }
 
 class TestDocument {
+  constructor() {
+    this.defaultView = {
+      history: { length: 1 },
+    };
+  }
+
   createElement(tagName) {
     return new TestElement(tagName, this);
   }
@@ -631,6 +637,94 @@ describe('mountWorkspace', () => {
       wrapper.querySelectorAll('.symbiote-workspace__panel')[0].dataset.panelType,
       'preview'
     );
+  });
+
+  it('applies workspace patches through runtime updates without navigation or remounting', async () => {
+    let container = createContainer();
+    let history = container.ownerDocument.defaultView.history;
+    let initialHistoryLength = history.length;
+    let destroyCalls = 0;
+    let runtimeUpdates = [];
+    let runtimeElement;
+
+    let mounted = mountWorkspace({
+      version: '0.3.0',
+      name: 'Realtime Patch Workspace',
+      panelTypes: {
+        timeline: {
+          title: 'Timeline',
+          component: 'sn-video-timeline',
+        },
+      },
+      layout: {
+        type: 'panel',
+        panelType: 'timeline',
+      },
+    }, container, {
+      runtimeController: {
+        mountWorkspace({ element }) {
+          runtimeElement = element.ownerDocument.createElement('panel-layout');
+          runtimeElement.dataset.runtimeInstanceId = 'runtime-1';
+          runtimeElement.dataset.atomicUpdateCount = '0';
+          element.dataset.runtimeInstanceId = runtimeElement.dataset.runtimeInstanceId;
+          element.dataset.atomicUpdateCount = '0';
+          element.appendChild(runtimeElement);
+          return {
+            updateConfig(update) {
+              runtimeUpdates.push(update);
+              let updateCount = Number(runtimeElement.dataset.atomicUpdateCount || '0') + 1;
+              runtimeElement.dataset.atomicUpdateCount = String(updateCount);
+              runtimeElement.dataset.lastUpdateReason = update.reason || '';
+              runtimeElement.dataset.lastUpdatedStage = update.stage?.id || '';
+              update.element.dataset.runtimeInstanceId = runtimeElement.dataset.runtimeInstanceId;
+              update.element.dataset.atomicUpdateCount = String(updateCount);
+              update.element.dataset.lastUpdatedStage = update.stage?.id || '';
+            },
+            destroy() {
+              destroyCalls += 1;
+            },
+          };
+        },
+      },
+    });
+    let wrapper = mounted.element;
+
+    let result = await mounted.applyPatch({
+      overlay: {
+        name: 'Realtime Patch Workspace Updated',
+        panelTypes: {
+          preview: {
+            title: 'Preview',
+            component: 'sn-video-preview',
+          },
+        },
+        layout: {
+          type: 'panel',
+          panelType: 'preview',
+        },
+      },
+    }, {
+      stage: { id: 'validation' },
+    });
+
+    assert.equal(result.status, 'ok');
+    assert.equal(result.mounted, mounted);
+    assert.equal(mounted.element, wrapper);
+    assert.equal(container.children[0], wrapper);
+    assert.equal(runtimeElement.parentElement, wrapper);
+    assert.equal(runtimeElement.dataset.runtimeInstanceId, 'runtime-1');
+    assert.equal(runtimeElement.dataset.atomicUpdateCount, '1');
+    assert.equal(runtimeElement.dataset.lastUpdatedStage, 'validation');
+    assert.equal(wrapper.dataset.runtimeInstanceId, 'runtime-1');
+    assert.equal(wrapper.dataset.atomicUpdateCount, '1');
+    assert.equal(wrapper.dataset.lastUpdatedStage, 'validation');
+    assert.equal(mounted.config.name, 'Realtime Patch Workspace Updated');
+    assert.equal(runtimeUpdates.length, 1);
+    assert.equal(runtimeUpdates[0].reason, 'applyPatch');
+    assert.equal(runtimeElement.dataset.lastUpdateReason, 'applyPatch');
+    assert.equal(runtimeUpdates[0].previousConfig.name, 'Realtime Patch Workspace');
+    assert.equal(destroyCalls, 0);
+    assert.equal(history.length, initialHistoryLength);
   });
 
   it('cleans up runtime handles and stops writeback after destroy', () => {

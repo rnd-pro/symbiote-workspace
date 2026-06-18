@@ -309,6 +309,13 @@ describe('realtime builder demo', () => {
     assert.match(smoke, /appShadowHosts\.length === 0/);
     assert.match(smoke, /runtimeInstanceId/);
     assert.match(smoke, /atomicUpdateCount/);
+    assert.match(smoke, /history\.length/);
+    assert.match(smoke, /initialHistoryLength/);
+    assert.match(smoke, /initialLocationHref/);
+    assert.match(smoke, /atomicStageCounts/);
+    assert.match(smoke, /atomicStageCountsReady/);
+    assert.match(smoke, /mobileLayoutIdentityPreserved/);
+    assert.match(smoke, /mobileWorkspaceIdentityPreserved/);
     assert.match(smoke, /mountedWorkspace/);
     assert.match(smoke, /mountedWorkspace = workspace\?\.querySelector\('\.symbiote-workspace'\)/);
     assert.match(smoke, /lastUpdatedStage === 'validation'/);
