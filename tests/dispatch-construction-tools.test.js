@@ -2679,6 +2679,36 @@ describe('create_workspace_construction_handoff dispatch', () => {
     assert.equal(roundTripPackage.status, 'ok');
     assert.doesNotMatch(roundTripPackage.json, /https?:|file:\/\/|\/Users\//);
 
+    let reloadSession = createSession();
+    let reloadResult = await dispatch('import_workspace_package', {
+      json: roundTripPackage.json,
+    }, reloadSession);
+    assert.equal(reloadResult.status, 'ok');
+    assert.equal(reloadResult.config.name, constructResult.config.name);
+    assert.deepEqual(
+      reloadResult.config.construction.plan.modules,
+      constructResult.config.construction.plan.modules,
+    );
+    assert.deepEqual(
+      reloadResult.config.construction.plan.capabilities,
+      constructResult.config.construction.plan.capabilities,
+    );
+    assert.deepEqual(
+      reloadResult.config.construction.packageContext.readiness,
+      constructResult.config.construction.packageContext.readiness,
+    );
+    assert.deepEqual(
+      reloadResult.config.validation.reports,
+      constructResult.config.validation.reports,
+    );
+    assert.ok(reloadResult.package.host.contract);
+    assert.deepEqual(
+      reloadResult.package.host.contract.runtimeSlots,
+      roundTripPackage.package.host.contract.runtimeSlots,
+    );
+    assert.equal(reloadSession.config.panelTypes.sentiment.component, 'acme-sentiment-panel');
+    assert.ok(layoutReferencesPanel(reloadSession.config.layout, 'sentiment'));
+
     let roundTripContext = await dispatch('create_workspace_package_construction_context', {
       json: roundTripPackage.json,
     }, createSession());
