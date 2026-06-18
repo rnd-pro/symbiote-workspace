@@ -68,17 +68,21 @@ describe('construction questions', () => {
       'layout-topology',
       'module-selection',
       'execution-model',
+      'required-host-services',
       'theme-mode',
       'theme-hue',
       'verification-scope',
     ]);
 
     let executionModel = questions.find((question) => question.id === 'execution-model');
+    let hostServices = questions.find((question) => question.id === 'required-host-services');
     let themeMode = questions.find((question) => question.id === 'theme-mode');
     let themeHue = questions.find((question) => question.id === 'theme-hue');
 
     assert.equal(executionModel.answer, 'ui-only');
     assert.equal(executionModel.answerSource, 'default');
+    assert.deepEqual(hostServices.answer, ['agent.runtime']);
+    assert.equal(hostServices.answerSource, 'default');
     assert.equal(themeMode.answer, 'light');
     assert.equal(themeMode.answerSource, 'default');
     assert.equal(themeHue.status, 'skipped');
@@ -255,8 +259,47 @@ describe('planWorkspaceConstruction', () => {
     assert.equal(result.plan.answers.executionModel, 'automation-bridge');
     assert.equal(result.plan.execution.model, 'automation-bridge');
     assert.equal(result.config.intent.executionModel, 'automation-bridge');
-    assert.deepEqual(result.config.execution, { model: 'automation-bridge' });
+    assert.deepEqual(result.config.execution, {
+      model: 'automation-bridge',
+      hostServices: [],
+    });
     assert.equal(validateWorkspaceConfig(result.config, { strict: true }).valid, true);
+  });
+
+  it('records host service question answers on the plan and config', () => {
+    let questions = buildConstructionQuestions({
+      brief: 'Build a storage-backed chat workspace',
+      template: 'chat',
+      hostServices: ['storage.project'],
+    });
+    let hostServices = questions.find((question) => question.id === 'required-host-services');
+
+    assert.equal(hostServices.group, 'runtime');
+    assert.deepEqual(hostServices.answer, ['storage.project']);
+    assert.equal(hostServices.status, 'answered');
+    assert.ok(hostServices.options.some((option) => option.value === 'agent.runtime'));
+    assert.ok(hostServices.options.some((option) => option.value === 'storage.project'));
+
+    let result = planWorkspaceConstruction({
+      brief: 'Build an agent runtime workspace',
+      template: 'chat',
+    }, {
+      answers: {
+        'required-host-services': ['storage.project', 'agent.runtime', 'agent.runtime'],
+      },
+    });
+
+    assert.deepEqual(result.plan.answers.requiredHostServices, ['storage.project', 'agent.runtime']);
+    assert.deepEqual(result.plan.execution.requiredHostServices, ['storage.project', 'agent.runtime']);
+    assert.deepEqual(result.plan.execution.moduleHostServices, ['agent.runtime']);
+    assert.deepEqual(result.config.intent.hostServices, ['storage.project', 'agent.runtime']);
+    assert.deepEqual(result.config.execution.hostServices, ['storage.project', 'agent.runtime']);
+    assert.equal(validateWorkspaceConfig(result.config, { strict: true }).valid, true);
+
+    assert.throws(() => normalizeConstructionIntent({
+      brief: 'Build a workspace with a non-portable host policy',
+      hostServices: ['https://api.example.com'],
+    }), /hostServices/);
   });
 
   it('summarizes execution requirements from selected modules', () => {
@@ -294,6 +337,7 @@ describe('planWorkspaceConstruction', () => {
 
     assert.equal(result.plan.execution.model, 'graph-execution');
     assert.deepEqual(result.plan.execution.requiredHostServices, ['agent.runtime', 'storage.project']);
+    assert.deepEqual(result.config.execution.hostServices, ['agent.runtime', 'storage.project']);
     assert.deepEqual(result.plan.execution.runtimeSlots, ['agent-runtime']);
     assert.deepEqual(result.plan.execution.enginePacks, ['runtime-pack']);
     assert.equal(validateWorkspaceConfig(result.config, { strict: true }).valid, true);

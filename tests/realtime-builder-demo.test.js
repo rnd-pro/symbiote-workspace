@@ -78,6 +78,7 @@ describe('realtime builder demo', () => {
       'layout-topology',
       'module-selection',
       'execution-model',
+      'required-host-services',
       'theme-mode',
       'theme-hue',
       'verification-scope',

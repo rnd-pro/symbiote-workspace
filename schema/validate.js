@@ -326,6 +326,9 @@ function validateIntent(intent, path, errors, warnings) {
   for (let field of ['audience', 'constraints', 'requiredCapabilities']) {
     if (intent[field] !== undefined) validateStringArray(intent[field], `${path}.${field}`, errors);
   }
+  if (intent.hostServices !== undefined) {
+    validatePortableIdArray(intent.hostServices, `${path}.hostServices`, errors);
+  }
 }
 
 function validateExecution(execution, path, errors) {
@@ -339,6 +342,26 @@ function validateExecution(execution, path, errors) {
       message: `Invalid execution model: "${execution.model}". Allowed: ${EXECUTION_MODELS.join(', ')}.`,
       severity: 'error',
     });
+  }
+  if (execution.hostServices !== undefined) {
+    validatePortableIdArray(execution.hostServices, `${path}.hostServices`, errors);
+  }
+}
+
+function validatePortableIdArray(value, path, errors) {
+  if (!Array.isArray(value)) {
+    errors.push({ path, message: `${path} must be an array.`, severity: 'error' });
+    return;
+  }
+  let seen = new Set();
+  for (let i = 0; i < value.length; i++) {
+    validatePortableIdField(value[i], `${path}[${i}]`, `${path} entries must be portable host service identifiers.`, errors);
+    if (typeof value[i] === 'string') {
+      if (seen.has(value[i])) {
+        errors.push({ path: `${path}[${i}]`, message: `Duplicate portable identifier "${value[i]}".`, severity: 'error' });
+      }
+      seen.add(value[i]);
+    }
   }
 }
 

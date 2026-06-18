@@ -561,6 +561,12 @@ The selected `layout-topology` answer is applied to the executable BSP
 constructor semantics; the emitted workspace layout still uses the stable
 `panel` and `split` node types required by the runtime schema.
 
+The constructor records portable runtime policy through `execution-model` and
+`required-host-services` questions. Selected host services are written to
+`config.intent.hostServices`, `config.execution.hostServices`, and
+`config.construction.plan.execution.requiredHostServices`; module-declared
+requirements remain visible as `moduleHostServices` for host readiness review.
+
 The constructor copies matching descriptor capabilities, actions, settings,
 state fields, events, bindings, slots, runtime slots, placement hints, and
 required host service IDs into `config.construction.plan.modules`. Selected

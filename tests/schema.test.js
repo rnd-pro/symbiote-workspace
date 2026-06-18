@@ -5,6 +5,7 @@ import {
   WORKSPACE_SCHEMA_VERSION,
   WORKSPACE_REGISTER_VALUES,
   EXECUTION_MODELS,
+  HOST_SERVICE_CATEGORIES,
   DATA_BINDING_DIRECTIONS,
   WORKSPACE_CONFIG_SCHEMA,
   MODULE_CAPABILITY_DESCRIPTOR_SCHEMA,
@@ -31,6 +32,12 @@ describe('schema', () => {
     assert.ok(EXECUTION_MODELS.includes('ui-only'));
     assert.ok(EXECUTION_MODELS.includes('graph-execution'));
     assert.ok(EXECUTION_MODELS.includes('automation-bridge'));
+  });
+
+  it('exports host service category values', () => {
+    assert.ok(Array.isArray(HOST_SERVICE_CATEGORIES));
+    assert.ok(HOST_SERVICE_CATEGORIES.includes('agent.runtime'));
+    assert.ok(HOST_SERVICE_CATEGORIES.includes('storage.project'));
   });
 
   it('exports data binding directions', () => {
@@ -187,9 +194,11 @@ describe('validateWorkspaceConfig', () => {
       intent: {
         brief: 'Build execution workspace',
         executionModel: 'server-session',
+        hostServices: ['agent.runtime'],
       },
       execution: {
         model: 'server-session',
+        hostServices: ['agent.runtime'],
       },
     }, { strict: true });
 
@@ -201,15 +210,19 @@ describe('validateWorkspaceConfig', () => {
       intent: {
         brief: 'Build broken execution workspace',
         executionModel: 'file:///tmp/runtime',
+        hostServices: ['https://api.example.com'],
       },
       execution: {
         model: 'file:///tmp/runtime',
+        hostServices: ['file:///tmp/storage'],
       },
     }, { strict: true });
 
     assert.equal(invalid.valid, false);
     assert.ok(invalid.errors.some((error) => error.path === 'intent.executionModel'));
+    assert.ok(invalid.errors.some((error) => error.path === 'intent.hostServices[0]'));
     assert.ok(invalid.errors.some((error) => error.path === 'execution.model'));
+    assert.ok(invalid.errors.some((error) => error.path === 'execution.hostServices[0]'));
   });
 
   it('warns on auth-like keys in config', () => {

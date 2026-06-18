@@ -64,8 +64,12 @@ All notable changes to this project will be documented in this file.
   `server-session`, `remote-provider`, `mobile-executor`, or
   `automation-bridge`). Plans and configs preserve the selected value in
   `plan.execution.model`, `config.intent.executionModel`, and
-  `config.execution.model`, and plans summarize selected-module host services,
-  runtime slots, and engine packs for host-neutral execution readiness.
+  `config.execution.model`. Constructor questions also include
+  `required-host-services`, preserving portable host service IDs in
+  `plan.answers.requiredHostServices`, `plan.execution.requiredHostServices`,
+  `config.intent.hostServices`, and `config.execution.hostServices`, while
+  keeping selected-module host service requirements visible as
+  `plan.execution.moduleHostServices`.
 - **Pre-publication package status** — README package instructions now describe
   the current pack-based consumer verification path and local `node cli.js`
   commands instead of presenting npm registry install or `npx` commands before

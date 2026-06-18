@@ -21,6 +21,20 @@ export const EXECUTION_MODELS = Object.freeze([
   'automation-bridge',
 ]);
 
+export const HOST_SERVICE_CATEGORIES = Object.freeze([
+  'agent.runtime',
+  'ai.provider',
+  'clipboard',
+  'file.system',
+  'media.realtime',
+  'network.fetch',
+  'notifications',
+  'presence.session',
+  'selection',
+  'storage.archive',
+  'storage.project',
+]);
+
 /**
  * Collapse policy for panels.
  * - 'auto': system collapses/restores based on available space
@@ -372,6 +386,7 @@ const INTENT_SCHEMA = Object.freeze({
     constraints: { type: 'array', items: { type: 'string' } },
     requiredCapabilities: { type: 'array', items: { type: 'string' } },
     executionModel: { type: 'string', enum: EXECUTION_MODELS },
+    hostServices: { type: 'array', items: { type: 'string' } },
     preferredTheme: { type: 'object' },
   },
 });
@@ -559,6 +574,11 @@ export const WORKSPACE_CONFIG_SCHEMA = Object.freeze({
       type: 'object',
       properties: {
         model: { type: 'string', enum: EXECUTION_MODELS },
+        hostServices: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Portable host service IDs required by the constructed workspace.',
+        },
       },
       description: 'Portable execution model metadata selected during construction.',
     },
@@ -823,6 +843,7 @@ export const WORKSPACE_CONFIG_SCHEMA = Object.freeze({
  * @property {Object[]} [patches] - Proposed or applied construction patches
  * @property {Object} [validation] - Validation reports
  * @property {Object} [runtime] - Runtime mount metadata
+ * @property {Object} [execution] - Portable execution model and host-service metadata
  * @property {Object} [exports] - Portable export metadata
  * @property {Object} [design] - Design policy context
  * @property {WorkspaceThemeConfig} [theme] - Theme config

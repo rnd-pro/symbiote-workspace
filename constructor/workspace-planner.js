@@ -1,5 +1,6 @@
 import {
   EXECUTION_MODELS,
+  HOST_SERVICE_CATEGORIES,
   WORKSPACE_SCHEMA_VERSION,
   WORKSPACE_REGISTER_VALUES,
 } from '../schema/workspace-schema.js';
@@ -839,6 +840,18 @@ function uniqueSortedStrings(values, fieldName) {
   return [...new Set(normalized)].sort((a, b) => a.localeCompare(b));
 }
 
+let PORTABLE_HOST_SERVICE_PATTERN = /^[a-z][a-z0-9]*(?:[./:_-][a-z0-9]+)*$/;
+
+function uniqueSortedPortableIds(values, fieldName) {
+  let normalized = uniqueSortedStrings(values, fieldName);
+  for (let value of normalized) {
+    if (!PORTABLE_HOST_SERVICE_PATTERN.test(value)) {
+      throw new Error(`Construction intent field "${fieldName}" must contain portable identifiers.`);
+    }
+  }
+  return normalized;
+}
+
 function assertRegister(register, fieldName = 'register') {
   if (!WORKSPACE_REGISTER_VALUES.includes(register)) {
     throw new Error(`Invalid ${fieldName} "${register}". Allowed: ${WORKSPACE_REGISTER_VALUES.join(', ')}`);
@@ -1622,6 +1635,29 @@ function sortedModuleRequirements(modules, field) {
   return [...new Set(values)].sort((a, b) => a.localeCompare(b));
 }
 
+function defaultHostServices(modules, selectedModules = []) {
+  let selected = new Set(selectedModules);
+  let values = [];
+  for (let module of modules) {
+    if (selected.size > 0 && !selected.has(module.value) && !selected.has(module.panelType)) continue;
+    if (!Array.isArray(module.requiredHostServices)) continue;
+    for (let value of module.requiredHostServices) {
+      if (typeof value === 'string' && value.trim()) values.push(value.trim());
+    }
+  }
+  return [...new Set(values)].sort((a, b) => a.localeCompare(b));
+}
+
+function hostServiceOptions(modules, defaults = []) {
+  return [...new Set([
+    ...HOST_SERVICE_CATEGORIES,
+    ...defaultHostServices(modules),
+    ...defaults,
+  ])]
+    .sort((a, b) => a.localeCompare(b))
+    .map(makeOption);
+}
+
 function sortedRuntimeSlotIds(modules) {
   let values = [];
   for (let module of modules) {
@@ -1671,6 +1707,9 @@ function buildQuestionDefinitions(intent, options = {}) {
   let theme = themeDefaults(config, intent.targetRegister, intent.preferredTheme);
   let moduleSelection = defaultModuleSelection(modules, intent.requiredCapabilities);
   let executionModel = defaultExecutionModel(config, intent);
+  let hostServices = intent.hostServices.length
+    ? intent.hostServices
+    : defaultHostServices(modules, moduleSelection);
 
   return [
     {
@@ -1717,6 +1756,16 @@ function buildQuestionDefinitions(intent, options = {}) {
       type: 'single-select',
       options: EXECUTION_MODELS.map(makeOption),
       default: executionModel,
+      required: true,
+    },
+    {
+      id: 'required-host-services',
+      title: 'Required host services',
+      group: 'runtime',
+      type: 'multi-select',
+      options: hostServiceOptions(modules, hostServices),
+      default: hostServices,
+      answerSource: intent.hostServices.length ? 'user' : undefined,
       required: true,
     },
     {
@@ -2326,6 +2375,7 @@ export function normalizeConstructionIntent(intent, options = {}) {
     constraints: uniqueSortedStrings(input.constraints, 'constraints'),
     requiredCapabilities: uniqueSortedStrings(input.requiredCapabilities, 'requiredCapabilities'),
     executionModel: normalizeExecutionModel(input.executionModel || options.executionModel),
+    hostServices: uniqueSortedPortableIds(input.hostServices || options.hostServices, 'hostServices'),
     preferredTheme: normalizePreferredTheme(input.preferredTheme || options.theme),
   };
 }
@@ -2385,6 +2435,7 @@ export function planWorkspaceConstruction(intent, options = {}) {
   let moduleSelectionQuestion = questions.find((question) => question.id === 'module-selection');
   let moduleSelectionSource = moduleSelectionQuestion?.answerSource || 'default';
   let executionModel = answers.get('execution-model') || defaultExecutionModel(config, normalized);
+  let hostServices = answers.get('required-host-services') || defaultHostServices(moduleOptions(config), modules);
   let mode = answers.get('theme-mode') || themeDefaults(config, register, normalized.preferredTheme).mode;
   let defaults = themeDefaults(config, register, normalized.preferredTheme);
   let hue = mode === 'custom' ? (answers.get('theme-hue') ?? defaults.hue) : defaults.hue;
@@ -2424,6 +2475,7 @@ export function planWorkspaceConstruction(intent, options = {}) {
       moduleSelection: deepClone(modules),
       moduleSelectionSource,
       executionModel,
+      requiredHostServices: deepClone(hostServices),
       themeMode: mode,
       themeHue: mode === 'custom' ? hue : null,
       verificationScope: deepClone(verificationScope),
@@ -2442,7 +2494,8 @@ export function planWorkspaceConstruction(intent, options = {}) {
     ),
     execution: {
       model: executionModel,
-      requiredHostServices: sortedModuleRequirements(plannedModules, 'requiredHostServices'),
+      requiredHostServices: deepClone(hostServices),
+      moduleHostServices: sortedModuleRequirements(plannedModules, 'requiredHostServices'),
       runtimeSlots: sortedRuntimeSlotIds(plannedModules),
       enginePacks: sortedEnginePacks(config),
     },
@@ -2475,12 +2528,14 @@ export function planWorkspaceConstruction(intent, options = {}) {
     constraints: deepClone(normalized.constraints),
     requiredCapabilities: deepClone(normalized.requiredCapabilities),
     executionModel,
+    hostServices: deepClone(hostServices),
     preferredTheme: deepClone(normalized.preferredTheme),
   };
   config.construction = { questions, plan };
   config.execution = {
     ...(deepClone(config.execution) || {}),
     model: executionModel,
+    hostServices: deepClone(hostServices),
   };
   if (packageContext) config.construction.packageContext = deepClone(packageContext);
   config.theme = {
