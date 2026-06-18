@@ -2131,6 +2131,104 @@ describe('inspect workspace package dispatch', () => {
     assert.ok(result.warnings.length > 0);
   });
 
+  it('package inspection carries host service and runtime slot gaps into handoff construction gates', async () => {
+    let sourceSession = createSession();
+    let mediaModule = {
+      tagName: 'acme-media-room',
+      capabilities: ['room.media'],
+      requiredHostServices: ['media.realtime', 'presence.session'],
+      runtimeSlots: [{ id: 'media-session', role: 'provider', required: true }],
+      placement: {
+        panelType: 'media',
+        title: 'Media',
+        icon: 'video_call',
+      },
+    };
+    let constructSource = await dispatch('construct_workspace', {
+      intent: 'media operations room',
+      template: 'dashboard',
+      requiredCapabilities: ['room.media'],
+      moduleCapabilities: [mediaModule],
+    }, sourceSession);
+    assert.equal(constructSource.status, 'ok');
+
+    let exportResult = await dispatch('export_workspace_package', {
+      manifest: { id: 'com.example.host-gapped-package' },
+    }, sourceSession);
+    assert.equal(exportResult.status, 'ok');
+
+    let packageObj = JSON.parse(exportResult.json);
+    let deps = packageObj.manifest.dependencies;
+    let availableWithoutHostRuntime = {
+      components: deps.components,
+      plugins: deps.plugins,
+      packages: deps.packages,
+      hostServices: [],
+      runtimeSlots: [],
+    };
+
+    let inspectResult = await dispatch('inspect_workspace_package', {
+      package: packageObj,
+      available: availableWithoutHostRuntime,
+    }, createSession());
+    assert.equal(inspectResult.status, 'ok');
+    assert.equal(inspectResult.valid, true);
+    assert.equal(inspectResult.ready, false);
+    assert.deepEqual(inspectResult.missing.hostServices, ['media.realtime', 'presence.session']);
+    assert.deepEqual(inspectResult.missing.runtimeSlots, ['media-session']);
+    assert.equal(inspectResult.readiness.nextAction, 'review-package-readiness');
+
+    let contextResult = await dispatch('create_workspace_package_construction_context', {
+      package: packageObj,
+      available: availableWithoutHostRuntime,
+    }, createSession());
+    assert.equal(contextResult.status, 'ok');
+    assert.equal(contextResult.valid, true);
+    assert.equal(contextResult.ready, false);
+    assert.deepEqual(contextResult.missing.hostServices, ['media.realtime', 'presence.session']);
+    assert.deepEqual(contextResult.missing.runtimeSlots, ['media-session']);
+
+    let handoffResult = await dispatch('create_workspace_construction_handoff', {
+      context: contextResult,
+      intent: {
+        brief: 'Build the host-gapped media package.',
+        template: contextResult.workspaceTemplates[0].name,
+      },
+    }, createSession());
+    assert.equal(handoffResult.status, 'ok');
+    assert.equal(handoffResult.valid, true);
+    assert.equal(handoffResult.ready, false);
+    assert.deepEqual(handoffResult.missing.hostServices, ['media.realtime', 'presence.session']);
+    assert.deepEqual(handoffResult.missing.runtimeSlots, ['media-session']);
+
+    let targetSession = createSession();
+    let planResult = await dispatch('plan_workspace', handoffResult, targetSession);
+    assert.equal(planResult.status, 'ok');
+    assert.equal(planResult.readiness.ready, false);
+    assert.deepEqual(planResult.readiness.missing.hostServices, ['media.realtime', 'presence.session']);
+    assert.deepEqual(planResult.readiness.missing.runtimeSlots, ['media-session']);
+    assert.ok(planResult.readiness.recovery.some((item) => (
+      item.kind === 'hostServices' &&
+      item.item === 'media.realtime' &&
+      item.action === 'provide-host-service'
+    )));
+    assert.ok(planResult.readiness.recovery.some((item) => (
+      item.kind === 'runtimeSlots' &&
+      item.item === 'media-session' &&
+      item.action === 'provide-runtime-slot'
+    )));
+    assert.equal(targetSession.config, null);
+
+    let constructResult = await dispatch('construct_workspace', handoffResult, targetSession);
+    assert.equal(constructResult.status, 'error');
+    assert.equal(constructResult.code, 'construction_handoff_not_ready');
+    assert.deepEqual(constructResult.readiness.missing.hostServices, ['media.realtime', 'presence.session']);
+    assert.deepEqual(constructResult.readiness.missing.runtimeSlots, ['media-session']);
+    assert.match(constructResult.hint, /media\.realtime/);
+    assert.match(constructResult.hint, /media-session/);
+    assert.equal(targetSession.config, null);
+  });
+
   it('inspect_workspace_package with available reports ready when all deps present', async () => {
     let session = createSession();
     await dispatch('scaffold_workspace', { template: 'chat', name: 'All Present' }, session);
