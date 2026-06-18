@@ -12,6 +12,15 @@ export const WORKSPACE_REGISTER_VALUES = Object.freeze([
   'presentation',
 ]);
 
+export const EXECUTION_MODELS = Object.freeze([
+  'ui-only',
+  'graph-execution',
+  'server-session',
+  'remote-provider',
+  'mobile-executor',
+  'automation-bridge',
+]);
+
 /**
  * Collapse policy for panels.
  * - 'auto': system collapses/restores based on available space
@@ -362,6 +371,7 @@ const INTENT_SCHEMA = Object.freeze({
     audience: { type: 'array', items: { type: 'string' } },
     constraints: { type: 'array', items: { type: 'string' } },
     requiredCapabilities: { type: 'array', items: { type: 'string' } },
+    executionModel: { type: 'string', enum: EXECUTION_MODELS },
     preferredTheme: { type: 'object' },
   },
 });
@@ -544,6 +554,13 @@ export const WORKSPACE_CONFIG_SCHEMA = Object.freeze({
         mount: { type: 'object' },
       },
       description: 'Runtime mounting metadata that remains portable across hosts.',
+    },
+    execution: {
+      type: 'object',
+      properties: {
+        model: { type: 'string', enum: EXECUTION_MODELS },
+      },
+      description: 'Portable execution model metadata selected during construction.',
     },
     exports: {
       type: 'object',

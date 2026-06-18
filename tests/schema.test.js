@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   WORKSPACE_SCHEMA_VERSION,
   WORKSPACE_REGISTER_VALUES,
+  EXECUTION_MODELS,
   DATA_BINDING_DIRECTIONS,
   WORKSPACE_CONFIG_SCHEMA,
   MODULE_CAPABILITY_DESCRIPTOR_SCHEMA,
@@ -23,6 +24,13 @@ describe('schema', () => {
     assert.ok(WORKSPACE_REGISTER_VALUES.includes('tool'));
     assert.ok(WORKSPACE_REGISTER_VALUES.includes('brand'));
     assert.ok(WORKSPACE_REGISTER_VALUES.includes('presentation'));
+  });
+
+  it('exports execution model values', () => {
+    assert.ok(Array.isArray(EXECUTION_MODELS));
+    assert.ok(EXECUTION_MODELS.includes('ui-only'));
+    assert.ok(EXECUTION_MODELS.includes('graph-execution'));
+    assert.ok(EXECUTION_MODELS.includes('automation-bridge'));
   });
 
   it('exports data binding directions', () => {
@@ -170,6 +178,38 @@ describe('validateWorkspaceConfig', () => {
 
     assert.equal(result.valid, false);
     assert.ok(result.errors.some((error) => error.path === 'construction.plan.verification.reports[0].status'));
+  });
+
+  it('validates portable execution model metadata', () => {
+    let valid = validateWorkspaceConfig({
+      version: '0.2.0',
+      name: 'Execution Workspace',
+      intent: {
+        brief: 'Build execution workspace',
+        executionModel: 'server-session',
+      },
+      execution: {
+        model: 'server-session',
+      },
+    }, { strict: true });
+
+    assert.equal(valid.valid, true);
+
+    let invalid = validateWorkspaceConfig({
+      version: '0.2.0',
+      name: 'Broken Execution Workspace',
+      intent: {
+        brief: 'Build broken execution workspace',
+        executionModel: 'file:///tmp/runtime',
+      },
+      execution: {
+        model: 'file:///tmp/runtime',
+      },
+    }, { strict: true });
+
+    assert.equal(invalid.valid, false);
+    assert.ok(invalid.errors.some((error) => error.path === 'intent.executionModel'));
+    assert.ok(invalid.errors.some((error) => error.path === 'execution.model'));
   });
 
   it('warns on auth-like keys in config', () => {

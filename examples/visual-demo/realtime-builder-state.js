@@ -1499,6 +1499,7 @@ function buildConstructionTrace(finalStage) {
     audience: ['service builders', 'AI agent operators'],
     constraints: ['mock data only', 'host neutral workspace config'],
     requiredCapabilities,
+    executionModel: 'automation-bridge',
   }, {
     moduleCapabilities,
     answers: {
@@ -1506,6 +1507,7 @@ function buildConstructionTrace(finalStage) {
       'target-register': 'agent-workspace',
       'layout-topology': 'workbench',
       'module-selection': Object.keys(finalStage.config.panelTypes),
+      'execution-model': 'automation-bridge',
       'theme-mode': 'dark',
       'verification-scope': ['layout', 'modules', 'theme', 'portability'],
     },

@@ -1,4 +1,5 @@
 import {
+  EXECUTION_MODELS,
   WORKSPACE_SCHEMA_VERSION,
   WORKSPACE_REGISTER_VALUES,
 } from '../schema/workspace-schema.js';
@@ -884,6 +885,18 @@ function normalizePreferredTheme(theme) {
   return Object.keys(result).length ? result : null;
 }
 
+function normalizeExecutionModel(executionModel) {
+  if (executionModel === undefined || executionModel === null) return null;
+  if (typeof executionModel !== 'string' || !executionModel.trim()) {
+    throw new Error('Construction intent field "executionModel" must be a string.');
+  }
+  let normalized = executionModel.trim();
+  if (!EXECUTION_MODELS.includes(normalized)) {
+    throw new Error(`Construction intent field "executionModel" does not accept "${normalized}".`);
+  }
+  return normalized;
+}
+
 function makeOption(value) {
   return { value, label: value };
 }
@@ -1598,6 +1611,38 @@ function capabilityCoverage(requiredCapabilities, modules, availableModules = mo
   };
 }
 
+function sortedModuleRequirements(modules, field) {
+  let values = [];
+  for (let module of modules) {
+    if (!Array.isArray(module[field])) continue;
+    for (let value of module[field]) {
+      if (typeof value === 'string' && value.trim()) values.push(value.trim());
+    }
+  }
+  return [...new Set(values)].sort((a, b) => a.localeCompare(b));
+}
+
+function sortedRuntimeSlotIds(modules) {
+  let values = [];
+  for (let module of modules) {
+    if (!Array.isArray(module.runtimeSlots)) continue;
+    for (let slot of module.runtimeSlots) {
+      if (typeof slot === 'string' && slot.trim()) {
+        values.push(slot.trim());
+      } else if (isObject(slot) && typeof slot.id === 'string' && slot.id.trim()) {
+        values.push(slot.id.trim());
+      }
+    }
+  }
+  return [...new Set(values)].sort((a, b) => a.localeCompare(b));
+}
+
+function sortedEnginePacks(config) {
+  if (!Array.isArray(config.engine?.packs)) return [];
+  return [...new Set(config.engine.packs.filter((pack) => typeof pack === 'string' && pack.trim()))]
+    .sort((a, b) => a.localeCompare(b));
+}
+
 function themeDefaults(config, register, preferredTheme = null) {
   let defaults = REGISTER_THEME_DEFAULTS[register] || REGISTER_THEME_DEFAULTS.tool;
   return {
@@ -1608,12 +1653,24 @@ function themeDefaults(config, register, preferredTheme = null) {
   };
 }
 
+function defaultExecutionModel(config, intent) {
+  if (intent.executionModel) return intent.executionModel;
+  if (config.execution?.model && EXECUTION_MODELS.includes(config.execution.model)) return config.execution.model;
+  if (config.engine?.graphs?.length || config.engine?.packs?.length || config.engine?.bindings?.length) {
+    return 'graph-execution';
+  }
+  if (intent.targetRegister === 'agent-workspace') return 'server-session';
+  if (intent.targetRegister === 'media-studio') return 'graph-execution';
+  return 'ui-only';
+}
+
 function buildQuestionDefinitions(intent, options = {}) {
   let registry = templateRegistryFromOptions(options);
   let config = withModuleCapabilities(templateConfig(intent.template, registry), options.moduleCapabilities);
   let modules = moduleOptions(config);
   let theme = themeDefaults(config, intent.targetRegister, intent.preferredTheme);
   let moduleSelection = defaultModuleSelection(modules, intent.requiredCapabilities);
+  let executionModel = defaultExecutionModel(config, intent);
 
   return [
     {
@@ -1651,6 +1708,15 @@ function buildQuestionDefinitions(intent, options = {}) {
       default: moduleSelection,
       answerSource: intent.requiredCapabilities.length ? 'derived' : undefined,
       requiredCapabilities: deepClone(intent.requiredCapabilities),
+      required: true,
+    },
+    {
+      id: 'execution-model',
+      title: 'Execution model',
+      group: 'runtime',
+      type: 'single-select',
+      options: EXECUTION_MODELS.map(makeOption),
+      default: executionModel,
       required: true,
     },
     {
@@ -2259,6 +2325,7 @@ export function normalizeConstructionIntent(intent, options = {}) {
     audience: uniqueSortedStrings(input.audience, 'audience'),
     constraints: uniqueSortedStrings(input.constraints, 'constraints'),
     requiredCapabilities: uniqueSortedStrings(input.requiredCapabilities, 'requiredCapabilities'),
+    executionModel: normalizeExecutionModel(input.executionModel || options.executionModel),
     preferredTheme: normalizePreferredTheme(input.preferredTheme || options.theme),
   };
 }
@@ -2317,6 +2384,7 @@ export function planWorkspaceConstruction(intent, options = {}) {
   let modules = answers.get('module-selection') || [];
   let moduleSelectionQuestion = questions.find((question) => question.id === 'module-selection');
   let moduleSelectionSource = moduleSelectionQuestion?.answerSource || 'default';
+  let executionModel = answers.get('execution-model') || defaultExecutionModel(config, normalized);
   let mode = answers.get('theme-mode') || themeDefaults(config, register, normalized.preferredTheme).mode;
   let defaults = themeDefaults(config, register, normalized.preferredTheme);
   let hue = mode === 'custom' ? (answers.get('theme-hue') ?? defaults.hue) : defaults.hue;
@@ -2355,6 +2423,7 @@ export function planWorkspaceConstruction(intent, options = {}) {
       layoutTopology: topology,
       moduleSelection: deepClone(modules),
       moduleSelectionSource,
+      executionModel,
       themeMode: mode,
       themeHue: mode === 'custom' ? hue : null,
       verificationScope: deepClone(verificationScope),
@@ -2371,6 +2440,12 @@ export function planWorkspaceConstruction(intent, options = {}) {
       plannedModules,
       moduleOptions(config),
     ),
+    execution: {
+      model: executionModel,
+      requiredHostServices: sortedModuleRequirements(plannedModules, 'requiredHostServices'),
+      runtimeSlots: sortedRuntimeSlotIds(plannedModules),
+      enginePacks: sortedEnginePacks(config),
+    },
     theme: {
       recipe: {
         mode,
@@ -2399,9 +2474,14 @@ export function planWorkspaceConstruction(intent, options = {}) {
     audience: deepClone(normalized.audience),
     constraints: deepClone(normalized.constraints),
     requiredCapabilities: deepClone(normalized.requiredCapabilities),
+    executionModel,
     preferredTheme: deepClone(normalized.preferredTheme),
   };
   config.construction = { questions, plan };
+  config.execution = {
+    ...(deepClone(config.execution) || {}),
+    model: executionModel,
+  };
   if (packageContext) config.construction.packageContext = deepClone(packageContext);
   config.theme = {
     ...(deepClone(config.theme) || {}),

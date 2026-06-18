@@ -518,6 +518,14 @@ requirement and which ranked unselected modules are available as alternatives.
 `capabilities.selectedModules` lists every selected module, including explicit
 selections that matched none of the required capabilities, with matched and
 missing capability diagnostics plus the module selection reason.
+The `execution-model` question records how the workspace should execute:
+`ui-only`, `graph-execution`, `server-session`, `remote-provider`,
+`mobile-executor`, or `automation-bridge`. The selected value is preserved in
+`config.intent.executionModel`, `config.execution.model`, and
+`config.construction.plan.execution.model`. The same plan section summarizes
+selected-module `requiredHostServices`, `runtimeSlots`, and `enginePacks` so
+hosts can decide whether they can execute the workspace without embedding host
+URLs, credentials, or runtime handles in the portable config.
 Descriptor `provider` and `descriptor.package` references must be portable
 package or registry identifiers such as `symbiote-ui` or `@acme/workspace-pack`;
 URLs, file references, and local paths are rejected before descriptors reach

@@ -59,6 +59,13 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **Construction execution model** — constructor questions now include a
+  portable `execution-model` choice (`ui-only`, `graph-execution`,
+  `server-session`, `remote-provider`, `mobile-executor`, or
+  `automation-bridge`). Plans and configs preserve the selected value in
+  `plan.execution.model`, `config.intent.executionModel`, and
+  `config.execution.model`, and plans summarize selected-module host services,
+  runtime slots, and engine packs for host-neutral execution readiness.
 - **Pre-publication package status** — README package instructions now describe
   the current pack-based consumer verification path and local `node cli.js`
   commands instead of presenting npm registry install or `npx` commands before

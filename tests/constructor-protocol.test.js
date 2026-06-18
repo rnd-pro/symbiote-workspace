@@ -41,6 +41,21 @@ describe('normalizeConstructionIntent', () => {
     assert.deepEqual(intent.requiredCapabilities, ['charts', 'filters']);
     assert.equal(intent.targetRegister, 'brand');
   });
+
+  it('normalizes portable execution model intent', () => {
+    let intent = normalizeConstructionIntent({
+      brief: 'Agent runtime workspace',
+      template: 'agent-workspace',
+      executionModel: 'server-session',
+    });
+
+    assert.equal(intent.executionModel, 'server-session');
+
+    assert.throws(() => normalizeConstructionIntent({
+      brief: 'Broken runtime workspace',
+      executionModel: 'https://runtime.example.com',
+    }), /executionModel/);
+  });
 });
 
 describe('construction questions', () => {
@@ -52,14 +67,18 @@ describe('construction questions', () => {
       'target-register',
       'layout-topology',
       'module-selection',
+      'execution-model',
       'theme-mode',
       'theme-hue',
       'verification-scope',
     ]);
 
+    let executionModel = questions.find((question) => question.id === 'execution-model');
     let themeMode = questions.find((question) => question.id === 'theme-mode');
     let themeHue = questions.find((question) => question.id === 'theme-hue');
 
+    assert.equal(executionModel.answer, 'ui-only');
+    assert.equal(executionModel.answerSource, 'default');
     assert.equal(themeMode.answer, 'light');
     assert.equal(themeMode.answerSource, 'default');
     assert.equal(themeHue.status, 'skipped');
@@ -208,6 +227,75 @@ describe('planWorkspaceConstruction', () => {
     assert.equal(result.plan.verification.reports.find((report) => report.check === 'portability').status, 'pass');
     assert.equal(result.plan.verification.reports.find((report) => report.check === 'modules').status, 'pass');
     assert.equal(result.plan.verification.reports.find((report) => report.check === 'package-readiness').status, 'pass');
+    assert.equal(validateWorkspaceConfig(result.config, { strict: true }).valid, true);
+  });
+
+  it('records execution model question answers on the plan and config', () => {
+    let questions = buildConstructionQuestions({
+      brief: 'Build a graph execution workspace',
+      template: 'graph',
+      executionModel: 'graph-execution',
+    });
+    let executionQuestion = questions.find((question) => question.id === 'execution-model');
+
+    assert.equal(executionQuestion.group, 'runtime');
+    assert.equal(executionQuestion.answer, 'graph-execution');
+    assert.equal(executionQuestion.status, 'answered');
+
+    let result = planWorkspaceConstruction({
+      brief: 'Build a graph execution workspace',
+      template: 'graph',
+      executionModel: 'graph-execution',
+    }, {
+      answers: {
+        'execution-model': 'automation-bridge',
+      },
+    });
+
+    assert.equal(result.plan.answers.executionModel, 'automation-bridge');
+    assert.equal(result.plan.execution.model, 'automation-bridge');
+    assert.equal(result.config.intent.executionModel, 'automation-bridge');
+    assert.deepEqual(result.config.execution, { model: 'automation-bridge' });
+    assert.equal(validateWorkspaceConfig(result.config, { strict: true }).valid, true);
+  });
+
+  it('summarizes execution requirements from selected modules', () => {
+    let result = planWorkspaceConstruction({
+      brief: 'Build a graph runtime workspace',
+      template: 'dashboard',
+      executionModel: 'graph-execution',
+    }, {
+      moduleCapabilities: [{
+        tagName: 'acme-runtime-panel',
+        capabilities: ['runtime.panel'],
+        requiredHostServices: ['agent.runtime', 'storage.project'],
+        runtimeSlots: [
+          { id: 'agent-runtime', role: 'provider', required: true },
+        ],
+        actions: [{
+          id: 'run',
+          label: 'Run',
+          engine: { graphId: 'main', nodeId: 'run', pack: 'runtime-pack' },
+        }],
+        placement: { panelType: 'runtime' },
+      }, {
+        tagName: 'acme-runtime-log',
+        capabilities: ['runtime.log'],
+        requiredHostServices: ['agent.runtime'],
+        runtimeSlots: [
+          { id: 'agent-runtime', role: 'provider', required: true },
+        ],
+        placement: { panelType: 'runtime-log' },
+      }],
+      answers: {
+        'module-selection': ['runtime', 'runtime-log'],
+      },
+    });
+
+    assert.equal(result.plan.execution.model, 'graph-execution');
+    assert.deepEqual(result.plan.execution.requiredHostServices, ['agent.runtime', 'storage.project']);
+    assert.deepEqual(result.plan.execution.runtimeSlots, ['agent-runtime']);
+    assert.deepEqual(result.plan.execution.enginePacks, ['runtime-pack']);
     assert.equal(validateWorkspaceConfig(result.config, { strict: true }).valid, true);
   });
 

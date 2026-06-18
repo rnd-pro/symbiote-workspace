@@ -1,6 +1,7 @@
 import {
   WORKSPACE_SCHEMA_VERSION,
   WORKSPACE_REGISTER_VALUES,
+  EXECUTION_MODELS,
   COLLAPSE_POLICIES,
   OVERFLOW_POLICIES,
   RESPONSIVE_MODES,
@@ -246,6 +247,10 @@ export function validateWorkspaceConfig(config, options = {}) {
     validateBehavior(config.rootBehavior, 'rootBehavior', errors, warnings);
   }
 
+  if (config.execution !== undefined) {
+    validateExecution(config.execution, 'execution', errors);
+  }
+
   // Cross-reference: layout panelTypes → panelTypes definitions
   if (config.panelTypes && config.layout) {
     crossReferenceLayout(config.layout, config.panelTypes, 'layout', errors, warnings);
@@ -267,7 +272,7 @@ export function validateWorkspaceConfig(config, options = {}) {
   if (options.strict) {
     let knownKeys = new Set([
       'version', 'name', 'register', 'intent', 'construction', 'patches',
-      'validation', 'runtime', 'exports', 'design', 'theme', 'layout', 'layouts',
+      'validation', 'runtime', 'execution', 'exports', 'design', 'theme', 'layout', 'layouts',
       'components', 'data', 'state', 'engine', 'groups', 'sections', 'panelTypes',
       'events', 'rootBehavior',
     ]);
@@ -311,8 +316,29 @@ function validateIntent(intent, path, errors, warnings) {
       severity: 'error',
     });
   }
+  if (intent.executionModel !== undefined && !EXECUTION_MODELS.includes(intent.executionModel)) {
+    errors.push({
+      path: `${path}.executionModel`,
+      message: `Invalid executionModel value: "${intent.executionModel}". Allowed: ${EXECUTION_MODELS.join(', ')}.`,
+      severity: 'error',
+    });
+  }
   for (let field of ['audience', 'constraints', 'requiredCapabilities']) {
     if (intent[field] !== undefined) validateStringArray(intent[field], `${path}.${field}`, errors);
+  }
+}
+
+function validateExecution(execution, path, errors) {
+  if (!isObject(execution)) {
+    errors.push({ path, message: 'Execution metadata must be an object.', severity: 'error' });
+    return;
+  }
+  if (execution.model !== undefined && !EXECUTION_MODELS.includes(execution.model)) {
+    errors.push({
+      path: `${path}.model`,
+      message: `Invalid execution model: "${execution.model}". Allowed: ${EXECUTION_MODELS.join(', ')}.`,
+      severity: 'error',
+    });
   }
 }
 
