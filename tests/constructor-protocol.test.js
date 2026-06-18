@@ -472,6 +472,7 @@ describe('planWorkspaceConstruction', () => {
     assert.deepEqual(result.plan.modules[0].requiredHostServices, ['storage.project']);
     assert.deepEqual(result.plan.modules[0].actions, [{ id: 'refresh', label: 'Refresh' }]);
     assert.deepEqual(result.plan.modules[0].placement, { registers: ['admin'], regions: ['main'] });
+    assert.deepEqual(result.plan.layout.regions, { main: ['panel-1'] });
   });
 
   it('materializes external module capability descriptors into executable config surfaces', () => {

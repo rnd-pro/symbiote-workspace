@@ -401,6 +401,73 @@ describe('construction workflow dispatch', () => {
     assert.deepEqual(session.config.validation.reports, result.plan.verification.reports);
   });
 
+  it('construct_workspace builds a portable default chat workspace with named regions', async () => {
+    let session = createSession();
+    let result = await dispatch('construct_workspace', {
+      intent: 'chat workspace for support teams',
+      answers: {
+        'theme-mode': 'dark',
+      },
+    }, session);
+
+    assert.equal(result.status, 'ok');
+    assert.equal(result.templateName, 'chat');
+    assert.equal(result.intent.template, 'chat');
+    assert.equal(result.intent.targetRegister, 'tool');
+    assert.equal(result.plan.answers.layoutTopology, 'conversation-split');
+    assert.equal(result.plan.execution.model, 'ui-only');
+    assert.deepEqual(result.plan.execution.requiredHostServices, ['agent.runtime']);
+    assert.deepEqual(result.plan.execution.runtimeSlots, []);
+    assert.deepEqual(result.plan.layout.layoutIds, ['layout']);
+    assert.deepEqual(result.plan.layout.sectionLayouts, [
+      { sectionId: 'messages', groupId: 'chat', layoutId: 'layout' },
+    ]);
+    assert.deepEqual(result.plan.layout.regions, {
+      composer: ['composer'],
+      messages: ['transcript'],
+      navigation: ['conversations'],
+    });
+    assert.equal(session.config.panelTypes.conversations.component, 'sn-tree-panel');
+    assert.equal(session.config.panelTypes.transcript.component, 'chat-transcript');
+    assert.equal(session.config.panelTypes.composer.component, 'chat-composer');
+    assert.deepEqual(
+      result.plan.modules.map((module) => module.panelType),
+      ['composer', 'conversations', 'transcript'],
+    );
+    assert.deepEqual(
+      result.plan.modules.map((module) => module.placement?.regions),
+      [['composer'], ['navigation'], ['messages']],
+    );
+    assert.ok(session.config.components.catalog.includes('chat-transcript'));
+    assert.ok(session.config.components.catalog.includes('chat-composer'));
+    assert.ok(layoutReferencesPanel(session.config.layout, 'conversations'));
+    assert.ok(layoutReferencesPanel(session.config.layout, 'transcript'));
+    assert.ok(layoutReferencesPanel(session.config.layout, 'composer'));
+    assert.equal(result.plan.theme.recipe.mode, 'dark');
+    assert.equal(result.plan.theme.recipe.name, 'agent-console');
+    assert.deepEqual(
+      session.config.validation.reports.map((report) => report.check),
+      ['portability', 'design', 'modules', 'package-readiness'],
+    );
+
+    let exported = await dispatch('export_workspace_package', {
+      manifest: { id: 'com.example.default-chat-workspace' },
+    }, session);
+    assert.equal(exported.status, 'ok');
+    assert.doesNotMatch(exported.json, /https?:|file:\/\/|\/Users\//);
+
+    let reloadSession = createSession();
+    let imported = await dispatch('import_workspace_package', {
+      json: exported.json,
+    }, reloadSession);
+    assert.equal(imported.status, 'ok');
+    assert.equal(imported.config.intent.template, 'chat');
+    assert.deepEqual(imported.config.construction.plan.layout, result.config.construction.plan.layout);
+    assert.deepEqual(imported.config.construction.plan.execution, result.config.construction.plan.execution);
+    assert.ok(layoutReferencesPanel(reloadSession.config.layout, 'transcript'));
+    assert.ok(layoutReferencesPanel(reloadSession.config.layout, 'composer'));
+  });
+
   it('construct_workspace merges object intent with top-level construction fields', async () => {
     let session = createSession();
     let result = await dispatch('construct_workspace', {

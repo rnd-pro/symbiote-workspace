@@ -560,6 +560,9 @@ The selected `layout-topology` answer is applied to the executable BSP
 `config.layout` for the selected module panels. Topologies remain portable
 constructor semantics; the emitted workspace layout still uses the stable
 `panel` and `split` node types required by the runtime schema.
+The construction plan also records `layout.regions`, mapping descriptor
+`placement.regions` hints to selected panel types. When a descriptor does not
+declare regions, the selected panel type is used as the portable region name.
 
 The constructor records portable runtime policy through `execution-model` and
 `required-host-services` questions. Selected host services are written to

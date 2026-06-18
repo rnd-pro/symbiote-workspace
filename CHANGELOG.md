@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Added constructor-owned `construction.plan.layout.regions` evidence and a
+  default chat dispatch proof that strict package export/import preserves the
+  chat layout topology, selected Symbiote chat modules, and named regions.
 - Added `mountWorkspace().updateConfig()` and `mountWorkspace().applyPatch()`
   browser APIs for validated no-reload workspace updates that preserve the
   mounted wrapper, reapply theme state, and delegate updates to runtime

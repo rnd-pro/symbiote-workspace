@@ -34,20 +34,24 @@ function moduleDescriptor(tagName, capabilities, options = {}) {
 
 const MODULES = Object.freeze({
   tree: moduleDescriptor('sn-tree-panel', ['navigation.tree', 'data.hierarchy'], {
+    placement: { regions: ['navigation'] },
     events: { emits: [{ name: 'item-select' }] },
     bindings: [{ id: 'items', direction: 'input', path: 'data.tree' }],
   }),
   chatTranscript: moduleDescriptor('chat-transcript', ['chat.transcript', 'agent.messages'], {
+    placement: { regions: ['messages'] },
     events: { emits: [{ name: 'message-select' }] },
     bindings: [{ id: 'messages', direction: 'input', path: 'data.messages' }],
   }),
   chatComposer: moduleDescriptor('chat-composer', ['chat.compose', 'agent.command-input'], {
+    placement: { regions: ['composer'] },
     actions: [{ id: 'send', label: 'Send', event: 'message-submit' }],
     events: { emits: [{ name: 'message-submit' }] },
     bindings: [{ id: 'draft', direction: 'two-way', path: 'data.draft' }],
     requiredHostServices: ['agent.runtime'],
   }),
   chatWorkspace: moduleDescriptor('chat-workspace', ['chat.workspace', 'agent.review'], {
+    placement: { regions: ['chat'] },
     runtimeSlots: [{ id: 'agent-runtime', role: 'provider', required: true }],
     requiredHostServices: ['agent.runtime', 'storage.project'],
   }),
@@ -1953,6 +1957,30 @@ function sectionLayoutPlan(config) {
     .sort((a, b) => a.sectionId.localeCompare(b.sectionId));
 }
 
+function layoutRegionsPlan(modules) {
+  let regions = {};
+  for (let module of modules) {
+    let placementRegions = Array.isArray(module.placement?.regions)
+      ? module.placement.regions
+      : [];
+    let moduleRegions = placementRegions.length > 0 ? placementRegions : [module.panelType];
+    for (let region of moduleRegions) {
+      if (typeof region !== 'string' || !region.trim()) continue;
+      let regionId = region.trim();
+      regions[regionId] = regions[regionId] || [];
+      regions[regionId].push(module.panelType);
+    }
+  }
+  return Object.fromEntries(
+    Object.entries(regions)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([region, panelTypes]) => [
+        region,
+        [...new Set(panelTypes)].sort((a, b) => a.localeCompare(b)),
+      ]),
+  );
+}
+
 function recordReferencesOnlySelectedPanels(record, selectedPanelTypes, fields) {
   for (let field of fields) {
     let panelType = record?.[field];
@@ -2485,6 +2513,7 @@ export function planWorkspaceConstruction(intent, options = {}) {
       defaultLayoutId: defaultLayoutId(config),
       layoutIds: layoutIds(config),
       sectionLayouts: sectionLayoutPlan(config),
+      regions: layoutRegionsPlan(plannedModules),
     },
     modules: plannedModules,
     capabilities: capabilityCoverage(
