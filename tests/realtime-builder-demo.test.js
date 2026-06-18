@@ -59,9 +59,25 @@ describe('realtime builder demo', () => {
     let finalStage = demo.stages.at(-1);
     let panels = Object.keys(finalStage.config.panelTypes);
 
-    assert.equal(demo.stages.length, 4);
+    assert.deepEqual(
+      demo.stages.map((stage) => stage.id),
+      [
+        'workspace-name',
+        'target-register',
+        'layout-topology',
+        'module-selection',
+        'execution-model',
+        'required-host-services',
+        'theme-mode',
+        'theme-hue',
+        'verification-scope',
+      ]
+    );
     assert.equal(demo.acceptanceMatrix.every((item) => item.status === 'pass'), true);
     assert.ok(demo.acceptanceMatrix.some((item) => item.id === 'construction-tool-lineage'));
+    assert.ok(demo.acceptanceMatrix.some((item) => item.id === 'current-protocol-visible'));
+    assert.ok(demo.acceptanceMatrix.some((item) => item.id === 'package-readiness-visible'));
+    assert.ok(demo.acceptanceMatrix.some((item) => item.id === 'runtime-import-contract-visible'));
     assert.deepEqual(demo.requiredWidgets, [
       'agent-chat',
       'service-blueprint',
@@ -83,6 +99,35 @@ describe('realtime builder demo', () => {
       'theme-hue',
       'verification-scope',
     ]);
+    assert.deepEqual(
+      demo.constructionTrace.visibleQuestionIds,
+      demo.constructionTrace.canonicalQuestionIds
+    );
+    assert.equal(demo.constructionTrace.currentFunctionality.executionModel, 'automation-bridge');
+    assert.equal(demo.constructionTrace.executionEvidence.model, 'automation-bridge');
+    assert.deepEqual(
+      demo.constructionTrace.currentFunctionality.hostServices,
+      ['agent.runtime', 'storage.project']
+    );
+    assert.deepEqual(
+      demo.constructionTrace.executionEvidence.requiredHostServices,
+      ['agent.runtime', 'storage.project']
+    );
+    assert.equal(demo.constructionTrace.packageEvidence.readiness.strictExport, true);
+    assert.equal(demo.constructionTrace.packageEvidence.readiness.strictImport, true);
+    assert.deepEqual(
+      demo.constructionTrace.currentFunctionality.importMapKeys,
+      [
+        '@symbiotejs/symbiote',
+        '@symbiotejs/symbiote/',
+        'symbiote-engine',
+        'symbiote-engine/',
+        'symbiote-engine/contracts',
+        'symbiote-ui/',
+        'symbiote-ui/ui',
+        'symbiote-workspace/browser',
+      ]
+    );
     assert.deepEqual(demo.constructionTrace.capabilityCoverage.missing, []);
     assert.equal(demo.constructionTrace.exportImportEvidence.valid, true);
     assert.equal(demo.constructionTrace.constructionPlanEvidence.topology, 'bsp-workbench');
@@ -114,8 +159,10 @@ describe('realtime builder demo', () => {
       assert.ok(stage.chat.length > 0);
       assert.ok(stage.config.construction.questions.length > 0);
       assert.equal(stage.chatState.activeQuestionId, stage.activeQuestionId);
+      assert.equal(stage.id, stage.activeQuestionId);
       assert.ok(stage.chatState.nextPatch);
       assert.ok(stage.chatState.decisionTrace.length > 0);
+      assert.ok(stage.chatState.currentFunctionality);
     }
     let answeredQuestionIds = finalStage.config.construction.questions
       .filter((question) => question.status === 'answered')
@@ -163,6 +210,20 @@ describe('realtime builder demo', () => {
       true
     );
     assert.ok(finalStage.config.validation.reports.some((report) => report.check === 'theme'));
+    assert.equal(finalStage.config.intent.executionModel, 'automation-bridge');
+    assert.deepEqual(finalStage.config.intent.hostServices, ['agent.runtime', 'storage.project']);
+    assert.deepEqual(finalStage.config.execution, {
+      model: 'automation-bridge',
+      hostServices: ['agent.runtime', 'storage.project'],
+    });
+    assert.deepEqual(finalStage.config.construction.plan.execution.requiredHostServices, [
+      'agent.runtime',
+      'storage.project',
+    ]);
+    assert.deepEqual(finalStage.chatState.currentFunctionality.hostServices, [
+      'agent.runtime',
+      'storage.project',
+    ]);
     assert.deepEqual(
       finalStage.chatState.requiredElements,
       demo.requiredWidgets
@@ -193,9 +254,32 @@ describe('realtime builder demo', () => {
       assert.equal(result.status, 'ok');
       assert.equal(contract.requiredWidgets.includes('theme-editor'), true);
       assert.equal(contract.acceptanceMatrix.every((item) => item.status === 'pass'), true);
-      assert.deepEqual(contract.playStages, ['intent', 'questionnaire', 'builder', 'validation']);
+      assert.deepEqual(contract.playStages, [
+        'workspace-name',
+        'target-register',
+        'layout-topology',
+        'module-selection',
+        'execution-model',
+        'required-host-services',
+        'theme-mode',
+        'theme-hue',
+        'verification-scope',
+      ]);
       assert.deepEqual(contract.constructionTrace.capabilityCoverage.missing, []);
       assert.equal(contract.constructionTrace.exportImportEvidence.valid, true);
+      assert.equal(contract.currentFunctionality.executionModel, 'automation-bridge');
+      assert.equal(contract.executionEvidence.model, 'automation-bridge');
+      assert.deepEqual(contract.currentFunctionality.hostServices, ['agent.runtime', 'storage.project']);
+      assert.deepEqual(contract.executionEvidence.requiredHostServices, ['agent.runtime', 'storage.project']);
+      assert.equal(contract.packageEvidence.readiness.strictExport, true);
+      assert.equal(contract.packageEvidence.readiness.strictImport, true);
+      assert.deepEqual(
+        contract.currentFunctionality.visibleQuestionIds,
+        contract.constructionTrace.canonicalQuestionIds
+      );
+      assert.equal(contract.currentFunctionality.packageReadiness.strictExport, true);
+      assert.equal(contract.currentFunctionality.packageReadiness.strictImport, true);
+      assert.equal(contract.currentFunctionality.runtimeImportContract.hasBarePackageRoutes, true);
       assert.equal(contract.constructionTrace.constructionPlanEvidence.topology, 'bsp-workbench');
       assert.equal(contract.constructionTrace.constructionPlanEvidence.moduleCount, 8);
       assert.equal(contract.constructionTrace.constructionPlanEvidence.eventCount >= 6, true);
@@ -213,10 +297,25 @@ describe('realtime builder demo', () => {
           .bindings[0].path,
         'theme'
       );
-      assert.deepEqual(contract.buildStreamTimeline.map((item) => item.progress), [25, 50, 75, 100]);
+      assert.deepEqual(
+        contract.buildStreamTimeline.map((item) => item.stage),
+        contract.playStages
+      );
+      assert.deepEqual(
+        contract.buildStreamTimeline.map((item) => item.progress),
+        [11, 22, 33, 44, 56, 67, 78, 89, 100]
+      );
       assert.equal(contract.buildStreamTimeline.at(-1).operations.length, 4);
-      assert.equal(contract.chatStateTimeline.length, 4);
+      assert.equal(contract.chatStateTimeline.length, 9);
+      assert.deepEqual(
+        contract.chatStateTimeline.map((item) => item.activeQuestionId),
+        contract.playStages
+      );
       assert.equal(contract.chatStateTimeline.at(-1).requiredElements.includes('theme-editor'), true);
+      assert.deepEqual(
+        contract.chatStateTimeline.at(-1).currentFunctionality.hostServices,
+        ['agent.runtime', 'storage.project']
+      );
       assert.deepEqual(
         contract.chatStateTimeline.at(-1).adaptiveScenarios.map((scenario) => scenario.mode),
         ['wide', 'tablet', 'mobile']
@@ -227,7 +326,7 @@ describe('realtime builder demo', () => {
           .themeEditor,
         'visible-or-docked'
       );
-      assert.equal(contract.chatStateTimeline.at(-1).decisionTrace.length, 5);
+      assert.equal(contract.chatStateTimeline.at(-1).decisionTrace.length, 9);
       assert.match(html, /<script type="importmap">/);
       assert.match(app, /mountWorkspace/);
       assert.match(app, /from 'symbiote-ui\/ui'/);
@@ -252,6 +351,14 @@ describe('realtime builder demo', () => {
       assert.match(app, /demo-build-progress/);
       assert.match(app, /operationIndex/);
       assert.match(app, /dataset\.buildKind/);
+      assert.match(app, /dataset\.executionModel/);
+      assert.match(app, /dataset\.hostServices/);
+      assert.match(app, /dataset\.packageReadiness/);
+      assert.match(app, /currentFunctionality/);
+      assert.match(app, /Host services/);
+      assert.match(app, /Package readiness/);
+      assert.match(app, /Runtime imports/);
+      assert.match(app, /data-package-readiness/);
       assert.match(app, /Service blueprint/);
       assert.match(app, /Widget registry/);
       assert.match(app, /dataset\.collapsedPanels/);
@@ -321,7 +428,7 @@ describe('realtime builder demo', () => {
     assert.match(smoke, /atomicStageCountsReady/);
     assert.match(smoke, /mobileLayoutIdentityPreserved/);
     assert.match(smoke, /mobileWorkspaceIdentityPreserved/);
-    assert.match(smoke, /themeTransitionStage === 'builder'/);
+    assert.match(smoke, /\['theme-mode', 'theme-hue'\]\.includes\(themeTransitionStage\)/);
     assert.match(smoke, /themeTransitionSource === 'cascade-theme-change'/);
     assert.match(smoke, /themeTransitionChanged === 'true'/);
     assert.match(smoke, /themeTransitionFromMode === 'dark'/);
@@ -330,7 +437,11 @@ describe('realtime builder demo', () => {
     assert.match(smoke, /themeTransitionUpdateCount > 0/);
     assert.match(smoke, /mountedWorkspace/);
     assert.match(smoke, /mountedWorkspace = workspace\?\.querySelector\('\.symbiote-workspace'\)/);
-    assert.match(smoke, /lastUpdatedStage === 'validation'/);
+    assert.match(smoke, /lastUpdatedStage === 'verification-scope'/);
+    assert.match(smoke, /data-current-evidence/);
+    assert.match(smoke, /dataset\.executionModel/);
+    assert.match(smoke, /dataset\.hostServices/);
+    assert.match(smoke, /data-package-readiness/);
     assert.match(smoke, /cascade-theme-open-full/);
     assert.match(smoke, /data-adaptive-state="docked"/);
     assert.match(smoke, /themeEditorState/);

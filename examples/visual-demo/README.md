@@ -24,9 +24,11 @@ npm run demo:realtime-builder
 ```
 
 The realtime builder demo uses mock chat and questionnaire state. Press Play to
-step from intent capture into service blueprint, dynamic layout assembly,
-widget registration, bindings, adaptive collapse priorities, validation state,
-and the required theme editor widget.
+step through the canonical 9-question construction protocol: workspace name,
+target register, layout topology, module selection, execution model, required
+host services, theme mode, theme hue, and verification scope. The visible flow
+keeps execution model, host service, package readiness, and runtime import-map
+evidence available in the generated UI.
 
 The generated workspace preview is mounted through the Symbiote UI
 `panel-layout` runtime instead of the portable fallback cards. The demo shell
@@ -51,11 +53,12 @@ status.
 
 The generated `demo.contract.json` includes the play stages, required widgets,
 acceptance matrix, build stream timeline, chat-state timeline, questionnaire
-decision trace, adaptive viewport scenarios, and construction trace. The
-construction trace records canonical questionnaire IDs, required module
-capability coverage, adaptive/theme evidence, verification reports, and strict
-export/import evidence so the staged transformation is inspectable without
-reading the browser DOM.
+decision trace, adaptive viewport scenarios, current functionality evidence,
+execution evidence, package evidence, and construction trace. The construction
+trace records canonical questionnaire IDs, required module capability coverage,
+adaptive/theme evidence, verification reports, strict export/import evidence,
+and browser import-map evidence so the staged transformation is inspectable
+without reading the browser DOM.
 
 For opt-in browser evidence, run the real-browser smoke. It starts the demo
 server, launches a Chrome-compatible browser through the DevTools Protocol, and

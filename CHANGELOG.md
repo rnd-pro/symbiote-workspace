@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Extended the realtime builder demo from broad mock stages into the canonical
+  9-question construction protocol, including visible execution model, host
+  services, package readiness, and browser import-map evidence in both the
+  runtime UI and generated contract.
 - Added constructor-owned `construction.plan.layout.regions` evidence and a
   default chat dispatch proof that strict package export/import preserves the
   chat layout topology, selected Symbiote chat modules, and named regions.

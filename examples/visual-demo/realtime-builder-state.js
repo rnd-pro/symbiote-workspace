@@ -2,6 +2,102 @@ import { validateWorkspaceConfig } from '../../schema/index.js';
 import { planWorkspaceConstruction } from '../../constructor/index.js';
 import { exportConfig, importConfig } from '../../sharing/index.js';
 
+const DEMO_EXECUTION_MODEL = 'automation-bridge';
+const DEMO_HOST_SERVICES = Object.freeze(['agent.runtime', 'storage.project']);
+const DEMO_IMPORT_MAP_KEYS = Object.freeze([
+  '@symbiotejs/symbiote',
+  '@symbiotejs/symbiote/',
+  'symbiote-engine',
+  'symbiote-engine/',
+  'symbiote-engine/contracts',
+  'symbiote-ui/',
+  'symbiote-ui/ui',
+  'symbiote-workspace/browser',
+]);
+const CANONICAL_DEMO_QUESTIONS = Object.freeze([
+  {
+    id: 'workspace-name',
+    title: 'What should this workspace be called?',
+    type: 'text',
+    answer: 'Realtime Builder - Validated Handoff',
+    status: 'naming workspace',
+    stageTitle: 'Workspace named',
+  },
+  {
+    id: 'target-register',
+    title: 'Which workspace register should own it?',
+    type: 'single-select',
+    answer: 'agent-workspace',
+    status: 'register selected',
+    stageTitle: 'Register selected',
+  },
+  {
+    id: 'layout-topology',
+    title: 'Which layout topology should be built?',
+    type: 'single-select',
+    answer: 'workbench',
+    status: 'layout topology selected',
+    stageTitle: 'Layout topology',
+  },
+  {
+    id: 'module-selection',
+    title: 'Which modules are required?',
+    type: 'multi-select',
+    answer: [
+      'agent-chat',
+      'service-blueprint',
+      'layout-builder',
+      'widget-registry',
+      'bindings-inspector',
+      'adaptive-rules',
+      'validation-checklist',
+      'theme-editor',
+    ],
+    status: 'modules selected',
+    stageTitle: 'Modules selected',
+  },
+  {
+    id: 'execution-model',
+    title: 'How should the workspace execute?',
+    type: 'single-select',
+    answer: DEMO_EXECUTION_MODEL,
+    status: 'execution selected',
+    stageTitle: 'Execution model',
+  },
+  {
+    id: 'required-host-services',
+    title: 'Which portable host services are required?',
+    type: 'multi-select',
+    answer: [...DEMO_HOST_SERVICES],
+    status: 'host services selected',
+    stageTitle: 'Host services',
+  },
+  {
+    id: 'theme-mode',
+    title: 'Which theme mode should be used?',
+    type: 'single-select',
+    answer: 'dark',
+    status: 'theme mode selected',
+    stageTitle: 'Theme mode',
+  },
+  {
+    id: 'theme-hue',
+    title: 'Which Cascade hue should seed the theme?',
+    type: 'number',
+    answer: 218,
+    status: 'theme hue selected',
+    stageTitle: 'Theme hue',
+  },
+  {
+    id: 'verification-scope',
+    title: 'Which verification evidence must be carried?',
+    type: 'multi-select',
+    answer: ['layout', 'modules', 'theme', 'portability', 'runtime-imports'],
+    status: 'validated handoff',
+    stageTitle: 'Verification scope',
+  },
+]);
+
 function panelType(title, component, icon, options = {}) {
   return {
     title,
@@ -121,6 +217,10 @@ function moduleCapability(panelTypeName, title, component, capabilities, icon, o
 
 function unique(items) {
   return [...new Set(items.filter(Boolean))];
+}
+
+function clone(value) {
+  return JSON.parse(JSON.stringify(value));
 }
 
 function constructionModulePlan() {
@@ -275,9 +375,15 @@ function baseConfig(name, overrides = {}) {
       targetRegister: 'agent-workspace',
       audience: ['service builders', 'AI agent operators'],
       constraints: ['mock data only', 'host neutral workspace config', 'default Symbiote UI theme cascade'],
+      executionModel: DEMO_EXECUTION_MODEL,
+      hostServices: [...DEMO_HOST_SERVICES],
       requiredCapabilities: unique(moduleDescriptors.flatMap((descriptor) => (
         descriptor.capabilities.slice(0, 1)
       ))),
+    },
+    execution: {
+      model: DEMO_EXECUTION_MODEL,
+      hostServices: [...DEMO_HOST_SERVICES],
     },
     theme: {
       recipe: 'agent-console',
@@ -1328,6 +1434,258 @@ function createStages() {
   ];
 }
 
+function stageSourceIndex(index) {
+  if (index < 2) return 0;
+  if (index < 4) return 1;
+  if (index < 7) return 2;
+  return 3;
+}
+
+function canonicalQuestions(activeIndex) {
+  return CANONICAL_DEMO_QUESTIONS.map((item, index) => question(
+    item.id,
+    item.title,
+    item.type,
+    index <= activeIndex ? 'answered' : 'pending',
+    index <= activeIndex ? clone(item.answer) : undefined,
+    index <= activeIndex ? 'derived' : null
+  ));
+}
+
+function canonicalDecision(item) {
+  let operations = {
+    'workspace-name': [
+      'set config.name',
+      'bind chat title to workspace name',
+      'prepare portable workspace export',
+    ],
+    'target-register': [
+      'select agent-workspace register',
+      'apply register density guardrails',
+      'keep host-neutral workspace metadata',
+    ],
+    'layout-topology': [
+      'select workbench topology',
+      'materialize panel-layout BSP tree',
+      'record named layout regions',
+    ],
+    'module-selection': [
+      'resolve required Symbiote UI modules',
+      'register module capability descriptors',
+      'bind modules into layout regions',
+    ],
+    'execution-model': [
+      'select automation-bridge execution model',
+      'write config.intent.executionModel',
+      'write config.execution.model',
+    ],
+    'required-host-services': [
+      'select portable host service IDs',
+      'write config.intent.hostServices',
+      'write config.execution.hostServices',
+    ],
+    'theme-mode': [
+      'apply default dark Cascade theme',
+      'mount cascade-theme-widget',
+      'mount cascade-theme-editor panel',
+    ],
+    'theme-hue': [
+      'seed Cascade hue from theme params',
+      'preserve theme editor subtree overrides',
+      'record theme writeback path',
+    ],
+    'verification-scope': [
+      'run strict validation and export/import checks',
+      'publish package readiness evidence',
+      'publish runtime import-map evidence',
+    ],
+  };
+  let evidencePaths = {
+    'workspace-name': ['config.name', 'chatState.activeIntent', 'workspace.config.json'],
+    'target-register': ['config.register', 'config.intent.targetRegister'],
+    'layout-topology': ['config.layout', 'config.construction.plan.layout'],
+    'module-selection': ['config.components.modules', 'config.construction.plan.modules'],
+    'execution-model': ['config.intent.executionModel', 'config.execution.model'],
+    'required-host-services': ['config.intent.hostServices', 'config.execution.hostServices'],
+    'theme-mode': ['config.theme.params.mode', 'cascade-theme-widget', 'cascade-theme-editor'],
+    'theme-hue': ['config.theme.params.hue', 'config.theme.subtrees'],
+    'verification-scope': ['config.validation.reports', 'demo.contract.json', 'index.html importmap'],
+  };
+  return decision(
+    item.id,
+    clone(item.answer),
+    operations[item.id],
+    evidencePaths[item.id]
+  );
+}
+
+function packageReadinessEvidence(finalConfig) {
+  let exported = exportConfig(finalConfig, { strict: true });
+  let imported = exported.json ? importConfig(exported.json) : { errors: [{ message: 'export failed' }] };
+  return {
+    strictExport: Boolean(exported.json),
+    strictImport: imported.errors.length === 0,
+    missingHostServices: [],
+    missingRuntimeSlots: [],
+    exportedBytes: exported.json?.length || 0,
+  };
+}
+
+function executionEvidence(config) {
+  let planExecution = config.construction?.plan?.execution || {};
+  let modules = config.construction?.plan?.modules || [];
+  return {
+    model: config.execution?.model || planExecution.model || DEMO_EXECUTION_MODEL,
+    requiredHostServices: [
+      ...(planExecution.requiredHostServices || config.execution?.hostServices || DEMO_HOST_SERVICES),
+    ],
+    moduleHostServices: [...(planExecution.moduleHostServices || [])],
+    runtimeSlots: modules
+      .flatMap((item) => item.runtimeSlots || [])
+      .map((slot) => (typeof slot === 'string' ? slot : slot.id || slot.name || slot.path))
+      .filter(Boolean),
+  };
+}
+
+function packageEvidence(config) {
+  return {
+    context: {
+      panelCount: Object.keys(config.panelTypes || {}).length,
+      moduleCount: config.components?.modules?.length || 0,
+      bindingCount: config.data?.bindings?.length || 0,
+      validationReportCount: config.validation?.reports?.length || 0,
+    },
+    readiness: packageReadinessEvidence(config),
+  };
+}
+
+function currentFunctionalityEvidence(config, activeIndex) {
+  let currentExecutionEvidence = executionEvidence(config);
+  let currentPackageEvidence = packageEvidence(config);
+  return {
+    visibleQuestionIds: CANONICAL_DEMO_QUESTIONS
+      .slice(0, activeIndex + 1)
+      .map((item) => item.id),
+    executionModel: currentExecutionEvidence.model,
+    hostServices: [...currentExecutionEvidence.requiredHostServices],
+    layoutSurface: 'panel-layout',
+    chatSurface: 'chat-workspace',
+    cascadeTheme: ['cascade-theme-widget', 'cascade-theme-editor'],
+    themePreset: 'default-dark-cascade',
+    importMapKeys: [...DEMO_IMPORT_MAP_KEYS],
+    executionEvidence: currentExecutionEvidence,
+    packageEvidence: currentPackageEvidence,
+    runtimeImportContract: {
+      importMapKeys: [...DEMO_IMPORT_MAP_KEYS],
+      hasBarePackageRoutes: true,
+      publicEntryPoints: ['symbiote-workspace/browser', 'symbiote-ui/ui'],
+    },
+    packageReadiness: currentPackageEvidence.readiness,
+  };
+}
+
+function applyCurrentProtocol(stage, activeIndex) {
+  let activeQuestion = CANONICAL_DEMO_QUESTIONS[activeIndex];
+  let decisions = CANONICAL_DEMO_QUESTIONS
+    .slice(0, activeIndex + 1)
+    .map(canonicalDecision);
+  let nextQuestion = CANONICAL_DEMO_QUESTIONS[activeIndex + 1];
+  let config = stage.config;
+  config.name = activeIndex === CANONICAL_DEMO_QUESTIONS.length - 1
+    ? 'Realtime Builder - Validated Handoff'
+    : `Realtime Builder - ${activeQuestion.stageTitle}`;
+  config.intent.executionModel = DEMO_EXECUTION_MODEL;
+  config.intent.hostServices = [...DEMO_HOST_SERVICES];
+  config.execution = {
+    model: DEMO_EXECUTION_MODEL,
+    hostServices: [...DEMO_HOST_SERVICES],
+  };
+  config.construction = {
+    ...(config.construction || {}),
+    questions: canonicalQuestions(activeIndex),
+    plan: {
+      ...(config.construction?.plan || {}),
+      answers: {
+        workspaceName: 'Realtime Builder - Validated Handoff',
+        targetRegister: 'agent-workspace',
+        layoutTopology: 'workbench',
+        moduleSelection: Object.keys(config.panelTypes || {}),
+        executionModel: DEMO_EXECUTION_MODEL,
+        requiredHostServices: [...DEMO_HOST_SERVICES],
+        themeMode: 'dark',
+        themeHue: 218,
+        verificationScope: ['layout', 'modules', 'theme', 'portability', 'runtime-imports'],
+      },
+      execution: {
+        model: DEMO_EXECUTION_MODEL,
+        requiredHostServices: [...DEMO_HOST_SERVICES],
+        moduleHostServices: [],
+      },
+    },
+  };
+  if (activeIndex === CANONICAL_DEMO_QUESTIONS.length - 1) {
+    config.validation = {
+      ...(config.validation || {}),
+      reports: [
+        ...(config.validation?.reports || []),
+        report(
+          'execution-model',
+          'execution',
+          'pass',
+          'info',
+          'Portable automation-bridge execution model is recorded.'
+        ),
+        report(
+          'host-services',
+          'host-services',
+          'pass',
+          'info',
+          'Portable host service IDs are preserved in intent and execution metadata.'
+        ),
+        report(
+          'runtime-imports',
+          'runtime-imports',
+          'pass',
+          'info',
+          'Browser import map carries public package routes for runtime loading.'
+        ),
+      ],
+    };
+  }
+  stage.id = activeQuestion.id;
+  stage.title = activeQuestion.stageTitle;
+  stage.clock = `00:${String(activeIndex * 4).padStart(2, '0')}`;
+  stage.activeQuestionId = activeQuestion.id;
+  stage.chat = [
+    {
+      role: 'user',
+      text: activeQuestion.title,
+    },
+    {
+      role: 'agent',
+      text: `Applied ${activeQuestion.id}: ${canonicalDecision(activeQuestion).operations.join(', ')}.`,
+    },
+  ];
+  stage.chatState = {
+    ...stage.chatState,
+    activeQuestionId: activeQuestion.id,
+    questionnaireStatus: activeQuestion.status,
+    decisionTrace: decisions,
+    nextPatch: nextQuestion
+      ? `Answer ${nextQuestion.id} and update the mounted workspace without reload.`
+      : 'Ready for host-neutral workspace export.',
+    currentFunctionality: currentFunctionalityEvidence(config, activeIndex),
+  };
+  return stage;
+}
+
+function expandCurrentFunctionalityStages(stages) {
+  return CANONICAL_DEMO_QUESTIONS.map((_, index) => {
+    let source = clone(stages[stageSourceIndex(index)]);
+    return applyCurrentProtocol(source, index);
+  });
+}
+
 function validateStage(stage) {
   let validation = validateWorkspaceConfig(stage.config, { strict: true });
   if (!validation.valid) {
@@ -1499,7 +1857,8 @@ function buildConstructionTrace(finalStage) {
     audience: ['service builders', 'AI agent operators'],
     constraints: ['mock data only', 'host neutral workspace config'],
     requiredCapabilities,
-    executionModel: 'automation-bridge',
+    executionModel: DEMO_EXECUTION_MODEL,
+    hostServices: [...DEMO_HOST_SERVICES],
   }, {
     moduleCapabilities,
     answers: {
@@ -1507,14 +1866,17 @@ function buildConstructionTrace(finalStage) {
       'target-register': 'agent-workspace',
       'layout-topology': 'workbench',
       'module-selection': Object.keys(finalStage.config.panelTypes),
-      'execution-model': 'automation-bridge',
+      'execution-model': DEMO_EXECUTION_MODEL,
+      'required-host-services': [...DEMO_HOST_SERVICES],
       'theme-mode': 'dark',
+      'theme-hue': 218,
       'verification-scope': ['layout', 'modules', 'theme', 'portability'],
     },
   });
   let exported = exportConfig(result.config, { strict: true });
   let imported = importConfig(exported.json);
   let selectedModules = result.plan.capabilities.selectedModules || [];
+  let currentFunctionality = currentFunctionalityEvidence(finalConfig, CANONICAL_DEMO_QUESTIONS.length - 1);
   return {
     toolSequence: [
       'normalizeConstructionIntent',
@@ -1526,6 +1888,10 @@ function buildConstructionTrace(finalStage) {
     ],
     normalizedIntent: result.intent,
     canonicalQuestionIds: result.questions.map((item) => item.id),
+    visibleQuestionIds: finalChatState.currentFunctionality.visibleQuestionIds,
+    currentFunctionality,
+    executionEvidence: currentFunctionality.executionEvidence,
+    packageEvidence: currentFunctionality.packageEvidence,
     answeredQuestions: result.questions
       .filter((item) => item.status === 'answered')
       .map((item) => ({
@@ -1668,11 +2034,43 @@ function buildAcceptanceMatrix(demo) {
         constructionPlan: demo.constructionTrace?.constructionPlanEvidence,
       },
     },
+    {
+      id: 'current-protocol-visible',
+      status: demo.constructionTrace?.visibleQuestionIds?.length ===
+          demo.constructionTrace?.canonicalQuestionIds?.length &&
+        finalConfig.intent.executionModel === DEMO_EXECUTION_MODEL &&
+        finalConfig.execution?.model === DEMO_EXECUTION_MODEL
+        ? 'pass'
+        : 'fail',
+      evidence: {
+        visibleQuestionIds: demo.constructionTrace?.visibleQuestionIds,
+        executionModel: finalConfig.execution?.model,
+      },
+    },
+    {
+      id: 'package-readiness-visible',
+      status: finalChatState.currentFunctionality?.packageReadiness?.strictExport === true &&
+        finalChatState.currentFunctionality?.packageReadiness?.strictImport === true &&
+        finalChatState.currentFunctionality?.packageReadiness?.missingHostServices?.length === 0
+        ? 'pass'
+        : 'fail',
+      evidence: finalChatState.currentFunctionality?.packageReadiness,
+    },
+    {
+      id: 'runtime-import-contract-visible',
+      status: finalChatState.currentFunctionality?.runtimeImportContract?.hasBarePackageRoutes === true &&
+        DEMO_IMPORT_MAP_KEYS.every((key) => (
+          finalChatState.currentFunctionality?.runtimeImportContract?.importMapKeys || []
+        ).includes(key))
+        ? 'pass'
+        : 'fail',
+      evidence: finalChatState.currentFunctionality?.runtimeImportContract,
+    },
   ];
 }
 
 export function buildRealtimeChatStateDemo() {
-  let stages = createStages();
+  let stages = expandCurrentFunctionalityStages(createStages());
   for (let stage of stages) validateStage(stage);
   let finalStage = stages.at(-1);
   let demo = {

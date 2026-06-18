@@ -509,12 +509,22 @@ new Promise((resolve, reject) => {
 
 let realtimeExpression = `
 new Promise((resolve, reject) => {
-  let deadline = Date.now() + 14000;
+  let deadline = Date.now() + 30000;
   let clickedPlay = false;
   let initialHistoryLength = history.length;
   let initialLocationHref = location.href;
   let atomicStageCounts = {};
-  let expectedAtomicStages = ['intent', 'questionnaire', 'builder', 'validation'];
+  let expectedAtomicStages = [
+    'workspace-name',
+    'target-register',
+    'layout-topology',
+    'module-selection',
+    'execution-model',
+    'required-host-services',
+    'theme-mode',
+    'theme-hue',
+    'verification-scope',
+  ];
   let check = () => {
     let error = document.querySelector('[data-preview-error]');
     if (error) {
@@ -542,7 +552,7 @@ new Promise((resolve, reject) => {
     let workspace = document.querySelector('.demo-workspace');
     let layout = workspace?.querySelector('panel-layout');
     let mountedWorkspace = workspace?.querySelector('.symbiote-workspace');
-    let finalStage = shell?.dataset.stage === 'validation';
+    let finalStage = shell?.dataset.stage === 'verification-scope';
     let finalKind = shell?.dataset.buildKind === 'rank-layout-behavior';
     let progress = document.querySelector('.demo-build-progress span')?.textContent || '';
     let requiredElements = [
@@ -604,13 +614,28 @@ new Promise((resolve, reject) => {
     let themeTransitionChanged = shell?.dataset.themeTransitionChanged || '';
     let themeTransitionUpdateCount = Number(shell?.dataset.themeTransitionUpdateCount || '0');
     let themeTransitionReady =
-      themeTransitionStage === 'builder' &&
+      ['theme-mode', 'theme-hue'].includes(themeTransitionStage) &&
       themeTransitionSource === 'cascade-theme-change' &&
       themeTransitionChanged === 'true' &&
       themeTransitionFromMode === 'dark' &&
       themeTransitionToMode === 'dark' &&
       Number(themeTransitionFromHue) !== Number(themeTransitionToHue) &&
       themeTransitionUpdateCount > 0;
+    let currentEvidence = [
+      'host-services',
+      'package-readiness',
+      'runtime-imports',
+    ].map((id) => document.querySelector('[data-current-evidence="' + id + '"]')).filter(Boolean);
+    let executionModel = shell?.dataset.executionModel || '';
+    let hostServices = shell?.dataset.hostServices || '';
+    let packageReadiness = shell?.dataset.packageReadiness || '';
+    let packageReadinessElement = document.querySelector('[data-package-readiness="pass"]');
+    let currentProtocolReady =
+      executionModel === 'automation-bridge' &&
+      hostServices.includes('agent.runtime') &&
+      hostServices.includes('storage.project') &&
+      packageReadiness === 'pass' &&
+      Boolean(packageReadinessElement);
     let smokeReady = finalStage &&
       finalKind &&
       progress.includes('100%') &&
@@ -624,8 +649,10 @@ new Promise((resolve, reject) => {
       runtimeInstanceId &&
       updateCount > 0 &&
       atomicStageCountsReady &&
+      currentEvidence.length === 3 &&
+      currentProtocolReady &&
       noNavigation &&
-      lastUpdatedStage === 'validation';
+      lastUpdatedStage === 'verification-scope';
     if (smokeReady) {
       themeWidget?.dispatchEvent?.(new CustomEvent('cascade-theme-open-full', {
         bubbles: true,
@@ -691,6 +718,10 @@ new Promise((resolve, reject) => {
             themeEditorDefined,
             requiredElements: requiredElements.map((element) => element.localName),
             modulePanels,
+            currentEvidence: currentEvidence.map((element) => element.dataset.currentEvidence),
+            executionModel,
+            hostServices,
+            packageReadiness,
             themeEditorOpenRequest: mobileShell.dataset.themeEditorOpenRequest,
           });
           return;
@@ -741,6 +772,11 @@ new Promise((resolve, reject) => {
         updateCount,
         atomicStageCounts,
         atomicStageCountsReady,
+        currentEvidence: currentEvidence.map((element) => element.dataset.currentEvidence),
+        executionModel,
+        hostServices,
+        packageReadiness,
+        currentProtocolReady,
         lastUpdatedStage,
         initialHistoryLength,
         historyLength: history.length,

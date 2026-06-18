@@ -268,6 +268,10 @@ function buildModuleBody(panelType, context) {
   }
   if (panelType === 'validation-checklist') {
     let validation = validateWorkspaceConfig(config, { strict: true });
+    let current = chatState.currentFunctionality || {};
+    let packageReadiness = current.packageReadiness || {};
+    let runtimeImports = current.runtimeImportContract || {};
+    let packageStatus = packageReadiness.strictExport && packageReadiness.strictImport ? 'pass' : 'fail';
     return card('Builder contract', \`
       <div class="sn-demo-module-list">
         <sn-card class="demo-validation-row">
@@ -280,6 +284,18 @@ function buildModuleBody(panelType, context) {
             <sn-badge>\${escapeHtml(item.status)}</sn-badge>
           </sn-card>
         \`).join('')}
+        <sn-card class="demo-validation-row" data-current-evidence="host-services">
+          <span class="demo-validation-label">Host services</span>
+          <b>\${escapeHtml((current.hostServices || []).join(', '))}</b>
+        </sn-card>
+        <sn-card class="demo-validation-row" data-current-evidence="package-readiness" data-package-readiness="\${packageStatus}">
+          <span class="demo-validation-label">Package readiness</span>
+          <sn-badge>\${packageStatus}</sn-badge>
+        </sn-card>
+        <sn-card class="demo-validation-row" data-current-evidence="runtime-imports">
+          <span class="demo-validation-label">Runtime imports</span>
+          <b>\${escapeHtml((runtimeImports.importMapKeys || []).length)} routes</b>
+        </sn-card>
       </div>
     \`, { icon: 'fact_check', status: validation.valid ? 'strict pass' : 'strict fail' });
   }
@@ -903,7 +919,7 @@ function renderWorkspace(stage) {
 function recordThemeTransitionEvidence(stage) {
   if (
     !playbackActive ||
-    stage.id !== 'builder' ||
+    !['theme-mode', 'theme-hue'].includes(stage.id) ||
     shell.dataset.themeTransitionChanged === 'true'
   ) {
     return;
@@ -962,10 +978,16 @@ function renderStage(index) {
   let scenario = adaptiveScenario(stage);
   let adaptive = stage.chatState?.adaptiveBehavior || {};
   let theme = stage.chatState?.themeCascade || {};
+  let current = stage.chatState?.currentFunctionality || {};
+  let currentExecution = current.executionEvidence || {};
+  let currentPackage = current.packageEvidence?.readiness || current.packageReadiness || {};
   let progress = buildProgressPercent(stageIndex);
   let activeOperation = buildOperations(stage)[operationIndex];
   shell.dataset.stage = stage.id;
   shell.dataset.buildKind = activeOperation?.label.toLowerCase().replaceAll(' ', '-') || 'stage';
+  shell.dataset.executionModel = currentExecution.model || current.executionModel || '';
+  shell.dataset.hostServices = (currentExecution.requiredHostServices || current.hostServices || []).join(',');
+  shell.dataset.packageReadiness = currentPackage.strictExport && currentPackage.strictImport ? 'pass' : 'fail';
   shell.dataset.adaptiveMode = adaptive.mode || '';
   shell.dataset.adaptiveBreakpoint = String(adaptive.breakpoint || stage.config.rootBehavior?.responsiveBreakpoint || '');
   shell.dataset.themeMode = theme.mode || stage.config.theme?.params?.mode || '';
@@ -1058,6 +1080,9 @@ export async function writeRealtimeChatStateDemo(options = {}) {
     playStages: demo.stages.map((stage) => stage.id),
     requiredWidgets: demo.requiredWidgets,
     constructionTrace: demo.constructionTrace,
+    currentFunctionality: demo.constructionTrace.currentFunctionality,
+    executionEvidence: demo.constructionTrace.executionEvidence,
+    packageEvidence: demo.constructionTrace.packageEvidence,
     buildStreamTimeline: demo.stages.map((stage, index) => ({
       stage: stage.id,
       progress: progressPercent(index, demo.stages.length),
@@ -1070,6 +1095,7 @@ export async function writeRealtimeChatStateDemo(options = {}) {
       requiredElements: stage.chatState.requiredElements,
       adaptiveScenarios: stage.chatState.adaptiveScenarios,
       decisionTrace: stage.chatState.decisionTrace,
+      currentFunctionality: stage.chatState.currentFunctionality,
       nextPatch: stage.chatState.nextPatch,
     })),
     imports,
