@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Extended `npm run release:preflight` with non-publishing npm identity and
+  registry checks. Stable release gates now verify `npm whoami`, detect already
+  published target versions, require explicit `--allow-new-package-name` for
+  first-publication `E404`, and keep local/offline skips available through
+  `--skip-npm-auth` and `--skip-npm-registry`.
 - Added `npm run release:preflight` as a non-publishing stable-release gate. It
   verifies package metadata, dated changelog release headings, the 69-tool
   registry with `workflow_kanban`, project-owned `.mjs` absence, install/test

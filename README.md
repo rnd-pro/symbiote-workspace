@@ -54,16 +54,21 @@ npm run release:preflight -- --target-version 1.0.0
 
 The preflight checks package metadata, a dated changelog release heading, the
 69-tool dispatch registry with `workflow_kanban`, project-owned `.mjs` absence,
-`npm ci --ignore-scripts`, the full test suite, package-consumer install,
-`npm pack --dry-run --json`, the realtime-builder browser proof, and a clean git
-status. It does not modify package metadata, create tags, publish, or change
-dist-tags.
+`npm whoami`, npm registry package/version state, `npm ci --ignore-scripts`,
+the full test suite, package-consumer install, `npm pack --dry-run --json`, the
+realtime-builder browser proof, and a clean git status. It does not modify
+package metadata, create tags, publish, or change dist-tags.
+
+For first publication of a package name that is not yet present in the npm
+registry, pass `--allow-new-package-name` only after release-owner approval.
+For local or offline checks, use `--skip-npm-auth` and
+`--skip-npm-registry`.
 
 For a prerelease checkpoint against the current package version, pass the
 current version explicitly and skip release-only gates as needed:
 
 ```bash
-npm run release:preflight -- --target-version 0.3.0-alpha.2 --skip-browser --skip-git-clean
+npm run release:preflight -- --target-version 0.3.0-alpha.2 --skip-browser --skip-git-clean --skip-npm-auth --skip-npm-registry
 ```
 
 ## Architecture

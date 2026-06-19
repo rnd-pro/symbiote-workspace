@@ -32,6 +32,9 @@ function printUsage() {
     '  --skip-pack                  Skip npm pack --dry-run --json.',
     '  --skip-browser               Skip realtime-builder browser smoke.',
     '  --skip-git-clean            Skip git status cleanliness check.',
+    '  --skip-npm-auth             Skip npm whoami identity check.',
+    '  --skip-npm-registry         Skip npm registry package/version check.',
+    '  --allow-new-package-name    Allow npm registry E404 for first publication.',
     '  --help                       Show this help.',
   ].join('\n'));
 }
@@ -48,11 +51,14 @@ for (let name of [
   'pack',
   'browser',
   'git-clean',
+  'npm-auth',
+  'npm-registry',
 ]) {
   if (hasFlag(`--skip-${name}`)) skip.add(name);
 }
 
 let targetVersion = readOption('--target-version', '1.0.0');
+let allowNewPackageName = hasFlag('--allow-new-package-name');
 let failures = [];
 
 function fail(message) {
@@ -85,11 +91,11 @@ async function run(label, command, commandArgs, options = {}) {
     }
     child.on('error', reject);
     child.on('close', (code) => {
-      if (code !== 0) {
+      if (code !== 0 && !options.allowFailure) {
         reject(new Error(`${label} failed with exit code ${code}${stderr ? `\n${stderr}` : ''}`));
         return;
       }
-      resolve({ stdout, stderr });
+      resolve({ code, stdout, stderr });
     });
   });
 }
@@ -139,6 +145,69 @@ async function verifyToolRegistry() {
     ].join(' '),
   ], { capture: true });
   console.log(stdout.trim());
+}
+
+async function verifyNpmAuth() {
+  let result = await run('npm identity check', 'npm', ['whoami'], {
+    capture: true,
+    allowFailure: true,
+  });
+  if (result.code !== 0) {
+    fail('npm whoami failed; authenticate before release publication');
+    return;
+  }
+  console.log(JSON.stringify({ npmUser: result.stdout.trim() }));
+}
+
+function registryLookupIsNotFound(result) {
+  return result.code !== 0 && /\bE404\b|not found/i.test(`${result.stdout}\n${result.stderr}`);
+}
+
+async function verifyNpmRegistry() {
+  let packageMeta = await readJson('package.json');
+  let result = await run('npm registry package check', 'npm', [
+    'view',
+    packageMeta.name,
+    'versions',
+    'dist-tags',
+    '--json',
+  ], {
+    capture: true,
+    allowFailure: true,
+  });
+  if (registryLookupIsNotFound(result)) {
+    if (allowNewPackageName) {
+      console.log(JSON.stringify({
+        packageName: packageMeta.name,
+        registered: false,
+        firstPublicationAllowed: true,
+      }));
+      return;
+    }
+    fail(`npm registry has no package ${packageMeta.name}; pass --allow-new-package-name only after first-publication approval`);
+    return;
+  }
+  if (result.code !== 0) {
+    fail(`npm registry package check failed for ${packageMeta.name}`);
+    return;
+  }
+  let registry;
+  try {
+    registry = JSON.parse(result.stdout);
+  } catch {
+    fail(`npm registry package check returned invalid JSON for ${packageMeta.name}`);
+    return;
+  }
+  let versions = Array.isArray(registry?.versions) ? registry.versions : [];
+  if (versions.includes(targetVersion)) {
+    fail(`npm registry already contains ${packageMeta.name}@${targetVersion}`);
+  }
+  console.log(JSON.stringify({
+    packageName: packageMeta.name,
+    registered: true,
+    targetVersionExists: versions.includes(targetVersion),
+    distTags: registry?.['dist-tags'] || {},
+  }));
 }
 
 function verifyPackList(pack) {
@@ -191,6 +260,12 @@ async function main() {
   await verifyReleaseMetadata();
   await verifyNoProjectMjs();
   await verifyToolRegistry();
+  if (!skip.has('npm-auth')) {
+    await verifyNpmAuth();
+  }
+  if (!skip.has('npm-registry')) {
+    await verifyNpmRegistry();
+  }
 
   if (!skip.has('npm-ci')) {
     await run('npm ci', 'npm', ['ci', '--ignore-scripts']);
