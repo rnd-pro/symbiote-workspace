@@ -675,6 +675,9 @@ describe('realtime builder demo', () => {
     assert.match(smoke, /LinkedIn/);
     assert.match(smoke, /applyPatch/);
     assert.match(smoke, /validateWorkspacePatch/);
+    assert.match(smoke, /video-studio/);
+    assert.match(smoke, /agent-workspace/);
+    assert.match(smoke, /Export workspace/);
     assert.match(smoke, /professionalScenario/);
     assert.match(smoke, /history\.length/);
     assert.match(smoke, /initialHistoryLength/);
@@ -685,14 +688,15 @@ describe('realtime builder demo', () => {
     assert.match(smoke, /assemblySamples/);
     assert.match(smoke, /Realtime builder UI assembly moved backward/);
     assert.match(smoke, /previousAssemblyState/);
-    assert.match(smoke, /initialAssemblyWasPartial/);
-    assert.match(smoke, /Realtime builder initial state is not a partial UI assembly/);
+    assert.match(smoke, /initialAssemblyWasFullEmptyLayout/);
+    assert.match(smoke, /Realtime builder initial state is not a full empty layout assembly/);
     assert.match(smoke, /finalAssemblyComplete/);
     assert.match(smoke, /mountedPanelTypes/);
     assert.match(smoke, /assemblyPhase === 'layout'/);
+    assert.match(smoke, /visiblePanelCount === plannedPanelCount/);
     assert.match(smoke, /mountedPanelCount === 0/);
     assert.match(smoke, /hydratedPanelCount === 0/);
-    assert.match(smoke, /emptyStateCount > 0/);
+    assert.match(smoke, /emptyStateCount >= plannedPanelCount/);
     assert.match(smoke, /assemblyPhase === 'theme'/);
     assert.match(smoke, /__symbioteRealtimeSmokePromise/);
     assert.match(smoke, /mobileLayoutIdentityPreserved/);

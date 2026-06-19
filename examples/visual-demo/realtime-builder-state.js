@@ -1017,14 +1017,44 @@ function buildConstructorScenario() {
       themeParams: { mode: 'dark', hue: 172, chroma: 30, brightness: 0, contrast: 60 },
     }),
     panelData: {
-      templates: { note: 'Template layout selection: video-studio, social-automation, agent-workspace.' },
-      tabs: { tabs: ['Video Studio', 'Automation Studio', 'Agent Programming'] },
-      palette: { note: 'Palette selects existing symbiote-ui modules before generated code.' },
+      templates: {
+        note: 'Template layout selection: video-studio, social-automation, agent-workspace.',
+        activeId: 'video-studio',
+        templates: [
+          { id: 'video-studio', name: 'Video Studio', icon: 'movie', sidebarIcon: 'movie' },
+          { id: 'social-automation', name: 'Automation Studio', icon: 'hub', sidebarIcon: 'hub' },
+          { id: 'agent-workspace', name: 'Agent Programming', icon: 'code', sidebarIcon: 'code' },
+        ],
+      },
+      tabs: {
+        activeId: 'video-studio',
+        tabs: [
+          { id: 'video-studio', name: 'Video Studio', icon: 'movie' },
+          { id: 'automation-studio', name: 'Automation Studio', icon: 'hub' },
+          { id: 'agent-programming', name: 'Agent Programming', icon: 'code' },
+        ],
+      },
+      palette: {
+        note: 'Palette selects existing symbiote-ui modules before generated code.',
+        modules: [
+          { name: 'chat-workspace', icon: 'chat', type: 'chat-workspace', desc: 'Agent chat module' },
+          { name: 'panel-layout', icon: 'view_quilt', type: 'panel-layout', desc: 'Manual split layout' },
+          { name: 'cascade-theme-editor', icon: 'palette', type: 'cascade-theme-editor', desc: 'Cascade theme editor' },
+          { name: 'sn-kanban-board', icon: 'view_kanban', type: 'sn-kanban-board', desc: 'Workflow kanban board' },
+        ],
+      },
       layout: { nestedLayout: true },
       inspector: { node: graphModel('agent').nodes[1] },
-      menu: { actions: ['Load existing config', 'Split panel', 'Add module', 'Export workspace'] },
+      menu: {
+        actions: [
+          { label: 'Load existing config', icon: 'folder_open' },
+          { label: 'Split panel', icon: 'splitscreen' },
+          { label: 'Add module', icon: 'add_box' },
+          { label: 'Export workspace', icon: 'ios_share' },
+        ],
+      },
     },
-    acceptance: ['templates', 'palette', 'layout', 'inspector', 'theme'],
+    acceptance: ['templates', 'tabs', 'palette', 'layout', 'inspector', 'theme', 'menu'],
   };
 }
 

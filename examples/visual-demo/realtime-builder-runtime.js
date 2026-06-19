@@ -383,6 +383,79 @@ function buildWorkspaceState(stage) {
   };
 }
 
+function constructorTemplateGroups(data = {}) {
+  let templates = data.templates || [
+    { id: 'video-studio', name: 'Video Studio', icon: 'movie', sidebarIcon: 'movie' },
+    { id: 'social-automation', name: 'Automation Studio', icon: 'hub', sidebarIcon: 'hub' },
+    { id: 'agent-workspace', name: 'Agent Programming', icon: 'code', sidebarIcon: 'code' },
+  ];
+  return templates.map((template, index) => ({
+    id: template.id,
+    name: template.name || template.label || template.id,
+    icon: template.icon || 'dashboard_customize',
+    sidebarIcon: template.sidebarIcon || template.icon || 'dashboard_customize',
+    color: template.color || 'var(--sn-tab-accent-' + (index % 6) + ')',
+    closeable: template.closeable === true,
+  }));
+}
+
+function constructorTabs(data = {}) {
+  return (data.tabs || []).map((tab, index) => {
+    if (typeof tab === 'string') {
+      return {
+        id: tab.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''),
+        name: tab,
+        icon: ['movie', 'hub', 'code'][index] || 'folder',
+      };
+    }
+    return {
+      id: tab.id,
+      name: tab.name || tab.label || tab.id,
+      icon: tab.icon || 'folder',
+      closeable: tab.closeable === true,
+    };
+  });
+}
+
+function constructorPaletteCategories(data = {}) {
+  let categories = data.categories || [{
+    category: 'Workspace modules',
+    color: 'var(--sn-node-selected)',
+    items: data.modules || [
+      { name: 'chat-workspace', icon: 'chat', type: 'chat-workspace', desc: 'Agent chat module' },
+      { name: 'panel-layout', icon: 'view_quilt', type: 'panel-layout', desc: 'Manual split layout' },
+      { name: 'cascade-theme-editor', icon: 'palette', type: 'cascade-theme-editor', desc: 'Cascade theme editor' },
+      { name: 'sn-kanban-board', icon: 'view_kanban', type: 'sn-kanban-board', desc: 'Workflow kanban board' },
+    ],
+  }];
+  return categories.map((category) => ({
+    ...category,
+    items: (category.items || []).map((item) => ({
+      ...item,
+      name: item.name || item.type,
+      type: item.type || item.name,
+      icon: item.icon || 'widgets',
+      desc: item.desc || item.description || item.type || item.name,
+      factory: () => ({ type: item.type || item.name }),
+    })),
+  }));
+}
+
+function setConstructorMenuItems(menu, actions = []) {
+  if (!menu) return;
+  menu.textContent = '';
+  actions.forEach((action, index) => {
+    let item = document.createElement('sn-menu-item');
+    let label = typeof action === 'string' ? action : action.label || action.id;
+    let defaultIcon = ['folder_open', 'splitscreen', 'add_box', 'ios_share'][index] || 'bolt';
+    let icon = typeof action === 'string' ? defaultIcon : action.icon || 'bolt';
+    item.textContent = label || 'Action';
+    item.setAttribute('icon', icon);
+    if (typeof action === 'object' && action.shortcut) item.setAttribute('shortcut', action.shortcut);
+    menu.appendChild(item);
+  });
+}
+
 function hydratePanelContent(root, panelType, stage) {
   let data = scenarioPanelData(panelType);
   let chatSelector = panelType === 'agent-chat' || panelType === 'chat';
@@ -407,6 +480,49 @@ function hydratePanelContent(root, panelType, stage) {
       layoutBuilder.$.panelTypes = preview.panelTypes;
       layoutBuilder.$.layoutTree = normalizeLayoutNode(preview.layout, 'layout-preview');
       setHydrationProof(layoutBuilder, panelType, preview);
+    }
+  }
+  if (panelType === 'templates') {
+    let shellMenu = findPanelElement(root, 'layout-shell-menu');
+    if (shellMenu) {
+      let groups = constructorTemplateGroups(data);
+      shellMenu.setAttribute('title', data.title || 'Template Layouts');
+      shellMenu.setAttribute('title-icon', 'dashboard_customize');
+      shellMenu.setAttribute('path-label', data.pathLabel || 'templates / reusable layouts');
+      if (shellMenu.$) {
+        shellMenu.$.title = data.title || 'Template Layouts';
+        shellMenu.$.titleIcon = 'dashboard_customize';
+        shellMenu.$.pathLabel = data.pathLabel || 'templates / reusable layouts';
+      }
+      shellMenu.setGroups?.(groups, data.activeId || groups[0]?.id);
+      setHydrationProof(shellMenu, panelType, data.note, groups);
+    }
+  }
+  if (panelType === 'tabs') {
+    let tabs = findPanelElement(root, 'project-tabs');
+    if (tabs) {
+      let items = constructorTabs(data);
+      tabs.setTabs?.(items, data.activeId || items[0]?.id);
+      setHydrationProof(tabs, panelType, items);
+    }
+  }
+  if (panelType === 'palette') {
+    let palette = findPanelElement(root, 'palette-browser');
+    if (palette) {
+      let categories = constructorPaletteCategories(data);
+      if (palette.$) {
+        palette.$.title = data.title || 'Module Palette';
+        palette.$.searchPlaceholder = data.searchPlaceholder || 'Search modules';
+      }
+      palette.setCategories?.(categories);
+      setHydrationProof(palette, panelType, data.note, categories);
+    }
+  }
+  if (panelType === 'menu') {
+    let menu = findPanelElement(root, 'sn-menu');
+    if (menu) {
+      setConstructorMenuItems(menu, data.actions);
+      setHydrationProof(menu, panelType, data.actions);
     }
   }
   if (panelType === 'service-blueprint') {
@@ -1452,10 +1568,6 @@ function progressivePanelSubset(panelOrder, progress, options = {}) {
 function visibleScenarioPanelTypes(scenario = activeScenario(), stage = demo.stages[stageIndex]) {
   let panelOrder = scenarioPanelOrder(scenario);
   if (panelOrder.length === 0) return [];
-  let phase = buildPhaseState(stage);
-  if (phase.phase === 'layout') {
-    return progressivePanelSubset(panelOrder, phase.phaseProgress);
-  }
   return panelOrder;
 }
 

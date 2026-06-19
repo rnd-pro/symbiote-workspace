@@ -792,8 +792,12 @@ new Promise((resolve, reject) => {
       { selector: 'sn-event-feed[data-demo-hydrated="activity"]', tokens: ['Plan accepted', 'Diff ready'] },
     ],
     'constructor-control': [
+      { selector: 'layout-shell-menu[data-demo-hydrated="templates"]', tokens: ['video-studio', 'agent-workspace'] },
+      { selector: 'project-tabs[data-demo-hydrated="tabs"]', tokens: ['Video Studio', 'Agent Programming'] },
+      { selector: 'palette-browser[data-demo-hydrated="palette"]', tokens: ['chat-workspace', 'cascade-theme-editor', 'sn-kanban-board'] },
       { selector: 'panel-layout[data-demo-hydrated="layout"]', tokens: ['agent-chat', 'theme-editor'] },
       { selector: 'inspector-panel[data-demo-hydrated="inspector"]', tokens: ['Plan', 'agent/plan'] },
+      { selector: 'sn-menu[data-demo-hydrated="menu"]', tokens: ['Load existing config', 'Export workspace'] },
     ],
   };
   let queryState = () => {
@@ -1154,20 +1158,20 @@ new Promise((resolve, reject) => {
       let hydratedPanelCount = Number(shell?.dataset.hydratedScenarioPanelCount || '0');
       let plannedPanelCount = Number(shell?.dataset.plannedScenarioPanelCount || '0');
       let emptyStateCount = document.querySelectorAll('sn-empty-state').length;
-      let initialAssemblyWasPartial =
+      let initialAssemblyWasFullEmptyLayout =
         shell?.dataset.stage === 'workspace-name' &&
         shell?.dataset.scenarioId === 'video-editing' &&
         shell?.dataset.assemblyPhase === 'layout' &&
         initialProgress.includes('Build ') &&
-        visiblePanelCount > 0 &&
-        plannedPanelCount > visiblePanelCount &&
+        plannedPanelCount > 0 &&
+        visiblePanelCount === plannedPanelCount &&
         mountedPanelCount === 0 &&
         hydratedPanelCount === 0 &&
-        emptyStateCount > 0 &&
+        emptyStateCount >= plannedPanelCount &&
         !document.querySelector('chat-workspace');
-      if (!initialAssemblyWasPartial) {
+      if (!initialAssemblyWasFullEmptyLayout) {
         if (Date.now() > deadline) {
-          rejectWithDebug('Realtime builder initial state is not a partial UI assembly.', {
+          rejectWithDebug('Realtime builder initial state is not a full empty layout assembly.', {
             stage: shell?.dataset.stage || '',
             scenarioId: shell?.dataset.scenarioId || '',
             assemblyPhase: shell?.dataset.assemblyPhase || '',
