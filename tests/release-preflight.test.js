@@ -70,6 +70,8 @@ describe('release preflight', () => {
       ]),
       (error) => {
         assert.match(error.stderr, /package\.json version is .* expected 1\.0\.0/);
+        assert.match(error.stderr, /package-lock\.json version is .* expected 1\.0\.0/);
+        assert.match(error.stderr, /package-lock\.json root package version is .* expected 1\.0\.0/);
         assert.match(error.stderr, /CHANGELOG\.md is missing a dated 1\.0\.0 release heading/);
         return true;
       },

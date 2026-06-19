@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Hardened `npm run release:preflight` so stable release gates now verify both
+  `package-lock.json` top-level version and root package version against
+  `--target-version`.
 - Extended `npm run release:preflight` with non-publishing npm identity and
   registry checks. Stable release gates now verify `npm whoami`, detect already
   published target versions, require explicit `--allow-new-package-name` for

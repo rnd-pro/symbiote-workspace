@@ -106,9 +106,17 @@ function isStableVersion(version) {
 
 async function verifyReleaseMetadata() {
   let packageMeta = await readJson('package.json');
+  let lockfile = await readJson('package-lock.json');
   let changelog = await readFile(new URL('CHANGELOG.md', ROOT_URL), 'utf8');
   if (packageMeta.version !== targetVersion) {
     fail(`package.json version is ${packageMeta.version}; expected ${targetVersion}`);
+  }
+  if (lockfile.version !== targetVersion) {
+    fail(`package-lock.json version is ${lockfile.version}; expected ${targetVersion}`);
+  }
+  let rootLockVersion = lockfile.packages?.['']?.version;
+  if (rootLockVersion !== targetVersion) {
+    fail(`package-lock.json root package version is ${rootLockVersion}; expected ${targetVersion}`);
   }
   if (isStableVersion(targetVersion)) {
     let escaped = targetVersion.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
