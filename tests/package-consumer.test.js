@@ -36,7 +36,16 @@ async function withTempConsumer(run) {
 
 async function packageRoot(specifier) {
   let entryUrl = import.meta.resolve(specifier);
-  return dirname(fileURLToPath(entryUrl));
+  let dir = dirname(fileURLToPath(entryUrl));
+  while (dir !== dirname(dir)) {
+    try {
+      JSON.parse(await readFile(join(dir, 'package.json'), 'utf8'));
+      return dir;
+    } catch {
+      dir = dirname(dir);
+    }
+  }
+  throw new Error(`Unable to locate package root for ${specifier}`);
 }
 
 async function run(command, args, options = {}) {
@@ -60,6 +69,7 @@ async function packPackage(packagePath, artifactsDir, npmEnv) {
     '--pack-destination',
     artifactsDir,
     '--json',
+    '--ignore-scripts',
   ], withNpmEnv({ cwd: ROOT }, npmEnv));
   let [pack] = JSON.parse(stdout);
   return {
@@ -266,17 +276,33 @@ describe('packed package consumer', () => {
         artifactsDir,
         npmEnv,
       );
+      let symbioteEnginePack = await packPackage(
+        await packageRoot('symbiote-engine'),
+        artifactsDir,
+        npmEnv,
+      );
+      let wsPack = await packPackage(
+        await packageRoot('ws'),
+        artifactsDir,
+        npmEnv,
+      );
       let workspaceTarball = workspacePack.tarball;
       let symbioteUiTarball = symbioteUiPack.tarball;
+      let symbioteEngineTarball = symbioteEnginePack.tarball;
+      let wsTarball = wsPack.tarball;
 
       await run('npm', ['init', '-y'], withNpmEnv({ cwd: consumerDir }, npmEnv));
       await run('npm', [
         'install',
+        symbioteEngineTarball,
         symbioteUiTarball,
+        wsTarball,
         workspaceTarball,
         '--ignore-scripts',
         '--no-audit',
         '--no-fund',
+        '--legacy-peer-deps',
+        '--offline',
       ], withNpmEnv({ cwd: consumerDir }, npmEnv));
 
       await runNode(consumerDir, `
@@ -341,7 +367,7 @@ describe('packed package consumer', () => {
 
       await runNode(consumerDir, `
         import packageMeta from 'symbiote-workspace/package.json' with { type: 'json' };
-        import { describeWorkspace, setLayout } from 'symbiote-workspace/handlers';
+        import { describeWorkspace, setLayout, workflowKanban } from 'symbiote-workspace/handlers';
         import { loadWorkspaceConfig } from 'symbiote-workspace/loader';
         import { validateWorkspaceConfig } from 'symbiote-workspace/schema/validate.js';
         import { WORKSPACE_CONFIG_SCHEMA } from 'symbiote-workspace/schema/workspace-schema.js';
@@ -354,6 +380,7 @@ describe('packed package consumer', () => {
         }
         if (typeof describeWorkspace !== 'function') throw new Error('handlers describeWorkspace export missing');
         if (typeof setLayout !== 'function') throw new Error('handlers setLayout export missing');
+        if (typeof workflowKanban !== 'function') throw new Error('handlers workflowKanban export missing');
         if (typeof loadWorkspaceConfig !== 'function') throw new Error('loader loadWorkspaceConfig export missing');
         if (typeof validateWorkspaceConfig !== 'function') throw new Error('schema wildcard validateWorkspaceConfig export missing');
         if (!WORKSPACE_CONFIG_SCHEMA?.properties) throw new Error('schema wildcard WORKSPACE_CONFIG_SCHEMA export missing');

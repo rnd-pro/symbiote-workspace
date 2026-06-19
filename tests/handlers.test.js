@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  scaffoldWorkspace,
   scaffoldFromScratch,
   registerPanelType,
   updatePanelType,
@@ -47,6 +48,17 @@ describe('scaffoldFromScratch', () => {
     assert.ok(Array.isArray(config.groups));
     assert.ok(Array.isArray(config.sections));
     assert.ok(typeof config.panelTypes === 'object');
+  });
+});
+
+describe('scaffoldWorkspace', () => {
+  it('creates a template config through the ESM constructor path', () => {
+    let result = scaffoldWorkspace('graph', { name: 'Graph Handler' });
+
+    assert.equal(result.status, 'ok');
+    assert.equal(result.config.name, 'Graph Handler');
+    assert.notEqual(result.config.layout.panelType, 'default');
+    assert.ok(Object.keys(result.config.panelTypes).length > 0);
   });
 });
 

@@ -686,6 +686,43 @@ export const TOOLS = [
     inputSchema: { type: 'object', properties: {} },
   },
 
+  // ── Workflow Modules ──
+  {
+    name: 'workflow_kanban',
+    description: 'Register a portable workflow kanban board panel backed by symbiote-ui sn-kanban-board.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        panelType: { type: 'string', description: 'Portable panel type ID for the kanban board.' },
+        board: {
+          type: 'object',
+          description: 'Plain JSON kanban board model with id, title, columns, and optional cards.',
+        },
+        title: { type: 'string', description: 'Panel title override.' },
+        icon: { type: 'string', description: 'Material Symbols icon name.' },
+        behavior: { type: 'object', description: 'Panel responsive behavior.' },
+        layoutId: {
+          type: 'string',
+          description: 'Optional named layout to create or replace with this board panel.',
+        },
+        setDefaultLayout: { type: 'boolean', description: 'Replace the root layout with this board panel.' },
+        group: { type: 'object', description: 'Optional project group to upsert for the workflow board.' },
+        section: {
+          type: 'object',
+          description: 'Optional sidebar section to upsert for the workflow board.',
+        },
+        eventTarget: { type: 'object', description: 'Optional target for sn-board-card-drop move intents.' },
+        requiredHostServices: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Optional portable host services required by this workflow board.',
+        },
+      },
+      required: ['panelType', 'board'],
+    },
+    mutates: true,
+  },
+
   // ── Preview ──
   {
     name: 'start_preview',
@@ -981,6 +1018,69 @@ const TOOL_MAP = new Map(TOOLS.map((t) => [t.name, t]));
  */
 export function isMutating(toolName) {
   return TOOL_MAP.get(toolName)?.mutates === true;
+}
+
+const CURRENT_CONFIG_TOOLS = new Set([
+  'describe_workspace',
+  'list_used_components',
+  'propose_workspace_patch',
+  'validate_workspace_patch',
+  'apply_workspace_patch',
+  'export_workspace',
+  'add_group',
+  'remove_group',
+  'update_group',
+  'reorder_groups',
+  'list_groups',
+  'add_section',
+  'remove_section',
+  'update_section',
+  'reorder_sections',
+  'list_sections',
+  'set_layout',
+  'add_panel',
+  'remove_panel',
+  'resize_panel',
+  'update_layout_behavior',
+  'register_panel_type',
+  'update_panel_type',
+  'unregister_panel_type',
+  'list_panel_types',
+  'add_menu_action',
+  'remove_menu_action',
+  'toggle_menu_action',
+  'list_menu_actions',
+  'set_behavior',
+  'get_behavior',
+  'update_behavior',
+  'mount_widget',
+  'unmount_widget',
+  'swap_widget',
+  'bridge_event',
+  'unbridge_event',
+  'list_bridges',
+  'workflow_kanban',
+  'start_preview',
+  'validate_config',
+  'save_config',
+  'export_workspace_package',
+  'export_config',
+  'diff_configs',
+  'merge_configs',
+  'check_guardrails',
+]);
+
+function missingConfigResult(toolName) {
+  return {
+    status: 'error',
+    tool: toolName,
+    code: 'workspace_config_missing',
+    hint: [
+      'No active workspace config.',
+      'Create or load one first with scaffold_workspace, scaffold_from_scratch,',
+      'construct_workspace, load_config, import_config, or import_workspace_package.',
+    ].join(' '),
+  };
 }
 
 /**
@@ -1608,8 +1708,12 @@ export async function dispatch(toolName, args, session) {
     };
   }
 
+  if (CURRENT_CONFIG_TOOLS.has(toolName) && !session.config) {
+    return missingConfigResult(toolName);
+  }
+
   let h = await getHandlers();
-  let config = session.ensure();
+  let config = session.config;
 
   try {
   switch (toolName) {
@@ -1818,6 +1922,10 @@ export async function dispatch(toolName, args, session) {
 
     case 'list_bridges':
       return h.listBridges(config);
+
+    // ── Workflow Modules ──
+    case 'workflow_kanban':
+      return applyMutation(session, h.workflowKanban(config, args));
 
     // ── Preview ──
     case 'start_preview':

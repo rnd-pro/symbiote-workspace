@@ -1614,7 +1614,7 @@ describe('workspace package dispatch', () => {
 
     assert.equal(result.status, 'error');
     assert.ok(result.hint.includes('invalid package'));
-    assert.equal(session.config.name, 'New Workspace');
+    assert.equal(session.config, null);
   });
 
   it('import_workspace_package rejects a well-formed JSON that is not a valid package', async () => {
@@ -1625,7 +1625,7 @@ describe('workspace package dispatch', () => {
 
     assert.equal(result.status, 'error');
     assert.ok(result.errors.length > 0);
-    assert.equal(session.config.name, 'New Workspace');
+    assert.equal(session.config, null);
   });
 
   it('validate_workspace_package accepts a valid package', async () => {

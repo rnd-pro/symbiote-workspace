@@ -67,4 +67,5 @@ export {
   listBridges,
 } from './events.js';
 
+export { workflowKanban } from './workflow-kanban.js';
 export { startPreview } from './preview.js';

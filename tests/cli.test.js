@@ -141,6 +141,25 @@ describe('CLI help', () => {
       );
     }
   });
+
+  it('documents workflow-kanban CLI options', async () => {
+    let { stdout } = await exec('--help');
+
+    assert.ok(stdout.includes("Options for 'workflow-kanban':"));
+    assert.ok(stdout.includes('--panel-type <id>'));
+    assert.ok(stdout.includes('--board <json-object>'));
+    assert.ok(stdout.includes('--icon <string>'));
+    assert.ok(stdout.includes('--required-host-services <json-array>'));
+  });
+
+  it('prints usage for workflow-kanban --help without dispatching the tool', async () => {
+    let { stdout } = await exec('workflow-kanban', '--help');
+
+    assert.ok(stdout.includes("Options for 'workflow-kanban':"));
+    assert.ok(stdout.includes('--panel-type <id>'));
+    assert.equal(stdout.includes('"status": "error"'), false);
+    assert.equal(stdout.includes('Missing required arguments'), false);
+  });
 });
 
 describe('CLI tool commands', () => {
@@ -156,6 +175,19 @@ describe('CLI tool commands', () => {
     let result = JSON.parse(stdout);
     assert.equal(result.status, 'ok');
     assert.equal(result.config.name, 'My Chat');
+  });
+
+  it('scaffold --output writes the generated config to a file', async () => {
+    await withTempPath('cli-scaffold-output', 'workspace.json', async (file) => {
+      let { stdout } = await exec('scaffold', 'chat', '--name', 'Output Chat', '--output', file);
+      let result = JSON.parse(stdout);
+      let written = JSON.parse(await readFile(file, 'utf-8'));
+
+      assert.equal(result.status, 'ok');
+      assert.equal(result.config.name, 'Output Chat');
+      assert.equal(written.name, 'Output Chat');
+      assert.equal(written.version, WORKSPACE_SCHEMA_VERSION);
+    });
   });
 
   it('scaffold-from-scratch creates blank workspace', async () => {
@@ -318,6 +350,61 @@ describe('CLI --config workflow', () => {
       let r3 = await exec('list-panel-types', '--config', tmpFile);
       let p3 = JSON.parse(r3.stdout);
       assert.equal(p3.count, 1);
+    });
+  });
+
+  it('workflow-kanban mutates and saves config via --config', async () => {
+    await withTempPath('cli-workflow-kanban', 'workspace.json', async (tmpFile) => {
+      await exec('scaffold-from-scratch', '--name', 'Kanban Test', '--config', tmpFile);
+
+      let board = {
+        id: 'release-flow',
+        columns: [{
+          id: 'todo',
+          title: 'Todo',
+          cards: [{ id: 'task-1', title: 'Review package' }],
+        }],
+      };
+      let eventTarget = {
+        panelType: 'review-log',
+        targetMethod: 'recordDrop',
+        mapping: { cardId: 'card.id', columnId: 'column.id' },
+      };
+      let { stdout } = await exec(
+        'workflow-kanban',
+        '--config',
+        tmpFile,
+        '--panel-type',
+        'approvals',
+        '--board',
+        JSON.stringify(board),
+        '--layout-id',
+        'workflow',
+        '--set-default-layout',
+        '--event-target',
+        JSON.stringify(eventTarget),
+      );
+      let result = JSON.parse(stdout);
+      let saved = JSON.parse(await readFile(tmpFile, 'utf8'));
+
+      assert.equal(result.status, 'ok');
+      assert.equal(result.panelType, 'approvals');
+      assert.equal(saved.panelTypes.approvals.component, 'sn-kanban-board');
+      assert.equal(saved.layout.panelType, 'approvals');
+      assert.equal(saved.layouts.workflow.panelType, 'approvals');
+      assert.ok(saved.components.catalog.includes('sn-kanban-board'));
+      assert.equal(saved.state.fields.find((field) => field.panelType === 'approvals').default.id, 'release-flow');
+      assert.deepEqual(
+        saved.events
+          .filter((event) => event.sourcePanel === 'approvals')
+          .map((event) => event.event)
+          .sort(),
+        ['sn-board-card-action', 'sn-board-card-drop', 'sn-board-card-select'],
+      );
+      assert.equal(
+        saved.events.find((event) => event.event === 'sn-board-card-drop').targetMethod,
+        'recordDrop',
+      );
     });
   });
 });

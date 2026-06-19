@@ -4,7 +4,7 @@ import { createServer } from 'node:net';
 import { createConnection } from 'node:net';
 import { request } from 'node:http';
 import { randomBytes, createHash } from 'node:crypto';
-import { access, mkdtemp, rm } from 'node:fs/promises';
+import { access, mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -28,6 +28,30 @@ function timeoutMs() {
   return Number(readArg('--timeout', process.env.SYMBIOTE_BROWSER_SMOKE_TIMEOUT || DEFAULT_TIMEOUT));
 }
 
+function headlessMode() {
+  let mode = readArg('--headless', process.env.SYMBIOTE_BROWSER_HEADLESS || 'new');
+  if (!['old', 'new', 'shell'].includes(mode)) {
+    throw new Error(`Unsupported browser smoke headless mode: ${mode}`);
+  }
+  return mode;
+}
+
+function browserDriver() {
+  let driver = readArg('--driver', process.env.SYMBIOTE_BROWSER_DRIVER || 'cdp');
+  if (!['cdp', 'playwright'].includes(driver)) {
+    throw new Error(`Unsupported browser smoke driver: ${driver}`);
+  }
+  return driver;
+}
+
+function playwrightBrowserName() {
+  let name = readArg('--playwright-browser', process.env.SYMBIOTE_PLAYWRIGHT_BROWSER || 'webkit');
+  if (!['chromium', 'firefox', 'webkit'].includes(name)) {
+    throw new Error(`Unsupported Playwright browser: ${name}`);
+  }
+  return name;
+}
+
 function delay(ms) {
   return new Promise((resolveDelay) => setTimeout(resolveDelay, ms));
 }
@@ -45,6 +69,40 @@ async function pathExists(path) {
   }
 }
 
+async function browserCacheCandidates() {
+  let home = process.env.HOME || '';
+  if (!home) return [];
+  let roots = [
+    join(home, '.cache/symbiote-ui-browsers/chrome'),
+    join(home, '.cache/puppeteer/chrome'),
+  ];
+  let candidates = [];
+  for (let root of roots) {
+    let entries = [];
+    try {
+      entries = await readdir(root, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (let entry of entries
+      .filter((item) => item.isDirectory())
+      .map((item) => item.name)
+      .sort((left, right) => right.localeCompare(left, undefined, {
+        numeric: true,
+        sensitivity: 'base',
+      }))) {
+      let base = join(root, entry);
+      candidates.push(
+        join(base, 'chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing'),
+        join(base, 'chrome-mac/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing'),
+        join(base, 'chrome-mac-arm64/Chromium.app/Contents/MacOS/Chromium'),
+        join(base, 'chrome-mac/Chromium.app/Contents/MacOS/Chromium')
+      );
+    }
+  }
+  return candidates;
+}
+
 async function findBrowser() {
   let explicit = readArg('--browser', process.env.SYMBIOTE_BROWSER_BIN || '');
   if (explicit) {
@@ -53,6 +111,7 @@ async function findBrowser() {
   }
 
   let candidates = [
+    ...await browserCacheCandidates(),
     '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
     '/Applications/Google Chrome Dev.app/Contents/MacOS/Google Chrome Dev',
     join(process.env.HOME || '', 'Applications/Google Chrome.app/Contents/MacOS/Google Chrome'),
@@ -186,26 +245,57 @@ function httpJson(method, port, path, timeout) {
   });
 }
 
-async function waitForCdp(port, timeout) {
+async function waitForCdp(port, timeout, browserProcess = null) {
   let deadline = Date.now() + timeout;
   let lastError = null;
+  let requestTimeout = Math.min(3000, Math.max(1000, timeout));
   while (Date.now() < deadline) {
     try {
-      return await httpJson('GET', port, '/json/version', 1000);
+      return await httpJson('GET', port, '/json/version', requestTimeout);
     } catch (error) {
       lastError = error;
+      if (browserProcess?.exitCode !== null) {
+        throw new Error(
+          `Browser exited before Chrome DevTools Protocol was available: exit code ${browserProcess.exitCode}`
+        );
+      }
       await delay(POLL_INTERVAL);
     }
   }
   throw new Error(`Timed out waiting for Chrome DevTools Protocol: ${lastError?.message || 'no response'}`);
 }
 
-async function createCdpTarget(port, url) {
+async function readDevToolsActivePort(profileDir, timeout, browserProcess = null) {
+  let deadline = Date.now() + timeout;
+  let portFile = join(profileDir, 'DevToolsActivePort');
+  let lastError = null;
+  while (Date.now() < deadline) {
+    try {
+      let text = await readFile(portFile, 'utf8');
+      let [portLine] = text.trim().split(/\r?\n/);
+      let port = Number(portLine);
+      if (Number.isInteger(port) && port > 0) return port;
+      lastError = new Error(`Invalid DevToolsActivePort content: ${JSON.stringify(text)}`);
+    } catch (error) {
+      lastError = error;
+    }
+    if (browserProcess?.exitCode !== null) {
+      throw new Error(
+        `Browser exited before Chrome wrote DevToolsActivePort: exit code ${browserProcess.exitCode}`
+      );
+    }
+    await delay(POLL_INTERVAL);
+  }
+  throw new Error(`Timed out waiting for DevToolsActivePort: ${lastError?.message || 'no response'}`);
+}
+
+async function createCdpTarget(port, url, timeout = 10000) {
   let path = `/json/new?${encodeURIComponent(url)}`;
+  let requestTimeout = Math.min(15000, Math.max(3000, timeout));
   try {
-    return await httpJson('PUT', port, path, 3000);
+    return await httpJson('PUT', port, path, requestTimeout);
   } catch {
-    return httpJson('GET', port, path, 3000);
+    return httpJson('GET', port, path, requestTimeout);
   }
 }
 
@@ -361,9 +451,14 @@ class CdpWebSocket {
     this.socket.write(Buffer.concat([header, masked]));
   }
 
-  send(method, params = {}, timeout = DEFAULT_TIMEOUT) {
+  send(method, params = {}, timeout = DEFAULT_TIMEOUT, sessionId = '') {
     let id = this.nextId++;
-    this.writeFrame(1, JSON.stringify({ id, method, params }));
+    this.writeFrame(1, JSON.stringify({
+      id,
+      method,
+      params,
+      ...(sessionId ? { sessionId } : {}),
+    }));
     return new Promise((resolveSend, rejectSend) => {
       let timer = setTimeout(() => {
         this.pending.delete(id);
@@ -399,6 +494,20 @@ class CdpWebSocket {
     this.writeFrame(8, Buffer.alloc(0));
     this.socket.end();
   }
+}
+
+async function connectCdpWebSocket(url, timeout = DEFAULT_TIMEOUT) {
+  let deadline = Date.now() + timeout;
+  let lastError = null;
+  while (Date.now() < deadline) {
+    try {
+      return await CdpWebSocket.connect(url, Math.min(3000, Math.max(500, deadline - Date.now())));
+    } catch (error) {
+      lastError = error;
+      await delay(POLL_INTERVAL);
+    }
+  }
+  throw lastError || new Error('Timed out opening CDP WebSocket.');
 }
 
 function remoteValuePreview(value = {}) {
@@ -476,6 +585,81 @@ function formatPageDiagnostics(diagnostics = {}) {
   return lines.join('\n\n');
 }
 
+function createPlaywrightDiagnostics(page) {
+  let diagnostics = {
+    exceptions: [],
+    console: [],
+    failedRequests: [],
+    badResponses: [],
+  };
+  page.on('pageerror', (error) => {
+    diagnostics.exceptions.push(error.stack || error.message || String(error));
+  });
+  page.on('console', (message) => {
+    diagnostics.console.push({
+      type: message.type(),
+      text: message.text(),
+    });
+  });
+  page.on('requestfailed', (request) => {
+    diagnostics.failedRequests.push({
+      type: request.resourceType(),
+      errorText: request.failure()?.errorText || 'unknown network failure',
+      canceled: false,
+    });
+  });
+  page.on('response', (response) => {
+    let status = response.status();
+    if (status >= 400) {
+      diagnostics.badResponses.push({
+        type: response.request().resourceType(),
+        status,
+        url: response.url(),
+        mimeType: response.headers()['content-type'] || '',
+      });
+    }
+  });
+  return diagnostics;
+}
+
+async function runPlaywrightSmoke({ demo, url, expression, timeout }) {
+  let playwright;
+  try {
+    playwright = await import('playwright');
+  } catch {
+    throw new Error(
+      'Playwright browser smoke driver requires dev dependency `playwright`. '
+      + 'Run `npm install` and `npx playwright install webkit`, or use `--driver cdp`.'
+    );
+  }
+  let browserName = playwrightBrowserName();
+  let browserType = playwright[browserName];
+  if (!browserType?.launch) {
+    throw new Error(`Playwright browser is unavailable: ${browserName}`);
+  }
+  let browser = null;
+  try {
+    browser = await browserType.launch({ headless: true, timeout });
+    let page = await browser.newPage();
+    let diagnostics = createPlaywrightDiagnostics(page);
+    try {
+      await page.goto(url, { waitUntil: 'load', timeout });
+      let value = await page.evaluate((source) => globalThis.eval(source), expression);
+      return { browserName, value };
+    } catch (error) {
+      let diagnosticsText = formatPageDiagnostics(diagnostics);
+      throw new Error([error.message, diagnosticsText].filter(Boolean).join('\n\n'));
+    }
+  } catch (error) {
+    throw new Error([
+      `Playwright ${browserName} smoke failed for ${demo}.`,
+      error.message,
+    ].filter(Boolean).join('\n'));
+  } finally {
+    if (browser) await browser.close();
+  }
+}
+
 let mountExpression = `
 new Promise((resolve, reject) => {
   let deadline = Date.now() + 10000;
@@ -514,6 +698,18 @@ new Promise((resolve, reject) => {
   let initialHistoryLength = history.length;
   let initialLocationHref = location.href;
   let atomicStageCounts = {};
+  let scenarioUpdateCounts = {};
+  let initialAssemblyEvidence = null;
+  let scenarioDataProofEvidence = {};
+  let scenarioProviderDefinitionEvidence = {};
+  let assemblySamples = [];
+  let previousAssemblyState = null;
+  let phaseOrder = {
+    layout: 0,
+    modules: 1,
+    data: 2,
+    theme: 3,
+  };
   let expectedAtomicStages = [
     'workspace-name',
     'target-register',
@@ -525,7 +721,407 @@ new Promise((resolve, reject) => {
     'theme-hue',
     'verification-scope',
   ];
+  let expectedScenarioIds = [
+    'video-editing',
+    'automation-editing',
+    'agent-programming',
+    'constructor-control',
+  ];
+  let scenarioSwitchOrder = [
+    'automation-editing',
+    'agent-programming',
+    'constructor-control',
+  ];
+  let scenarioComponents = {
+    'video-editing': [
+      'chat-workspace',
+      'sn-video-player',
+      'sn-timeline',
+      'node-canvas',
+      'canvas-graph',
+      'inspector-panel',
+    ],
+    'automation-editing': [
+      'chat-workspace',
+      'node-canvas',
+      'sn-data-table',
+      'sn-rich-text-editor',
+      'sn-kanban-board',
+      'sn-timeline',
+      'sn-file-upload',
+    ],
+    'agent-programming': [
+      'chat-workspace',
+      'sn-tree-panel',
+      'source-editor',
+      'sn-source-diff',
+      'code-block',
+      'sn-event-feed',
+      'node-canvas',
+      'canvas-graph',
+    ],
+    'constructor-control': [
+      'layout-shell-menu',
+      'project-tabs',
+      'palette-browser',
+      'panel-layout',
+      'inspector-panel',
+      'cascade-theme-editor',
+      'sn-menu',
+    ],
+  };
+  let scenarioDataProofs = {
+    'video-editing': [
+      { selector: 'sn-video-player[data-demo-hydrated="preview"]', tokens: ['Launch cut', 'Scene 03'] },
+      { selector: 'sn-timeline[data-demo-hydrated="timeline"]', tokens: ['Product shot', 'Music bed'] },
+      { selector: 'node-canvas[data-demo-hydrated="effects"]', tokens: ['Source', 'Grade'] },
+      { selector: 'canvas-graph[data-demo-hydrated="overview"]', tokens: ['Render'] },
+    ],
+    'automation-editing': [
+      { selector: 'node-canvas[data-demo-hydrated="workflow"]', tokens: ['Trigger', 'Classify'] },
+      { selector: 'sn-data-table[data-demo-hydrated="queue"]', tokens: ['LinkedIn', 'pricing'] },
+      { selector: 'sn-rich-text-editor[data-demo-hydrated="reply"]', tokens: ['tracked approval gate'] },
+      { selector: 'sn-kanban-board[data-demo-hydrated="approvals"]', tokens: ['Pricing reply', 'Support escalation'] },
+      { selector: 'sn-timeline[data-demo-hydrated="history"]', tokens: ['Queue item classified'] },
+    ],
+    'agent-programming': [
+      { selector: 'sn-tree-panel[data-demo-hydrated="files"]', tokens: ['runtime.js'] },
+      { selector: 'source-editor[data-demo-hydrated="source"]', tokens: ['applyPatch', 'mergeWorkspaceConfig'] },
+      { selector: 'sn-source-diff[data-demo-hydrated="diff"]', tokens: ['validateWorkspacePatch'] },
+      { selector: 'code-block[data-demo-hydrated="code"]', tokens: ['node --test', 'pass 42'] },
+      { selector: 'sn-event-feed[data-demo-hydrated="activity"]', tokens: ['Plan accepted', 'Diff ready'] },
+    ],
+    'constructor-control': [
+      { selector: 'panel-layout[data-demo-hydrated="layout"]', tokens: ['agent-chat', 'theme-editor'] },
+      { selector: 'inspector-panel[data-demo-hydrated="inspector"]', tokens: ['Plan', 'agent/plan'] },
+    ],
+  };
+  let queryState = () => {
+    let shell = document.querySelector('.demo-shell');
+    let workspace = document.querySelector('.demo-workspace');
+    let layout = workspace?.querySelector('panel-layout');
+    let mountedWorkspace = workspace?.querySelector('.symbiote-workspace');
+    let runtimeInstanceId = layout?.dataset.runtimeInstanceId
+      || mountedWorkspace?.dataset.runtimeInstanceId
+      || workspace?.dataset.runtimeInstanceId
+      || '';
+    let updateCount = Number(
+      layout?.dataset.atomicUpdateCount
+      || mountedWorkspace?.dataset.atomicUpdateCount
+      || workspace?.dataset.atomicUpdateCount
+      || '0'
+    );
+    let lastUpdatedStage = mountedWorkspace?.dataset.lastUpdatedStage
+      || workspace?.dataset.lastUpdatedStage
+      || '';
+    return { shell, workspace, layout, mountedWorkspace, runtimeInstanceId, updateCount, lastUpdatedStage };
+  };
+  let hasScenarioComponents = (scenarioId) => (
+    (scenarioComponents[scenarioId] || []).every((selector) => document.querySelector(selector))
+  );
+  let scenarioProviderDefinitionState = (scenarioId) => (
+    (scenarioComponents[scenarioId] || []).map((tagName) => ({
+      tagName,
+      present: Boolean(document.querySelector(tagName)),
+      defined: Boolean(customElements.get(tagName)),
+    }))
+  );
+  let scenarioProvidersDefined = (scenarioId) => {
+    let definitions = scenarioProviderDefinitionState(scenarioId);
+    scenarioProviderDefinitionEvidence[scenarioId] = definitions;
+    return definitions.length > 0 && definitions.every((item) => item.present && item.defined);
+  };
+  let readElementProof = (element) => [
+    element?.getAttribute?.('data-demo-proof') || '',
+    element?.textContent || '',
+    element?.shadowRoot?.textContent || '',
+  ].join(' ');
+  let scenarioDataProofState = (scenarioId) => (
+    (scenarioDataProofs[scenarioId] || []).map((requirement) => {
+      let element = document.querySelector(requirement.selector);
+      let proof = readElementProof(element);
+      return {
+        selector: requirement.selector,
+        tokens: requirement.tokens,
+        hydrated: Boolean(element),
+        matched: Boolean(element) && requirement.tokens.every((token) => proof.includes(token)),
+      };
+    })
+  );
+  let scenarioDataProofReady = (scenarioId) => {
+    let proof = scenarioDataProofState(scenarioId);
+    scenarioDataProofEvidence[scenarioId] = proof;
+    return proof.length > 0 && proof.every((item) => item.matched);
+  };
+  let mountedPanelTypes = () => {
+    let panelTypes = [
+      ...[...document.querySelectorAll('[data-module]')].map((element) => element.dataset.module),
+      ...[...document.querySelectorAll('[data-panel-type]')].map((element) => element.dataset.panelType),
+      ...[...document.querySelectorAll('layout-node[node-type="panel"]')].map((element) => (
+        element.dataset.panelType || element.$?.panelType
+      )),
+    ].filter(Boolean);
+    return [...new Set(panelTypes)];
+  };
+  let findScenarioTab = (scenarioId) => (
+    [...document.querySelectorAll('project-tab-item')].find((tab) => (
+      tab.dataset.scenarioTabId === scenarioId || tab.$?.id === scenarioId
+    ))
+  );
+  let scenarioRailReady = () => (
+    Boolean(document.querySelector('layout-shell-menu project-tabs')) &&
+    Boolean(document.querySelector('layout-shell-menu layout-sidebar')) &&
+    expectedScenarioIds.every((scenarioId) => findScenarioTab(scenarioId))
+  );
+  let sidebarSectionIds = () => (
+    [...document.querySelectorAll('layout-sidebar sidebar-section')]
+      .map((section) => section.dataset.sectionId || section.$?.sectionId || '')
+      .filter(Boolean)
+  );
+  let sidebarContextReady = (scenarioId) => {
+    let ids = sidebarSectionIds();
+    return ids.length >= 3 &&
+      ids.every((id) => id.startsWith(scenarioId + ':')) &&
+      expectedScenarioIds.every((id) => !ids.includes(id));
+  };
+  let switchScenario = (scenarioId) => {
+    let button = findScenarioTab(scenarioId);
+    if (!button) return false;
+    button.click();
+    return true;
+  };
+  let currentScenarioReady = (scenarioId, state = queryState()) => (
+    state.shell?.dataset.scenarioId === scenarioId &&
+    state.workspace?.dataset.professionalScenario === scenarioId &&
+    hasScenarioComponents(scenarioId) &&
+    scenarioProvidersDefined(scenarioId) &&
+    scenarioDataProofReady(scenarioId) &&
+    sidebarContextReady(scenarioId)
+  );
+  let readAssemblyState = (shell) => ({
+    phase: shell?.dataset.assemblyPhase || '',
+    phaseIndex: phaseOrder[shell?.dataset.assemblyPhase || ''] ?? -1,
+    visible: Number(shell?.dataset.visibleScenarioPanelCount || '0'),
+    mounted: Number(shell?.dataset.mountedScenarioPanelCount || '0'),
+    hydrated: Number(shell?.dataset.hydratedScenarioPanelCount || '0'),
+    stage: shell?.dataset.stage || '',
+    buildKind: shell?.dataset.buildKind || '',
+  });
+  let recordAssemblyState = (shell) => {
+    let next = readAssemblyState(shell);
+    if (previousAssemblyState) {
+      let monotonic =
+        next.phaseIndex >= previousAssemblyState.phaseIndex &&
+        next.visible >= previousAssemblyState.visible &&
+        next.mounted >= previousAssemblyState.mounted &&
+        next.hydrated >= previousAssemblyState.hydrated;
+      if (!monotonic) {
+        rejectWithDebug('Realtime builder UI assembly moved backward.', {
+          previousAssemblyState,
+          nextAssemblyState: next,
+          assemblySamples,
+        });
+        return false;
+      }
+    }
+    let lastSample = assemblySamples.at(-1);
+    if (
+      !lastSample ||
+      lastSample.phase !== next.phase ||
+      lastSample.visible !== next.visible ||
+      lastSample.mounted !== next.mounted ||
+      lastSample.hydrated !== next.hydrated
+    ) {
+      assemblySamples.push(next);
+    }
+    previousAssemblyState = next;
+    return true;
+  };
+  let rejectWithDebug = (message, debugState = {}) => {
+    reject(new Error([
+      message,
+      'readyState=' + document.readyState,
+      'debug=' + JSON.stringify(debugState),
+      'body=' + (document.body?.innerHTML || '').slice(0, 800),
+    ].join('\\n')));
+  };
+  let finishWithMobileCheck = (baseState, playProgress) => {
+    let mobile = document.querySelector('[data-viewport-mode="mobile"]');
+    if (!mobile) {
+      reject(new Error('Realtime builder mobile adaptive preview button is missing.'));
+      return;
+    }
+    let preMobileState = queryState();
+    mobile.click();
+    let checkMobile = () => {
+      try {
+      let mobileState = queryState();
+      let mobileShell = mobileState.shell;
+      let dockedPanels = mobileShell?.dataset.dockedPanels || '';
+      let collapsedPanels = mobileShell?.dataset.collapsedPanels || '';
+      let adaptivePanel = document.querySelector('[data-adaptive-state]');
+      let mobileLayoutIdentityPreserved = Boolean(preMobileState.layout && preMobileState.layout === mobileState.layout);
+      let mobileWorkspaceIdentityPreserved = Boolean(
+        preMobileState.mountedWorkspace && preMobileState.mountedWorkspace === mobileState.mountedWorkspace
+      );
+      let mobileScenarioReady = currentScenarioReady('constructor-control', mobileState);
+      let themeEvidence = mobileShell?.dataset.themeMode === 'dark' &&
+        mobileShell?.dataset.themeEditorState === 'validated' &&
+        mobileShell?.dataset.adaptiveMode === 'drawer' &&
+        Boolean(document.querySelector('cascade-theme-editor'));
+      if (
+        mobileShell?.dataset.viewportMode === 'mobile' &&
+        mobileScenarioReady &&
+        Boolean(adaptivePanel) &&
+        themeEvidence &&
+        mobileLayoutIdentityPreserved &&
+        mobileWorkspaceIdentityPreserved &&
+        history.length === initialHistoryLength &&
+        location.href === initialLocationHref
+      ) {
+        resolve({
+          title: document.title,
+          stage: mobileShell.dataset.stage,
+          buildKind: mobileShell.dataset.buildKind,
+          scenarioId: mobileShell.dataset.scenarioId,
+          professionalScenario: mobileState.workspace.dataset.professionalScenario,
+          scenarioTemplate: mobileShell.dataset.scenarioTemplate,
+          viewportMode: mobileShell.dataset.viewportMode,
+          adaptiveMode: mobileShell.dataset.adaptiveMode,
+          themeMode: mobileShell.dataset.themeMode,
+          themeEditorState: mobileShell.dataset.themeEditorState,
+          dockedPanels,
+          collapsedPanels,
+          progress: playProgress,
+          initialAssemblyEvidence,
+          assemblySamples,
+          runtimeInstanceId: baseState.runtimeInstanceId,
+          atomicUpdateCount: mobileState.updateCount,
+          atomicStageCounts,
+          scenarioUpdateCounts,
+          lastUpdatedStage: baseState.lastUpdatedStage,
+          initialHistoryLength,
+          historyLength: history.length,
+          initialLocationHref,
+          locationHref: location.href,
+          noNavigation: history.length === initialHistoryLength && location.href === initialLocationHref,
+          mobileLayoutIdentityPreserved,
+          mobileWorkspaceIdentityPreserved,
+          themeTransitionStage: baseState.themeTransitionStage,
+          themeTransitionSource: baseState.themeTransitionSource,
+          themeTransitionFromMode: baseState.themeTransitionFromMode,
+          themeTransitionToMode: baseState.themeTransitionToMode,
+          themeTransitionFromHue: baseState.themeTransitionFromHue,
+          themeTransitionToHue: baseState.themeTransitionToHue,
+          themeTransitionChanged: baseState.themeTransitionChanged,
+          themeTransitionFromComputedHue: baseState.themeTransitionFromComputedHue,
+          themeTransitionToComputedHue: baseState.themeTransitionToComputedHue,
+          themeTransitionComputedChanged: baseState.themeTransitionComputedChanged,
+          themeTransitionUpdateCount: baseState.themeTransitionUpdateCount,
+          themeWidgetUsesDefaults: baseState.themeWidgetUsesDefaults,
+          themeEditorDefined: baseState.themeEditorDefined,
+          requiredElements: baseState.requiredElements,
+          scenarioComponents: Object.fromEntries(Object.entries(scenarioComponents).map(([id, selectors]) => [
+            id,
+            selectors.filter((selector) => document.querySelector(selector)),
+          ])),
+          scenarioProviderDefinitionEvidence,
+          modulePanels: baseState.modulePanels,
+          currentEvidence: baseState.currentEvidence,
+          scenarioDataProofEvidence,
+          executionModel: baseState.executionModel,
+          hostServices: baseState.hostServices,
+          packageReadiness: baseState.packageReadiness,
+          themeEditorOpenRequest: mobileShell.dataset.themeEditorOpenRequest,
+        });
+        return;
+      }
+      if (Date.now() > deadline) {
+        rejectWithDebug('Realtime builder mobile adaptive preview did not preserve professional layout identity.', {
+          viewportMode: mobileShell?.dataset.viewportMode || '',
+          scenarioId: mobileShell?.dataset.scenarioId || '',
+          professionalScenario: mobileState.workspace?.dataset.professionalScenario || '',
+          dockedPanels,
+          collapsedPanels,
+          adaptivePanel: Boolean(adaptivePanel),
+          themeEvidence: Boolean(themeEvidence),
+          mobileScenarioReady,
+          sidebarSectionIds: sidebarSectionIds(),
+          sidebarContextReady: sidebarContextReady('constructor-control'),
+          mobileLayoutIdentityPreserved,
+          mobileWorkspaceIdentityPreserved,
+        });
+        return;
+      }
+      setTimeout(checkMobile, 100);
+      } catch (error) {
+        reject(error);
+      }
+    };
+    checkMobile();
+  };
+  let verifyScenarioSwitches = (baseState, playProgress) => {
+    let index = 0;
+    let checkScenario = () => {
+      try {
+      if (index >= scenarioSwitchOrder.length) {
+        finishWithMobileCheck(baseState, playProgress);
+        return;
+      }
+      let scenarioId = scenarioSwitchOrder[index];
+      if (!switchScenario(scenarioId)) {
+        reject(new Error('Realtime builder scenario button is missing: ' + scenarioId));
+        return;
+      }
+      let waitScenario = () => {
+        try {
+        let state = queryState();
+        let ready = currentScenarioReady(scenarioId, state);
+        let identityPreserved = state.layout === baseState.layout &&
+          state.mountedWorkspace === baseState.mountedWorkspace &&
+          state.runtimeInstanceId === baseState.runtimeInstanceId;
+        let scenarioUpdated = state.updateCount > Number(scenarioUpdateCounts[scenarioId] || 0);
+        if (ready && identityPreserved && scenarioUpdated) {
+          scenarioUpdateCounts[scenarioId] = state.updateCount;
+          index += 1;
+          setTimeout(checkScenario, 50);
+          return;
+        }
+        if (Date.now() > deadline) {
+          rejectWithDebug('Realtime builder scenario switch did not mount the expected professional layout.', {
+            scenarioId,
+            ready,
+            identityPreserved,
+            scenarioUpdated,
+            activeScenarioId: state.shell?.dataset.scenarioId || '',
+            professionalScenario: state.workspace?.dataset.professionalScenario || '',
+            sidebarSectionIds: sidebarSectionIds(),
+            sidebarContextReady: sidebarContextReady(scenarioId),
+            runtimeInstanceId: state.runtimeInstanceId,
+            expectedRuntimeInstanceId: baseState.runtimeInstanceId,
+            updateCount: state.updateCount,
+            scenarioUpdateCounts,
+            components: scenarioComponents[scenarioId].map((selector) => [selector, Boolean(document.querySelector(selector))]),
+            providerDefinitions: scenarioProviderDefinitionEvidence[scenarioId] ||
+              scenarioProviderDefinitionState(scenarioId),
+            scenarioDataProof: scenarioDataProofEvidence[scenarioId] || scenarioDataProofState(scenarioId),
+          });
+          return;
+        }
+        setTimeout(waitScenario, 100);
+        } catch (error) {
+          reject(error);
+        }
+      };
+      waitScenario();
+      } catch (error) {
+        reject(error);
+      }
+    };
+    checkScenario();
+  };
   let check = () => {
+    try {
     let error = document.querySelector('[data-preview-error]');
     if (error) {
       reject(new Error(error.textContent || 'Realtime builder rendered data-preview-error.'));
@@ -544,14 +1140,76 @@ new Promise((resolve, reject) => {
       setTimeout(check, 100);
       return;
     }
+    let state = queryState();
+    let shell = state.shell;
+    let workspace = state.workspace;
+    let layout = state.layout;
+    let mountedWorkspace = state.mountedWorkspace;
+    if (!recordAssemblyState(shell)) return;
     if (!clickedPlay) {
+      let initialProgress = document.querySelector('.demo-build-progress span')?.textContent || '';
+      let initialPanels = mountedPanelTypes();
+      let visiblePanelCount = Number(shell?.dataset.visibleScenarioPanelCount || initialPanels.length || '0');
+      let mountedPanelCount = Number(shell?.dataset.mountedScenarioPanelCount || '0');
+      let hydratedPanelCount = Number(shell?.dataset.hydratedScenarioPanelCount || '0');
+      let plannedPanelCount = Number(shell?.dataset.plannedScenarioPanelCount || '0');
+      let emptyStateCount = document.querySelectorAll('sn-empty-state').length;
+      let initialAssemblyWasPartial =
+        shell?.dataset.stage === 'workspace-name' &&
+        shell?.dataset.scenarioId === 'video-editing' &&
+        shell?.dataset.assemblyPhase === 'layout' &&
+        initialProgress.includes('Build ') &&
+        visiblePanelCount > 0 &&
+        plannedPanelCount > visiblePanelCount &&
+        mountedPanelCount === 0 &&
+        hydratedPanelCount === 0 &&
+        emptyStateCount > 0 &&
+        !document.querySelector('chat-workspace');
+      if (!initialAssemblyWasPartial) {
+        if (Date.now() > deadline) {
+          rejectWithDebug('Realtime builder initial state is not a partial UI assembly.', {
+            stage: shell?.dataset.stage || '',
+            scenarioId: shell?.dataset.scenarioId || '',
+            assemblyPhase: shell?.dataset.assemblyPhase || '',
+            initialProgress,
+            initialPanels,
+            visiblePanelCount,
+            mountedPanelCount,
+            hydratedPanelCount,
+            plannedPanelCount,
+            emptyStateCount,
+            hasChatWorkspace: Boolean(document.querySelector('chat-workspace')),
+            visibleScenarioPanels: shell?.dataset.visibleScenarioPanels || '',
+            mountedScenarioPanels: shell?.dataset.mountedScenarioPanels || '',
+            hydratedScenarioPanels: shell?.dataset.hydratedScenarioPanels || '',
+            plannedScenarioPanels: shell?.dataset.plannedScenarioPanels || '',
+          });
+          return;
+        }
+        setTimeout(check, 100);
+        return;
+      }
+      initialAssemblyEvidence = {
+        stage: shell.dataset.stage,
+        scenarioId: shell.dataset.scenarioId,
+        assemblyPhase: shell.dataset.assemblyPhase,
+        progress: initialProgress,
+        visiblePanelCount,
+        mountedPanelCount,
+        hydratedPanelCount,
+        plannedPanelCount,
+        emptyStateCount,
+        visiblePanels: shell.dataset.visibleScenarioPanels,
+        mountedPanels: shell.dataset.mountedScenarioPanels,
+        hydratedPanels: shell.dataset.hydratedScenarioPanels,
+        plannedPanels: shell.dataset.plannedScenarioPanels,
+        mountedPanelTypes: initialPanels,
+      };
       clickedPlay = true;
       play.click();
+      setTimeout(check, 100);
+      return;
     }
-    let shell = document.querySelector('.demo-shell');
-    let workspace = document.querySelector('.demo-workspace');
-    let layout = workspace?.querySelector('panel-layout');
-    let mountedWorkspace = workspace?.querySelector('.symbiote-workspace');
     let finalStage = shell?.dataset.stage === 'verification-scope';
     let finalKind = shell?.dataset.buildKind === 'rank-layout-behavior';
     let progress = document.querySelector('.demo-build-progress span')?.textContent || '';
@@ -560,38 +1218,40 @@ new Promise((resolve, reject) => {
       'chat-workspace',
       'cascade-theme-widget',
       'cascade-theme-editor',
-      'sn-card',
-      'sn-button',
-      'sn-segmented-control',
     ].map((selector) => document.querySelector(selector)).filter(Boolean);
+    let operationChips = [...document.querySelectorAll('.demo-operation-chip')];
+    let operationProcessReady =
+      operationChips.length >= 4 &&
+      operationChips.at(-1)?.dataset.operationLabel === 'Rank layout behavior' &&
+      operationChips.every((chip) => ['done', 'active', 'pending'].includes(chip.dataset.operationStatus));
+    let micButton = document.querySelector('chat-workspace chat-composer .btn-mic');
+    let micRect = micButton?.getBoundingClientRect?.() || null;
+    let composerBody = document.querySelector('chat-workspace chat-composer .composer-body:not(.voice-preview)');
+    let composerRect = composerBody?.getBoundingClientRect?.() || null;
+    let composerRadius = composerBody ? Number.parseFloat(getComputedStyle(composerBody).borderRadius) : 0;
+    let chatVoiceReady = Boolean(
+      micButton &&
+      !micButton.hidden &&
+      micButton.dataset.voiceState === 'idle' &&
+      micRect?.width > 0 &&
+      micRect?.height > 0 &&
+      micRect.y >= 0 &&
+      micRect.y < innerHeight
+    );
+    let chatComposerRounded = Boolean(
+      composerRadius >= 12 &&
+      composerRect?.width > 0 &&
+      composerRect?.height > 0 &&
+      composerRect.y >= 0 &&
+      composerRect.y < innerHeight
+    );
     let oldDemoSurfaces = document.querySelector('.demo-chat, .demo-inspector');
     let appShadowHosts = [...document.querySelectorAll('.demo-shell, .demo-workspace, .symbiote-workspace, panel-layout')]
       .filter((element) => element.shadowRoot);
     let modulePanels = [...document.querySelectorAll('[data-module]')].map((element) => element.dataset.module);
-    let expectedPanels = [
-      'agent-chat',
-      'service-blueprint',
-      'layout-builder',
-      'widget-registry',
-      'bindings-inspector',
-      'adaptive-rules',
-      'validation-checklist',
-      'theme-editor',
-    ];
-    let panelsReady = expectedPanels.every((panel) => modulePanels.includes(panel));
-    let runtimeInstanceId = layout?.dataset.runtimeInstanceId
-      || mountedWorkspace?.dataset.runtimeInstanceId
-      || workspace?.dataset.runtimeInstanceId
-      || '';
-    let updateCount = Number(
-      layout?.dataset.atomicUpdateCount
-      || mountedWorkspace?.dataset.atomicUpdateCount
-      || workspace?.dataset.atomicUpdateCount
-      || '0'
-    );
-    let lastUpdatedStage = mountedWorkspace?.dataset.lastUpdatedStage
-      || workspace?.dataset.lastUpdatedStage
-      || '';
+    let runtimeInstanceId = state.runtimeInstanceId;
+    let updateCount = state.updateCount;
+    let lastUpdatedStage = state.lastUpdatedStage;
     if (shell?.dataset.stage && Number.isFinite(updateCount)) {
       atomicStageCounts[shell.dataset.stage] = Math.max(
         atomicStageCounts[shell.dataset.stage] || 0,
@@ -612,6 +1272,9 @@ new Promise((resolve, reject) => {
     let themeTransitionFromHue = shell?.dataset.themeTransitionFromHue || '';
     let themeTransitionToHue = shell?.dataset.themeTransitionToHue || '';
     let themeTransitionChanged = shell?.dataset.themeTransitionChanged || '';
+    let themeTransitionFromComputedHue = shell?.dataset.themeTransitionFromComputedHue || '';
+    let themeTransitionToComputedHue = shell?.dataset.themeTransitionToComputedHue || '';
+    let themeTransitionComputedChanged = shell?.dataset.themeTransitionComputedChanged || '';
     let themeTransitionUpdateCount = Number(shell?.dataset.themeTransitionUpdateCount || '0');
     let themeTransitionReady =
       ['theme-mode', 'theme-hue'].includes(themeTransitionStage) &&
@@ -620,6 +1283,10 @@ new Promise((resolve, reject) => {
       themeTransitionFromMode === 'dark' &&
       themeTransitionToMode === 'dark' &&
       Number(themeTransitionFromHue) !== Number(themeTransitionToHue) &&
+      themeTransitionFromComputedHue &&
+      themeTransitionToComputedHue &&
+      themeTransitionFromComputedHue !== themeTransitionToComputedHue &&
+      themeTransitionComputedChanged === 'true' &&
       themeTransitionUpdateCount > 0;
     let currentEvidence = [
       'host-services',
@@ -636,20 +1303,34 @@ new Promise((resolve, reject) => {
       hostServices.includes('storage.project') &&
       packageReadiness === 'pass' &&
       Boolean(packageReadinessElement);
+    let defaultScenarioReady = currentScenarioReady('video-editing', state);
+    let finalAssemblyComplete =
+      shell?.dataset.assemblyPhase === 'theme' &&
+      Number(shell?.dataset.visibleScenarioPanelCount || '0') ===
+      Number(shell?.dataset.plannedScenarioPanelCount || '-1') &&
+      Number(shell?.dataset.mountedScenarioPanelCount || '0') ===
+      Number(shell?.dataset.plannedScenarioPanelCount || '-1') &&
+      Number(shell?.dataset.hydratedScenarioPanelCount || '0') ===
+      Number(shell?.dataset.plannedScenarioPanelCount || '-1');
     let smokeReady = finalStage &&
       finalKind &&
       progress.includes('100%') &&
-      requiredElements.length === 7 &&
+      requiredElements.length === 3 &&
+      operationProcessReady &&
+      chatVoiceReady &&
+      chatComposerRounded &&
       !oldDemoSurfaces &&
       appShadowHosts.length === 0 &&
       themeWidgetUsesDefaults &&
       themeEditorDefined &&
       themeTransitionReady &&
-      panelsReady &&
+      scenarioRailReady() &&
+      defaultScenarioReady &&
+      finalAssemblyComplete &&
+      Boolean(initialAssemblyEvidence) &&
       runtimeInstanceId &&
       updateCount > 0 &&
       atomicStageCountsReady &&
-      currentEvidence.length === 3 &&
       currentProtocolReady &&
       noNavigation &&
       lastUpdatedStage === 'verification-scope';
@@ -659,91 +1340,33 @@ new Promise((resolve, reject) => {
         composed: true,
       }));
       let openRequest = shell?.dataset.themeEditorOpenRequest === 'theme-editor';
-      let mobile = document.querySelector('[data-viewport-mode="mobile"]');
-      if (!mobile) {
-        reject(new Error('Realtime builder mobile adaptive preview button is missing.'));
-        return;
-      }
-      let preMobileLayout = layout;
-      let preMobileMountedWorkspace = mountedWorkspace;
-      mobile.click();
-      let checkMobile = () => {
-        let mobileShell = document.querySelector('.demo-shell');
-        let mobileWorkspace = document.querySelector('.demo-workspace');
-        let postMobileLayout = mobileWorkspace?.querySelector('panel-layout');
-        let postMobileMountedWorkspace = mobileWorkspace?.querySelector('.symbiote-workspace');
-        let mobileLayoutIdentityPreserved = Boolean(preMobileLayout && preMobileLayout === postMobileLayout);
-        let mobileWorkspaceIdentityPreserved = Boolean(
-          preMobileMountedWorkspace && preMobileMountedWorkspace === postMobileMountedWorkspace
-        );
-        let dockedPanels = mobileShell?.dataset.dockedPanels || '';
-        let collapsedPanels = mobileShell?.dataset.collapsedPanels || '';
-        let dockedTheme = document.querySelector('[data-panel-type="theme-editor"][data-adaptive-state="docked"]');
-        let collapsedAdaptive = document.querySelector('[data-panel-type="adaptive-rules"][data-adaptive-state="collapsed"]');
-        let themeEvidence = mobileShell?.dataset.themeMode === 'dark' &&
-          mobileShell?.dataset.themeEditorState === 'validated' &&
-          mobileShell?.dataset.adaptiveMode === 'drawer';
-        if (mobileShell?.dataset.viewportMode === 'mobile' && dockedPanels.includes('theme-editor') && collapsedPanels.includes('adaptive-rules') && dockedTheme && collapsedAdaptive && themeEvidence && openRequest && mobileLayoutIdentityPreserved && mobileWorkspaceIdentityPreserved) {
-          resolve({
-            title: document.title,
-            stage: mobileShell.dataset.stage,
-            buildKind: mobileShell.dataset.buildKind,
-            viewportMode: mobileShell.dataset.viewportMode,
-            adaptiveMode: mobileShell.dataset.adaptiveMode,
-            themeMode: mobileShell.dataset.themeMode,
-            themeEditorState: mobileShell.dataset.themeEditorState,
-            dockedPanels,
-            collapsedPanels,
-            progress,
-            runtimeInstanceId,
-            atomicUpdateCount: updateCount,
-            atomicStageCounts,
-            lastUpdatedStage,
-            initialHistoryLength,
-            historyLength: history.length,
-            initialLocationHref,
-            locationHref: location.href,
-            noNavigation,
-            mobileLayoutIdentityPreserved,
-            mobileWorkspaceIdentityPreserved,
-            themeTransitionStage,
-            themeTransitionSource,
-            themeTransitionFromMode,
-            themeTransitionToMode,
-            themeTransitionFromHue,
-            themeTransitionToHue,
-            themeTransitionChanged,
-            themeTransitionUpdateCount,
-            themeWidgetUsesDefaults,
-            themeEditorDefined,
-            requiredElements: requiredElements.map((element) => element.localName),
-            modulePanels,
-            currentEvidence: currentEvidence.map((element) => element.dataset.currentEvidence),
-            executionModel,
-            hostServices,
-            packageReadiness,
-            themeEditorOpenRequest: mobileShell.dataset.themeEditorOpenRequest,
-          });
-          return;
-        }
-        if (Date.now() > deadline) {
-          reject(new Error([
-            'Realtime builder mobile adaptive preview did not expose docked/collapsed panels.',
-            \`viewportMode=\${mobileShell?.dataset.viewportMode || ''}\`,
-            \`dockedPanels=\${dockedPanels}\`,
-            \`collapsedPanels=\${collapsedPanels}\`,
-            \`dockedTheme=\${Boolean(dockedTheme)}\`,
-            \`collapsedAdaptive=\${Boolean(collapsedAdaptive)}\`,
-            \`themeEvidence=\${Boolean(themeEvidence)}\`,
-            \`openRequest=\${Boolean(openRequest)}\`,
-            \`mobileLayoutIdentityPreserved=\${Boolean(mobileLayoutIdentityPreserved)}\`,
-            \`mobileWorkspaceIdentityPreserved=\${Boolean(mobileWorkspaceIdentityPreserved)}\`,
-          ].join('\\n')));
-          return;
-        }
-        setTimeout(checkMobile, 100);
-      };
-      checkMobile();
+      verifyScenarioSwitches({
+        layout,
+        mountedWorkspace,
+        runtimeInstanceId,
+        updateCount,
+        lastUpdatedStage,
+        themeTransitionStage,
+        themeTransitionSource,
+        themeTransitionFromMode,
+        themeTransitionToMode,
+        themeTransitionFromHue,
+        themeTransitionToHue,
+        themeTransitionChanged,
+        themeTransitionFromComputedHue,
+        themeTransitionToComputedHue,
+        themeTransitionComputedChanged,
+        themeTransitionUpdateCount,
+        themeWidgetUsesDefaults,
+        themeEditorDefined,
+        requiredElements: requiredElements.map((element) => element.localName),
+        modulePanels,
+        currentEvidence: currentEvidence.map((element) => element.dataset.currentEvidence),
+        executionModel,
+        hostServices,
+        packageReadiness,
+        themeEditorOpenRequest: openRequest ? 'theme-editor' : '',
+      }, progress);
       return;
     }
     if (Date.now() > deadline) {
@@ -752,8 +1375,28 @@ new Promise((resolve, reject) => {
         finalKind,
         progress,
         requiredElementCount: requiredElements.length,
-        requiredElements: requiredElements.map((element) => element.localName),
-        oldDemoSurfaceCount: oldDemoSurfaces ? 1 : 0,
+          requiredElements: requiredElements.map((element) => element.localName),
+          operationChipCount: operationChips.length,
+          operationStatuses: operationChips.map((chip) => chip.dataset.operationStatus),
+          operationProcessReady,
+          chatVoiceReady,
+          micHidden: micButton ? micButton.hidden : null,
+          micVoiceState: micButton?.dataset.voiceState || '',
+          micRect: micRect ? {
+            x: Math.round(micRect.x),
+            y: Math.round(micRect.y),
+            width: Math.round(micRect.width),
+            height: Math.round(micRect.height),
+          } : null,
+          chatComposerRounded,
+          composerRadius,
+          composerRect: composerRect ? {
+            x: Math.round(composerRect.x),
+            y: Math.round(composerRect.y),
+            width: Math.round(composerRect.width),
+            height: Math.round(composerRect.height),
+          } : null,
+          oldDemoSurfaceCount: oldDemoSurfaces ? 1 : 0,
         appShadowHostCount: appShadowHosts.length,
         themeWidgetUsesDefaults: Boolean(themeWidgetUsesDefaults),
         themeEditorDefined,
@@ -764,15 +1407,32 @@ new Promise((resolve, reject) => {
         themeTransitionFromHue,
         themeTransitionToHue,
         themeTransitionChanged,
+        themeTransitionFromComputedHue,
+        themeTransitionToComputedHue,
+        themeTransitionComputedChanged,
         themeTransitionUpdateCount,
         themeTransitionReady,
-        panelsReady,
+        scenarioRailReady: scenarioRailReady(),
+        defaultScenarioReady,
+        finalAssemblyComplete,
+        assemblyPhase: shell?.dataset.assemblyPhase || '',
+        assemblySamples,
+        visibleScenarioPanelCount: shell?.dataset.visibleScenarioPanelCount || '',
+        mountedScenarioPanelCount: shell?.dataset.mountedScenarioPanelCount || '',
+        hydratedScenarioPanelCount: shell?.dataset.hydratedScenarioPanelCount || '',
+        plannedScenarioPanelCount: shell?.dataset.plannedScenarioPanelCount || '',
+        initialAssemblyEvidence,
+        sidebarSectionIds: sidebarSectionIds(),
+        sidebarContextReady: sidebarContextReady('video-editing'),
+        scenarioProviderDefinitionEvidence,
+        scenarioDataProofEvidence,
         modulePanels,
         runtimeInstanceId,
         updateCount,
         atomicStageCounts,
         atomicStageCountsReady,
         currentEvidence: currentEvidence.map((element) => element.dataset.currentEvidence),
+        scenarioDataProofEvidence,
         executionModel,
         hostServices,
         packageReadiness,
@@ -795,6 +1455,9 @@ new Promise((resolve, reject) => {
       return;
     }
     setTimeout(check, 100);
+    } catch (error) {
+      reject(error);
+    }
   };
   check();
 })
@@ -802,9 +1465,8 @@ new Promise((resolve, reject) => {
 
 async function run() {
   let timeout = timeoutMs();
-  let browser = await findBrowser();
+  let driver = browserDriver();
   let previewPort = Number(readArg('--port', await freePort()));
-  let cdpPort = Number(readArg('--cdp-port', await freePort()));
   let demo = readArg('--demo', 'visual');
   if (!['visual', 'realtime-builder'].includes(demo)) {
     throw new Error(`Unknown browser smoke demo: ${demo}`);
@@ -812,10 +1474,16 @@ async function run() {
   let command = demoCommand(demo);
   let keepOutput = hasArg('--keep-output') || process.env.SYMBIOTE_BROWSER_SMOKE_KEEP === '1';
   let outputDir = resolve(readArg('--output-dir', await mkdtemp(join(tmpdir(), 'symbiote-visual-demo-'))));
-  let profileDir = await mkdtemp(join(tmpdir(), 'symbiote-browser-profile-'));
+  let profileDir = null;
   let preview = null;
   let browserProcess = null;
   let cdp = null;
+  let url = `http://127.0.0.1:${previewPort}/`;
+  let expression = demo === 'realtime-builder'
+    ? `(globalThis.__symbioteRealtimeSmokePromise ||= ${realtimeExpression})`
+    : mountExpression;
+  let resultValue = null;
+  let browserSummary = {};
 
   try {
     preview = spawnProcess(process.execPath, [
@@ -829,56 +1497,78 @@ async function run() {
     });
     await waitForPreview(preview, timeout, command.readyText);
 
-    browserProcess = spawnProcess(browser, [
-      '--headless=new',
-      '--disable-gpu',
-      '--disable-background-networking',
-      '--disable-extensions',
-      '--disable-dev-shm-usage',
-      '--no-default-browser-check',
-      '--no-first-run',
-      `--remote-debugging-address=127.0.0.1`,
-      `--remote-debugging-port=${cdpPort}`,
-      `--user-data-dir=${profileDir}`,
-      'about:blank',
-    ]);
+    if (driver === 'playwright') {
+      let result = await runPlaywrightSmoke({ demo, url, expression, timeout });
+      resultValue = result.value;
+      browserSummary = {
+        browser: `playwright:${result.browserName}`,
+        playwrightBrowser: result.browserName,
+      };
+    } else {
+      let browser = await findBrowser();
+      let headless = headlessMode();
+      let configuredCdpPort = readArg('--cdp-port', process.env.SYMBIOTE_BROWSER_CDP_PORT || '0');
+      let cdpPort = Number(configuredCdpPort);
+      if (!Number.isInteger(cdpPort) || cdpPort < 0) {
+        throw new Error(`Invalid Chrome DevTools Protocol port: ${configuredCdpPort}`);
+      }
+      profileDir = await mkdtemp(join(tmpdir(), 'symbiote-browser-profile-'));
+      browserProcess = spawnProcess(browser, [
+        `--headless=${headless}`,
+        '--disable-gpu',
+        '--disable-background-networking',
+        '--disable-extensions',
+        '--disable-dev-shm-usage',
+        '--no-default-browser-check',
+        '--no-first-run',
+        '--remote-debugging-address=127.0.0.1',
+        `--remote-debugging-port=${cdpPort}`,
+        `--user-data-dir=${profileDir}`,
+        'about:blank',
+      ]);
 
-    try {
-      await waitForCdp(cdpPort, timeout);
-    } catch (error) {
-      throw new Error([
-        error.message,
-        browserProcess.output.stderr ? `Chrome stderr: ${browserProcess.output.stderr}` : '',
-        browserProcess.output.stdout ? `Chrome stdout: ${browserProcess.output.stdout}` : '',
-      ].filter(Boolean).join('\n'));
-    }
-    let target = await createCdpTarget(cdpPort, `http://127.0.0.1:${previewPort}/`);
-    cdp = await CdpWebSocket.connect(target.webSocketDebuggerUrl, timeout);
-    await cdp.send('Page.enable', {}, timeout);
-    await cdp.send('Runtime.enable', {}, timeout);
-    await cdp.send('Network.enable', {}, timeout);
-    let diagnostics = createPageDiagnostics(cdp);
-    await cdp.send('Page.navigate', { url: `http://127.0.0.1:${previewPort}/` }, timeout);
-    await cdp.waitEvent('Page.loadEventFired', timeout);
-    let expression = demo === 'realtime-builder' ? realtimeExpression : mountExpression;
-    let result = await cdp.send('Runtime.evaluate', {
-      expression,
-      awaitPromise: true,
-      returnByValue: true,
-    }, timeout);
-    if (result.exceptionDetails) {
-      let text = result.exceptionDetails.exception?.description || result.exceptionDetails.text;
-      let diagnosticsText = formatPageDiagnostics(diagnostics);
-      throw new Error([text, diagnosticsText].filter(Boolean).join('\n\n'));
+      try {
+        if (cdpPort === 0) {
+          cdpPort = await readDevToolsActivePort(profileDir, timeout, browserProcess);
+        }
+        await waitForCdp(cdpPort, timeout, browserProcess);
+      } catch (error) {
+        throw new Error([
+          error.message,
+          browserProcess.output.stderr ? `Chrome stderr: ${browserProcess.output.stderr}` : '',
+          browserProcess.output.stdout ? `Chrome stdout: ${browserProcess.output.stdout}` : '',
+        ].filter(Boolean).join('\n'));
+      }
+      let target = await createCdpTarget(cdpPort, url, timeout);
+      cdp = await connectCdpWebSocket(target.webSocketDebuggerUrl, timeout);
+      await cdp.send('Page.enable', {}, timeout);
+      await cdp.send('Runtime.enable', {}, timeout);
+      await cdp.send('Network.enable', {}, timeout);
+      let diagnostics = createPageDiagnostics(cdp);
+      await cdp.send('Page.navigate', { url }, timeout);
+      await cdp.waitEvent('Page.loadEventFired', timeout);
+      let result = await cdp.send('Runtime.evaluate', {
+        expression,
+        awaitPromise: true,
+        returnByValue: true,
+      }, timeout);
+      if (result.exceptionDetails) {
+        let text = result.exceptionDetails.exception?.description || result.exceptionDetails.text;
+        let diagnosticsText = formatPageDiagnostics(diagnostics);
+        throw new Error([text, diagnosticsText].filter(Boolean).join('\n\n'));
+      }
+      resultValue = result.result.value;
+      browserSummary = { browser };
     }
 
     console.log(JSON.stringify({
       status: 'ok',
+      driver,
       demo,
-      url: `http://127.0.0.1:${previewPort}/`,
-      browser,
+      url,
+      ...browserSummary,
       outputDir,
-      ...result.result.value,
+      ...resultValue,
     }, null, 2));
   } finally {
     cdp?.close();
@@ -888,7 +1578,7 @@ async function run() {
       waitForProcessExit(browserProcess),
       waitForProcessExit(preview),
     ]);
-    await removeTempDir(profileDir);
+    if (profileDir) await removeTempDir(profileDir);
     if (!keepOutput) await removeTempDir(outputDir);
   }
 }

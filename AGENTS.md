@@ -10,7 +10,7 @@
 ## Architecture
 
 Unified dispatch layer: `runtime/dispatch.js` is the single entry point for all
-68 tools. Both CLI (`cli.js`) and MCP (`mcp/index.js`) are thin proxies —
+69 tools. Both CLI (`cli.js`) and MCP (`mcp/index.js`) are thin proxies —
 they parse input and call `dispatch(toolName, args, session)`.
 
 ## Code Quality

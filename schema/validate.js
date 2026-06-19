@@ -43,6 +43,8 @@ let BLOCKED_VALUE_PATTERNS = new Set([
   '127.0.0.1',
 ]);
 
+let SEMVER_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+
 function isObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
@@ -108,6 +110,12 @@ export function validateWorkspaceConfig(config, options = {}) {
     errors.push({ path: 'version', message: 'Missing required field: version.', severity: 'error' });
   } else if (typeof config.version !== 'string') {
     errors.push({ path: 'version', message: 'Field "version" must be a string.', severity: 'error' });
+  } else if (!isCompatibleVersion(config.version)) {
+    errors.push({
+      path: 'version',
+      message: `Unsupported workspace schema version "${config.version}". Expected semver compatible with ${WORKSPACE_SCHEMA_VERSION}.`,
+      severity: 'error',
+    });
   }
 
   if (!config.name) {
@@ -653,6 +661,34 @@ function validateBehavior(behavior, path, errors, warnings) {
     errors.push({ path, message: 'Behavior must be an object.', severity: 'error' });
     return;
   }
+  validateNumberRange(
+    behavior.importance,
+    `${path}.importance`,
+    'Behavior importance must be a finite number between 0 and 100.',
+    errors,
+    { min: 0, max: 100 },
+  );
+  validateNumberRange(
+    behavior.minInlineSize,
+    `${path}.minInlineSize`,
+    'Behavior minInlineSize must be a finite number greater than or equal to 0.',
+    errors,
+    { min: 0 },
+  );
+  validateNumberRange(
+    behavior.minBlockSize,
+    `${path}.minBlockSize`,
+    'Behavior minBlockSize must be a finite number greater than or equal to 0.',
+    errors,
+    { min: 0 },
+  );
+  validateNumberRange(
+    behavior.responsiveBreakpoint,
+    `${path}.responsiveBreakpoint`,
+    'Behavior responsiveBreakpoint must be a finite number greater than or equal to 0.',
+    errors,
+    { min: 0 },
+  );
   if (behavior.collapse && !COLLAPSE_POLICIES.includes(behavior.collapse)) {
     errors.push({ path: `${path}.collapse`, message: `Invalid collapse: "${behavior.collapse}". Valid: ${COLLAPSE_POLICIES.join(', ')}`, severity: 'error' });
   }
@@ -667,6 +703,13 @@ function validateBehavior(behavior, path, errors, warnings) {
   }
   if (behavior.swipeControl && !SWIPE_CONTROLS.includes(behavior.swipeControl)) {
     errors.push({ path: `${path}.swipeControl`, message: `Invalid swipeControl: "${behavior.swipeControl}". Valid: ${SWIPE_CONTROLS.join(', ')}`, severity: 'error' });
+  }
+}
+
+function validateNumberRange(value, path, message, errors, { min = -Infinity, max = Infinity } = {}) {
+  if (value === undefined) return;
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max) {
+    errors.push({ path, message, severity: 'error' });
   }
 }
 
@@ -704,9 +747,12 @@ function validateSections(sections, groupIds, errors, warnings) {
 function validatePanelTypes(panelTypes, errors, warnings) {
   for (let [name, pt] of Object.entries(panelTypes)) {
     let path = `panelTypes.${name}`;
-    if (!pt.title) errors.push({ path: `${path}.title`, message: 'PanelType requires a "title".', severity: 'error' });
-    if (!pt.component) errors.push({ path: `${path}.component`, message: 'PanelType requires a "component".', severity: 'error' });
-    if (pt.component && !/^[a-z][a-z0-9]*(-[a-z0-9]+)+$/.test(pt.component)) {
+    if (typeof pt.title !== 'string' || !pt.title.trim()) {
+      errors.push({ path: `${path}.title`, message: 'PanelType requires a non-empty "title" string.', severity: 'error' });
+    }
+    if (typeof pt.component !== 'string' || !pt.component.trim()) {
+      errors.push({ path: `${path}.component`, message: 'PanelType requires a non-empty "component" string.', severity: 'error' });
+    } else if (!/^[a-z][a-z0-9]*(-[a-z0-9]+)+$/.test(pt.component)) {
       warnings.push({ path: `${path}.component`, message: `Component tag "${pt.component}" should be a valid custom element name (lowercase with hyphens).`, severity: 'warning' });
     }
     if (pt.behavior) {
@@ -819,8 +865,36 @@ function validateEvents(events, errors, warnings) {
   for (let i = 0; i < events.length; i++) {
     let ev = events[i];
     let path = `events[${i}]`;
-    if (!ev.sourcePanel) errors.push({ path: `${path}.sourcePanel`, message: 'Event bridge requires a "sourcePanel".', severity: 'error' });
-    if (!ev.event) errors.push({ path: `${path}.event`, message: 'Event bridge requires an "event".', severity: 'error' });
+    if (!isObject(ev)) {
+      errors.push({ path, message: 'Event bridge entry must be an object.', severity: 'error' });
+      continue;
+    }
+    validatePortableIdField(
+      ev.sourcePanel,
+      `${path}.sourcePanel`,
+      'Event bridge requires a portable "sourcePanel".',
+      errors,
+    );
+    if (ev.targetPanel !== undefined) {
+      validatePortableIdField(
+        ev.targetPanel,
+        `${path}.targetPanel`,
+        'Event bridge targetPanel must be portable when provided.',
+        errors,
+      );
+    }
+    if (typeof ev.event !== 'string' || !ev.event.trim()) {
+      errors.push({ path: `${path}.event`, message: 'Event bridge requires a non-empty "event".', severity: 'error' });
+    }
+    if (ev.targetMethod !== undefined && (typeof ev.targetMethod !== 'string' || !ev.targetMethod.trim())) {
+      errors.push({ path: `${path}.targetMethod`, message: 'Event bridge targetMethod must be a non-empty string when provided.', severity: 'error' });
+    }
+    if (ev.targetProperty !== undefined && (typeof ev.targetProperty !== 'string' || !ev.targetProperty.trim())) {
+      errors.push({ path: `${path}.targetProperty`, message: 'Event bridge targetProperty must be a non-empty string when provided.', severity: 'error' });
+    }
+    if (ev.mapping !== undefined && !isObject(ev.mapping)) {
+      errors.push({ path: `${path}.mapping`, message: 'Event bridge mapping must be an object when provided.', severity: 'error' });
+    }
     if (ev.id) {
       if (ids.has(ev.id)) {
         errors.push({ path: `${path}.id`, message: `Duplicate event bridge ID: "${ev.id}".`, severity: 'error' });
@@ -1258,6 +1332,7 @@ function checkPortability(config, errors, warnings) {
  */
 export function isCompatibleVersion(version) {
   if (typeof version !== 'string') return false;
+  if (!SEMVER_PATTERN.test(version)) return false;
   let [major] = version.split('.');
   let [schemaMajor] = WORKSPACE_SCHEMA_VERSION.split('.');
   return major === schemaMajor;

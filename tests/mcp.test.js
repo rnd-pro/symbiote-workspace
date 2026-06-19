@@ -213,6 +213,7 @@ describe('MCP Protocol', () => {
     assert.equal(toolNames.has('construct_workspace'), true);
     assert.equal(toolNames.has('apply_workspace_patch'), true);
     assert.equal(toolNames.has('export_workspace'), true);
+    assert.equal(toolNames.has('workflow_kanban'), true);
     assert.equal(toolNames.has('create_workspace_construction_handoff'), true);
     assert.equal(toolNames.has('collect_plugin_module_capabilities'), true);
     assert.equal(toolNames.has('collect_plugin_workspace_templates'), true);
@@ -247,6 +248,11 @@ describe('MCP Protocol', () => {
     assert.equal(saveConfig.annotations.readOnlyHint, false);
     assert.equal(startPreview.annotations.readOnlyHint, false);
     assert.equal(listGroups.annotations.readOnlyHint, true);
+    assert.equal(
+      toolList.result.tools.find((tool) => tool.name === 'workflow_kanban')
+        .annotations.readOnlyHint,
+      false,
+    );
     assert.equal(pluginModules.annotations.readOnlyHint, true);
     assert.equal(pluginTemplates.annotations.readOnlyHint, true);
     assert.equal(
@@ -375,6 +381,53 @@ describe('MCP Protocol', () => {
     let content = JSON.parse(listResult.result.content[0].text);
     assert.equal(content.count, 1);
     assert.equal(content.groups[0].id, 'g1');
+  });
+
+  it('registers workflow kanban board config through tools/call', async () => {
+    let responses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: { name: 'scaffold_from_scratch', arguments: { name: 'Workflow MCP' } },
+      },
+      {
+        jsonrpc: '2.0', id: 3, method: 'tools/call',
+        params: {
+          name: 'workflow_kanban',
+          arguments: {
+            panelType: 'approvals',
+            board: {
+              id: 'release-flow',
+              title: 'Release Flow',
+              columns: [
+                { id: 'ready', title: 'Ready', cards: [{ id: 'card-1', title: 'Draft release' }] },
+                { id: 'done', title: 'Done', cards: [] },
+              ],
+            },
+            setDefaultLayout: true,
+            eventTarget: { panelType: 'workflow', targetProperty: 'approvalState' },
+          },
+        },
+      },
+      {
+        jsonrpc: '2.0', id: 4, method: 'tools/call',
+        params: { name: 'export_config', arguments: { strict: true } },
+      },
+    ]);
+
+    let workflowResult = responses.find((r) => r.id === 3);
+    assert.ok(workflowResult);
+    let workflowContent = JSON.parse(workflowResult.result.content[0].text);
+    assert.equal(workflowContent.status, 'ok');
+    assert.equal(workflowContent.component, 'sn-kanban-board');
+
+    let exportResult = responses.find((r) => r.id === 4);
+    let exportContent = JSON.parse(exportResult.result.content[0].text);
+    let config = JSON.parse(exportContent.json);
+    assert.equal(config.panelTypes.approvals.component, 'sn-kanban-board');
+    assert.deepEqual(config.layout, { type: 'panel', panelType: 'approvals' });
+    assert.equal(config.state.fields[0].default.columns[0].cards[0].id, 'card-1');
+    assert.equal(config.events.some((event) => event.event === 'sn-board-card-drop'), true);
   });
 
   it('constructs workspace state through tools/call and exports it from the same session', async () => {
@@ -1671,7 +1724,7 @@ describe('Construction Handoff via MCP', () => {
         jsonrpc: '2.0', id: 2, method: 'tools/call',
         params: { name: 'plan_workspace', arguments: handoff },
       },
-    ]);
+    ], 5000);
     let plan = JSON.parse(planResponses.find((r) => r.id === 2).result.content[0].text);
     assert.equal(plan.status, 'ok');
     assert.equal(plan.templateName, 'mcp-voice-video-room');

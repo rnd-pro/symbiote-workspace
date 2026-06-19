@@ -99,6 +99,22 @@ describe('validateWorkspaceConfig', () => {
     assert.equal(result.valid, false);
   });
 
+  it('rejects malformed and incompatible schema versions', () => {
+    let malformed = validateWorkspaceConfig({
+      version: 'bad',
+      name: 'Malformed Version',
+    });
+    let incompatible = validateWorkspaceConfig({
+      version: '2.0.0',
+      name: 'Future Version',
+    });
+
+    assert.equal(malformed.valid, false);
+    assert.ok(malformed.errors.some((error) => error.path === 'version'));
+    assert.equal(incompatible.valid, false);
+    assert.ok(incompatible.errors.some((error) => error.path === 'version'));
+  });
+
   it('rejects invalid register value', () => {
     let result = validateWorkspaceConfig({
       version: '0.1.0',
@@ -625,6 +641,76 @@ describe('validateWorkspaceConfig', () => {
     assert.equal(result.valid, true);
   });
 
+  it('validates behavior numeric ranges', () => {
+    let valid = validateWorkspaceConfig({
+      version: '0.2.0',
+      name: 'Behavior Workspace',
+      rootBehavior: {
+        importance: 0,
+        minInlineSize: 0,
+        minBlockSize: 0,
+        responsiveBreakpoint: 0,
+      },
+    });
+
+    assert.equal(valid.valid, true);
+
+    let invalid = validateWorkspaceConfig({
+      version: '0.2.0',
+      name: 'Broken Behavior Workspace',
+      rootBehavior: {
+        importance: 200,
+        minInlineSize: -1,
+        minBlockSize: -1,
+        responsiveBreakpoint: -1,
+      },
+    });
+
+    assert.equal(invalid.valid, false);
+    assert.ok(invalid.errors.some((error) => error.path === 'rootBehavior.importance'));
+    assert.ok(invalid.errors.some((error) => error.path === 'rootBehavior.minInlineSize'));
+    assert.ok(invalid.errors.some((error) => error.path === 'rootBehavior.minBlockSize'));
+    assert.ok(invalid.errors.some((error) => error.path === 'rootBehavior.responsiveBreakpoint'));
+  });
+
+  it('validates event bridge metadata', () => {
+    let valid = validateWorkspaceConfig({
+      version: '0.2.0',
+      name: 'Event Workspace',
+      events: [{
+        id: 'workflow-kanban-approvals-drop',
+        sourcePanel: 'approvals',
+        event: 'sn-board-card-drop',
+        targetPanel: 'workflow',
+        targetProperty: 'approvalState',
+        mapping: { cardId: 'detail.card.id' },
+      }],
+    });
+
+    assert.equal(valid.valid, true);
+
+    let invalid = validateWorkspaceConfig({
+      version: '0.2.0',
+      name: 'Broken Event Workspace',
+      events: [{
+        sourcePanel: 'Bad Panel',
+        event: '',
+        targetPanel: 'https://host.local/panel',
+        targetMethod: '',
+        targetProperty: '',
+        mapping: [],
+      }],
+    });
+
+    assert.equal(invalid.valid, false);
+    assert.ok(invalid.errors.some((error) => error.path === 'events[0].sourcePanel'));
+    assert.ok(invalid.errors.some((error) => error.path === 'events[0].event'));
+    assert.ok(invalid.errors.some((error) => error.path === 'events[0].targetPanel'));
+    assert.ok(invalid.errors.some((error) => error.path === 'events[0].targetMethod'));
+    assert.ok(invalid.errors.some((error) => error.path === 'events[0].targetProperty'));
+    assert.ok(invalid.errors.some((error) => error.path === 'events[0].mapping'));
+  });
+
   it('rejects split layout children without BSP first and second nodes', () => {
     let result = validateWorkspaceConfig({
       version: '0.2.0',
@@ -679,6 +765,24 @@ describe('validateWorkspaceConfig', () => {
 
     assert.equal(result.valid, true);
     assert.ok(result.warnings.some((error) => error.path === 'layouts.secondary.second.panelType'));
+  });
+
+  it('rejects panel type titles and components that are not non-empty strings', () => {
+    let result = validateWorkspaceConfig({
+      version: '0.2.0',
+      name: 'Invalid Panel Types',
+      panelTypes: {
+        board: { title: { text: 'Board' }, component: 'sn-kanban-board' },
+        table: { title: 'Table', component: { tag: 'sn-data-table' } },
+        empty: { title: '', component: '' },
+      },
+    });
+
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some((error) => error.path === 'panelTypes.board.title'));
+    assert.ok(result.errors.some((error) => error.path === 'panelTypes.table.component'));
+    assert.ok(result.errors.some((error) => error.path === 'panelTypes.empty.title'));
+    assert.ok(result.errors.some((error) => error.path === 'panelTypes.empty.component'));
   });
 
   it('rejects unknown keys in strict mode', () => {
@@ -880,5 +984,10 @@ describe('isCompatibleVersion', () => {
   it('rejects non-string', () => {
     assert.equal(isCompatibleVersion(null), false);
     assert.equal(isCompatibleVersion(123), false);
+  });
+
+  it('rejects malformed semver', () => {
+    assert.equal(isCompatibleVersion('bad'), false);
+    assert.equal(isCompatibleVersion('0.bad.0'), false);
   });
 });

@@ -103,8 +103,11 @@
     "web-components",
     "server"
   ],
+  "dependencies": {
+    "ws": "^8.21.0"
+  },
   "peerDependencies": {
-    "symbiote-ui": ">=0.3.0-alpha.44",
+    "symbiote-ui": ">=0.3.0-alpha.45",
     "symbiote-engine": ">=0.3.0-alpha.11"
   },
   "peerDependenciesMeta": {
@@ -113,8 +116,9 @@
     }
   },
   "devDependencies": {
+    "playwright": "1.61.0",
     "symbiote-engine": "0.3.0-alpha.11",
-    "symbiote-ui": "0.3.0-alpha.44"
+    "symbiote-ui": "0.3.0-alpha.45"
   },
   "repository": {
     "type": "git",

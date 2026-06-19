@@ -76,3 +76,15 @@ npm run test:visual-demo-browser -- --demo realtime-builder
 
 Set `SYMBIOTE_BROWSER_BIN` or pass `--browser` when Chrome is not installed in
 the standard macOS application locations.
+
+When Chrome/CDP is not available, run the same proof through Playwright:
+
+```bash
+npx playwright install webkit
+SYMBIOTE_BROWSER_DRIVER=playwright SYMBIOTE_PLAYWRIGHT_BROWSER=webkit \
+  npm run test:visual-demo-browser -- --demo realtime-builder --timeout 70000
+```
+
+`SYMBIOTE_PLAYWRIGHT_BROWSER` and `--playwright-browser` accept `chromium`,
+`firefox`, or `webkit`. Smoke output is removed after successful runs unless
+`--keep-output` or `SYMBIOTE_BROWSER_SMOKE_KEEP=1` is set.

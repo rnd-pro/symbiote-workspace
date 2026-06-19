@@ -35,6 +35,7 @@ Verify the packed package through a temporary consumer instead of publishing to
 npm:
 
 ```bash
+npm ci --ignore-scripts
 npm run test:package-consumer
 ```
 
@@ -55,7 +56,7 @@ flow, and MCP stdio behavior. It does not publish or require registry writes.
 │   cli.js         │      mcp/index.js        │
 │   thin proxy     │      thin proxy          │
 ├──────────────────┴──────────────────────────┤
-│  handlers/* (12 modules)  constructor/*     │
+│  handlers/* (13 modules)  constructor/*     │
 │  schema/*  validation/*   loader/*          │
 │  plugins/*  sharing/*     server/*          │
 └─────────────────────────────────────────────┘
@@ -278,6 +279,12 @@ server:
 node examples/visual-demo/preview.js --write-only --output-dir tmp/visual-demo-preview
 ```
 
+Run the realtime builder demo locally:
+
+```bash
+npm run demo:realtime-builder
+```
+
 Use the opt-in browser smoke when a release gate needs real render evidence:
 
 ```bash
@@ -286,7 +293,20 @@ npm run test:visual-demo-browser
 
 It launches the visual demo server and a Chrome-compatible browser, then checks
 that the preview mounts without `[data-preview-error]` and renders the expected
-workspace and panel DOM.
+workspace and panel DOM. The default driver uses Chrome DevTools Protocol.
+For environments where local Chrome/CDP is unavailable, use the Playwright
+driver after installing a Playwright browser:
+
+```bash
+npx playwright install webkit
+SYMBIOTE_BROWSER_DRIVER=playwright SYMBIOTE_PLAYWRIGHT_BROWSER=webkit \
+  npm run test:visual-demo-browser -- --demo realtime-builder --timeout 70000
+```
+
+`SYMBIOTE_PLAYWRIGHT_BROWSER` and `--playwright-browser` accept `chromium`,
+`firefox`, or `webkit`. Smoke output is temporary by default; pass
+`--keep-output` or set `SYMBIOTE_BROWSER_SMOKE_KEEP=1` when retaining generated
+proof artifacts for inspection.
 
 ## Portable Relaunch And Host Contract
 
@@ -342,7 +362,7 @@ Start as MCP server:
 node cli.js mcp
 ```
 
-Exposes all 68 tools from the unified runtime registry via JSON-RPC over stdio.
+Exposes all 69 tools from the unified runtime registry via JSON-RPC over stdio.
 Agents can classify, plan,
 propose, validate, apply, export, mutate, and query workspaces
 programmatically.
@@ -362,12 +382,33 @@ programmatically.
 | **Behaviors** | `set_behavior` `get_behavior` `update_behavior` |
 | **Widgets** | `mount_widget` `unmount_widget` `swap_widget` |
 | **Events** | `bridge_event` `unbridge_event` `list_bridges` |
+| **Workflow Modules** | `workflow_kanban` |
 | **Sharing** | `export_config` `import_config` `diff_configs` `merge_configs` |
 | **Workspace Package** | `export_workspace_package` `import_workspace_package` `validate_workspace_package` `inspect_workspace_package` `create_workspace_package_construction_context` `create_workspace_packages_construction_context` `create_workspace_construction_handoff` |
 | **Plugin Metadata** | `collect_plugin_module_capabilities` `collect_plugin_workspace_templates` |
 | **Preview** | `start_preview` |
 | **Validation** | `validate_config` `check_guardrails` |
 | **File I/O** | `save_config` `load_config` |
+
+### Workflow Kanban
+
+`workflow_kanban` registers a portable workflow board panel backed by the
+provider-owned `symbiote-ui` `sn-kanban-board` module. It requires a portable
+`panelType` and a plain JSON `board` with an `id` and non-empty `columns`.
+
+```bash
+node cli.js workflow-kanban --config ws.json \
+  --panel-type approvals \
+  --board '{"id":"release-flow","columns":[{"id":"todo","title":"Todo","cards":[{"id":"task-1","title":"Review package"}]}]}' \
+  --layout-id workflow \
+  --set-default-layout
+```
+
+The tool upserts the panel type, module descriptor, board state field, data
+bindings, select/action/drop event bridges, and optional group/section/layout
+metadata.
+`behavior`, `eventTarget.mapping`, and `requiredHostServices` are validated as
+portable JSON before the active config is mutated.
 
 ## Workspace Config
 
@@ -1028,8 +1069,8 @@ The manifest rejects host, identity, and marketplace state:
   `subscription`
 - **marketplace keys**: `price`, `seller`, `marketplace`, `licenseKey`,
   `licenseServer`, `purchase`, `rating`, `payout`, `listing`
-- **non-portable values**: `file://` URIs, absolute paths (`/Users/`,
-  `/home/`, `/tmp/`), HTTP/WS URLs in dependency and asset fields
+- **non-portable values**: local file URIs, home-directory or temporary
+  absolute paths, HTTP/WS URLs in dependency and asset fields
 
 ## Related Packages
 

@@ -567,9 +567,12 @@ export function mountWorkspace(config, container, options = {}) {
     let detail = event.detail || {};
     if (writeThemeChanges) {
       updateThemeParams(currentConfig, detail.state, detail.targetSelector);
+      theme = applyWorkspaceTheme(currentConfig, wrapper, options);
+      assignMountedState(mounted, { config: currentConfig, loaderResult, theme });
     }
     options.onThemeChange?.({
       config: currentConfig,
+      theme,
       event,
       state: detail.state || null,
       targetSelector: detail.targetSelector || null,

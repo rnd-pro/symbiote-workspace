@@ -3,7 +3,6 @@
  *
  * Exports schema, validation, planning, sharing, and plugin utilities.
  * Does NOT import browser-only code (DOM, CustomElements).
- * Does NOT import server-only code (node:fs, node:http).
  *
  * Browser-only assembly lives in `symbiote-workspace/browser`.
  * Server mode lives in `symbiote-workspace/server`.

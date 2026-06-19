@@ -8,7 +8,16 @@ import { dispatch, TOOLS, isMutating, createSession } from '../runtime/index.js'
 
 let ROOT = resolve(import.meta.dirname, '..');
 let TMP_ROOT = resolve(ROOT, 'tmp');
-let EXPECTED_TOOL_COUNT = 68;
+let EXPECTED_TOOL_COUNT = 69;
+let WORKFLOW_KANBAN_BOARD = Object.freeze({
+  id: 'release-flow',
+  title: 'Release Flow',
+  columns: [
+    { id: 'ready', title: 'Ready', cards: [{ id: 'card-1', title: 'Prepare release notes' }] },
+    { id: 'review', title: 'Review', cards: [] },
+    { id: 'done', title: 'Done', cards: [] },
+  ],
+});
 
 async function withTempPath(prefix, filename, run) {
   await mkdir(TMP_ROOT, { recursive: true });
@@ -60,6 +69,7 @@ describe('isMutating', () => {
     assert.equal(isMutating('scaffold_workspace'), true);
     assert.equal(isMutating('mount_widget'), true);
     assert.equal(isMutating('save_config'), true);
+    assert.equal(isMutating('workflow_kanban'), true);
   });
 
   it('identifies read-only tools', () => {
@@ -371,6 +381,244 @@ describe('dispatch', () => {
     assert.notEqual(ids[0], ids[1]);
   });
 
+  it('workflow_kanban registers a portable kanban board module', async () => {
+    let session = createSession();
+    await dispatch('scaffold_from_scratch', { name: 'Workflow Desk' }, session);
+
+    let result = await dispatch('workflow_kanban', {
+      panelType: 'approvals',
+      title: 'Approvals',
+      icon: 'fact_check',
+      board: WORKFLOW_KANBAN_BOARD,
+      layoutId: 'workflow',
+      setDefaultLayout: true,
+      group: { id: 'workflow', name: 'Workflow' },
+      section: { id: 'board', label: 'Board', groupId: 'workflow' },
+      eventTarget: { panelType: 'workflow', targetProperty: 'approvalState' },
+    }, session);
+
+    assert.equal(result.status, 'ok');
+    assert.equal(result.component, 'sn-kanban-board');
+    assert.equal(result.boardPath, 'state.approvals.board');
+    assert.deepEqual(result.events, [
+      'sn-board-card-select',
+      'sn-board-card-action',
+      'sn-board-card-drop',
+    ]);
+    assert.equal(session.config.panelTypes.approvals.component, 'sn-kanban-board');
+    assert.equal(session.config.panelTypes.approvals.icon, 'fact_check');
+    assert.equal(session.config.components.modules[0].placement.icon, 'fact_check');
+    assert.deepEqual(session.config.layout, { type: 'panel', panelType: 'approvals' });
+    assert.deepEqual(session.config.layouts.workflow, { type: 'panel', panelType: 'approvals' });
+    assert.ok(session.config.components.catalog.includes('sn-kanban-board'));
+    assert.equal(session.config.components.modules[0].capabilities.includes('workflow.kanban'), true);
+    assert.deepEqual(session.config.state.fields.find((field) => field.id === 'board').default, WORKFLOW_KANBAN_BOARD);
+    assert.equal(session.config.data.bindings.some((binding) => binding.id === 'move-intent'), true);
+    assert.equal(
+      session.config.events.find((event) => event.event === 'sn-board-card-drop').targetProperty,
+      'approvalState',
+    );
+
+    let validation = await dispatch('validate_config', {}, session);
+    assert.equal(validation.valid, true);
+    let exported = await dispatch('export_config', { strict: true }, session);
+    assert.equal(exported.status, 'ok');
+  });
+
+  it('workflow_kanban supports multiple boards without duplicate module descriptors', async () => {
+    let session = createSession();
+    await dispatch('scaffold_from_scratch', { name: 'Workflow Desk' }, session);
+
+    let first = await dispatch('workflow_kanban', {
+      panelType: 'release-board',
+      board: WORKFLOW_KANBAN_BOARD,
+      requiredHostServices: ['storage.project'],
+    }, session);
+    let second = await dispatch('workflow_kanban', {
+      panelType: 'triage-board',
+      board: {
+        id: 'triage-flow',
+        columns: [
+          { id: 'new', title: 'New', cards: [{ id: 'bug-1', title: 'Inspect bug' }] },
+        ],
+      },
+      requiredHostServices: ['agent.runtime'],
+    }, session);
+
+    assert.equal(first.status, 'ok');
+    assert.equal(second.status, 'ok');
+    assert.deepEqual(session.config.components.modules.map((module) => module.tagName), [
+      'sn-kanban-board',
+    ]);
+    assert.deepEqual(session.config.components.modules[0].requiredHostServices, [
+      'agent.runtime',
+      'storage.project',
+    ]);
+    assert.equal(session.config.panelTypes['release-board'].component, 'sn-kanban-board');
+    assert.equal(session.config.panelTypes['triage-board'].component, 'sn-kanban-board');
+    assert.equal(
+      session.config.state.fields.some((field) => field.path === 'state.release-board.board'),
+      true,
+    );
+    assert.equal(
+      session.config.state.fields.some((field) => field.path === 'state.triage-board.board'),
+      true,
+    );
+    assert.equal(
+      session.config.events.some((event) => event.id === 'workflow-kanban-triage-board-drop'),
+      true,
+    );
+
+    let validation = await dispatch('validate_config', {}, session);
+    assert.equal(validation.valid, true);
+    let exported = await dispatch('export_config', { strict: true }, session);
+    assert.equal(exported.status, 'ok');
+  });
+
+  it('workflow_kanban keeps canonical provider metadata over stale module descriptors', async () => {
+    let session = createSession();
+    await dispatch('scaffold_from_scratch', { name: 'Workflow Desk' }, session);
+    session.config.components = {
+      catalog: ['sn-kanban-board'],
+      modules: [{
+        tagName: 'sn-kanban-board',
+        provider: 'legacy-provider',
+        descriptor: { package: 'legacy-pack', component: 'sn-kanban-board' },
+        capabilities: ['legacy.kanban'],
+        placement: {
+          title: 'Legacy Board',
+          icon: 'history',
+          behavior: { importance: 1 },
+          regions: ['legacy'],
+          panelType: 'legacy-panel',
+          registers: ['legacy-register'],
+        },
+        requiredHostServices: ['storage.project'],
+        actions: [{ id: 'refresh', label: 'Refresh', event: 'workflow.refresh' }],
+      }],
+    };
+
+    let result = await dispatch('workflow_kanban', {
+      panelType: 'approvals',
+      icon: 'fact_check',
+      behavior: { importance: 80, minInlineSize: 360 },
+      board: WORKFLOW_KANBAN_BOARD,
+      requiredHostServices: ['agent.runtime'],
+    }, session);
+
+    assert.equal(result.status, 'ok');
+    let [module] = session.config.components.modules;
+    assert.equal(module.provider, 'symbiote-ui');
+    assert.equal(module.descriptor.package, 'symbiote-ui');
+    assert.deepEqual(module.capabilities, ['workflow.kanban', 'kanban-board', 'workflow.move-intent']);
+    assert.deepEqual(module.placement, {
+      title: 'Workflow Kanban',
+      icon: 'fact_check',
+      behavior: { importance: 80, minInlineSize: 360 },
+      regions: ['workflow', 'board'],
+    });
+    assert.deepEqual(module.requiredHostServices, ['agent.runtime', 'storage.project']);
+    assert.deepEqual(module.actions, [{ id: 'refresh', label: 'Refresh', event: 'workflow.refresh' }]);
+
+    let exported = await dispatch('export_config', { strict: true }, session);
+    assert.equal(exported.status, 'ok');
+  });
+
+  it('workflow_kanban rejects invalid boards without mutating session', async () => {
+    let session = createSession();
+    await dispatch('scaffold_from_scratch', { name: 'Workflow Desk' }, session);
+    let before = JSON.stringify(session.config);
+
+    let result = await dispatch('workflow_kanban', {
+      panelType: 'approvals',
+      board: { id: 'Release Flow', columns: [] },
+    }, session);
+
+    assert.equal(result.status, 'error');
+    assert.match(result.hint, /board\.id/);
+    assert.equal(JSON.stringify(session.config), before);
+  });
+
+  it('workflow_kanban rejects non-string board titles without mutating session', async () => {
+    let session = createSession();
+    await dispatch('scaffold_from_scratch', { name: 'Workflow Desk' }, session);
+    let before = JSON.stringify(session.config);
+
+    let result = await dispatch('workflow_kanban', {
+      panelType: 'approvals',
+      board: {
+        id: 'release-flow',
+        title: { text: 'Release Flow' },
+        columns: [{ id: 'todo', title: 'Todo', cards: [] }],
+      },
+    }, session);
+
+    assert.equal(result.status, 'error');
+    assert.match(result.hint, /board\.title/);
+    assert.equal(JSON.stringify(session.config), before);
+  });
+
+  it('workflow_kanban rejects invalid event mapping without mutating session', async () => {
+    let session = createSession();
+    await dispatch('scaffold_from_scratch', { name: 'Workflow Desk' }, session);
+    let before = JSON.stringify(session.config);
+
+    let result = await dispatch('workflow_kanban', {
+      panelType: 'approvals',
+      board: WORKFLOW_KANBAN_BOARD,
+      eventTarget: { panelType: 'workflow', mapping: [] },
+    }, session);
+
+    assert.equal(result.status, 'error');
+    assert.match(result.hint, /eventTarget\.mapping/);
+    assert.equal(JSON.stringify(session.config), before);
+  });
+
+  it('workflow_kanban rejects behavior outside layout contract without mutating session', async () => {
+    let session = createSession();
+    await dispatch('scaffold_from_scratch', { name: 'Workflow Desk' }, session);
+    let before = JSON.stringify(session.config);
+
+    let result = await dispatch('workflow_kanban', {
+      panelType: 'approvals',
+      board: WORKFLOW_KANBAN_BOARD,
+      behavior: { importance: 200 },
+    }, session);
+
+    assert.equal(result.status, 'error');
+    assert.match(result.hint, /behavior\.importance/);
+    assert.equal(JSON.stringify(session.config), before);
+  });
+
+  it('workflow_kanban rejects non-portable host service IDs without mutating session', async () => {
+    let session = createSession();
+    await dispatch('scaffold_from_scratch', { name: 'Workflow Desk' }, session);
+    let before = JSON.stringify(session.config);
+
+    let result = await dispatch('workflow_kanban', {
+      panelType: 'approvals',
+      board: WORKFLOW_KANBAN_BOARD,
+      requiredHostServices: ['storage.project', 'https://example.com/service'],
+    }, session);
+
+    assert.equal(result.status, 'error');
+    assert.match(result.hint, /requiredHostServices/);
+    assert.equal(JSON.stringify(session.config), before);
+  });
+
+  it('workflow_kanban requires an active workspace config', async () => {
+    let session = createSession();
+
+    let result = await dispatch('workflow_kanban', {
+      panelType: 'approvals',
+      board: WORKFLOW_KANBAN_BOARD,
+    }, session);
+
+    assert.equal(result.status, 'error');
+    assert.equal(result.code, 'workspace_config_missing');
+    assert.equal(session.config, null);
+  });
+
   it('error handling: catches handler errors gracefully', async () => {
     let session = createSession();
     // discover_components with invalid path should return error (not throw)
@@ -414,8 +662,50 @@ describe('dispatch', () => {
 
   it('input validation: passes when no required fields', async () => {
     let session = createSession();
+    await dispatch('scaffold_from_scratch', {}, session);
     let result = await dispatch('list_groups', {}, session);
     assert.notEqual(result.status, 'error');
+  });
+
+  it('read-only current-workspace tools do not initialize a fresh session config', async () => {
+    let tools = [
+      ['describe_workspace', {}],
+      ['list_used_components', {}],
+      ['propose_workspace_patch', { overlay: { name: 'Preview' } }],
+      ['validate_workspace_patch', { overlay: { name: 'Preview' } }],
+      ['export_workspace', {}],
+      ['list_groups', {}],
+      ['list_sections', {}],
+      ['list_panel_types', {}],
+      ['list_menu_actions', { panelType: 'main' }],
+      ['get_behavior', { target: 'root' }],
+      ['list_bridges', {}],
+      ['validate_config', {}],
+      ['export_workspace_package', {}],
+      ['export_config', {}],
+      ['diff_configs', { otherJson: '{}' }],
+      ['check_guardrails', {}],
+    ];
+
+    for (let [toolName, args] of tools) {
+      assert.equal(isMutating(toolName), false, `${toolName} must stay read-only`);
+      let session = createSession();
+
+      let result = await dispatch(toolName, args, session);
+
+      assert.equal(result.status, 'error', `${toolName} must reject a missing config`);
+      assert.equal(result.code, 'workspace_config_missing', `${toolName} must report missing config`);
+      assert.equal(session.config, null, `${toolName} must not create a blank config`);
+    }
+  });
+
+  it('read-only tools without current-workspace dependency do not initialize a fresh session config', async () => {
+    let session = createSession();
+
+    let result = await dispatch('list_templates', {}, session);
+
+    assert.ok(result.count >= 5);
+    assert.equal(session.config, null);
   });
 
   it('export_config returns portable JSON', async () => {

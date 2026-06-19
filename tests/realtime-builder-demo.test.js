@@ -78,6 +78,90 @@ describe('realtime builder demo', () => {
     assert.ok(demo.acceptanceMatrix.some((item) => item.id === 'current-protocol-visible'));
     assert.ok(demo.acceptanceMatrix.some((item) => item.id === 'package-readiness-visible'));
     assert.ok(demo.acceptanceMatrix.some((item) => item.id === 'runtime-import-contract-visible'));
+    assert.ok(demo.acceptanceMatrix.some((item) => item.id === 'professional-scenario-matrix'));
+    assert.ok(demo.acceptanceMatrix.some((item) => item.id === 'professional-library-surfaces'));
+    assert.ok(demo.acceptanceMatrix.some((item) => item.id === 'template-manual-edit-existing-modes'));
+    assert.equal(demo.defaultScenarioId, 'video-editing');
+    assert.deepEqual(
+      demo.professionalScenarios.map((scenario) => scenario.id),
+      ['video-editing', 'automation-editing', 'agent-programming', 'constructor-control']
+    );
+    assert.deepEqual(
+      demo.professionalScenarios.map((scenario) => scenario.sourceTemplate),
+      ['video-studio', 'social-automation', 'agent-workspace + editor', 'template/manual/edit-existing']
+    );
+    assert.deepEqual(
+      demo.professionalScenarios.map((scenario) => scenario.topology),
+      ['timeline-first', 'canvas-first', 'chat-first-workbench', 'constructor-shell']
+    );
+    assert.deepEqual(
+      demo.professionalComponentContract.templateContractGaps,
+      ['sn-timeline-editor', 'sn-canvas-viewport']
+    );
+    assert.deepEqual(
+      [
+        'chat-workspace',
+        'sn-video-player',
+        'node-canvas',
+        'canvas-graph',
+        'sn-data-table',
+        'sn-rich-text-editor',
+        'sn-kanban-board',
+        'source-editor',
+        'sn-source-diff',
+        'code-block',
+        'cascade-theme-editor',
+      ].filter((component) => !demo.professionalComponentContract.publicComponents.includes(component)),
+      []
+    );
+    let scenarioPanels = Object.fromEntries(demo.professionalScenarios.map((scenario) => [
+      scenario.id,
+      Object.values(scenario.config.panelTypes).map((panelConfig) => panelConfig.component),
+    ]));
+    assert.deepEqual(
+      scenarioPanels['video-editing'],
+      ['chat-workspace', 'sn-video-player', 'sn-timeline', 'node-canvas', 'canvas-graph']
+    );
+    assert.deepEqual(
+      scenarioPanels['automation-editing'],
+      ['chat-workspace', 'node-canvas', 'sn-data-table', 'sn-rich-text-editor', 'sn-kanban-board', 'sn-timeline', 'sn-file-upload']
+    );
+    assert.deepEqual(
+      scenarioPanels['agent-programming'],
+      ['chat-workspace', 'sn-tree-panel', 'source-editor', 'sn-source-diff', 'code-block', 'sn-event-feed', 'node-canvas', 'canvas-graph']
+    );
+    assert.deepEqual(
+      scenarioPanels['constructor-control'],
+      ['layout-shell-menu', 'project-tabs', 'palette-browser', 'panel-layout', 'inspector-panel', 'cascade-theme-editor', 'sn-menu']
+    );
+    let chatScenarios = demo.professionalScenarios.filter((scenario) => scenario.panelData?.chat);
+    assert.ok(chatScenarios.length >= 3);
+    for (let scenario of chatScenarios) {
+      let chatState = scenario.panelData?.chat?.workspaceState;
+      assert.equal(chatState?.voiceControls?.input?.visible, true);
+      assert.equal(chatState?.voiceControls?.input?.state, 'idle');
+      assert.equal(chatState?.voiceControls?.command?.visible, false);
+      assert.equal(chatState?.voiceControls?.language?.mode, 'auto');
+      assert.equal(chatState?.composer?.leadingControls?.[0]?.icon, 'attach_file');
+      assert.ok(chatState?.composer?.attachedContext?.length >= 2);
+      assert.ok(chatState?.messages?.some((message) => message.role === 'agent'));
+      assert.ok(chatState?.messages?.some((message) => message.role === 'tool'));
+      assert.ok(chatState?.messages?.some((message) => message.role === 'thinking'));
+      assert.ok(chatState?.messages?.some((message) => message.role === 'board'));
+    }
+    let expectedScenarioConfigTemplates = {
+      'video-editing': 'video-studio',
+      'automation-editing': 'social-automation',
+      'agent-programming': 'agent-workspace',
+      'constructor-control': 'template/manual/edit-existing',
+    };
+    for (let scenario of demo.professionalScenarios) {
+      assert.equal(validateWorkspaceConfig(scenario.config, { strict: true }).valid, true);
+      assert.equal(scenario.config.construction.plan.scenarioId, scenario.id);
+      assert.equal(scenario.config.construction.sourceTemplate, expectedScenarioConfigTemplates[scenario.id]);
+      assert.ok(scenario.panelData);
+      assert.ok(scenario.acceptance.length >= 5);
+    }
     assert.deepEqual(demo.requiredWidgets, [
       'agent-chat',
       'service-blueprint',
@@ -254,6 +338,36 @@ describe('realtime builder demo', () => {
       assert.equal(result.status, 'ok');
       assert.equal(contract.requiredWidgets.includes('theme-editor'), true);
       assert.equal(contract.acceptanceMatrix.every((item) => item.status === 'pass'), true);
+      assert.equal(contract.defaultScenarioId, 'video-editing');
+      assert.deepEqual(
+        contract.professionalScenarios.map((scenario) => scenario.id),
+        ['video-editing', 'automation-editing', 'agent-programming', 'constructor-control']
+      );
+      assert.deepEqual(
+        contract.professionalScenarios.map((scenario) => scenario.sourceTemplate),
+        ['video-studio', 'social-automation', 'agent-workspace + editor', 'template/manual/edit-existing']
+      );
+      assert.deepEqual(
+        [
+          'sn-video-player',
+          'node-canvas',
+          'canvas-graph',
+          'sn-data-table',
+          'sn-rich-text-editor',
+          'sn-kanban-board',
+          'source-editor',
+          'sn-source-diff',
+          'code-block',
+          'cascade-theme-editor',
+        ].filter((component) => !contract.professionalScenarios
+          .flatMap((scenario) => scenario.components)
+          .includes(component)),
+        []
+      );
+      assert.deepEqual(
+        contract.professionalComponentContract.templateContractGaps,
+        ['sn-timeline-editor', 'sn-canvas-viewport']
+      );
       assert.deepEqual(contract.playStages, [
         'workspace-name',
         'target-register',
@@ -330,6 +444,7 @@ describe('realtime builder demo', () => {
       assert.match(html, /<script type="importmap">/);
       assert.match(app, /mountWorkspace/);
       assert.match(app, /from 'symbiote-ui\/ui'/);
+      assert.match(app, /symbiote-ui\/board/);
       assert.doesNotMatch(app, /symbiote-ui\/layout\/Layout\/Layout\.js/);
       assert.doesNotMatch(app, /symbiote-ui\/chat\/ChatWorkspace\/ChatWorkspace\.js/);
       assert.doesNotMatch(app, /symbiote-ui\/themes\/CascadeThemeEditor\/CascadeThemeEditor\.js/);
@@ -338,17 +453,90 @@ describe('realtime builder demo', () => {
       assert.equal(app.includes('CASCADE_THEME_DEFAULTS'), true);
       assert.match(app, /createSymbioteLayoutRuntime/);
       assert.equal(app.includes("document.createElement('panel-layout')"), true);
-      assert.equal(app.includes('customElements.define'), true);
+      assert.equal(app.includes('customElements.define'), false);
+      assert.match(app, /defineModule\(tagName/);
       assert.match(app, /chat-workspace/);
       assert.match(app, /cascade-theme-editor/);
       assert.match(app, /cascade-theme-widget/);
       assert.match(app, /sn-card/);
       assert.match(app, /sn-description-list/);
       assert.match(app, /sn-segmented-control/);
-      assert.match(app, /sn-agent-chat-panel/);
-      assert.match(app, /sn-theme-editor-widget/);
+      assert.match(app, /chat-workspace/);
+      assert.match(app, /panel-layout/);
+      assert.match(app, /cascade-theme-editor/);
+      assert.doesNotMatch(app, /sn-agent-chat-panel/);
+      assert.doesNotMatch(app, /sn-service-blueprint-panel/);
+      assert.doesNotMatch(app, /sn-layout-builder-surface/);
+      assert.doesNotMatch(app, /sn-widget-registry-panel/);
+      assert.doesNotMatch(app, /sn-bindings-inspector-panel/);
+      assert.doesNotMatch(app, /sn-adaptive-rules-panel/);
+      assert.doesNotMatch(app, /sn-validation-checklist-panel/);
+      assert.doesNotMatch(app, /sn-theme-editor-widget/);
+      assert.match(app, /activeScenarioId/);
+      assert.match(app, /renderScenarioRail/);
+      assert.match(app, /scenarioSidebarSections/);
+      assert.match(app, /syncScenarioSidebar/);
+      assert.match(app, /sidebarActiveByScenario/);
+      assert.match(app, /scenarioPanelOrder/);
+      assert.match(app, /visibleScenarioPanelTypes/);
+      assert.match(app, /mountedScenarioPanelTypes/);
+      assert.match(app, /hydratedScenarioPanelTypes/);
+      assert.match(app, /buildPhaseState/);
+      assert.match(app, /progressiveScenarioConfig/);
+      assert.match(app, /pruneLayoutNode/);
+      assert.match(app, /filterScenarioModules/);
+      assert.match(app, /sn-empty-state/);
+      assert.match(app, /layoutSidebar\.setSections/);
+      assert.match(app, /sidebarVisible: false/);
+      assert.match(app, /dataset\.contextScenarioId/);
+      assert.match(app, /dataset\.activeSidebarSection/);
+      assert.match(app, /dataset\.mountedSectionIds/);
+      assert.match(app, /dataset\.pendingSectionIds/);
+      assert.match(app, /professional-scenario:\$\{scenario\.id\}/);
+      assert.match(app, /dataset\.scenarioId/);
+      assert.match(app, /dataset\.scenarioTemplate/);
+      assert.match(app, /dataset\.professionalScenario/);
+      assert.match(app, /dataset\.assemblyPhase/);
+      assert.match(app, /dataset\.assemblyPhaseProgress/);
+      assert.match(app, /dataset\.visibleScenarioPanels/);
+      assert.match(app, /dataset\.visibleScenarioPanelCount/);
+      assert.match(app, /dataset\.mountedScenarioPanels/);
+      assert.match(app, /dataset\.mountedScenarioPanelCount/);
+      assert.match(app, /dataset\.hydratedScenarioPanels/);
+      assert.match(app, /dataset\.hydratedScenarioPanelCount/);
+      assert.match(app, /dataset\.plannedScenarioPanels/);
+      assert.match(app, /dataset\.plannedScenarioPanelCount/);
+      assert.match(app, /dataset\.uiAssemblyStep/);
+      assert.match(app, /dataset\.uiAssemblyTotal/);
+      assert.match(app, /dataset\.buildPanelTypes/);
+      assert.match(app, /dataset\.mountedPanelTypes/);
+      assert.match(app, /dataset\.hydratedPanelTypes/);
+      assert.match(app, /dataset\.plannedPanelTypes/);
+      assert.match(app, /video-editing/);
+      assert.match(app, /automation-editing/);
+      assert.match(app, /agent-programming/);
+      assert.match(app, /constructor-control/);
+      assert.match(app, /sn-video-player/);
+      assert.match(app, /node-canvas/);
+      assert.match(app, /canvas-graph/);
+      assert.match(app, /sn-data-table/);
+      assert.match(app, /sn-rich-text-editor/);
+      assert.match(app, /sn-kanban-board/);
+      assert.match(app, /sn-file-upload/);
+      assert.match(app, /sn-tree-panel/);
+      assert.match(app, /source-editor/);
+      assert.match(app, /sn-source-diff/);
+      assert.match(app, /code-block/);
+      assert.match(app, /sn-event-feed/);
+      assert.match(app, /layout-shell-menu/);
+      assert.match(app, /project-tabs/);
+      assert.match(app, /palette-browser/);
       assert.match(app, /Play/);
+      assert.match(app, /demo-action-label/);
       assert.match(app, /demo-build-progress/);
+      assert.match(app, /demo-operation-chip/);
+      assert.match(app, /chat-workspace-view/);
+      assert.match(app, /demoVoiceControls/);
       assert.match(app, /operationIndex/);
       assert.match(app, /dataset\.buildKind/);
       assert.match(app, /dataset\.executionModel/);
@@ -358,12 +546,12 @@ describe('realtime builder demo', () => {
       assert.match(app, /Host services/);
       assert.match(app, /Package readiness/);
       assert.match(app, /Runtime imports/);
-      assert.match(app, /data-package-readiness/);
-      assert.match(app, /Service blueprint/);
-      assert.match(app, /Widget registry/);
+      assert.match(app, /packageEvidence\.dataset\.packageReadiness/);
       assert.match(app, /dataset\.collapsedPanels/);
       assert.match(app, /dataset\.themeEditorState/);
-      assert.match(app, /mounted\.updateConfig\(stage\.config/);
+      assert.match(app, /defineModule\(tagName/);
+      assert.doesNotMatch(app, /customElements\.define\(tagName, class extends HTMLElement/);
+      assert.match(app, /mounted\.updateConfig\(config/);
       assert.doesNotMatch(app, /\b(?:attachShadow|shadowRoot)\b/);
       assert.match(app, /updateConfig\(nextConfig, options = \{\}\)/);
       assert.match(app, /dataset\.runtimeInstanceId/);
@@ -373,18 +561,27 @@ describe('realtime builder demo', () => {
       assert.match(app, /dataset\.themeTransitionStage/);
       assert.match(app, /themeTransitionSource = 'cascade-theme-change'/);
       assert.match(app, /themeTransitionChanged/);
+      assert.match(app, /themeTransitionFromComputedHue/);
+      assert.match(app, /themeTransitionToComputedHue/);
+      assert.match(app, /themeTransitionComputedChanged/);
       assert.match(app, /themeTransitionUpdateCount/);
       assert.match(app, /layout\.\$\.layoutTree = normalizeLayoutNode\(nextConfig\.layout\)/);
       assert.doesNotMatch(app, /mounted\.destroy\(\);\s*mounted = null;/);
       assert.match(app, /cascade-theme-open-full/);
       assert.match(app, /openPanel\?\.\('theme-editor'/);
       assert.match(app, /applyAdaptiveScenario/);
-      assert.match(app, /renderStage\(demo\.stages\.length - 1\)/);
+      assert.match(app, /renderStage\(0\);/);
+      assert.doesNotMatch(app, /renderStage\(demo\.stages\.length - 1\)/);
+      assert.doesNotMatch(app, /operationIndex = buildOperations\(demo\.stages\.at\(-1\)\)\.length - 1/);
       assert.match(app, /data-adaptive-state="collapsed"/);
       assert.doesNotMatch(app, /class="demo-chat"/);
       assert.doesNotMatch(app, /class="demo-inspector"/);
       assert.doesNotMatch(states, /default-light/);
       assert.match(states, /default-dark-cascade/);
+      assert.match(states, /"voiceControls"/);
+      assert.match(states, /"role": "tool"/);
+      assert.match(states, /"role": "thinking"/);
+      assert.match(states, /"role": "board"/);
       assert.equal(html.includes('"symbiote-ui/"'), true);
       assert.equal(html.includes('"symbiote-ui/ui"'), true);
       assert.equal(html.includes('"symbiote-engine/"'), true);
@@ -393,7 +590,7 @@ describe('realtime builder demo', () => {
       assert.equal(html.includes('"@symbiotejs/symbiote"'), true);
       assert.doesNotMatch(app, /\/Users\//);
       assert.doesNotMatch(states, /localhost|\/Users\//);
-      assert.equal(config.panelTypes['theme-editor'].component, 'sn-theme-editor-widget');
+      assert.equal(config.panelTypes['theme-editor'].component, 'cascade-theme-editor');
     });
   });
 
@@ -402,6 +599,30 @@ describe('realtime builder demo', () => {
 
     assert.match(smoke, /--demo/);
     assert.match(smoke, /realtime-builder/);
+    assert.match(smoke, /browserCacheCandidates/);
+    assert.match(smoke, /symbiote-ui-browsers/);
+    assert.match(smoke, /puppeteer/);
+    assert.match(smoke, /Google Chrome for Testing/);
+    assert.match(smoke, /SYMBIOTE_BROWSER_HEADLESS/);
+    assert.match(smoke, /--headless/);
+    assert.match(smoke, /`--headless=\$\{headless\}`/);
+    assert.match(smoke, /SYMBIOTE_BROWSER_DRIVER/);
+    assert.match(smoke, /--driver/);
+    assert.match(smoke, /playwright/);
+    assert.match(smoke, /SYMBIOTE_PLAYWRIGHT_BROWSER/);
+    assert.match(smoke, /--playwright-browser/);
+    assert.match(smoke, /runPlaywrightSmoke/);
+    assert.match(smoke, /createPlaywrightDiagnostics/);
+    assert.match(smoke, /page\.evaluate\(\(source\) => globalThis\.eval\(source\), expression\)/);
+    assert.match(smoke, /browser: `playwright:\$\{result\.browserName\}`/);
+    assert.match(smoke, /SYMBIOTE_BROWSER_CDP_PORT/);
+    assert.match(smoke, /DevToolsActivePort/);
+    assert.match(smoke, /readDevToolsActivePort/);
+    assert.match(smoke, /Invalid Chrome DevTools Protocol port/);
+    assert.match(smoke, /if \(cdpPort === 0\)/);
+    assert.match(smoke, /waitForCdp\(cdpPort, timeout, browserProcess\)/);
+    assert.match(smoke, /Browser exited before Chrome DevTools Protocol/);
+    assert.match(smoke, /Browser exited before Chrome wrote DevToolsActivePort/);
     assert.match(smoke, /Realtime builder Play/);
     assert.match(smoke, /data-action="play"/);
     assert.match(smoke, /mobile adaptive preview/);
@@ -409,23 +630,71 @@ describe('realtime builder demo', () => {
     assert.match(smoke, /chat-workspace/);
     assert.match(smoke, /cascade-theme-widget/);
     assert.match(smoke, /cascade-theme-editor/);
+    assert.match(smoke, /video-editing/);
+    assert.match(smoke, /automation-editing/);
+    assert.match(smoke, /agent-programming/);
+    assert.match(smoke, /constructor-control/);
+    assert.match(smoke, /sn-video-player/);
+    assert.match(smoke, /node-canvas/);
+    assert.match(smoke, /canvas-graph/);
+    assert.match(smoke, /sn-data-table/);
+    assert.match(smoke, /sn-rich-text-editor/);
+    assert.match(smoke, /sn-kanban-board/);
+    assert.match(smoke, /sn-file-upload/);
+    assert.match(smoke, /sn-tree-panel/);
+    assert.match(smoke, /source-editor/);
+    assert.match(smoke, /sn-source-diff/);
+    assert.match(smoke, /code-block/);
+    assert.match(smoke, /sn-event-feed/);
+    assert.match(smoke, /layout-shell-menu/);
+    assert.match(smoke, /project-tabs/);
+    assert.match(smoke, /palette-browser/);
     assert.match(smoke, /hasAttribute\('storage-key'\)/);
     assert.match(smoke, /hasAttribute\('target-selector'\)/);
     assert.match(smoke, /customElements\.get\('cascade-theme-editor'\)/);
     assert.match(smoke, /themeWidgetUsesDefaults/);
     assert.match(smoke, /themeEditorDefined/);
-    assert.match(smoke, /sn-card/);
-    assert.match(smoke, /sn-button/);
-    assert.match(smoke, /sn-segmented-control/);
     assert.match(smoke, /\.demo-chat, \.demo-inspector/);
     assert.match(smoke, /appShadowHosts\.length === 0/);
     assert.match(smoke, /runtimeInstanceId/);
     assert.match(smoke, /atomicUpdateCount/);
+    assert.match(smoke, /scenarioRailReady/);
+    assert.match(smoke, /sidebarContextReady/);
+    assert.match(smoke, /sidebarSectionIds/);
+    assert.match(smoke, /id\.startsWith\(scenarioId \+ ':'\)/);
+    assert.match(smoke, /switchScenario/);
+    assert.match(smoke, /scenarioUpdateCounts/);
+    assert.match(smoke, /scenarioDataProofs/);
+    assert.match(smoke, /scenarioDataProofReady/);
+    assert.match(smoke, /scenarioProviderDefinitionState/);
+    assert.match(smoke, /scenarioProvidersDefined/);
+    assert.match(smoke, /customElements\.get\(tagName\)/);
+    assert.match(smoke, /scenarioProviderDefinitionEvidence/);
+    assert.match(smoke, /data-demo-proof/);
+    assert.match(smoke, /Product shot/);
+    assert.match(smoke, /LinkedIn/);
+    assert.match(smoke, /applyPatch/);
+    assert.match(smoke, /validateWorkspacePatch/);
+    assert.match(smoke, /professionalScenario/);
     assert.match(smoke, /history\.length/);
     assert.match(smoke, /initialHistoryLength/);
     assert.match(smoke, /initialLocationHref/);
     assert.match(smoke, /atomicStageCounts/);
     assert.match(smoke, /atomicStageCountsReady/);
+    assert.match(smoke, /initialAssemblyEvidence/);
+    assert.match(smoke, /assemblySamples/);
+    assert.match(smoke, /Realtime builder UI assembly moved backward/);
+    assert.match(smoke, /previousAssemblyState/);
+    assert.match(smoke, /initialAssemblyWasPartial/);
+    assert.match(smoke, /Realtime builder initial state is not a partial UI assembly/);
+    assert.match(smoke, /finalAssemblyComplete/);
+    assert.match(smoke, /mountedPanelTypes/);
+    assert.match(smoke, /assemblyPhase === 'layout'/);
+    assert.match(smoke, /mountedPanelCount === 0/);
+    assert.match(smoke, /hydratedPanelCount === 0/);
+    assert.match(smoke, /emptyStateCount > 0/);
+    assert.match(smoke, /assemblyPhase === 'theme'/);
+    assert.match(smoke, /__symbioteRealtimeSmokePromise/);
     assert.match(smoke, /mobileLayoutIdentityPreserved/);
     assert.match(smoke, /mobileWorkspaceIdentityPreserved/);
     assert.match(smoke, /\['theme-mode', 'theme-hue'\]\.includes\(themeTransitionStage\)/);
@@ -434,16 +703,18 @@ describe('realtime builder demo', () => {
     assert.match(smoke, /themeTransitionFromMode === 'dark'/);
     assert.match(smoke, /themeTransitionToMode === 'dark'/);
     assert.match(smoke, /Number\(themeTransitionFromHue\) !== Number\(themeTransitionToHue\)/);
+    assert.match(smoke, /themeTransitionFromComputedHue !== themeTransitionToComputedHue/);
+    assert.match(smoke, /themeTransitionComputedChanged === 'true'/);
     assert.match(smoke, /themeTransitionUpdateCount > 0/);
+    assert.match(smoke, /queryState/);
     assert.match(smoke, /mountedWorkspace/);
-    assert.match(smoke, /mountedWorkspace = workspace\?\.querySelector\('\.symbiote-workspace'\)/);
     assert.match(smoke, /lastUpdatedStage === 'verification-scope'/);
     assert.match(smoke, /data-current-evidence/);
     assert.match(smoke, /dataset\.executionModel/);
     assert.match(smoke, /dataset\.hostServices/);
     assert.match(smoke, /data-package-readiness/);
     assert.match(smoke, /cascade-theme-open-full/);
-    assert.match(smoke, /data-adaptive-state="docked"/);
+    assert.match(smoke, /data-adaptive-state/);
     assert.match(smoke, /themeEditorState/);
     assert.doesNotMatch(smoke, /demo-build-step/);
     assert.doesNotMatch(smoke, /Adaptive and theme state/);

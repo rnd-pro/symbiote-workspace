@@ -51,9 +51,11 @@ export function workspacePackageRoot(metaUrl = import.meta.url) {
   return resolve(dirname(fileURLToPath(metaUrl)), '../..');
 }
 
-async function readablePackageRoot(path) {
+async function readablePackageRoot(path, requiredFiles = ['package.json']) {
   try {
-    await readFile(join(path, 'package.json'));
+    for (let file of requiredFiles) {
+      await readFile(join(path, file));
+    }
     return path;
   } catch {
     return null;
@@ -63,11 +65,11 @@ async function readablePackageRoot(path) {
 export async function symbioteUiRoot(workspaceRoot) {
   let candidates = [
     resolve(workspaceRoot, '..', 'symbiote-dev-plane', 'repos', 'symbiote-ui'),
-    resolve(workspaceRoot, 'node_modules', 'symbiote-ui'),
     resolve(workspaceRoot, '..', 'symbiote-ui'),
+    resolve(workspaceRoot, 'node_modules', 'symbiote-ui'),
   ];
   for (let candidate of candidates) {
-    let root = await readablePackageRoot(candidate);
+    let root = await readablePackageRoot(candidate, ['package.json', 'ui/index.js', 'board/index.js']);
     if (root) return root;
   }
   return candidates.at(-1);

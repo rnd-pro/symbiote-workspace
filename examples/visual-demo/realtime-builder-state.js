@@ -14,6 +14,41 @@ const DEMO_IMPORT_MAP_KEYS = Object.freeze([
   'symbiote-ui/ui',
   'symbiote-workspace/browser',
 ]);
+const PROFESSIONAL_COMPONENT_CONTRACT = Object.freeze({
+  symbioteUiVersion: '0.3.0-alpha.45',
+  publicComponents: [
+    'panel-layout',
+    'chat-workspace',
+    'sn-video-player',
+    'sn-timeline',
+    'node-canvas',
+    'canvas-graph',
+    'graph-explorer-shell',
+    'inspector-panel',
+    'sn-tree-panel',
+    'source-editor',
+    'source-viewer',
+    'code-block',
+    'sn-source-diff',
+    'sn-data-table',
+    'sn-rich-text-editor',
+    'sn-file-upload',
+    'sn-kanban-board',
+    'palette-browser',
+    'layout-shell-menu',
+    'layout-sidebar',
+    'project-tabs',
+    'cascade-theme-widget',
+    'cascade-theme-editor',
+    'quick-open',
+    'sn-toolbar',
+    'sn-menu',
+  ],
+  templateContractGaps: [
+    'sn-timeline-editor',
+    'sn-canvas-viewport',
+  ],
+});
 const CANONICAL_DEMO_QUESTIONS = Object.freeze([
   {
     id: 'workspace-name',
@@ -107,6 +142,8 @@ function panelType(title, component, icon, options = {}) {
     ...(options.settings ? { settings: options.settings } : {}),
     ...(options.slots ? { slots: options.slots } : {}),
     ...(options.menuActions ? { menuActions: options.menuActions } : {}),
+    ...(options.attributes ? { attributes: options.attributes } : {}),
+    ...(options.properties ? { properties: options.properties } : {}),
   };
 }
 
@@ -223,6 +260,783 @@ function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function scenarioModule(panelTypeName, component, capabilities, options = {}) {
+  return {
+    tagName: component,
+    schemaVersion: '0.1.0',
+    provider: 'symbiote-ui',
+    descriptor: {
+      schemaVersion: '2.0.0',
+      package: 'symbiote-ui',
+      component,
+    },
+    placement: {
+      panelType: panelTypeName,
+      regions: options.regions || ['main'],
+    },
+    capabilities,
+    ...(options.actions ? { actions: options.actions } : {}),
+    ...(options.toolbarItems ? { toolbarItems: options.toolbarItems } : {}),
+    ...(options.settings ? { settings: options.settings } : {}),
+    ...(options.events ? { events: options.events } : {}),
+    ...(options.bindings ? { bindings: options.bindings } : {}),
+    ...(options.runtimeSlots ? { runtimeSlots: options.runtimeSlots } : {}),
+  };
+}
+
+function professionalPanelType(title, component, icon, options = {}) {
+  return panelType(title, component, icon, {
+    behavior: {
+      importance: options.importance || 70,
+      minInlineSize: options.minInlineSize || 260,
+      minBlockSize: options.minBlockSize || 160,
+      collapse: options.collapse || 'auto',
+      ...(options.behavior || {}),
+    },
+    ...(options.attributes ? { attributes: options.attributes } : {}),
+    ...(options.properties ? { properties: options.properties } : {}),
+    ...(options.menuActions ? { menuActions: options.menuActions } : {}),
+    ...(options.settings ? { settings: options.settings } : {}),
+  });
+}
+
+function professionalBaseConfig(options) {
+  let modules = options.modules || [];
+  return {
+    version: '0.3.0',
+    name: options.name,
+    register: options.register,
+    intent: {
+      brief: options.brief,
+      targetRegister: options.register,
+      audience: options.audience || ['professional workspace operators'],
+      constraints: ['mock data only', 'host neutral workspace config', 'public symbiote-ui components'],
+      executionModel: options.executionModel || 'graph-execution',
+      hostServices: [...(options.hostServices || DEMO_HOST_SERVICES)],
+      requiredCapabilities: unique(modules.flatMap((item) => item.capabilities.slice(0, 1))),
+    },
+    execution: {
+      model: options.executionModel || 'graph-execution',
+      hostServices: [...(options.hostServices || DEMO_HOST_SERVICES)],
+    },
+    theme: {
+      recipe: options.themeRecipe || 'professional-cascade',
+      params: options.themeParams || { mode: 'dark', hue: 218, chroma: 28, brightness: 0, contrast: 60 },
+      relations: { surfaceStep: 1.08, radiusScale: 0.82 },
+      overrides: { '--sn-workspace-gap': '10px' },
+    },
+    rootBehavior: {
+      responsiveMode: 'drawer',
+      responsiveBreakpoint: options.responsiveBreakpoint || 860,
+      mobileDock: 'primary',
+      swipeControl: 'edge',
+    },
+    groups: options.groups,
+    sections: options.sections,
+    panelTypes: options.panelTypes,
+    layouts: options.layouts || {},
+    layout: options.layout,
+    events: options.events || [],
+    data: {
+      bindings: options.bindings || [],
+      graphs: options.graphs || [],
+    },
+    construction: {
+      sourceTemplate: options.sourceTemplate,
+      plan: {
+        scenarioId: options.id,
+        layout: {
+          topology: options.topology,
+          layoutIds: Object.keys(options.layouts || {}),
+          regions: options.regions,
+        },
+        modules: modules.map((item) => ({
+          panelType: item.placement.panelType,
+          component: item.tagName,
+          capabilities: item.capabilities,
+          placement: item.placement,
+          actions: item.actions || [],
+          toolbarItems: item.toolbarItems || [],
+          settings: item.settings || [],
+          events: item.events || {},
+          bindings: item.bindings || [],
+          runtimeSlots: item.runtimeSlots || [],
+        })),
+        bindings: options.bindings || [],
+        execution: {
+          model: options.executionModel || 'graph-execution',
+          requiredHostServices: [...(options.hostServices || DEMO_HOST_SERVICES)],
+        },
+        theme: {
+          source: 'symbiote-ui/default-cascade',
+          widget: 'cascade-theme-widget',
+          editorPanel: 'theme-editor',
+        },
+      },
+    },
+    components: {
+      catalog: unique(modules.map((item) => item.tagName)),
+      modules,
+    },
+    validation: {
+      reports: [
+        report(`${options.id}-layout`, 'layout', 'pass', 'info', `${options.name} layout uses panel-layout regions.`),
+        report(`${options.id}-modules`, 'modules', 'pass', 'info', `${options.name} modules come from public symbiote-ui components.`),
+        report(`${options.id}-theme`, 'theme', 'pass', 'info', 'Default Cascade theme is inherited from symbiote-ui.'),
+      ],
+    },
+  };
+}
+
+function graphModel(kind) {
+  let presets = {
+    video: {
+      nodes: [
+        { id: 'media', type: 'media/source', name: 'Source', outputs: [{ name: 'frame', type: 'frame', label: 'frame' }] },
+        { id: 'grade', type: 'effect/color-grade', name: 'Grade', inputs: [{ name: 'frame', type: 'frame', label: 'in' }], outputs: [{ name: 'frame', type: 'frame', label: 'out' }] },
+        { id: 'mix', type: 'effect/composite', name: 'Composite', inputs: [{ name: 'frame', type: 'frame', label: 'layer' }], outputs: [{ name: 'frame', type: 'frame', label: 'out' }] },
+        { id: 'render', type: 'media/render', name: 'Render', inputs: [{ name: 'frame', type: 'frame', label: 'frame' }] },
+      ],
+      connections: [
+        { id: 'video-c1', from: 'media', out: 'frame', to: 'grade', in: 'frame' },
+        { id: 'video-c2', from: 'grade', out: 'frame', to: 'mix', in: 'frame' },
+        { id: 'video-c3', from: 'mix', out: 'frame', to: 'render', in: 'frame' },
+      ],
+    },
+    automation: {
+      nodes: [
+        { id: 'trigger', type: 'queue/trigger', name: 'Trigger', outputs: [{ name: 'item', type: 'message', label: 'item' }] },
+        { id: 'classify', type: 'ai/classify', name: 'Classify', inputs: [{ name: 'item', type: 'message', label: 'item' }], outputs: [{ name: 'intent', type: 'intent', label: 'intent' }] },
+        { id: 'draft', type: 'llm/draft', name: 'Draft reply', inputs: [{ name: 'intent', type: 'intent', label: 'intent' }], outputs: [{ name: 'draft', type: 'text', label: 'draft' }] },
+        { id: 'approval', type: 'human/approval', name: 'Approval', inputs: [{ name: 'draft', type: 'text', label: 'draft' }] },
+      ],
+      connections: [
+        { id: 'auto-c1', from: 'trigger', out: 'item', to: 'classify', in: 'item' },
+        { id: 'auto-c2', from: 'classify', out: 'intent', to: 'draft', in: 'intent' },
+        { id: 'auto-c3', from: 'draft', out: 'draft', to: 'approval', in: 'draft' },
+      ],
+    },
+    agent: {
+      nodes: [
+        { id: 'prompt', type: 'agent/prompt', name: 'Prompt', outputs: [{ name: 'task', type: 'task', label: 'task' }] },
+        { id: 'plan', type: 'agent/plan', name: 'Plan', inputs: [{ name: 'task', type: 'task', label: 'task' }], outputs: [{ name: 'steps', type: 'steps', label: 'steps' }] },
+        { id: 'edit', type: 'agent/edit', name: 'Edit', inputs: [{ name: 'steps', type: 'steps', label: 'steps' }], outputs: [{ name: 'patch', type: 'patch', label: 'patch' }] },
+        { id: 'review', type: 'agent/review', name: 'Review', inputs: [{ name: 'patch', type: 'patch', label: 'patch' }] },
+      ],
+      connections: [
+        { id: 'agent-c1', from: 'prompt', out: 'task', to: 'plan', in: 'task' },
+        { id: 'agent-c2', from: 'plan', out: 'steps', to: 'edit', in: 'steps' },
+        { id: 'agent-c3', from: 'edit', out: 'patch', to: 'review', in: 'patch' },
+      ],
+    },
+  };
+  let model = presets[kind] || presets.agent;
+  return {
+    readonly: true,
+    ...model,
+    positions: {
+      [model.nodes[0].id]: [40, 54],
+      [model.nodes[1].id]: [260, 54],
+      [model.nodes[2].id]: [480, 54],
+      [model.nodes[3].id]: [700, 54],
+    },
+  };
+}
+
+function overviewGraph(kind) {
+  let model = graphModel(kind);
+  return {
+    nodes: model.nodes.map((node) => ({
+      id: node.id,
+      label: node.name,
+      type: node.type,
+      status: node.id === model.nodes.at(-1).id ? 'running' : 'ready',
+    })),
+    connections: model.connections.map((connection) => ({
+      id: connection.id,
+      source: connection.from,
+      target: connection.to,
+    })),
+  };
+}
+
+function professionalChatState(title, messages) {
+  let baseMessages = messages.filter(Boolean);
+  let userPrompt = baseMessages[0] || `Build ${title} from existing modules.`;
+  let agentPlan = baseMessages[1] || 'Selecting template topology and library panels.';
+  let followUpPrompt = baseMessages[2] || 'Patch the active workspace without a page reload.';
+  let transcript = [
+    {
+      id: 'professional-user-0',
+      role: 'user',
+      text: userPrompt,
+    },
+    {
+      id: 'professional-agent-0',
+      role: 'agent',
+      text: agentPlan,
+    },
+    {
+      id: 'professional-thinking-0',
+      role: 'thinking',
+      elapsedText: '00:02',
+      status: 'planning topology',
+      text: 'Resolve template, panel regions, module capabilities, and Cascade theme.',
+    },
+    {
+      id: 'professional-tool-0',
+      role: 'tool',
+      name: 'construct_workspace_patch',
+      input: {
+        template: title,
+        mode: 'atomic-update',
+        source: 'symbiote-ui manifest',
+      },
+      result: {
+        layout: 'panel-layout',
+        theme: 'default-dark-cascade',
+        reload: false,
+      },
+      isLatestTool: true,
+    },
+    {
+      id: 'professional-board-0',
+      role: 'board',
+      cardItems: [
+        { id: 'template', title: 'Template selected', status: 'done', icon: 'dashboard_customize' },
+        { id: 'modules', title: 'Library modules mounted', status: 'running', icon: 'widgets' },
+        { id: 'theme', title: 'Cascade theme applied', status: 'done', icon: 'palette' },
+      ],
+    },
+    {
+      id: 'professional-user-1',
+      role: 'user',
+      text: followUpPrompt,
+    },
+    {
+      id: 'professional-agent-1',
+      role: 'agent',
+      text: 'Applied through `chat-workspace`, `panel-layout`, and public module contracts.',
+      isStreaming: true,
+    },
+  ];
+  return {
+    sidebar: 'hidden',
+    chats: [{ id: 'professional-demo', title, subtitle: 'Constructing workspace config' }],
+    activeChatId: 'professional-demo',
+    messages: transcript,
+    messagesOptions: { scrollToBottom: true },
+    composer: {
+      placeholder: 'Describe the next module, split, binding, or theme change...',
+      value: '',
+      attachedContext: [
+        { id: 'template', icon: 'dashboard_customize', name: title, title: 'Active template' },
+        { id: 'theme', icon: 'palette', name: 'default cascade', title: 'Cascade theme' },
+      ],
+      leadingControls: [
+        { id: 'attach', kind: 'button', icon: 'attach_file', label: 'Attach', title: 'Attach context' },
+      ],
+      footerControls: [
+        { id: 'template', kind: 'button', icon: 'dashboard_customize', label: 'Template', value: title },
+        { id: 'manual', kind: 'button', icon: 'open_with', label: 'Manual', value: 'Split panel' },
+        { id: 'edit-existing', kind: 'button', icon: 'difference', label: 'Edit existing', value: 'Patch' },
+      ],
+    },
+    voiceControls: {
+      input: {
+        visible: true,
+        enabled: true,
+        state: 'idle',
+      },
+      wakeListen: {
+        visible: false,
+        enabled: true,
+        active: false,
+        commandText: 'builder',
+      },
+      response: {
+        visible: false,
+        enabled: true,
+        active: false,
+        speaking: false,
+      },
+      command: {
+        visible: false,
+        enabled: true,
+        active: false,
+        text: 'Commands',
+      },
+      language: {
+        visible: false,
+        enabled: true,
+        mode: 'auto',
+        options: [
+          { mode: 'auto', label: 'auto' },
+          { mode: 'ru', label: 'RU' },
+          { mode: 'en', label: 'EN' },
+        ],
+      },
+    },
+    liveStatus: {
+      phase: 'running',
+      title,
+      text: 'Atomic workspace update without page reload.',
+    },
+    backgroundState: 'activity',
+  };
+}
+
+function buildVideoScenario() {
+  let panelTypes = {
+    chat: professionalPanelType('Chat', 'chat-workspace', 'chat', { importance: 100, minInlineSize: 220, collapse: 'never' }),
+    preview: professionalPanelType('Preview', 'sn-video-player', 'smart_display', {
+      importance: 95,
+      minInlineSize: 300,
+      collapse: 'never',
+      attributes: { muted: true, loop: true },
+    }),
+    timeline: professionalPanelType('Timeline', 'sn-timeline', 'view_timeline', { importance: 88, minInlineSize: 300, minBlockSize: 130, collapse: 'never' }),
+    effects: professionalPanelType('Effects Graph', 'node-canvas', 'hub', { importance: 80, minInlineSize: 300, collapse: 'never' }),
+    overview: professionalPanelType('Graph Overview', 'canvas-graph', 'account_tree', { importance: 55, minInlineSize: 180, collapse: 'never' }),
+  };
+  let modules = [
+    scenarioModule('chat', 'chat-workspace', ['chat.workspace', 'agent.review'], { regions: ['chat'] }),
+    scenarioModule('preview', 'sn-video-player', ['video-player', 'media-playback'], { regions: ['preview'] }),
+    scenarioModule('timeline', 'sn-timeline', ['timeline', 'media.timeline'], { regions: ['timeline'] }),
+    scenarioModule('effects', 'node-canvas', ['node-editor-canvas', 'media.effects-graph'], { regions: ['graph'] }),
+    scenarioModule('overview', 'canvas-graph', ['graph-overview', 'semantic-navigation'], { regions: ['graph-overview'] }),
+  ];
+  return {
+    id: 'video-editing',
+    title: 'Video Editing Workspace',
+    sourceTemplate: 'video-studio',
+    topology: 'timeline-first',
+      description: 'Media studio with dominant preview, effects graph, clip inspector, graph overview, and editing timeline.',
+    config: professionalBaseConfig({
+      id: 'video-editing',
+      name: 'Video Editing Workspace',
+      register: 'media-studio',
+      sourceTemplate: 'video-studio',
+      topology: 'timeline-first',
+      brief: 'Construct a professional video editing workspace from media, timeline, node graph, and inspector modules.',
+      groups: [{ id: 'media', name: 'Media', icon: 'movie', color: '--sn-accent' }],
+      sections: [{ id: 'studio', label: 'Studio', icon: 'movie', order: 0, groupId: 'media', layoutId: 'studio' }],
+      panelTypes,
+      layout: split(
+        'horizontal',
+        0.22,
+        panel('chat', { importance: 100, collapse: 'never' }),
+        split(
+          'vertical',
+          0.68,
+          split(
+            'horizontal',
+            0.60,
+            panel('preview', { importance: 95 }),
+            panel('effects')
+          ),
+          split('horizontal', 0.76, panel('timeline'), panel('overview'))
+        )
+      ),
+      layouts: {},
+      regions: {
+        chat: ['chat'],
+        preview: ['preview'],
+        graph: ['effects', 'overview'],
+        timeline: ['timeline'],
+      },
+      modules,
+      bindings: [
+        binding('timeline', 'sn-timeline', 'current-time', 'output', 'state.media.currentTime'),
+        binding('preview', 'sn-video-player', 'playback', 'input', 'state.media.currentTime'),
+        binding('effects', 'node-canvas', 'selection', 'output', 'state.media.selectedEffect'),
+      ],
+      events: [
+        eventBridge('timeline-to-preview', 'timeline', 'timeline-select', { targetPanel: 'preview', targetProperty: 'currentTime' }),
+      ],
+      graphs: [{ id: 'video-effects', ...overviewGraph('video') }],
+      themeParams: { mode: 'dark', hue: 262, chroma: 34, brightness: 0, contrast: 62 },
+    }),
+    panelData: {
+      chat: { workspaceState: professionalChatState('Video editor construction', [
+        'Build a video editing workspace with preview, timeline, effects graph, and clip inspector.',
+        'Selected video-studio topology, mounted dominant media preview, timeline, graph surfaces, and inspector.',
+      ]) },
+      preview: {
+        media: {
+          title: 'Launch cut',
+          subtitle: 'Scene 03 / color pass',
+          duration: '01:18',
+          frame: '00:34',
+        },
+      },
+      timeline: {
+        tracks: [
+          {
+            label: 'Video 1',
+            time: '00:00',
+            variant: 'success',
+            clips: [
+              { label: 'Intro', start: 0, span: 18, color: 'var(--sn-node-selected)' },
+              { label: 'Product shot', start: 20, span: 38, color: 'var(--sn-info-color, #2e90fa)' },
+              { label: 'Outro', start: 62, span: 18, color: 'var(--sn-success-color, #4caf50)' },
+            ],
+          },
+          {
+            label: 'Effects',
+            time: '00:18',
+            variant: 'info',
+            clips: [
+              { label: 'Color grade', start: 14, span: 30, color: 'var(--sn-warning-color, #ff9800)' },
+              { label: 'Composite', start: 46, span: 28, color: 'var(--sn-node-selected)' },
+            ],
+          },
+          {
+            label: 'Audio',
+            time: '00:34',
+            variant: 'neutral',
+            clips: [
+              { label: 'Music bed', start: 4, span: 70, color: 'var(--sn-accent-color, #8b5cf6)' },
+            ],
+          },
+        ],
+        items: [
+          { title: 'Ingest clip', time: '00:00', variant: 'success' },
+          { title: 'Color pass', time: '00:18', variant: 'info' },
+          { title: 'Composite overlay', time: '00:34', variant: 'warning' },
+          { title: 'Render target', time: '01:05', variant: 'neutral' },
+        ],
+      },
+      effects: { editorModel: graphModel('video') },
+      overview: { graphModel: overviewGraph('video') },
+    },
+    acceptance: ['preview', 'timeline', 'effects', 'overview', 'node-canvas-inspector'],
+  };
+}
+
+function buildAutomationScenario() {
+  let panelTypes = {
+    chat: professionalPanelType('Chat', 'chat-workspace', 'chat', { importance: 100, minInlineSize: 320, collapse: 'never' }),
+    workflow: professionalPanelType('Workflow', 'node-canvas', 'hub', { importance: 92, minInlineSize: 380 }),
+    queue: professionalPanelType('Queue', 'sn-data-table', 'table', { importance: 85, minInlineSize: 340 }),
+    reply: professionalPanelType('Reply Editor', 'sn-rich-text-editor', 'edit_note', { importance: 76, minInlineSize: 300 }),
+    approvals: professionalPanelType('Approvals', 'sn-kanban-board', 'view_kanban', { importance: 70, minInlineSize: 300 }),
+    history: professionalPanelType('History', 'sn-timeline', 'timeline', { importance: 60, minInlineSize: 240 }),
+    imports: professionalPanelType('Imports', 'sn-file-upload', 'upload_file', { importance: 42, minInlineSize: 220 }),
+  };
+  let modules = [
+    scenarioModule('chat', 'chat-workspace', ['chat.workspace', 'agent.command-input'], { regions: ['chat'] }),
+    scenarioModule('workflow', 'node-canvas', ['workflow.node-editor', 'automation.graph'], { regions: ['graph'] }),
+    scenarioModule('queue', 'sn-data-table', ['data-table', 'automation.queue'], { regions: ['data-table'] }),
+    scenarioModule('reply', 'sn-rich-text-editor', ['rich-text', 'automation.reply-template'], { regions: ['editor'] }),
+    scenarioModule('approvals', 'sn-kanban-board', ['kanban-board', 'approval-flow'], { regions: ['board'] }),
+    scenarioModule('history', 'sn-timeline', ['timeline', 'automation.history'], { regions: ['history'] }),
+    scenarioModule('imports', 'sn-file-upload', ['file-upload', 'data.import'], { regions: ['imports'] }),
+  ];
+  return {
+    id: 'automation-editing',
+    title: 'Automation Editing Workspace',
+    sourceTemplate: 'social-automation',
+    topology: 'canvas-first',
+    description: 'Automation studio with workflow graph, queue, reply editor, approvals, history, and imports.',
+    config: professionalBaseConfig({
+      id: 'automation-editing',
+      name: 'Automation Editing Workspace',
+      register: 'agent-workspace',
+      sourceTemplate: 'social-automation',
+      topology: 'canvas-first',
+      brief: 'Construct an automation editing workspace with graph, queue, editor, approvals, history, and imports.',
+      groups: [{ id: 'automation', name: 'Automation', icon: 'hub', color: '--sn-info' }],
+      sections: [{ id: 'automation', label: 'Automation', icon: 'hub', order: 0, groupId: 'automation', layoutId: 'automation' }],
+      panelTypes,
+      layout: split(
+        'horizontal',
+        0.23,
+        panel('chat', { importance: 100, collapse: 'never' }),
+        split(
+          'horizontal',
+          0.48,
+          split('vertical', 0.62, panel('workflow'), panel('approvals')),
+          split('vertical', 0.48, panel('queue'), split('horizontal', 0.56, panel('reply'), split('vertical', 0.5, panel('history'), panel('imports'))))
+        )
+      ),
+      regions: {
+        chat: ['chat'],
+        graph: ['workflow'],
+        data: ['queue'],
+        editor: ['reply'],
+        review: ['approvals', 'history', 'imports'],
+      },
+      modules,
+      bindings: [
+        binding('queue', 'sn-data-table', 'row', 'output', 'state.automation.selectedQueueItem'),
+        binding('reply', 'sn-rich-text-editor', 'context', 'input', 'state.automation.selectedQueueItem'),
+        binding('workflow', 'node-canvas', 'selection', 'output', 'state.automation.selectedNode'),
+        binding('history', 'sn-timeline', 'filter', 'input', 'state.automation.selectedNode'),
+      ],
+      events: [
+        eventBridge('queue-to-reply', 'queue', 'row-select', { targetPanel: 'reply', targetProperty: 'context' }),
+        eventBridge('workflow-to-history', 'workflow', 'node-select', { targetPanel: 'history', targetProperty: 'filter' }),
+        eventBridge('approval-to-workflow', 'approvals', 'sn-board-card-drop', { targetPanel: 'workflow', targetProperty: 'approvalState' }),
+      ],
+      graphs: [{ id: 'automation-flow', ...overviewGraph('automation') }],
+      themeParams: { mode: 'dark', hue: 196, chroma: 28, brightness: 0, contrast: 60 },
+    }),
+    panelData: {
+      chat: { workspaceState: professionalChatState('Automation construction', [
+        'Build an automation workspace for queue review, reply drafting, approvals, and workflow editing.',
+        'Mounted workflow graph, queue table, rich text editor, kanban approvals, history timeline, and imports.',
+      ]) },
+      workflow: { editorModel: graphModel('automation') },
+      queue: {
+        table: {
+          columns: [
+            { key: 'source', label: 'Source', width: 110 },
+            { key: 'intent', label: 'Intent', width: 140 },
+            { key: 'status', label: 'Status', width: 110 },
+          ],
+          rows: [
+            { id: 'q1', source: 'LinkedIn', intent: 'pricing', status: { badge: { label: 'draft', variant: 'info' } } },
+            { id: 'q2', source: 'Email', intent: 'support', status: { badge: { label: 'review', variant: 'warning' } } },
+            { id: 'q3', source: 'Forum', intent: 'bug', status: { badge: { label: 'approved', variant: 'success' } } },
+          ],
+        },
+      },
+      reply: { html: '<p>Hello {{firstName}}, here is a concise response with a tracked approval gate.</p>' },
+      approvals: {
+        board: {
+          columns: [
+            { id: 'draft', title: 'Draft', cards: [{ id: 'a1', title: 'Pricing reply', meta: ['LLM'], footer: ['needs review'] }] },
+            { id: 'review', title: 'Review', cards: [{ id: 'a2', title: 'Support escalation', meta: ['policy'], footer: ['human gate'] }] },
+            { id: 'ready', title: 'Ready', cards: [{ id: 'a3', title: 'Bug acknowledgement', meta: ['safe'], footer: ['scheduled'] }] },
+          ],
+        },
+      },
+      history: {
+        items: [
+          { title: 'Queue item classified', time: '12:01', variant: 'success' },
+          { title: 'Reply draft generated', time: '12:02', variant: 'info' },
+          { title: 'Approval requested', time: '12:04', variant: 'warning' },
+        ],
+      },
+    },
+    acceptance: ['workflow', 'queue', 'reply', 'approvals', 'history', 'imports'],
+  };
+}
+
+function buildAgentProgrammingScenario() {
+  let panelTypes = {
+    chat: professionalPanelType('Chat', 'chat-workspace', 'chat', { importance: 100, minInlineSize: 340, collapse: 'never' }),
+    files: professionalPanelType('Files', 'sn-tree-panel', 'folder', { importance: 58, minInlineSize: 220 }),
+    source: professionalPanelType('Source', 'source-editor', 'code', { importance: 86, minInlineSize: 360 }),
+    diff: professionalPanelType('Diff', 'sn-source-diff', 'difference', { importance: 82, minInlineSize: 360 }),
+    code: professionalPanelType('Code Output', 'code-block', 'terminal', { importance: 65, minInlineSize: 320 }),
+    activity: professionalPanelType('Activity', 'sn-event-feed', 'dynamic_feed', { importance: 58, minInlineSize: 260 }),
+    workflow: professionalPanelType('Workflow', 'node-canvas', 'hub', { importance: 72, minInlineSize: 340 }),
+    overview: professionalPanelType('Overview', 'canvas-graph', 'account_tree', { importance: 48, minInlineSize: 260 }),
+  };
+  let modules = [
+    scenarioModule('chat', 'chat-workspace', ['chat.workspace', 'agent.programming'], { regions: ['chat'] }),
+    scenarioModule('files', 'sn-tree-panel', ['tree-data', 'file-navigation'], { regions: ['navigation'] }),
+    scenarioModule('source', 'source-editor', ['source.edit', 'code-editor'], { regions: ['source'] }),
+    scenarioModule('diff', 'sn-source-diff', ['diff-viewer', 'code-review'], { regions: ['review'] }),
+    scenarioModule('code', 'code-block', ['syntax-highlight', 'agent-output'], { regions: ['output'] }),
+    scenarioModule('activity', 'sn-event-feed', ['activity.feed', 'task-events'], { regions: ['activity'] }),
+    scenarioModule('workflow', 'node-canvas', ['node-editor-canvas', 'agent-workflow'], { regions: ['graph'] }),
+    scenarioModule('overview', 'canvas-graph', ['graph-overview', 'semantic-navigation'], { regions: ['overview'] }),
+  ];
+  return {
+    id: 'agent-programming',
+    title: 'Agent Programming Workspace',
+    sourceTemplate: 'agent-workspace + editor',
+    topology: 'chat-first-workbench',
+    description: 'Agent coding workspace with chat, file tree, editor, diff, code output, activity, and two graph surfaces.',
+    config: professionalBaseConfig({
+      id: 'agent-programming',
+      name: 'Agent Programming Workspace',
+      register: 'agent-workspace',
+      sourceTemplate: 'agent-workspace',
+      topology: 'chat-first-workbench',
+      brief: 'Construct an agent programming workspace with chat, files, source, diff, code output, activity, and workflow graph.',
+      groups: [{ id: 'agent', name: 'Agent Programming', icon: 'smart_toy', color: '--sn-accent' }],
+      sections: [{ id: 'programming', label: 'Programming', icon: 'code', order: 0, groupId: 'agent', layoutId: 'programming' }],
+      panelTypes,
+      layout: split(
+        'horizontal',
+        0.25,
+        panel('chat', { importance: 100, collapse: 'never' }),
+        split(
+          'horizontal',
+          0.18,
+          panel('files'),
+          split(
+            'vertical',
+            0.58,
+            split('horizontal', 0.54, panel('source'), panel('diff')),
+            split('horizontal', 0.34, panel('code'), split('vertical', 0.52, panel('workflow'), split('horizontal', 0.5, panel('overview'), panel('activity'))))
+          )
+        )
+      ),
+      regions: {
+        chat: ['chat'],
+        navigation: ['files'],
+        source: ['source', 'code'],
+        review: ['diff'],
+        graph: ['workflow', 'overview'],
+        activity: ['activity'],
+      },
+      modules,
+      bindings: [
+        binding('files', 'sn-tree-panel', 'selection', 'output', 'state.source.selectedPath'),
+        binding('source', 'source-editor', 'document', 'input', 'state.source.selectedPath'),
+        binding('diff', 'sn-source-diff', 'hunk', 'output', 'state.review.selectedHunk'),
+        binding('workflow', 'node-canvas', 'selection', 'output', 'state.agent.selectedStep'),
+        binding('activity', 'sn-event-feed', 'filter', 'input', 'state.agent.selectedStep'),
+      ],
+      events: [
+        eventBridge('files-to-source', 'files', 'item-select', { targetPanel: 'source', targetProperty: 'path' }),
+        eventBridge('diff-to-source', 'diff', 'sn-diff-comment-add', { targetPanel: 'source', targetProperty: 'focusLine' }),
+        eventBridge('workflow-to-activity', 'workflow', 'node-select', { targetPanel: 'activity', targetProperty: 'filter' }),
+      ],
+      graphs: [{ id: 'agent-programming-flow', ...overviewGraph('agent') }],
+      themeParams: { mode: 'dark', hue: 222, chroma: 26, brightness: 0, contrast: 62 },
+    }),
+    panelData: {
+      chat: { workspaceState: professionalChatState('Agent programming construction', [
+        'Build an agent programming workspace with chat, files, source, diff, activity, and workflow graphs.',
+        'Mounted chat-workspace, source editor, source diff, code block, event feed, node-canvas, and canvas-graph.',
+      ]) },
+      files: {
+        items: [
+          { id: 'src', label: 'src', children: [{ id: 'src/runtime.js', label: 'runtime.js' }, { id: 'src/graph.js', label: 'graph.js' }] },
+          { id: 'tests', label: 'tests', children: [{ id: 'tests/runtime.test.js', label: 'runtime.test.js' }] },
+        ],
+      },
+      source: {
+        document: {
+          path: 'src/runtime.js',
+          language: 'js',
+          content: "export function applyPatch(config, patch) {\n  return mergeWorkspaceConfig(config, patch);\n}\n",
+          dirty: true,
+        },
+      },
+      diff: {
+        diff: {
+          path: 'src/runtime.js',
+          hunks: [{
+            header: '@@ -1,3 +1,5 @@',
+            lines: [
+              { type: 'context', content: 'export function applyPatch(config, patch) {', originalLineNumber: 1, modifiedLineNumber: 1 },
+              { type: 'deletion', content: '  return patch;', originalLineNumber: 2 },
+              { type: 'addition', content: '  validateWorkspacePatch(patch);', modifiedLineNumber: 2 },
+              { type: 'addition', content: '  return mergeWorkspaceConfig(config, patch);', modifiedLineNumber: 3 },
+              { type: 'context', content: '}', originalLineNumber: 3, modifiedLineNumber: 4 },
+            ],
+          }],
+        },
+      },
+      code: {
+        content: "node --test tests/runtime.test.js\n# pass 42\n# fail 0\n",
+        language: 'sh',
+      },
+      activity: {
+        events: [
+          { title: 'Plan accepted', subtitle: 'workspace patch', time: '13:01', status: 'done' },
+          { title: 'Files edited', subtitle: 'runtime.js', time: '13:04', status: 'running' },
+          { title: 'Diff ready', subtitle: '+2 -1', time: '13:06', status: 'done' },
+        ],
+      },
+      workflow: { editorModel: graphModel('agent') },
+      overview: { graphModel: overviewGraph('agent') },
+    },
+    acceptance: ['chat', 'files', 'source', 'diff', 'code', 'activity', 'workflow', 'overview'],
+  };
+}
+
+function buildConstructorScenario() {
+  let panelTypes = {
+    templates: professionalPanelType('Templates', 'layout-shell-menu', 'dashboard_customize', { importance: 72, minInlineSize: 280 }),
+    tabs: professionalPanelType('Workspaces', 'project-tabs', 'tab', { importance: 52, minBlockSize: 90 }),
+    palette: professionalPanelType('Palette', 'palette-browser', 'widgets', { importance: 78, minInlineSize: 300 }),
+    layout: professionalPanelType('Manual Layout', 'panel-layout', 'view_quilt', { importance: 94, minInlineSize: 420 }),
+    inspector: professionalPanelType('Inspector', 'inspector-panel', 'tune', { importance: 70, minInlineSize: 260 }),
+    theme: professionalPanelType('Theme', 'cascade-theme-editor', 'palette', { importance: 76, minInlineSize: 300 }),
+    menu: professionalPanelType('Actions', 'sn-menu', 'menu', { importance: 42, minInlineSize: 220 }),
+  };
+  let modules = [
+    scenarioModule('templates', 'layout-shell-menu', ['layout-shell', 'template-selection'], { regions: ['templates'] }),
+    scenarioModule('tabs', 'project-tabs', ['tab-list', 'workspace-tabs'], { regions: ['tabs'] }),
+    scenarioModule('palette', 'palette-browser', ['node-palette', 'module-discovery'], { regions: ['palette'] }),
+    scenarioModule('layout', 'panel-layout', ['layout-tree', 'manual-split'], { regions: ['layout'] }),
+    scenarioModule('inspector', 'inspector-panel', ['node-inspector', 'panel-properties'], { regions: ['inspector'] }),
+    scenarioModule('theme', 'cascade-theme-editor', ['cascade-theme-controls', 'theme-editor'], { regions: ['theme'] }),
+    scenarioModule('menu', 'sn-menu', ['menu', 'workspace-actions'], { regions: ['actions'] }),
+  ];
+  return {
+    id: 'constructor-control',
+    title: 'Constructor Control Workspace',
+    sourceTemplate: 'template/manual/edit-existing',
+    topology: 'constructor-shell',
+    description: 'Constructor controls for template layout, manual panel placement, and editing existing configs.',
+    config: professionalBaseConfig({
+      id: 'constructor-control',
+      name: 'Constructor Control Workspace',
+      register: 'tool',
+      sourceTemplate: 'template/manual/edit-existing',
+      topology: 'constructor-shell',
+      brief: 'Construct or edit existing workspaces by selecting templates, adding modules, changing splits, and applying Cascade theme.',
+      groups: [{ id: 'constructor', name: 'Constructor', icon: 'dashboard_customize', color: '--sn-accent' }],
+      sections: [{ id: 'constructor', label: 'Constructor', icon: 'dashboard_customize', order: 0, groupId: 'constructor', layoutId: 'constructor' }],
+      panelTypes,
+      layout: split(
+        'horizontal',
+        0.22,
+        split('vertical', 0.46, panel('templates'), split('vertical', 0.5, panel('tabs'), panel('palette'))),
+        split('horizontal', 0.64, panel('layout'), split('vertical', 0.5, panel('inspector'), split('horizontal', 0.58, panel('theme'), panel('menu'))))
+      ),
+      regions: {
+        templates: ['templates'],
+        palette: ['palette'],
+        canvas: ['layout'],
+        inspector: ['inspector'],
+        theme: ['theme'],
+        actions: ['tabs', 'menu'],
+      },
+      modules,
+      bindings: [
+        binding('templates', 'layout-shell-menu', 'template', 'output', 'construction.selectedTemplate'),
+        binding('palette', 'palette-browser', 'module', 'output', 'construction.selectedModule'),
+        binding('layout', 'panel-layout', 'layout-tree', 'two-way', 'layout'),
+        binding('theme', 'cascade-theme-editor', 'theme', 'two-way', 'theme'),
+      ],
+      events: [
+        eventBridge('template-to-layout', 'templates', 'template-select', { targetPanel: 'layout', targetMethod: 'updateConfig' }),
+        eventBridge('palette-to-layout', 'palette', 'factory-select', { targetPanel: 'layout', targetProperty: 'pendingPanel' }),
+        eventBridge('theme-to-root', 'theme', 'cascade-theme-change', { targetPanel: 'layout', targetProperty: 'theme' }),
+      ],
+      themeParams: { mode: 'dark', hue: 172, chroma: 30, brightness: 0, contrast: 60 },
+    }),
+    panelData: {
+      templates: { note: 'Template layout selection: video-studio, social-automation, agent-workspace.' },
+      tabs: { tabs: ['Video Studio', 'Automation Studio', 'Agent Programming'] },
+      palette: { note: 'Palette selects existing symbiote-ui modules before generated code.' },
+      layout: { nestedLayout: true },
+      inspector: { node: graphModel('agent').nodes[1] },
+      menu: { actions: ['Load existing config', 'Split panel', 'Add module', 'Export workspace'] },
+    },
+    acceptance: ['templates', 'palette', 'layout', 'inspector', 'theme'],
+  };
+}
+
+function buildProfessionalScenarios() {
+  return [
+    buildVideoScenario(),
+    buildAutomationScenario(),
+    buildAgentProgrammingScenario(),
+    buildConstructorScenario(),
+  ];
+}
+
 function constructionModulePlan() {
   return demoModuleCapabilities().map((descriptor) => ({
     panelType: descriptor.placement.panelType,
@@ -298,17 +1112,17 @@ function chatState(options) {
 
 function basePanelTypes() {
   return {
-    'agent-chat': panelType('Agent Chat', 'sn-agent-chat-panel', 'forum', {
+    'agent-chat': panelType('Agent Chat', 'chat-workspace', 'forum', {
       behavior: { importance: 100, minInlineSize: 320, collapse: 'never' },
       slots: [{ id: 'transcript', role: 'content', required: true }],
     }),
-    'service-blueprint': panelType('Service Blueprint', 'sn-service-blueprint-panel', 'account_tree', {
+    'service-blueprint': panelType('Service Blueprint', 'sn-description-list', 'account_tree', {
       behavior: { importance: 90, minInlineSize: 360, collapse: 'auto' },
       slots: [{ id: 'entities', role: 'content', required: true }],
     }),
     'layout-builder': panelType(
       'Layout Builder Surface',
-      'sn-layout-builder-surface',
+      'panel-layout',
       'dashboard_customize',
       {
         behavior: { importance: 88, minInlineSize: 420, collapse: 'auto' },
@@ -330,21 +1144,21 @@ function basePanelTypes() {
         ],
       },
     ),
-    'widget-registry': panelType('Widget Registry', 'sn-widget-registry-panel', 'widgets', {
+    'widget-registry': panelType('Widget Registry', 'sn-tree-panel', 'widgets', {
       behavior: { importance: 64, minInlineSize: 280, collapse: 'auto' },
       slots: [{ id: 'widget-cards', role: 'content' }],
     }),
-    'bindings-inspector': panelType('Bindings Inspector', 'sn-bindings-inspector-panel', 'hub', {
+    'bindings-inspector': panelType('Bindings Inspector', 'sn-data-table', 'hub', {
       behavior: { importance: 72, minInlineSize: 300, collapse: 'auto' },
       slots: [{ id: 'bindings', role: 'content', required: true }],
     }),
-    'adaptive-rules': panelType('Adaptive Rules', 'sn-adaptive-rules-panel', 'collapse_content', {
+    'adaptive-rules': panelType('Adaptive Rules', 'sn-list-detail-shell', 'collapse_content', {
       behavior: { importance: 58, minInlineSize: 280, collapse: 'auto' },
     }),
-    'validation-checklist': panelType('Validation Checklist', 'sn-validation-checklist-panel', 'task_alt', {
+    'validation-checklist': panelType('Validation Checklist', 'sn-event-feed', 'task_alt', {
       behavior: { importance: 76, minInlineSize: 280, collapse: 'auto' },
     }),
-    'theme-editor': panelType('Theme Editor', 'sn-theme-editor-widget', 'palette', {
+    'theme-editor': panelType('Theme Editor', 'cascade-theme-editor', 'palette', {
       behavior: { importance: 82, minInlineSize: 300, collapse: 'manual' },
       settings: [
         {
@@ -392,7 +1206,7 @@ function baseConfig(name, overrides = {}) {
       overrides: { '--sn-workspace-gap': '12px' },
       subtrees: [
         {
-          selector: 'sn-theme-editor-widget',
+          selector: 'cascade-theme-editor',
           params: { hue: 280, chroma: 46 },
           relations: { surfaceStep: 1.16 },
         },
@@ -772,14 +1586,14 @@ function createStages() {
           bindings: [
             binding(
               'service-blueprint',
-              'sn-service-blueprint-panel',
+              'sn-description-list',
               'service-entities',
               'output',
               'state.service.entities'
             ),
             binding(
               'widget-registry',
-              'sn-widget-registry-panel',
+              'sn-tree-panel',
               'selected-widgets',
               'output',
               'state.workspace.widgets'
@@ -790,7 +1604,7 @@ function createStages() {
           fields: [
             stateField(
               'agent-chat',
-              'sn-agent-chat-panel',
+              'chat-workspace',
               'questionnaire',
               'object',
               'state.agent.questionnaire',
@@ -798,7 +1612,7 @@ function createStages() {
             ),
             stateField(
               'service-blueprint',
-              'sn-service-blueprint-panel',
+              'sn-description-list',
               'entities',
               'array',
               'state.service.entities',
@@ -1003,29 +1817,29 @@ function createStages() {
         ],
         data: {
           bindings: [
-            binding('agent-chat', 'sn-agent-chat-panel', 'answers', 'output', 'state.agent.answers'),
+            binding('agent-chat', 'chat-workspace', 'answers', 'output', 'state.agent.answers'),
             binding(
               'layout-builder',
-              'sn-layout-builder-surface',
+              'panel-layout',
               'layout-tree',
               'two-way',
               'layout'
             ),
             binding(
               'bindings-inspector',
-              'sn-bindings-inspector-panel',
+              'sn-data-table',
               'binding-list',
               'input',
               'data.bindings'
             ),
-            binding('theme-editor', 'sn-theme-editor-widget', 'cascade-theme', 'two-way', 'theme'),
+            binding('theme-editor', 'cascade-theme-editor', 'cascade-theme', 'two-way', 'theme'),
           ],
         },
         state: {
           fields: [
             stateField(
               'layout-builder',
-              'sn-layout-builder-surface',
+              'panel-layout',
               'layout-tree',
               'object',
               'state.workspace.layout',
@@ -1033,7 +1847,7 @@ function createStages() {
             ),
             stateField(
               'theme-editor',
-              'sn-theme-editor-widget',
+              'cascade-theme-editor',
               'theme-state',
               'object',
               'state.workspace.theme',
@@ -1321,43 +2135,43 @@ function createStages() {
         ],
         data: {
           bindings: [
-            binding('agent-chat', 'sn-agent-chat-panel', 'answers', 'output', 'state.agent.answers'),
+            binding('agent-chat', 'chat-workspace', 'answers', 'output', 'state.agent.answers'),
             binding(
               'service-blueprint',
-              'sn-service-blueprint-panel',
+              'sn-description-list',
               'service-entities',
               'two-way',
               'state.service.entities'
             ),
             binding(
               'layout-builder',
-              'sn-layout-builder-surface',
+              'panel-layout',
               'layout-tree',
               'two-way',
               'layout'
             ),
             binding(
               'adaptive-rules',
-              'sn-adaptive-rules-panel',
+              'sn-list-detail-shell',
               'collapse-priorities',
               'input',
               'construction.plan.adaptivePriorities'
             ),
             binding(
               'validation-checklist',
-              'sn-validation-checklist-panel',
+              'sn-event-feed',
               'validation-reports',
               'input',
               'validation.reports'
             ),
-            binding('theme-editor', 'sn-theme-editor-widget', 'cascade-theme', 'two-way', 'theme'),
+            binding('theme-editor', 'cascade-theme-editor', 'cascade-theme', 'two-way', 'theme'),
           ],
         },
         state: {
           fields: [
             stateField(
               'agent-chat',
-              'sn-agent-chat-panel',
+              'chat-workspace',
               'answers',
               'object',
               'state.agent.answers',
@@ -1365,7 +2179,7 @@ function createStages() {
             ),
             stateField(
               'layout-builder',
-              'sn-layout-builder-surface',
+              'panel-layout',
               'layout-tree',
               'object',
               'state.workspace.layout',
@@ -1373,7 +2187,7 @@ function createStages() {
             ),
             stateField(
               'adaptive-rules',
-              'sn-adaptive-rules-panel',
+              'sn-list-detail-shell',
               'collapse-rules',
               'object',
               'state.workspace.adaptive',
@@ -1381,7 +2195,7 @@ function createStages() {
             ),
             stateField(
               'theme-editor',
-              'sn-theme-editor-widget',
+              'cascade-theme-editor',
               'theme-state',
               'object',
               'state.workspace.theme',
@@ -1389,7 +2203,7 @@ function createStages() {
             ),
             stateField(
               'validation-checklist',
-              'sn-validation-checklist-panel',
+              'sn-event-feed',
               'reports',
               'array',
               'validation.reports',
@@ -1705,7 +2519,7 @@ function demoModuleCapabilities() {
     moduleCapability(
       'agent-chat',
       'Agent Chat',
-      'sn-agent-chat-panel',
+      'chat-workspace',
       ['agent.chat', 'questionnaire.flow'],
       'forum',
       {
@@ -1726,7 +2540,7 @@ function demoModuleCapabilities() {
     moduleCapability(
       'service-blueprint',
       'Service Blueprint',
-      'sn-service-blueprint-panel',
+      'sn-description-list',
       ['service.blueprint', 'service.model'],
       'account_tree',
       {
@@ -1744,7 +2558,7 @@ function demoModuleCapabilities() {
     moduleCapability(
       'layout-builder',
       'Layout Builder Surface',
-      'sn-layout-builder-surface',
+      'panel-layout',
       ['workspace.layout-builder', 'layout.bsp'],
       'dashboard_customize',
       {
@@ -1765,7 +2579,7 @@ function demoModuleCapabilities() {
     moduleCapability(
       'widget-registry',
       'Widget Registry',
-      'sn-widget-registry-panel',
+      'sn-tree-panel',
       ['workspace.widget-registry', 'module.discovery'],
       'widgets',
       {
@@ -1781,7 +2595,7 @@ function demoModuleCapabilities() {
     moduleCapability(
       'bindings-inspector',
       'Bindings Inspector',
-      'sn-bindings-inspector-panel',
+      'sn-data-table',
       ['workspace.bindings-inspector', 'binding.inspect'],
       'hub',
       {
@@ -1796,7 +2610,7 @@ function demoModuleCapabilities() {
     moduleCapability(
       'adaptive-rules',
       'Adaptive Rules',
-      'sn-adaptive-rules-panel',
+      'sn-list-detail-shell',
       ['workspace.adaptive-rules', 'layout.collapse-priority'],
       'collapse_content',
       {
@@ -1812,7 +2626,7 @@ function demoModuleCapabilities() {
     moduleCapability(
       'validation-checklist',
       'Validation Checklist',
-      'sn-validation-checklist-panel',
+      'sn-event-feed',
       ['workspace.validation-checklist', 'validation.report'],
       'task_alt',
       {
@@ -1825,7 +2639,7 @@ function demoModuleCapabilities() {
     moduleCapability(
       'theme-editor',
       'Theme Editor',
-      'sn-theme-editor-widget',
+      'cascade-theme-editor',
       ['workspace.theme-editor', 'theme.cascade'],
       'palette',
       {
@@ -1972,6 +2786,10 @@ function buildAcceptanceMatrix(demo) {
   let finalStage = demo.stages.at(-1);
   let finalConfig = finalStage.config;
   let finalChatState = finalStage.chatState;
+  let scenarioIds = (demo.professionalScenarios || []).map((item) => item.id);
+  let scenarioComponents = unique((demo.professionalScenarios || []).flatMap((item) => (
+    Object.values(item.config?.panelTypes || {}).map((panelTypeConfig) => panelTypeConfig.component)
+  )));
   return [
     {
       id: 'chat-questionnaire-flow',
@@ -2066,17 +2884,57 @@ function buildAcceptanceMatrix(demo) {
         : 'fail',
       evidence: finalChatState.currentFunctionality?.runtimeImportContract,
     },
+    {
+      id: 'professional-scenario-matrix',
+      status: [
+        'video-editing',
+        'automation-editing',
+        'agent-programming',
+        'constructor-control',
+      ].every((id) => scenarioIds.includes(id)) ? 'pass' : 'fail',
+      evidence: scenarioIds,
+    },
+    {
+      id: 'professional-library-surfaces',
+      status: [
+        'chat-workspace',
+        'sn-video-player',
+        'node-canvas',
+        'canvas-graph',
+        'sn-data-table',
+        'sn-rich-text-editor',
+        'sn-kanban-board',
+        'source-editor',
+        'sn-source-diff',
+        'code-block',
+        'cascade-theme-editor',
+      ].every((component) => scenarioComponents.includes(component)) ? 'pass' : 'fail',
+      evidence: scenarioComponents,
+    },
+    {
+      id: 'template-manual-edit-existing-modes',
+      status: demo.professionalScenarios?.some((scenario) => scenario.id === 'constructor-control' &&
+        scenario.config.construction?.plan?.bindings?.length >= 3) ? 'pass' : 'fail',
+      evidence: demo.professionalScenarios
+        ?.find((scenario) => scenario.id === 'constructor-control')
+        ?.config.construction?.plan,
+    },
   ];
 }
 
 export function buildRealtimeChatStateDemo() {
   let stages = expandCurrentFunctionalityStages(createStages());
   for (let stage of stages) validateStage(stage);
+  let professionalScenarios = buildProfessionalScenarios();
+  for (let scenario of professionalScenarios) validateStage({ id: scenario.id, config: scenario.config });
   let finalStage = stages.at(-1);
   let demo = {
     schemaVersion: '0.1.0',
     name: 'Realtime Chat-State UI Builder',
     description: 'Mock chat and questionnaire state drives workspace UI assembly.',
+    defaultScenarioId: 'video-editing',
+    professionalComponentContract: PROFESSIONAL_COMPONENT_CONTRACT,
+    professionalScenarios,
     requiredWidgets: [
       'agent-chat',
       'service-blueprint',

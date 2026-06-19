@@ -17,7 +17,7 @@
  * @module symbiote-workspace/cli
  */
 
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 import { TOOLS } from './runtime/index.js';
@@ -136,6 +136,19 @@ Options for 'create-workspace-construction-handoff':
 
 Options for 'collect-plugin-module-capabilities' and 'collect-plugin-workspace-templates':
   --plugins <json-object-or-array>  Plugin definition object or array of plugin definitions
+
+Options for 'workflow-kanban':
+  --panel-type <id>            Portable panel type ID for the kanban board
+  --board <json-object>        Kanban board model with id, columns, and cards
+  --title <string>             Panel title override
+  --icon <string>              Material Symbols icon name
+  --layout-id <id>             Optional named layout to create or replace
+  --set-default-layout         Replace the root layout with this board panel
+  --group <json-object>        Optional project group to upsert
+  --section <json-object>      Optional sidebar section to upsert
+  --event-target <json-object> Optional drop-event target bridge fields
+  --required-host-services <json-array>
+                              Portable host service IDs required by this board
 
 Examples:
   node cli.js scaffold "chat workspace" --config ws.json
@@ -320,8 +333,17 @@ async function runToolCommand() {
     process.exit(1);
   }
 
+  if (flags.help === true || flags.h === true) {
+    printUsage();
+    return;
+  }
+
   // Build args from flags
   let toolArgs = flagsToCamelCase(flags);
+  let outputFile = toolName === 'scaffold_workspace' ? toolArgs.output : null;
+  if (toolName === 'scaffold_workspace') {
+    delete toolArgs.output;
+  }
 
   // Handle positional args
   let positionalField = POSITIONAL_MAP[toolName];
@@ -384,6 +406,15 @@ async function runToolCommand() {
       await session.save();
     } catch (err) {
       console.error(`Warning: auto-save failed: ${err.message}`);
+    }
+  }
+
+  if (!isDispatchError && outputFile) {
+    try {
+      await writeFile(resolve(outputFile), `${JSON.stringify(result.config, null, 2)}\n`, 'utf-8');
+    } catch (err) {
+      console.error(`Warning: output write failed: ${err.message}`);
+      process.exitCode = 1;
     }
   }
 

@@ -5,6 +5,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { loadPluginsFromDir } from '../server/plugin-loader.js';
+import { createWorkspaceServer } from '../server/index.js';
 import { clearPlugins, listPlugins, getPlugin } from '../plugins/index.js';
 import { clearRegistry, getNodeType } from 'symbiote-engine';
 
@@ -127,5 +128,24 @@ describe('Server: Plugin Loader (from directory)', () => {
   // Cleanup
   it('cleanup test fixtures', async () => {
     await rm(FIXTURES_DIR, { recursive: true, force: true });
+  });
+});
+
+describe('Server: workspace server startup', () => {
+  beforeEach(async () => {
+    clearPlugins();
+    clearRegistry();
+  });
+
+  it('starts and closes server mode with engine peer runtime dependencies', async () => {
+    let handle = await createWorkspaceServer({ port: 0, watchFiles: false });
+    try {
+      assert.ok(handle.server);
+      assert.ok(handle.wss);
+      assert.ok(handle.graph);
+      assert.deepEqual(handle.plugins, []);
+    } finally {
+      await handle.close();
+    }
   });
 });

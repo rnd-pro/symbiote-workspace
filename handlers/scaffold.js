@@ -4,6 +4,7 @@
  */
 
 import { WORKSPACE_SCHEMA_VERSION } from '../schema/workspace-schema.js';
+import { planWorkspace } from '../constructor/workspace-planner.js';
 
 /**
  * Create a workspace config from a template.
@@ -14,22 +15,6 @@ import { WORKSPACE_SCHEMA_VERSION } from '../schema/workspace-schema.js';
  * @returns {{ config: import('../schema/workspace-schema.js').WorkspaceConfig, status: string, next_step: string, hint: string }}
  */
 export function scaffoldWorkspace(templateName, options = {}) {
-  let { planWorkspace, matchTemplate, getTemplate } = /** @type {any} */ ({});
-  try {
-    // Dynamic import at call time to avoid circular deps
-    let mod = require('../constructor/workspace-planner.js');
-    planWorkspace = mod.planWorkspace;
-    matchTemplate = mod.matchTemplate;
-    getTemplate = mod.getTemplate;
-  } catch {
-    return {
-      config: scaffoldFromScratch(options),
-      status: 'ok',
-      next_step: 'add_groups',
-      hint: 'Template system not available. Created blank workspace. Add groups and sections next.',
-    };
-  }
-
   let config = planWorkspace(templateName, options);
   config.version = WORKSPACE_SCHEMA_VERSION;
 

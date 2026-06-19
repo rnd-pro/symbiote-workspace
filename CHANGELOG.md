@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Added `workflow_kanban` as the 69th unified CLI/MCP dispatch tool. It
+  registers a portable workflow board panel backed by provider-owned
+  `symbiote-ui` `sn-kanban-board`, with board state, data bindings,
+  select/action/drop event bridges, optional layout/group/section upserts, and
+  host-service portability validation.
+- Hardened `workflow_kanban` and config validation so canonical provider module
+  metadata cannot be overridden by stale descriptors, event mappings must be
+  plain objects, and responsive behavior numeric fields respect the published
+  layout contract.
+- Added a portable lockfile-backed install gate for local verification through
+  `npm ci --ignore-scripts` before package-consumer and browser proof checks.
+- Added an opt-in Playwright driver for the visual/realtime browser smoke
+  harness so CI can verify the same generated demo proof through WebKit,
+  Firefox, or Chromium when local Chrome DevTools Protocol automation is not
+  available.
 - Extended the realtime builder demo from broad mock stages into the canonical
   9-question construction protocol, including visible execution model, host
   services, package readiness, and browser import-map evidence in both the
@@ -344,7 +359,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
-- **Unified dispatch surface** — CLI and MCP now expose 68 tools from the same
+- **Unified dispatch surface** — CLI and MCP now expose 69 tools from the same
   `runtime/dispatch.js` registry.
 - **CLI help source** — CLI tool-command help is now generated from the
   unified `TOOLS` registry descriptions, with CLI-only aliases documented from
