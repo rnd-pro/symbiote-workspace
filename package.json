@@ -70,6 +70,7 @@
     "handlers/",
     "mcp/",
     "runtime/",
+    "scripts/",
     "examples/",
     "README.md",
     "LICENSE",
@@ -88,6 +89,7 @@
   "scripts": {
     "test": "node --test tests/*.test.js",
     "test:package-consumer": "node --test tests/package-consumer.test.js",
+    "release:preflight": "node scripts/release-preflight.js",
     "demo:visual": "node examples/visual-demo/preview.js",
     "demo:realtime-builder": "node examples/visual-demo/realtime-builder.js",
     "test:visual-demo-browser": "node examples/visual-demo/browser-smoke.js"

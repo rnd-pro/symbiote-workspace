@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Added `npm run release:preflight` as a non-publishing stable-release gate. It
+  verifies package metadata, dated changelog release headings, the 69-tool
+  registry with `workflow_kanban`, project-owned `.mjs` absence, install/test
+  gates, package-consumer proof, npm pack hygiene, realtime-builder browser
+  proof, and clean git state before a stable tag or publish attempt.
 - Added `workflow_kanban` as the 69th unified CLI/MCP dispatch tool. It
   registers a portable workflow board panel backed by provider-owned
   `symbiote-ui` `sn-kanban-board`, with board state, data bindings,

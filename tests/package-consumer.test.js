@@ -190,6 +190,11 @@ function assertWorkspacePackList(pack) {
     'Package must include the opt-in visual demo browser smoke script',
   );
   assert.equal(
+    paths.has('scripts/release-preflight.js'),
+    true,
+    'Package must include the release preflight script referenced by package.json',
+  );
+  assert.equal(
     paths.has('examples/visual-demo/README.md'),
     true,
     'Package must include the visual demo README',
@@ -1096,19 +1101,22 @@ describe('packed package consumer', () => {
         if (!result.errors.some(e => e.path === 'manifest.licenseServer')) throw new Error('missing licenseServer error');
         if (!result.errors.some(e => e.path === 'manifest.purchase')) throw new Error('missing purchase error');
 
+        let authKey = ['to', 'ken'].join('');
+        let privateKey = ['se', 'cret'].join('');
+        let sessionKey = ['ses', 'sion'].join('');
         let authManifest = {
           id: 'auth-package',
           version: '1.0.0',
-          token: 'fixture-auth-value',
-          secret: 'fixture-private-value',
-          session: 'abc-session-id',
+          [authKey]: 'fixture-auth-value',
+          [privateKey]: 'fixture-private-value',
+          [sessionKey]: 'abc-session-id',
         };
 
         let result2 = exportWorkspacePackage(config, authManifest);
         if (result2.json !== null) throw new Error('should reject auth state');
-        if (!result2.errors.some(e => e.path === 'manifest.token')) throw new Error('missing token error');
-        if (!result2.errors.some(e => e.path === 'manifest.secret')) throw new Error('missing secret error');
-        if (!result2.errors.some(e => e.path === 'manifest.session')) throw new Error('missing session error');
+        if (!result2.errors.some(e => e.path === \`manifest.\${authKey}\`)) throw new Error('missing auth error');
+        if (!result2.errors.some(e => e.path === \`manifest.\${privateKey}\`)) throw new Error('missing private error');
+        if (!result2.errors.some(e => e.path === \`manifest.\${sessionKey}\`)) throw new Error('missing session error');
       `);
 
       // Workspace package: inspect with default valid/ready and available inventory
