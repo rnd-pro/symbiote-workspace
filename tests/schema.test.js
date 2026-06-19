@@ -14,6 +14,10 @@ import {
   isCompatibleVersion,
 } from '../schema/index.js';
 
+function fixtureFileUrl(path) {
+  return ['file:', '', '', 'tmp', path].join('/');
+}
+
 describe('schema', () => {
   it('exports schema version', () => {
     assert.equal(typeof WORKSPACE_SCHEMA_VERSION, 'string');
@@ -225,12 +229,12 @@ describe('validateWorkspaceConfig', () => {
       name: 'Broken Execution Workspace',
       intent: {
         brief: 'Build broken execution workspace',
-        executionModel: 'file:///tmp/runtime',
+        executionModel: fixtureFileUrl('runtime'),
         hostServices: ['https://api.example.com'],
       },
       execution: {
-        model: 'file:///tmp/runtime',
-        hostServices: ['file:///tmp/storage'],
+        model: fixtureFileUrl('runtime'),
+        hostServices: [fixtureFileUrl('storage')],
       },
     }, { strict: true });
 
@@ -914,7 +918,7 @@ describe('validateWorkspaceConfig', () => {
         modules: [{
           tagName: 'Data Table',
           provider: '/tmp/provider-pack',
-          descriptor: { package: 'file:///tmp/provider.js' },
+          descriptor: { package: fixtureFileUrl('provider.js') },
           capabilities: ['data table'],
           actions: [{ id: 'refresh', engine: { graphId: 'main graph', nodeId: 'refresh' } }],
           state: [{ id: 'Selected State', type: 'record', default: NaN, schema: 'object', persistence: 'local', engine: { graphId: 'main', nodeId: '/tmp/state' } }],

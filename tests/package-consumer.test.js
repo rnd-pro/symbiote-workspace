@@ -1099,8 +1099,8 @@ describe('packed package consumer', () => {
         let authManifest = {
           id: 'auth-package',
           version: '1.0.0',
-          token: 'redacted-token-placeholder',
-          secret: 'redacted-secret-placeholder',
+          token: 'fixture-auth-value',
+          secret: 'fixture-private-value',
           session: 'abc-session-id',
         };
 

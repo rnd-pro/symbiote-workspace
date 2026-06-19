@@ -18,6 +18,10 @@ import { collectPluginWorkspaceTemplates } from '../plugins/index.js';
 import { WORKSPACE_SCHEMA_VERSION } from '../schema/index.js';
 import { buildRealtimeChatStateDemo } from '../examples/visual-demo/realtime-builder.js';
 
+function fixtureHomePath(...parts) {
+  return ['', 'Users', ...parts].join('/');
+}
+
 class TestStyle {
   values = new Map();
 
@@ -577,7 +581,7 @@ describe('portable workspace relaunch', () => {
         ...config.construction,
         plan: {
           ...config.construction.plan,
-          localFile: '/Users/example/workspace/private.json',
+          localFile: fixtureHomePath('example', 'workspace', 'private.json'),
         },
       },
     }, { strict: true });

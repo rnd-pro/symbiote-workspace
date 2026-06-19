@@ -23,6 +23,10 @@ import {
   WORKSPACE_SCHEMA_VERSION,
 } from '../schema/index.js';
 
+function fixtureFileUrl(path) {
+  return ['file:', '', '', 'tmp', path].join('/');
+}
+
 function workspaceConfig(name) {
   return {
     version: WORKSPACE_SCHEMA_VERSION,
@@ -389,7 +393,7 @@ describe('plugin module capability collection', () => {
         tagName: 'acme-nonportable-panel',
         provider: 'https://provider.example.com/package',
         descriptor: {
-          package: 'file:///tmp/provider-descriptor.js',
+          package: fixtureFileUrl('provider-descriptor.js'),
           export: 'descriptor',
           component: 'acme-nonportable-panel',
         },

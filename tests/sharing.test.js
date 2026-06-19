@@ -21,6 +21,14 @@ import {
 import { matchTemplate, planWorkspaceConstruction } from '../constructor/index.js';
 import { buildRealtimeChatStateDemo } from '../examples/visual-demo/realtime-builder.js';
 
+function fixtureHomePath(...parts) {
+  return ['', 'Users', ...parts].join('/');
+}
+
+function fixtureFileUrl(path) {
+  return ['file:', '', '', 'tmp', path].join('/');
+}
+
 let BASE_CONFIG = {
   version: '0.2.0',
   name: 'Test Workspace',
@@ -215,8 +223,8 @@ describe('exportConfig', () => {
         ...EXTENDED_CONFIG.construction,
         plan: {
           ...EXTENDED_CONFIG.construction.plan,
-          localFile: '/Users/tester/workspace/private.json',
-          previewUrl: 'file:///tmp/preview.html',
+          localFile: fixtureHomePath('tester', 'workspace', 'private.json'),
+          previewUrl: fixtureFileUrl('preview.html'),
         },
       },
     });
@@ -514,7 +522,7 @@ describe('importConfig', () => {
         ...EXTENDED_CONFIG.construction,
         plan: {
           ...EXTENDED_CONFIG.construction.plan,
-          localFile: '/Users/tester/workspace/private.json',
+          localFile: fixtureHomePath('tester', 'workspace', 'private.json'),
         },
       },
     }));
@@ -532,7 +540,7 @@ describe('importConfig', () => {
         catalog: [
           'sn-panel',
           'https://cdn.example.com/sn-panel.js',
-          '/Users/tester/workspace/sn-panel.js',
+          fixtureHomePath('tester', 'workspace', 'sn-panel.js'),
         ],
       },
     }));

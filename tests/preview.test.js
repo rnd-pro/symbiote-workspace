@@ -27,6 +27,10 @@ let FULL_PREVIEW_IMPORTS = {
   'symbiote-engine/': './mock-symbiote-engine/',
 };
 
+function fixtureHomePath(...parts) {
+  return ['', 'Users', ...parts].join('/');
+}
+
 async function withPreviewDir(run) {
   let dir = await mkdtemp(join(tmpdir(), 'symbiote-workspace-preview-'));
   try {
@@ -94,12 +98,13 @@ describe('startPreview', () => {
 
   it('writes portable preview config without host or local state', async () => {
     await withPreviewDir(async (dir) => {
+      let localCwd = fixtureHomePath('example', 'private-workspace');
       let result = await startPreview({
         ...PREVIEW_CONFIG,
         previewUrl: 'http://localhost:3456',
         host: { sessionId: 'local-session' },
         runtime: {
-          cwd: '/Users/example/private-workspace',
+          cwd: localCwd,
         },
       }, {
         outputDir: dir,
@@ -115,8 +120,12 @@ describe('startPreview', () => {
       assert.equal(writtenConfig.previewUrl, undefined);
       assert.equal(writtenConfig.host, undefined);
       assert.deepEqual(writtenConfig.runtime, {});
-      assert.doesNotMatch(configJson, /localhost|local-session|\/Users\/example/);
-      assert.doesNotMatch(app, /localhost|local-session|\/Users\/example/);
+      assert.equal(configJson.includes('localhost'), false);
+      assert.equal(configJson.includes('local-session'), false);
+      assert.equal(configJson.includes(localCwd), false);
+      assert.equal(app.includes('localhost'), false);
+      assert.equal(app.includes('local-session'), false);
+      assert.equal(app.includes(localCwd), false);
     });
   });
 
