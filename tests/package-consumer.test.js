@@ -115,6 +115,10 @@ function assertPackedPublicDocsUsePublicProviderContracts() {
   let docs = [
     'README.md',
     'CHANGELOG.md',
+    'docs/architecture.md',
+    'docs/getting-started.md',
+    'docs/host-contracts.md',
+    'docs/plugins-and-templates.md',
     'examples/visual-demo/README.md',
   ];
   let forbidden = [
@@ -142,6 +146,16 @@ function assertWorkspacePackList(pack) {
   assertPackedPublicDocsUsePublicProviderContracts();
 
   for (let target of ['package.json', 'README.md', 'LICENSE', 'CHANGELOG.md']) {
+    assert.equal(paths.has(target), true, `Package must include ${target}`);
+  }
+
+  for (let target of [
+    'docs/architecture.md',
+    'docs/getting-started.md',
+    'docs/host-contracts.md',
+    'docs/plugins-and-templates.md',
+    'docs/assets/realtime-builder-demo.png',
+  ]) {
     assert.equal(paths.has(target), true, `Package must include ${target}`);
   }
 

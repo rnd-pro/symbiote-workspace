@@ -1,3 +1,5 @@
+[![npm version](https://img.shields.io/npm/v/symbiote-workspace)](https://www.npmjs.com/package/symbiote-workspace) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D18-339933?logo=node.js&logoColor=white)](https://nodejs.org) [![ESM](https://img.shields.io/badge/ESM-only-F7DF1E?logo=javascript&logoColor=black)](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Modules)
+
 # symbiote-workspace
 
 **symbiote-workspace turns chat intent into portable, executable Symbiote
@@ -9,18 +11,20 @@ metadata, runtime slots, host requirements, and browser assembly. The package
 gives agents a direct path from user intent to a relaunchable workspace without
 forking a product app, hardcoding a host, or generating one-off UI code first.
 
+![Realtime Symbiote workspace builder demo](./docs/assets/realtime-builder-demo.png)
+
 ## Why symbiote-workspace?
 
-- **One artifact for the whole workspace** - layout, modules, theme, bindings,
+- **One artifact for the whole workspace** — layout, modules, theme, bindings,
   host requirements, and validation reports live in portable JSON.
-- **Agent construction without free-form app forks** - classify intent, ask the
+- **Agent construction without free-form app forks** — classify intent, ask the
   construction questions, select modules, validate the result, and assemble it
   in the browser.
-- **Symbiote primitives first** - use `symbiote-ui` layouts, Web Components,
+- **Symbiote primitives first** — use `symbiote-ui` layouts, Web Components,
   Cascade theme, manifests, and plugin descriptors before creating new modules.
-- **Same tools over CLI and MCP** - every registered tool goes through one
+- **Same tools over CLI and MCP** — every registered tool goes through one
   dispatch registry, so local scripts and agent hosts see the same behavior.
-- **Relaunchable by any compatible host** - exported configs exclude auth,
+- **Relaunchable by any compatible host** — exported configs exclude auth,
   secrets, user identity, local paths, and product-only runtime state.
 
 ## What is Symbiote Workspace?
@@ -32,1083 +36,141 @@ the schema, constructor, plugin registry, config mutation tools, validation,
 sharing contract, browser mounting, CLI, MCP transport, and optional server
 mode.
 
+> **Learn more**: [Host Contracts and Construction Protocol](./docs/host-contracts.md)
+
 ## Key Features
 
 ### Guided Workspace Construction
 
-- **Construction protocol** - intent classification, questionnaire state,
+- **Construction protocol** — intent classification, questionnaire state,
   topology planning, module selection, execution model, host services, and
   package readiness.
-- **Capability-driven modules** - module descriptors materialize panel types,
+- **Capability-driven modules** — module descriptors materialize panel types,
   actions, menus, toolbars, settings, events, slots, engine bindings, and data
   bindings into executable workspace surfaces.
-- **Template and plugin inputs** - canonical templates and plugin-provided
+- **Template and plugin inputs** — canonical templates and plugin-provided
   workspace templates feed the same planner instead of creating product forks.
 
 ### Portable Config Runtime
 
-- **Strict export/import** - shareable workspace JSON strips host-only state and
+- **Strict export/import** — shareable workspace JSON strips host-only state and
   rejects auth, user identity, server URLs, local paths, and session data.
-- **Host integration contracts** - exported metadata tells a compatible host
+- **Host integration contracts** — exported metadata tells a compatible host
   which imports, components, services, runtime slots, and permissions are
   required to relaunch the workspace.
-- **No-reload browser updates** - mounted workspaces can apply validated config
+- **No-reload browser updates** — mounted workspaces can apply validated config
   updates and patches without replacing the browser runtime.
 
 ### Unified Agent Tooling
 
-- **69 CLI/MCP tools** - one `runtime/dispatch.js` registry drives CLI commands,
+- **69 tools over CLI/MCP** — one `runtime/dispatch.js` registry drives CLI commands,
   MCP JSON-RPC, tests, and package-consumer verification.
-- **Workflow kanban tool** - `workflow_kanban` registers portable workflow-board
+- **Workflow kanban tool** — `workflow_kanban` registers portable workflow-board
   panels backed by provider-owned `symbiote-ui` board components.
-- **Release proof harness** - package preflight verifies metadata, tests,
+- **Release proof harness** — package preflight verifies metadata, tests,
   package contents, browser demo proof, npm registry state, and clean git state
   without publishing.
 
-## Architecture
-
-```
-┌─────────────────────────────────────────────┐
-│                  Dispatch                   │
-│          registered tools, 1 registry       │
-│             runtime/dispatch.js             │
-├──────────────────┬──────────────────────────┤
-│   CLI (argv)     │      MCP (JSON-RPC)      │
-│   cli.js         │      mcp/index.js        │
-│   thin proxy     │      thin proxy          │
-├──────────────────┴──────────────────────────┤
-│  handlers/* (13 modules)  constructor/*     │
-│  schema/*  validation/*   loader/*          │
-│  plugins/*  sharing/*     server/*          │
-└─────────────────────────────────────────────┘
-```
-
-CLI and MCP share the same dispatch layer — every tool available via MCP is also available via CLI, and vice versa. No code duplication.
-
-## Entry Points
-
-| Entry Point | Env | Purpose |
-|------------|-----|---------|
-| `symbiote-workspace` | Node | Schema, loader, constructor, sharing, validation, plugins, runtime |
-| `symbiote-workspace/runtime` | Node | Dispatch, session, tool registry |
-| `symbiote-workspace/browser` | Browser | DOM mounting + browser-safe isomorphic APIs |
-| `symbiote-workspace/loader` | Node | Workspace config loading and theme extraction helpers |
-| `symbiote-workspace/constructor` | Node | Construction planning, templates, questions, handoff consumption |
-| `symbiote-workspace/sharing` | Node | Package export/import, host contracts, construction context projection |
-| `symbiote-workspace/validation` | Node | Design guardrails and construction patch validation |
-| `symbiote-workspace/plugins` | Isomorphic | Plugin schema, validation, registry |
-| `symbiote-workspace/handlers` | Node | Config mutation and discovery handler functions |
-| `symbiote-workspace/server` | Node | Workspace server + plugin loader |
-| `symbiote-workspace/mcp` | Node | MCP stdio transport entrypoint |
-| `symbiote-workspace/schema` | Node | Schema definitions, validators |
-| `symbiote-workspace/schema/*` | Node | Direct schema module imports for validators and schema constants |
-| `symbiote-workspace/package.json` | Node | Package metadata for consumer tooling |
-
-## Related Packages
-
-- [`symbiote-ui`](https://github.com/RND-PRO/symbiote-ui) - Web Components,
-  provider catalogs, layout metadata, Cascade theme, and WebMCP descriptors.
-- [`symbiote-engine`](https://github.com/RND-PRO/symbiote-engine) - graph
-  execution, runtime commands, server helpers, persistence, and handler
-  loading.
-- [`symbiote-node`](https://github.com/RND-PRO/symbiote-node) - terminal
-  migration facade for older imports.
-
 ## Quick Start
 
-### Programmatic
-
-```javascript
-import {
-  planWorkspaceConstruction,
-  proposeWorkspacePatch,
-  applyWorkspacePatch,
-  validateWorkspaceConfig,
-  exportConfig,
-  createHostIntegrationContract,
-  checkDesignGuardrails,
-} from 'symbiote-workspace';
-
-// 1. Plan from intent through the construction protocol
-let construction = planWorkspaceConstruction('build me a chat workspace', {
-  name: 'My Chat',
-  register: 'tool',
-});
-let { config, questions, plan } = construction;
-
-// 2. Validate the generated config and design density guardrails
-let validation = validateWorkspaceConfig(config);
-console.log(validation.valid); // true
-
-let guardrails = checkDesignGuardrails(config);
-console.log(guardrails.pass); // true
-
-// 3. Preview and apply accepted workspace patches
-let proposal = await proposeWorkspacePatch(config, {
-  theme: { params: { mode: 'dark', hue: 220 } },
-});
-if (proposal.accepted) {
-  config = (await applyWorkspacePatch(config, proposal.overlay)).config;
-}
-
-// 4. Export for sharing after validation
-let { json } = exportConfig(config, { strict: true });
-console.log(json); // portable JSON, no auth/server data
-
-// 5. Ask the host what it must provide to relaunch the workspace
-let contract = createHostIntegrationContract(config);
-console.log(contract.contract.browser.requiredImports);
+```sh
+npm install symbiote-workspace symbiote-ui symbiote-engine
 ```
 
-### Unified Dispatch
+```js
+import {
+  exportConfig,
+  planWorkspaceConstruction,
+  validateWorkspaceConfig,
+} from 'symbiote-workspace';
 
-```javascript
-import { dispatch, createSession, TOOLS } from 'symbiote-workspace/runtime';
+let { config } = planWorkspaceConstruction('build me a chat workspace', {
+  name: 'My Chat',
+  register: 'agent-workspace',
+});
+
+let validation = validateWorkspaceConfig(config);
+if (!validation.valid) throw new Error('Workspace config is invalid');
+
+let { json } = exportConfig(config, { strict: true });
+console.log(json);
+```
+
+See [Getting Started and Preview](./docs/getting-started.md) for dispatch,
+CLI, preview generation, and browser smoke workflows.
+
+## Example: Unified Dispatch
+
+```js
+import { createSession, dispatch } from 'symbiote-workspace/runtime';
 
 let session = createSession();
-
-// Plan without mutating session state
 let planned = await dispatch('plan_workspace', {
-  intent: 'chat workspace',
-  name: 'My Chat',
+  intent: 'video editing studio for agentic media review',
+  name: 'Launch Cut',
 }, session);
 
-// Create session config from the planned workspace
-await dispatch('import_config', { json: JSON.stringify(planned.config) }, session);
-
-// Mutate
-await dispatch('add_group', { id: 'main', name: 'Main' }, session);
-await dispatch('register_panel_type', {
-  name: 'viewport', title: 'Viewport', component: 'sn-canvas-viewport',
+await dispatch('import_config', {
+  json: JSON.stringify(planned.config),
 }, session);
 
-// Validate and apply patch proposals before mutation
-await dispatch('apply_workspace_patch', {
-  overlay: { theme: { params: { mode: 'dark', hue: 220 } } },
-}, session);
-
-// Query
-let groups = await dispatch('list_groups', {}, session);
-let desc = await dispatch('describe_workspace', {}, session);
-
-// Validate
 let result = await dispatch('validate_config', {}, session);
-console.log(result.valid); // true
-
-// Save
-await dispatch('save_config', { filePath: './workspace.json' }, session);
+console.log(result.valid);
 ```
 
 ## CLI
 
-From a checked-out repository, all registered tools are available as CLI
-commands through the local entrypoint:
-
-```bash
-# Scaffold
-node cli.js scaffold chat --name "My Chat"
-node cli.js scaffold-from-scratch --name "Blank WS"
-node cli.js list-templates
-
-# Stateful mode (--config auto-saves on mutations)
-node cli.js scaffold dashboard --config ws.json
+```sh
 node cli.js classify-workspace "agent review workspace"
 node cli.js plan-workspace "agent review workspace" --name "Review Desk"
-node cli.js propose-workspace-patch --config ws.json --overlay '{"theme":{"params":{"mode":"dark","hue":220}}}'
-node cli.js validate-workspace-patch --config ws.json --overlay '{"register":"editor"}'
-node cli.js apply-workspace-patch --config ws.json --overlay '{"name":"Review Desk"}'
-node cli.js export-workspace --config ws.json
-node cli.js add-group --config ws.json --id analytics --name Analytics
-node cli.js add-section --config ws.json --groupId analytics --id overview --label Overview
-node cli.js register-panel-type --config ws.json --name chart --title Chart --component sn-chart
-node cli.js set-layout --config ws.json --layoutTree '{"type":"split","direction":"horizontal","ratio":0.3,"first":{"type":"panel","panelType":"sidebar"},"second":{"type":"panel","panelType":"chart"}}'
-
-# Discovery (auto-detects symbiote-ui)
-node cli.js discover
-node cli.js find-component --tagName sn-data-table
-node cli.js list-component-tags
-node cli.js list-categories
-
-# Validation
 node cli.js validate workspace.json
-node cli.js describe workspace.json
-node cli.js preview workspace.json --output-dir .workspace-preview
-
-# Server
-node cli.js serve --port 3100 --plugins-dir ./plugins
-
-# MCP mode
 node cli.js mcp
 ```
 
-### CLI Aliases
+All CLI and MCP tools route through the same dispatch registry. The full tool
+list and aliases live in [Getting Started and Preview](./docs/getting-started.md)
+and [Host Contracts and Construction Protocol](./docs/host-contracts.md).
 
-| Alias | Tool |
-|-------|------|
-| `scaffold` | `scaffold_workspace` |
-| `plan` | `plan_workspace` |
-| `construct` | `construct_workspace` |
-| `describe` | `describe_workspace` |
-| `discover` | `discover_components` |
-| `validate` | `validate_config` |
-| `preview` | `start_preview` |
+## Visual Demo
 
-## Browser Preview
-
-`start_preview` writes `index.html`, `app.js`, `workspace.config.json`, and
-`preview.contract.json`. The generated HTML declares an import map before
-loading `app.js`, so browser bare imports resolve through an explicit host
-contract:
-
-```javascript
-import { startPreview } from 'symbiote-workspace/handlers';
-
-await startPreview(config, {
-  outputDir: '.workspace-preview',
-  imports: {
-    'symbiote-workspace/browser': './mock-workspace-browser.js',
-    'symbiote-ui/ui': './mock-symbiote-ui.js',
-    'symbiote-engine': './mock-symbiote-engine.js',
-    'symbiote-engine/contracts': './mock-symbiote-engine-contracts.js',
-  },
-});
-```
-
-The generated `app.js` and `workspace.config.json` use the same portable config
-sanitizer as export/import flows, so host/session fields and local paths are not
-copied into preview runtime state.
-
-When `imports` is omitted, preview defaults to local workspace paths and the
-returned `hint` serves the repository root so `symbiote-workspace/browser`,
-`symbiote-ui/ui`, `symbiote-engine`, and `symbiote-engine/contracts` can
-resolve from the generated import map.
-
-The generated runtime imports `applyCascadeTheme` from
-`symbiote-ui/ui`, passes it as `themeAdapter` to
-`mountWorkspace()`, verifies import-map support before loading bare modules,
-renders loader warnings with `data-preview-warning`, and reports import-map,
-module-load, and mount failures separately. Runtime errors include the original
-error message instead of a broad fallback.
-
-### Visual Demo Process
-
-The packaged visual demo runs the same portable construction path that agents
-use: classify intent, create a construction handoff, plan and construct the
-workspace, validate it, strictly export/import the config, write preview files,
-and serve the generated browser preview. The browser fallback renderer
-materializes the portable layout as styled split panels when no host runtime
-controller is supplied.
-
-```bash
-npm run demo:visual
-```
-
-For CI or package smoke checks, write the preview artifacts without starting a
-server:
-
-```bash
-node examples/visual-demo/preview.js --write-only --output-dir tmp/visual-demo-preview
-```
-
-Run the realtime builder demo locally:
-
-```bash
+```sh
 npm run demo:realtime-builder
 ```
 
-Use the opt-in browser smoke when a release gate needs real render evidence:
-
-```bash
-npm run test:visual-demo-browser
-```
-
-It launches the visual demo server and a Chrome-compatible browser, then checks
-that the preview mounts without `[data-preview-error]` and renders the expected
-workspace and panel DOM. The default driver uses Chrome DevTools Protocol.
-For environments where local Chrome/CDP is unavailable, use the Playwright
-driver after installing a Playwright browser:
-
-```bash
-npx playwright install webkit
-SYMBIOTE_BROWSER_DRIVER=playwright SYMBIOTE_PLAYWRIGHT_BROWSER=webkit \
-  npm run test:visual-demo-browser -- --demo realtime-builder --timeout 70000
-```
-
-`SYMBIOTE_PLAYWRIGHT_BROWSER` and `--playwright-browser` accept `chromium`,
-`firefox`, or `webkit`. Smoke output is temporary by default; pass
-`--keep-output` or set `SYMBIOTE_BROWSER_SMOKE_KEEP=1` when retaining generated
-proof artifacts for inspection.
-
-## Portable Relaunch And Host Contract
-
-Use strict export for configs that must be saved, shared, and relaunched by a
-different host:
-
-```javascript
-import {
-  createHostIntegrationContract,
-  exportConfig,
-  importConfig,
-} from 'symbiote-workspace';
-
-let exported = exportConfig(config, { strict: true });
-if (!exported.json) {
-  throw new Error(exported.errors.map((error) => error.message).join('; '));
-}
-
-let imported = importConfig(exported.json);
-let contract = createHostIntegrationContract(imported.config);
-```
-
-Default export mode strips host/local and user identity fields from the exported
-JSON. Strict mode rejects host-only state before sanitizing, so release and
-relaunch flows cannot hide local paths, sessions, endpoints, user identity, or
-host payloads.
-
-`createHostIntegrationContract(config)` returns the implemented host contract
-for a portable config:
-
-- chat construction tools: `classify_workspace`, `plan_workspace`,
-  `construct_workspace`, patch validation/application, import, and export;
-- standalone browser requirements: import-map entries for
-  `symbiote-workspace/browser`, `symbiote-ui/ui`, `symbiote-engine`, and
-  `symbiote-engine/contracts`, `<script type="importmap">` ordering,
-  `mountWorkspace()`, and
-  `symbiote-ui/ui.applyCascadeTheme`;
-- persistence requirements: `export_config`, `import_config`, and
-  `requiredEngineServices` derived from module-declared host services such as
-  `storage.project`;
-- module-required host services and runtime slots collected from
-  `components.modules` and `construction.plan.modules`, with portable ID
-  validation for those contract IDs.
-
-The contract is metadata only: it lists service IDs and import specifiers, never
-credentials, user identity, URLs, local paths, or product code.
-
-## MCP (Model Context Protocol)
-
-Start as MCP server:
-
-```bash
-node cli.js mcp
-```
-
-Exposes all 69 tools from the unified runtime registry via JSON-RPC over stdio.
-Agents can classify, plan,
-propose, validate, apply, export, mutate, and query workspaces
-programmatically.
-
-## Tools Reference
-
-| Category | Tools |
-|----------|-------|
-| **Discovery** | `describe_workspace` `discover_components` `find_component` `list_component_tags` `list_categories` `list_used_components` |
-| **Scaffold** | `list_templates` `scaffold_workspace` `scaffold_from_scratch` |
-| **Construction** | `classify_workspace` `build_construction_questions` `answer_construction_question` `plan_workspace` `construct_workspace` `propose_workspace_patch` `validate_workspace_patch` `apply_workspace_patch` `export_workspace` |
-| **Groups** | `add_group` `remove_group` `update_group` `reorder_groups` `list_groups` |
-| **Sections** | `add_section` `remove_section` `update_section` `reorder_sections` `list_sections` |
-| **Layout** | `set_layout` `add_panel` `remove_panel` `resize_panel` `update_layout_behavior` |
-| **Panel Types** | `register_panel_type` `update_panel_type` `unregister_panel_type` `list_panel_types` |
-| **Menu Actions** | `add_menu_action` `remove_menu_action` `toggle_menu_action` `list_menu_actions` |
-| **Behaviors** | `set_behavior` `get_behavior` `update_behavior` |
-| **Widgets** | `mount_widget` `unmount_widget` `swap_widget` |
-| **Events** | `bridge_event` `unbridge_event` `list_bridges` |
-| **Workflow Modules** | `workflow_kanban` |
-| **Sharing** | `export_config` `import_config` `diff_configs` `merge_configs` |
-| **Workspace Package** | `export_workspace_package` `import_workspace_package` `validate_workspace_package` `inspect_workspace_package` `create_workspace_package_construction_context` `create_workspace_packages_construction_context` `create_workspace_construction_handoff` |
-| **Plugin Metadata** | `collect_plugin_module_capabilities` `collect_plugin_workspace_templates` |
-| **Preview** | `start_preview` |
-| **Validation** | `validate_config` `check_guardrails` |
-| **File I/O** | `save_config` `load_config` |
-
-### Workflow Kanban
-
-`workflow_kanban` registers a portable workflow board panel backed by the
-provider-owned `symbiote-ui` `sn-kanban-board` module. It requires a portable
-`panelType` and a plain JSON `board` with an `id` and non-empty `columns`.
-
-```bash
-node cli.js workflow-kanban --config ws.json \
-  --panel-type approvals \
-  --board '{"id":"release-flow","columns":[{"id":"todo","title":"Todo","cards":[{"id":"task-1","title":"Review package"}]}]}' \
-  --layout-id workflow \
-  --set-default-layout
-```
-
-The tool upserts the panel type, module descriptor, board state field, data
-bindings, select/action/drop event bridges, and optional group/section/layout
-metadata.
-`behavior`, `eventTarget.mapping`, and `requiredHostServices` are validated as
-portable JSON before the active config is mutated.
-
-## Workspace Config
-
-```json
-{
-  "version": "0.2.0",
-  "name": "My Workspace",
-  "register": "tool",
-  "intent": {
-    "brief": "Build a media review workspace",
-    "template": "video-studio",
-    "targetRegister": "media-studio",
-    "audience": ["operators"],
-    "constraints": ["portable-config"],
-    "requiredCapabilities": ["timeline", "preview"]
-  },
-  "construction": {
-    "questions": [],
-    "plan": {
-      "name": "My Workspace",
-      "template": "video-studio",
-      "register": "media-studio"
-    }
-  },
-  "theme": {
-    "params": { "mode": "dark", "hue": 220 },
-    "relations": { "surfaceStep": 1.15 },
-    "overrides": { "--sn-gap": "8px" },
-    "subtrees": [
-      {
-        "selector": "[data-region='preview']",
-        "params": { "hue": 180 },
-        "relations": { "radiusScale": 0.8 },
-        "overrides": { "--sn-node-radius": "4px" }
-      }
-    ]
-  },
-  "layout": {
-    "type": "split",
-    "direction": "horizontal",
-    "ratio": 0.3,
-    "first": { "type": "panel", "panelType": "sidebar" },
-    "second": {
-      "type": "split",
-      "direction": "vertical",
-      "ratio": 0.6,
-      "first": { "type": "panel", "panelType": "viewport" },
-      "second": { "type": "panel", "panelType": "timeline" }
-    }
-  },
-  "panelTypes": {
-    "sidebar": { "title": "Sidebar", "component": "sn-tree-panel", "icon": "folder" },
-    "viewport": { "title": "Viewport", "component": "sn-canvas-viewport", "icon": "tv" },
-    "timeline": { "title": "Timeline", "component": "sn-timeline-editor", "icon": "schedule" }
-  },
-  "groups": [{ "id": "main", "name": "Main", "icon": "home" }],
-  "sections": [{ "id": "overview", "label": "Overview", "groupId": "main" }],
-  "events": [
-    { "id": "bridge_1", "sourcePanel": "timeline", "event": "frameChange", "targetPanel": "viewport" }
-  ],
-  "components": { "catalog": ["sn-tree-panel", "sn-canvas-viewport", "sn-timeline-editor"] }
-}
-```
-
-### Register Values
-
-| Register | Max Panels | Min Ratio | Use Case |
-|----------|-----------|-----------|----------|
-| `tool` | 12 | 0.1 | Dense professional UI (IDE, studio) |
-| `admin` | 14 | 0.08 | Operations/admin consoles |
-| `editor` | 10 | 0.1 | Code, content, and data editors |
-| `agent-workspace` | 12 | 0.1 | Agent control rooms and review desks |
-| `media-studio` | 10 | 0.08 | Timeline, preview, and media production UI |
-| `brand` | 6 | 0.2 | Marketing, landing pages |
-| `presentation` | 4 | 0.25 | Slides, demos, showcases |
-
-## Construction Protocol
-
-The constructor protocol is designed for agents that build workspaces from
-declared modules instead of editing application code directly.
-
-The read-only `classify_workspace` tool returns the matched template,
-normalized intent, initial questionnaire, and `nextAction: "plan-workspace"`.
-The read-only `build_construction_questions` and
-`answer_construction_question` tools expose the questionnaire step directly
-through dispatch, CLI, and MCP without creating a plan or mutating session
-state.
-
-The read-only `plan_workspace` tool returns the same construction plan without
-changing session state. The mutating `construct_workspace` tool writes the
-planned executable config into the active CLI/MCP session and participates in
-the same `--config` auto-save flow as other mutating tools. Both tools accept
-constructor `options` directly, including the `{ intent, options }` object
-returned by `create_workspace_construction_handoff`. Successful responses also
-expose `verification` at the top level, matching `plan.verification` for CLI and
-MCP consumers that need transport-stable construction diagnostics.
-
-```javascript
-import {
-  buildConstructionQuestions,
-  answerConstructionQuestion,
-  planWorkspaceConstruction,
-  extractConstructionPlan,
-} from 'symbiote-workspace/constructor';
-
-let questions = buildConstructionQuestions({
-  brief: 'build an agent review workspace',
-  requiredCapabilities: ['data.table', 'admin.bulk-actions'],
-});
-questions = answerConstructionQuestion(questions, 'theme-mode', 'dark');
-
-let { config } = planWorkspaceConstruction({
-  brief: 'build an agent review workspace',
-  requiredCapabilities: ['data.table', 'admin.bulk-actions'],
-}, {
-  moduleCapabilities: [
-    {
-      tagName: 'sn-data-table',
-      provider: 'symbiote-ui',
-      capabilities: ['data.table', 'admin.bulk-actions'],
-      actions: [{ id: 'refresh', label: 'Refresh' }],
-      requiredHostServices: ['storage.project'],
-      placement: {
-        panelType: 'records',
-        title: 'Records',
-        icon: 'table',
-        behavior: { importance: 90, minInlineSize: 320 },
-      },
-    },
-  ],
-  answers: {
-    'workspace-name': 'Review Desk',
-    'target-register': 'agent-workspace',
-  },
-});
-
-console.log(extractConstructionPlan(config));
-```
-
-`config.intent` stores the normalized brief and target register.
-`config.construction.questions` stores the questionnaire state, including
-defaults, answers, dependencies, and skipped reasons.
-`config.construction.plan` stores the normalized construction plan.
-`components.modules` stores module capability descriptors for catalog or custom
-components. When the intent includes `requiredCapabilities` and no explicit
-`module-selection` answer is provided, the constructor derives the module
-selection from declared descriptor capabilities. Explicit answers are preserved,
-and any uncovered requirements are reported in
-`config.construction.plan.capabilities.missing`. The plan also records
-`capabilities.byCapability` so agents can see which selected modules cover each
-requirement and which ranked unselected modules are available as alternatives.
-`capabilities.selectedModules` lists every selected module, including explicit
-selections that matched none of the required capabilities, with matched and
-missing capability diagnostics plus the module selection reason.
-The `execution-model` question records how the workspace should execute:
-`ui-only`, `graph-execution`, `server-session`, `remote-provider`,
-`mobile-executor`, or `automation-bridge`. The selected value is preserved in
-`config.intent.executionModel`, `config.execution.model`, and
-`config.construction.plan.execution.model`. The same plan section summarizes
-selected-module `requiredHostServices`, `runtimeSlots`, and `enginePacks` so
-hosts can decide whether they can execute the workspace without embedding host
-URLs, credentials, or runtime handles in the portable config.
-Descriptor `provider` and `descriptor.package` references must be portable
-package or registry identifiers such as `symbiote-ui` or `@acme/workspace-pack`;
-URLs, file references, and local paths are rejected before descriptors reach
-construction or plugin handoff surfaces.
-When `plan_workspace` or `construct_workspace` report missing module
-capabilities, top-level `readiness.recovery[]` entries include those ranked
-alternatives when the planner found compatible unselected modules. Failed
-`construct_workspace` responses also include the rejected construction `plan`
-so callers can inspect selected-module diagnostics without re-planning.
-
-External descriptors that do not already have a matching `panelTypes` entry are
-materialized from `placement.panelType` or `tagName`. The constructor copies
-placement title, icon, and behavior into the generated panel type, and selected
-generated panels are added to the root BSP layout when they are not present in
-any existing layout. Generated panel types that are not selected are removed
-from the executable `config.panelTypes` surface; their descriptors can remain
-in `components.modules` as catalog metadata and capability alternatives.
-When module selection prunes a named layout, section `layoutId` references are
-normalized back to the surviving root layout. Existing event bridges, data
-bindings, state fields, and engine bindings that reference unselected panels
-are pruned from the executable config in the same cleanup pass.
-
-Generated panel types also receive shell `menuActions` from descriptor
-`actions`, `toolbarItems`, and `menus[].items`, plus portable `settings` from
-descriptor settings and portable child `slots` from descriptor slots. Existing
-panel type menu actions, settings, and slots are
-preserved, so templates can keep authored shell commands and controls while
-external descriptors still expose executable declarations when they create
-panels.
-
-The selected `layout-topology` answer is applied to the executable BSP
-`config.layout` for the selected module panels. Topologies remain portable
-constructor semantics; the emitted workspace layout still uses the stable
-`panel` and `split` node types required by the runtime schema.
-The construction plan also records `layout.regions`, mapping descriptor
-`placement.regions` hints to selected panel types. When a descriptor does not
-declare regions, the selected panel type is used as the portable region name.
-
-The constructor records portable runtime policy through `execution-model` and
-`required-host-services` questions. Selected host services are written to
-`config.intent.hostServices`, `config.execution.hostServices`, and
-`config.construction.plan.execution.requiredHostServices`; module-declared
-requirements remain visible as `moduleHostServices` for host readiness review.
-
-The constructor copies matching descriptor capabilities, actions, settings,
-state fields, events, bindings, slots, runtime slots, placement hints, and
-required host service IDs into `config.construction.plan.modules`. Selected
-modules also expose `matchedCapabilities` and `selectionReason`; aggregate
-coverage is stored in `config.construction.plan.capabilities`.
-`validation.reports` and `patches` can persist machine-readable review results
-from patch validation.
-
-Construction also writes verification reports to
-`config.construction.plan.verification.reports` and mirrors them to
-`config.validation.reports`. Reports compose existing portability export,
-design guardrail, module capability, and package/host readiness checks, so
-agents can inspect construction readiness without invoking separate validators
-or host-specific services. Dispatch, CLI, and MCP construction responses expose
-the same payload as top-level `verification`. Report entries use stable
-`pass`, `warn`, or `blocked` status values with `info`, `warning`, or `error`
-severity, and both report locations are validated against the same shape. Each
-report entry requires `id`, `check`, `status`, `severity`, and `message`; it may
-also include `version`, `diagnostics`, and `suggestedPatches`.
-
-Selected descriptor bindings are also materialized into `config.data.bindings`.
-Each binding record carries `panelType`, `component`, `id`, `direction`, and
-optional `path`/`schema`; `direction` must be `input`, `output`, or `two-way`.
-This is a portable declaration for host/runtime handoff, not an embedded server
-endpoint or execution engine.
-
-Selected descriptor event declarations are materialized into `config.events`.
-Emitted events create broadcast bridges from the source panel, and matching
-selected descriptor consumers create targeted bridges with optional
-`targetMethod`, `targetProperty`, and `mapping` metadata. Authored bridges are
-preserved, and unselected panels do not receive generated event routes.
-
-Selected descriptor state declarations are materialized into
-`config.state.fields`. Each state field record carries `panelType`, `component`,
-`id`, `type`, a portable `path`, and optional `default`, `schema`, and
-`persistence`. This is a portable field contract and default declaration; live
-component/session values stay outside workspace configs.
-
-Selected descriptor actions, settings, state fields, events, and bindings may also carry
-portable `engine` metadata with `graphId`, `nodeId`, and optional
-`input`/`output`/`param`/`pack`. The constructor materializes those references
-into `config.engine.bindings[]` and aggregates pack identifiers into
-`config.engine.packs[]`; authored `config.engine.graphs[]` records stay plain
-serializable graph JSON. When a binding targets a graph authored in the
-workspace, validation checks the referenced node ID when that graph lists nodes.
-Bindings to undeclared graph IDs remain portable host handoff references that a
-host/runtime may resolve externally. This layer describes host/engine handoff
-metadata only and does not import or execute `symbiote-engine`.
-
-Selected descriptor settings are materialized into `panelTypes.*.settings` when
-the selected panel type does not already define settings. Each setting carries a
-portable `id`, `label`, `type`, optional `default`, enum `options`, and optional
-binding identifier for host/UI configuration surfaces.
-
-Selected descriptor slots are materialized into `panelTypes.*.slots` when the
-selected panel type does not already define slots. Each slot carries a portable
-`id`, optional `role`, accepted component/capability identifiers, and an optional
-`required` flag for host shell composition surfaces. Runtime slots stay in
-descriptor/package readiness metadata and are not converted into panel slots.
-
-## Browser Theme Mounting
-
-`symbiote-workspace/browser` exports browser-safe schema, loader, constructor,
-sharing, validation, and plugin APIs plus DOM mounting helpers. Node-only
-runtime dispatch remains in `symbiote-workspace/runtime`.
-
-The browser entrypoint applies workspace theme config when mounting:
-
-```javascript
-import { mountWorkspace } from 'symbiote-workspace/browser';
-import { applyCascadeTheme } from 'symbiote-ui/ui';
-
-let mounted = mountWorkspace(config, document.querySelector('#workspace'), {
-  themeAdapter: { applyCascadeTheme },
-  onThemeChange({ config }) {
-    saveConfig(config);
-  },
-});
-```
-
-`theme.params` and `theme.relations` are passed to the adapter. `theme.overrides`
-are applied as CSS custom properties on the workspace root, and `theme.subtrees`
-apply scoped params, relations, and overrides to matching descendants. If params
-or relations are present without a theme adapter, mounting throws instead of
-silently skipping the cascade.
-
-`cascade-theme-change` events from `cascade-theme-widget` or
-`cascade-theme-editor` write normalized params back into `config.theme.params`.
-Events with `detail.targetSelector` update the matching `theme.subtrees[]`
-entry so manual theme edits can survive export/import as portable config.
-
-## Plugin System
-
-Everything beyond core libraries is a plugin: provider bridges, handler packs,
-UI components, themes, and integrations.
-
-### Plugin Format
-
-```javascript
-// my-plugin.plugin.js
-export default {
-  name: '@symbiote/my-plugin',
-  version: '1.0.0',
-  category: 'handler',            // handler | provider | component | theme | integration
-
-  // Engine handlers (registered in symbiote-engine Registry)
-  handlers: [
-    {
-      type: 'my/action',
-      driver: {
-        inputs: [{ name: 'data', type: 'any' }],
-        outputs: [{ name: 'result', type: 'any' }],
-      },
-      lifecycle: {
-        execute: async (inputs, params) => { /* ... */ },
-      },
-    },
-  ],
-
-  // UI components as tag names or module capability descriptors
-  components: [
-    'sn-my-widget',
-    {
-      tagName: 'sn-data-table',
-      provider: 'symbiote-ui',
-      capabilities: ['data.table'],
-      toolbarItems: [{
-        id: 'filter',
-        label: 'Filter',
-        engine: { graphId: 'table-flow', nodeId: 'filter', input: 'rows' },
-      }],
-      bindings: [{
-        id: 'rows',
-        direction: 'input',
-        path: 'data.rows',
-        engine: { graphId: 'table-flow', nodeId: 'rows', output: 'rows', pack: 'table-pack' },
-      }],
-      requiredHostServices: ['storage.project'],
-    },
-  ],
-
-  // Plugin-level portable requirements
-  capabilities: ['admin.table'],
-  requiredHostServices: ['storage.project'],
-
-  // Workspace integration
-  workspace: {
-    configSchema: { myParam: { type: 'string' } },
-  },
-
-  // Lifecycle hooks
-  activate: (ctx) => { /* ctx.server, ctx.graph, ctx.wss, ctx.broadcast */ },
-  deactivate: () => { /* cleanup */ },
-};
-```
-
-### Plugin API
-
-```javascript
-import {
-  MODULE_CAPABILITY_DESCRIPTOR_SCHEMA,
-  MODULE_CAPABILITY_SCHEMA_VERSION,
-  registerPlugin,
-  activatePlugin,
-  unregisterPlugin,
-  listPlugins,
-  validatePlugin,
-  validateModuleCapabilityDescriptor,
-  validatePortableStringArray,
-  collectPluginModuleCapabilities,
-  collectPluginWorkspaceTemplates,
-} from 'symbiote-workspace/plugins';
-
-let result = registerPlugin(myPlugin);
-console.log(result.ok); // true
-
-await activatePlugin('@symbiote/my-plugin', { server, graph });
-
-console.log(listPlugins());
-// [{ name: '@symbiote/my-plugin', version: '1.0.0', category: 'handler', status: 'active' }]
-
-let capabilities = collectPluginModuleCapabilities([myPlugin]);
-if (!capabilities.ok) {
-  throw new Error(JSON.stringify(capabilities.errors));
-}
-
-// Pass plugin-provided module descriptors into constructor or dispatch APIs.
-console.log(capabilities.moduleCapabilities);
-console.log(MODULE_CAPABILITY_SCHEMA_VERSION);
-validateModuleCapabilityDescriptor(
-  capabilities.moduleCapabilities[0],
-  'moduleCapabilities[0]',
-  []
-);
-validatePortableStringArray(['analysis.sentiment'], 'capabilities', []);
-
-let templates = collectPluginWorkspaceTemplates([myPlugin]);
-if (!templates.ok) {
-  throw new Error(JSON.stringify(templates.errors));
-}
-
-console.log(templates.templates);
-```
-
-`collectPluginModuleCapabilities()` returns only object entries from
-`plugin.components`. String component tags remain valid registry/catalog
-entries, but they are not converted into module capability descriptors.
-Plugin-level `capabilities` and `requiredHostServices` describe the plugin
-itself and are not copied onto individual components.
-Descriptor provider references are validated with the same portability rules as
-workspace module descriptors, so plugin packs cannot introduce URL, file, or
-local path provider metadata through component declarations.
-The same module capability schema helpers are exported from
-`symbiote-workspace/schema`, the root entrypoint, the browser entrypoint, and
-`symbiote-workspace/plugins` for consumers that validate descriptors at package
-boundaries, including `validatePortableStringArray()` for portable capability
-and service ID lists.
-
-`collectPluginWorkspaceTemplates()` returns validated entries from
-`plugin.workspace.templates`. Each entry uses `{ name, description?, config }`,
-where `name` is a portable template identifier and `config` is a strict
-workspace config. Pass `templates.templates` to constructor or dispatch APIs as
-`workspaceTemplates`; the constructor stays plugin-neutral and only consumes the
-plain portable entries.
-
-The same metadata collectors are exposed through dispatch/MCP as
-`collect_plugin_module_capabilities` and `collect_plugin_workspace_templates`,
-and through the CLI as `collect-plugin-module-capabilities` and
-`collect-plugin-workspace-templates`. These tools validate and collect metadata
-only; they do not activate plugins or initialize workspace session state.
-
-## Portability Rules
-
-Workspace configs are **portable JSON** — shareable like ComfyUI projects:
-
-- ❌ No auth tokens, API keys, secrets
-- ❌ No server URLs or endpoints
-- ❌ No user identity or session data
-- ✅ Theme params, layout trees, component references
-- ✅ Host-agnostic: any compliant host assembles from config
-
-## Templates
-
-Built-in workspace templates for quick start:
-
-```bash
-node cli.js list-templates
-# chat, editor, graph, dashboard, admin, agent-workspace, social-automation, video-studio
-```
-
-```javascript
-import { listTemplates, getTemplate } from 'symbiote-workspace/constructor';
-
-listTemplates();
-// ['chat', 'editor', 'graph', 'dashboard', 'admin', 'agent-workspace', 'social-automation', 'video-studio']
-
-let template = getTemplate('chat');
-console.log(template.config); // Full workspace config
-```
-
-Canonical templates include module capability descriptors in
-`config.components.modules`, so construction plans can map selected panels to
-portable capabilities, actions, state fields, bindings, runtime slots, placement
-hints, and required host services.
-
-Constructor and dispatch APIs also accept external templates as plain data:
-
-```javascript
-import { planWorkspaceConstruction } from 'symbiote-workspace/constructor';
-import { collectPluginWorkspaceTemplates } from 'symbiote-workspace/plugins';
-
-let templates = collectPluginWorkspaceTemplates([myPlugin]);
-let { config } = planWorkspaceConstruction({
-  brief: 'build a team room',
-  template: 'team-ai-room',
-}, {
-  workspaceTemplates: templates.templates,
-});
-```
-
-CLI construction commands accept the same input with
-`--workspace-templates <json-array>`.
-
-External templates can model collaboration products such as command chats, team
-rooms, and voice/video rooms with neutral capability tags, for example
-`room.command`, `room.transcript`, `room.video`, `call.controls`, and
-`presence.roster`. Required services and runtime providers stay declarative in
-`requiredHostServices` and `runtimeSlots`; the host supplies actual realtime
-media, agent runtime, presence, and storage implementations.
-
-### Workspace Package
-
-The workspace package format wraps a portable workspace config with manifest
-metadata, a host integration contract, dependency lists, and asset references
-for distribution and discovery.
-
-```javascript
-import {
-  exportWorkspacePackage,
-  importWorkspacePackage,
-  createWorkspaceConstructionHandoff,
-  createWorkspacePackageConstructionContext,
-  createWorkspacePackagesConstructionContext,
-  inspectWorkspacePackage,
-  prepareConstructionIntentWithPackageContext,
-  validateWorkspacePackage,
-  WORKSPACE_PACKAGE_KIND,
-  WORKSPACE_PACKAGE_SCHEMA_VERSION,
-} from 'symbiote-workspace';
-```
-
-`exportWorkspacePackage(config, manifest)` exports the workspace config in
-strict mode, collects host contract requirements, normalizes the manifest
-(id, version, tags, permissions, dependencies, assets), and returns a
-validated package object with JSON output. A successful package requires a
-portable manifest `id`; name, version, compatibility, tags, permissions,
-dependencies, and asset lists are normalized from the manifest and config.
-
-`importWorkspacePackage(json)` parses a workspace package JSON string,
-validates it against the package schema, and returns both the parsed package
-and its workspace config as separate objects.
-
-`validateWorkspacePackage(packageObject)` validates a workspace package object
-in isolation, checking the package kind and schema version, workspace config
-validity, manifest portability, and host contract integrity, without requiring
-JSON serialization. Dispatch/MCP `validate_workspace_package` returns
-`status: "ok"` for valid packages and accepts either a `package` object or a
-`json` package string; the CLI exposes those forms as `--package` and `--json`.
-Invalid packages keep `valid: false` and `errors`, and also return
-`status: "error"`, `code: "workspace_package_invalid"`, and
-`nextAction: "fix-workspace-package"` so transports can signal failure.
-
-`inspectWorkspacePackage(input, options)` inspects a workspace package
-object or JSON string without requiring a full host. Returns `valid` (no
-structural errors), `ready` (`valid` and no missing-dependency warnings),
-`package`, `config`, `summary`, `compatibility`, `requirements`, and
-`missing`. Pass an optional `options.available` host-neutral inventory
-(`components`, `plugins`, `packages`, `hostServices`, `runtimeSlots`) to
-detect missing capabilities; missing items lower `ready` to `false` through
-warnings. Dispatch/MCP `inspect_workspace_package` returns the transport-safe
-inspection summary, readiness, `nextAction`, warnings, and errors without
-echoing the full package or config. No marketplace or product-install semantics
-are applied.
-
-`createWorkspacePackageConstructionContext(input, options)` projects a valid
-workspace package into constructor-ready data without installing or activating
-anything. It reuses package inspection and returns external `workspaceTemplates`,
-package `moduleCapabilities`, explicit `requiredCapabilities`, package
-requirements, readiness gaps, and source metadata. Pass the returned
-`workspaceTemplates`, `moduleCapabilities`, and `requiredCapabilities` to
-`planWorkspaceConstruction()` or the construction dispatch tools.
-Dispatch and MCP handoff flows preserve those package-provided templates and
-module descriptors through `plan_workspace`, `construct_workspace`, and exported
-workspace config output.
-
-`createWorkspacePackagesConstructionContext({ packages, available })` aggregates
-multiple package entries (`{ package, templateName }` or `{ json, templateName }`)
-into one constructor-ready context. Duplicate workspace template names or module
-`tagName` descriptors are blocking conflicts; host availability gaps remain
-warnings and keep the context structurally valid but not ready. Package
-inspection and construction-context helpers expose a compact `readiness` summary
-with `status`, counts, and `nextAction` so agents can choose construct, review,
-or fix flows before creating a handoff. The same helper is exposed through
-dispatch/MCP as `create_workspace_packages_construction_context` and through the
-CLI as `create-workspace-packages-construction-context`.
-
-`prepareConstructionIntentWithPackageContext(intent, context)` returns a cloned
-constructor intent with package-required capabilities merged and sorted into
-`requiredCapabilities`. Use it when a host wants to inspect or route the prepared
-intent before creating a handoff.
-
-`createWorkspaceConstructionHandoff(context, intent)` converts a single-package
-or package-collection construction context into a handoff envelope with
-`_type: "workspace-construction-handoff"` plus the exact `{ intent, options }`
-shape consumed by `planWorkspaceConstruction(handoff.intent, handoff.options)`.
-It uses `prepareConstructionIntentWithPackageContext()` to merge package
-`requiredCapabilities` into the supplied construction intent and passes only
-valid package templates and module descriptors through. The
-handoff also carries `options.packageContext`, which construction plans copy to
-`plan.packageContext` and `config.construction.packageContext` so agents can see
-package source, requirements, missing capability gaps, warnings, and readiness
-without re-inspecting the package.
-Dispatch/MCP/CLI handoff responses mirror the same package decision data as
-top-level `readiness` and `nextAction`, so agents can route immediately after
-creating a handoff without parsing nested `options.packageContext`.
-Plans also include `plan.readiness.package`, a compact summary with package
-validity, readiness status, source count, missing/warning/error counts, and the
-next action (`construct`, `review-package-readiness`, or
-`fix-package-context`). Dispatch/MCP responses expose the highest-priority
-recovery summary as top-level `readiness`: package readiness when package
-context is invalid or not ready, and required-module-capability readiness when a
-ready package context still leaves unmatched required capabilities.
-Not-ready package readiness includes missing capability groups, recovery steps,
-diagnostics, and package source metadata at that top level so orchestrators can
-route follow-up work without parsing nested plan internals.
-Package readiness is only `ready` when the package context is valid, explicitly
-ready, and has no missing requirements, warnings, or errors. `plan_workspace`
-exposes top-level blocked readiness for missing required module capabilities so
-agents can recover before calling `construct_workspace`.
-`plan_workspace` accepts not-ready handoffs for diagnostics, but
-`construct_workspace` rejects `ready: false` handoffs so agents cannot
-materialize a degraded package workspace without resolving readiness gaps first.
-The construct gate also rejects stale handoffs that omit `ready` while still
-carrying missing capabilities or warning diagnostics, and rejects contradictory
-`ready: true` handoffs that still carry missing capabilities or warnings.
-Invalid handoff errors include `code: "construction_handoff_invalid"` and
-`nextAction: "fix-package-context"`; not-ready errors include
-`code: "construction_handoff_not_ready"` and
-`nextAction: "review-package-readiness"`. Both error paths return a structured
-`readiness` payload with missing capabilities, diagnostics, counts, status, and
-package source metadata. Missing capability entries also include `recovery`
-steps such as `register-component`, `install-plugin`, or `provide-host-service`
-so agents can route the next action without parsing prose.
-Invalid helper intent inputs in `create_workspace_construction_handoff` return
-`code: "construction_handoff_intent_invalid"` and
-`nextAction: "fix-construction-intent"` across dispatch, CLI, and MCP.
-It is exposed through dispatch/MCP as `create_workspace_construction_handoff`
-and through the CLI as `create-workspace-construction-handoff`.
-
-```javascript
-let context = createWorkspacePackageConstructionContext(packageJson, {
-  templateName: 'review-package',
-});
-
-let handoff = createWorkspaceConstructionHandoff(context, {
-  brief: 'Build a review queue workspace',
-  template: 'dashboard',
-});
-
-let { config, plan } = planWorkspaceConstruction(handoff.intent, handoff.options);
-```
-
-The dispatch/MCP tools accept the same handoff object directly:
-
-```javascript
-await dispatch('plan_workspace', handoff, session);
-await dispatch('construct_workspace', handoff, session);
-```
-
-The CLI accepts the same handoff object as a single positional JSON argument,
-or constructor options with `--options <json-object>` when agents pass only the
-handoff options through shell arguments:
-
-```bash
-node cli.js plan-workspace '{"_type":"workspace-construction-handoff","valid":true,"ready":true,"intent":{"brief":"Build a review queue workspace","template":"dashboard"},"options":{"workspaceTemplates":[],"moduleCapabilities":[]}}'
-```
-
-The manifest rejects host, identity, and marketplace state:
-
-- **host/identity keys**: `token`, `secret`, `session`, `user`, `credential`,
-  `endpoint`, `password`, `profile`, `organization`, `tenant`, `billing`,
-  `subscription`
-- **marketplace keys**: `price`, `seller`, `marketplace`, `licenseKey`,
-  `licenseServer`, `purchase`, `rating`, `payout`, `listing`
-- **non-portable values**: local file URIs, home-directory or temporary
-  absolute paths, HTTP/WS URLs in dependency and asset fields
-
-## Related Packages
-
-- [`symbiote-ui`](https://github.com/RND-PRO/symbiote-ui) - Web Components, provider catalogs, layout metadata, and component descriptors.
-- [`symbiote-engine`](https://github.com/RND-PRO/symbiote-engine) - runtime execution, CLI commands, server helpers, persistence, and handlers.
-- [`symbiote-node`](https://github.com/RND-PRO/symbiote-node) - terminal migration facade for older imports.
+The realtime builder demo shows the chat-state construction loop: empty layouts,
+validated patches, required UI modules, mounted Symbiote UI surfaces, Cascade
+theme state, and no-reload workspace updates. See
+[examples/visual-demo/README.md](./examples/visual-demo/README.md) for browser
+smoke options and CI-friendly write-only mode.
+
+## Documentation
+
+- [Architecture and Entry Points](./docs/architecture.md) — package layers,
+  dispatch architecture, and import boundaries.
+- [Getting Started and Preview](./docs/getting-started.md) — programmatic setup,
+  CLI aliases, generated browser previews, and visual demo commands.
+- [Host Contracts and Construction Protocol](./docs/host-contracts.md) — strict
+  export/import, MCP tools, workspace config, construction planning, and theme
+  mounting.
+- [Plugins, Portability, and Templates](./docs/plugins-and-templates.md) —
+  plugin format, module capabilities, portability rules, templates, and
+  workspace packages.
 
 ## License
 
-MIT
+MIT © [RND-PRO.com](https://rnd-pro.com)
+
+## Related Projects
+
+- [symbiote-ui](https://github.com/RND-PRO/symbiote-ui) — Web Components,
+  provider catalogs, layout metadata, Cascade theme, and WebMCP descriptors.
+- [symbiote-engine](https://github.com/RND-PRO/symbiote-engine) — graph
+  execution, runtime commands, server helpers, persistence, and handler loading.
+- [symbiote-node](https://github.com/RND-PRO/symbiote-node) — terminal migration
+  facade for older imports.
+- [JSDA-Kit](https://github.com/rnd-pro/jsda-kit) — JavaScript ESM asset
+  generation, SSR, and static output pipeline.
+- [Symbiote.js](https://github.com/symbiotejs/symbiote.js) — isomorphic
+  reactive Web Components framework.
+
+Made with ❤️ by the RND-PRO team

@@ -72,6 +72,7 @@
     "runtime/",
     "scripts/",
     "examples/",
+    "docs/",
     "README.md",
     "LICENSE",
     "CHANGELOG.md"
