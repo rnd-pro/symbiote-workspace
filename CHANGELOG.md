@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## [1.0.0] - 2026-06-20
+
 - Hardened `npm run release:preflight` so stable release gates now verify both
   `package-lock.json` top-level version and root package version against
   `--target-version`.

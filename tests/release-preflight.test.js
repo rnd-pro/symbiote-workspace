@@ -56,9 +56,11 @@ describe('release preflight', () => {
     assert.match(stdout, /Release preflight passed/);
   });
 
-  it('keeps the default stable gate closed until package metadata is released', async () => {
+  it('keeps stable gates closed for unreleased target metadata', async () => {
     await assert.rejects(
       runPreflight([
+        '--target-version',
+        '1.0.1',
         '--skip-npm-ci',
         '--skip-tests',
         '--skip-package-consumer',
@@ -69,10 +71,10 @@ describe('release preflight', () => {
         '--skip-npm-registry',
       ]),
       (error) => {
-        assert.match(error.stderr, /package\.json version is .* expected 1\.0\.0/);
-        assert.match(error.stderr, /package-lock\.json version is .* expected 1\.0\.0/);
-        assert.match(error.stderr, /package-lock\.json root package version is .* expected 1\.0\.0/);
-        assert.match(error.stderr, /CHANGELOG\.md is missing a dated 1\.0\.0 release heading/);
+        assert.match(error.stderr, /package\.json version is .* expected 1\.0\.1/);
+        assert.match(error.stderr, /package-lock\.json version is .* expected 1\.0\.1/);
+        assert.match(error.stderr, /package-lock\.json root package version is .* expected 1\.0\.1/);
+        assert.match(error.stderr, /CHANGELOG\.md is missing a dated 1\.0\.1 release heading/);
         return true;
       },
     );
