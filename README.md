@@ -1,21 +1,20 @@
 # symbiote-workspace
 
-Agent-driven workspace orchestration with plugin system:
-**intent → questionnaire → plan → validate → build → export**.
+`symbiote-workspace` owns the portable workspace construction layer for
+Symbiote provider systems.
 
-Portable workspace configs over [symbiote-ui](https://github.com/RND-PRO/symbiote-ui) primitives. Optional server mode via [symbiote-engine](https://github.com/RND-PRO/symbiote-engine).
+It is built for agents and hosts that turn chat intent into executable
+workspace configs. The package owns construction, schema validation, module
+selection, plugin metadata, browser assembly, export/import portability, CLI,
+MCP, and optional server mode. Hosts own chat, model routing, auth, policy,
+secrets, storage, billing, and identity.
 
-## Product Thesis
-
-`symbiote-workspace` turns chat intent into executable workspace configs. The
-host provides the chat surface, model routing, auth, transport, and runtime
-services; this package owns construction, module selection, validation,
-browser assembly, export, and relaunch portability.
-
-Construction uses existing `symbiote-ui` primitives, canonical templates,
-module capability descriptors, and plugin packs first. Custom components or
-new modules are fallback outputs only when discovery shows that the requested
-capability is missing from the available catalog.
+Workspace construction uses existing
+[`symbiote-ui`](https://github.com/RND-PRO/symbiote-ui) primitives, canonical
+templates, module capability descriptors, and plugin packs before creating new
+components. Optional server mode uses
+[`symbiote-engine`](https://github.com/RND-PRO/symbiote-engine) runtime
+primitives without importing engine internals.
 
 Selected module descriptors are materialized into executable workspace
 surfaces: placement creates panel types, actions/menus/toolbars become panel
@@ -23,16 +22,9 @@ shell actions, `events.emits` become portable broadcast event bridges, and
 bindings are copied into validated `data.bindings` records for host/runtime
 handoff.
 
-## Package Status
+## Package Verification
 
-This repository is currently verified through local package packing and a
-temporary consumer install. Do not use the npm registry as the source of truth
-for this pre-publication state.
-
-## Local Package Verification
-
-Verify the packed package through a temporary consumer instead of publishing to
-npm:
+Verify the package through a temporary consumer before publishing:
 
 ```bash
 npm ci --ignore-scripts
@@ -64,13 +56,6 @@ For first publication of a package name that is not yet present in the npm
 registry, pass `--allow-new-package-name` only after release-owner approval.
 For local or offline checks, use `--skip-npm-auth` and
 `--skip-npm-registry`.
-
-For a prerelease checkpoint against the current package version, pass the
-current version explicitly and skip release-only gates as needed:
-
-```bash
-npm run release:preflight -- --target-version 0.3.0-alpha.2 --skip-browser --skip-git-clean --skip-npm-auth --skip-npm-registry
-```
 
 ## Architecture
 
@@ -110,6 +95,16 @@ CLI and MCP share the same dispatch layer — every tool available via MCP is al
 | `symbiote-workspace/schema` | Node | Schema definitions, validators |
 | `symbiote-workspace/schema/*` | Node | Direct schema module imports for validators and schema constants |
 | `symbiote-workspace/package.json` | Node | Package metadata for consumer tooling |
+
+## Related Packages
+
+- [`symbiote-ui`](https://github.com/RND-PRO/symbiote-ui) - Web Components,
+  provider catalogs, layout metadata, Cascade theme, and WebMCP descriptors.
+- [`symbiote-engine`](https://github.com/RND-PRO/symbiote-engine) - graph
+  execution, runtime commands, server helpers, persistence, and handler
+  loading.
+- [`symbiote-node`](https://github.com/RND-PRO/symbiote-node) - terminal
+  migration facade for older imports.
 
 ## Quick Start
 
