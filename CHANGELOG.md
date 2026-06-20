@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Added `llms.txt` as a compact agent-facing resource map and included it in
+  the published package.
 - Split the public README reference material into focused docs, added a
   realtime-builder screenshot to the README, and included the docs assets in
   the published package.

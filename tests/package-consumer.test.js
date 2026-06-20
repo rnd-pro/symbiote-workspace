@@ -114,6 +114,7 @@ function assertPackIncludesTarget(paths, target) {
 function assertPackedPublicDocsUsePublicProviderContracts() {
   let docs = [
     'README.md',
+    'llms.txt',
     'CHANGELOG.md',
     'docs/architecture.md',
     'docs/getting-started.md',
@@ -145,7 +146,7 @@ function assertWorkspacePackList(pack) {
   assertNoForbiddenPackEntries(pack);
   assertPackedPublicDocsUsePublicProviderContracts();
 
-  for (let target of ['package.json', 'README.md', 'LICENSE', 'CHANGELOG.md']) {
+  for (let target of ['package.json', 'README.md', 'llms.txt', 'LICENSE', 'CHANGELOG.md']) {
     assert.equal(paths.has(target), true, `Package must include ${target}`);
   }
 
