@@ -2,7 +2,7 @@
   "name": "symbiote-workspace",
   "version": "1.0.0",
   "type": "module",
-  "description": "Portable workspace construction layer for Symbiote provider systems: schema, constructor, plugins, sharing, browser assembly, CLI, MCP, and server mode.",
+  "description": "Toolkit for turning chat intent into portable, executable Symbiote workspaces.",
   "main": "index.js",
   "exports": {
     ".": {

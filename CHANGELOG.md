@@ -6,9 +6,10 @@ All notable changes to this project will be documented in this file.
 
 ## [1.0.0] - 2026-06-20
 
-- Aligned npm package metadata and README introduction with the Symbiote package
-  family style: package layer ownership first, host boundaries explicit, and no
-  pre-publication status language in public docs.
+- Aligned npm package metadata and README introduction with the RND-PRO package
+  public-description style used by `rnd-pro/jsda-kit`: concise value
+  proposition first, practical overview, `Why`, `What is`, and grouped
+  `Key Features`, with no pre-publication status language in public docs.
 - Hardened `npm run release:preflight` so stable release gates now verify both
   `package-lock.json` top-level version and root package version against
   `--target-version`.

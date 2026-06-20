@@ -1,61 +1,69 @@
 # symbiote-workspace
 
-`symbiote-workspace` owns the portable workspace construction layer for
-Symbiote provider systems.
+**symbiote-workspace turns chat intent into portable, executable Symbiote
+workspaces. Fast.**
 
-It is built for agents and hosts that turn chat intent into executable
-workspace configs. The package owns construction, schema validation, module
-selection, plugin metadata, browser assembly, export/import portability, CLI,
-MCP, and optional server mode. Hosts own chat, model routing, auth, policy,
-secrets, storage, billing, and identity.
+Build professional agent workspaces from plain JSON configs: layout shells,
+panels, modules, actions, events, data bindings, Cascade themes, plugin
+metadata, runtime slots, host requirements, and browser assembly. The package
+gives agents a direct path from user intent to a relaunchable workspace without
+forking a product app, hardcoding a host, or generating one-off UI code first.
 
-Workspace construction uses existing
-[`symbiote-ui`](https://github.com/RND-PRO/symbiote-ui) primitives, canonical
-templates, module capability descriptors, and plugin packs before creating new
-components. Optional server mode uses
-[`symbiote-engine`](https://github.com/RND-PRO/symbiote-engine) runtime
-primitives without importing engine internals.
+## Why symbiote-workspace?
 
-Selected module descriptors are materialized into executable workspace
-surfaces: placement creates panel types, actions/menus/toolbars become panel
-shell actions, `events.emits` become portable broadcast event bridges, and
-bindings are copied into validated `data.bindings` records for host/runtime
-handoff.
+- **One artifact for the whole workspace** - layout, modules, theme, bindings,
+  host requirements, and validation reports live in portable JSON.
+- **Agent construction without free-form app forks** - classify intent, ask the
+  construction questions, select modules, validate the result, and assemble it
+  in the browser.
+- **Symbiote primitives first** - use `symbiote-ui` layouts, Web Components,
+  Cascade theme, manifests, and plugin descriptors before creating new modules.
+- **Same tools over CLI and MCP** - every registered tool goes through one
+  dispatch registry, so local scripts and agent hosts see the same behavior.
+- **Relaunchable by any compatible host** - exported configs exclude auth,
+  secrets, user identity, local paths, and product-only runtime state.
 
-## Package Verification
+## What is Symbiote Workspace?
 
-Verify the package through a temporary consumer before publishing:
+Symbiote Workspace is the portable construction layer between provider UI
+primitives and host applications. The host supplies chat, model routing, auth,
+policy, secrets, storage, billing, and identity. `symbiote-workspace` supplies
+the schema, constructor, plugin registry, config mutation tools, validation,
+sharing contract, browser mounting, CLI, MCP transport, and optional server
+mode.
 
-```bash
-npm ci --ignore-scripts
-npm run test:package-consumer
-```
+## Key Features
 
-The test packs this workspace and the currently installed `symbiote-ui`
-substitute, installs both tarballs into a gitignored `tmp/` consumer, then
-checks public entry points, the CLI bin, construction/export/host-contract
-flow, and MCP stdio behavior. It does not publish or require registry writes.
+### Guided Workspace Construction
 
-## Release Preflight
+- **Construction protocol** - intent classification, questionnaire state,
+  topology planning, module selection, execution model, host services, and
+  package readiness.
+- **Capability-driven modules** - module descriptors materialize panel types,
+  actions, menus, toolbars, settings, events, slots, engine bindings, and data
+  bindings into executable workspace surfaces.
+- **Template and plugin inputs** - canonical templates and plugin-provided
+  workspace templates feed the same planner instead of creating product forks.
 
-Run the release preflight before any stable version tag or publish attempt:
+### Portable Config Runtime
 
-```bash
-npm run release:preflight -- --target-version 1.0.0
-```
+- **Strict export/import** - shareable workspace JSON strips host-only state and
+  rejects auth, user identity, server URLs, local paths, and session data.
+- **Host integration contracts** - exported metadata tells a compatible host
+  which imports, components, services, runtime slots, and permissions are
+  required to relaunch the workspace.
+- **No-reload browser updates** - mounted workspaces can apply validated config
+  updates and patches without replacing the browser runtime.
 
-The preflight checks package and lockfile release metadata, a dated changelog
-release heading, the 69-tool dispatch registry with `workflow_kanban`,
-project-owned `.mjs` absence, `npm whoami`, npm registry package/version state,
-`npm ci --ignore-scripts`, the full test suite, package-consumer install,
-`npm pack --dry-run --json`, the realtime-builder browser proof, and a clean git
-status. It does not modify package metadata, create tags, publish, or change
-dist-tags.
+### Unified Agent Tooling
 
-For first publication of a package name that is not yet present in the npm
-registry, pass `--allow-new-package-name` only after release-owner approval.
-For local or offline checks, use `--skip-npm-auth` and
-`--skip-npm-registry`.
+- **69 CLI/MCP tools** - one `runtime/dispatch.js` registry drives CLI commands,
+  MCP JSON-RPC, tests, and package-consumer verification.
+- **Workflow kanban tool** - `workflow_kanban` registers portable workflow-board
+  panels backed by provider-owned `symbiote-ui` board components.
+- **Release proof harness** - package preflight verifies metadata, tests,
+  package contents, browser demo proof, npm registry state, and clean git state
+  without publishing.
 
 ## Architecture
 
