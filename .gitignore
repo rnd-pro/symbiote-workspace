@@ -4,3 +4,4 @@ tmp/
 .project-graph-cache.json
 *.tgz
 .DS_Store
+.agent-portal
