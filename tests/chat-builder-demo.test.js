@@ -1,17 +1,21 @@
 /**
- * Chat-first tool-driven demo — construction proof.
+ * Chat-first, questionnaire-driven demo — construction proof.
  *
- * Verifies that the chat-builder demo constructs a workspace AROUND a persistent
- * chat panel using only real dispatch tools, that the chat stays pinned as the
- * center while regions are added around it, and that the result is a valid,
- * portable, relaunchable config.
+ * Verifies that each workspace class is built by answering the system's
+ * questionnaire (the agent selects from offered options), that the system then
+ * places panels from its canonical template, and that the chat is docked as a
+ * global RIGHT panel at full height around a valid, portable config.
  */
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildChatFirstWorkspace, CHAT_PANEL } from '../examples/visual-demo/chat-builder-state.js';
-import { TOOLS, dispatch, createSession } from '../runtime/index.js';
+import {
+  buildChatFirstWorkspace,
+  CHAT_PANEL,
+  CHAT_COMPONENT,
+} from '../examples/visual-demo/chat-builder-state.js';
+import { dispatch, createSession } from '../runtime/index.js';
 import { validateWorkspaceConfig } from '../schema/index.js';
 
 function layoutPanels(node, acc = []) {
@@ -21,67 +25,105 @@ function layoutPanels(node, acc = []) {
   return acc;
 }
 
-test('chat-builder drives construction only through real dispatch tools', async () => {
-  let { steps } = await buildChatFirstWorkspace();
-  let toolNames = new Set(TOOLS.map((t) => t.name));
-  for (let step of steps) {
-    assert.ok(toolNames.has(step.tool), `step ${step.index} uses unknown tool "${step.tool}"`);
-  }
-  // The chat-building granular tools must actually be exercised, not bypassed.
-  let used = new Set(steps.map((s) => s.tool));
-  for (let required of ['register_panel_type', 'set_layout', 'set_behavior', 'add_panel', 'bridge_event', 'export_config']) {
-    assert.ok(used.has(required), `expected the demo to call ${required}`);
+let cached;
+async function build() {
+  if (!cached) cached = await buildChatFirstWorkspace();
+  return cached;
+}
+
+test('all three workspace classes are present', async () => {
+  let { scenarios, chatPanel, chatComponent } = await build();
+  assert.equal(chatPanel, CHAT_PANEL);
+  assert.equal(chatComponent, CHAT_COMPONENT);
+  let keys = scenarios.map((s) => s.key).sort();
+  assert.deepEqual(keys, ['automation', 'programming', 'video']);
+});
+
+test('each scenario answers the offered questionnaire', async () => {
+  let { scenarios } = await build();
+  for (let scenario of scenarios) {
+    assert.ok(scenario.questions.length > 0, `${scenario.key} has no questions`);
+    // Every returned question carries a chosen value (we drop skipped ones).
+    for (let q of scenario.questions) {
+      assert.notEqual(q.chosen, undefined, `${scenario.key}/${q.id} has no chosen value`);
+    }
+    // The module selection is the agent picking every offered module value.
+    let moduleQuestion = scenario.questions.find((q) => q.id === 'module-selection');
+    assert.ok(moduleQuestion, `${scenario.key} is missing the module-selection question`);
+    assert.equal(moduleQuestion.type, 'multi-select');
+    let offered = moduleQuestion.options.map((o) => o.value).sort();
+    assert.ok(offered.length > 0, `${scenario.key} module-selection offered no options`);
+    assert.deepEqual([...moduleQuestion.chosen].sort(), offered, `${scenario.key} did not select all offered modules`);
   }
 });
 
-test('layout is assembled progressively around the chat', async () => {
-  let { steps } = await buildChatFirstWorkspace();
-
-  // Right after set_layout the chat is the entire workspace.
-  let afterSetLayout = steps.find((s) => s.tool === 'set_layout');
-  assert.deepEqual(afterSetLayout.digest.panels, [CHAT_PANEL]);
-
-  // Each add_panel grows the panel count without ever dropping the chat.
-  let addPanelSteps = steps.filter((s) => s.tool === 'add_panel');
-  assert.ok(addPanelSteps.length >= 3, 'expected several add_panel calls');
-  for (let step of addPanelSteps) {
-    assert.ok(step.digest.panels.includes(CHAT_PANEL), 'chat must remain in the layout after every add_panel');
+test('the final config validates strict', async () => {
+  let { scenarios } = await build();
+  for (let scenario of scenarios) {
+    let validation = validateWorkspaceConfig(scenario.config, { strict: true });
+    assert.equal(validation.valid, true, `${scenario.key}: ${JSON.stringify(validation.errors)}`);
   }
+});
 
-  // Final layout has the chat plus the regions built around it.
-  let final = steps.at(-1).digest;
-  assert.ok(final.panels.includes(CHAT_PANEL));
-  for (let region of ['preview', 'inspector', 'graph', 'logs']) {
-    assert.ok(final.panels.includes(region), `final layout should include the ${region} region`);
+test('chat is docked on the right of the root horizontal split', async () => {
+  let { scenarios } = await build();
+  for (let scenario of scenarios) {
+    let root = scenario.config.layout;
+    assert.equal(root.type, 'split', `${scenario.key} root is not a split`);
+    assert.equal(root.direction, 'horizontal', `${scenario.key} root split is not horizontal`);
+    assert.equal(root.second.type, 'panel', `${scenario.key} root second child is not a panel`);
+    assert.equal(root.second.panelType, CHAT_PANEL, `${scenario.key} chat is not the right child`);
+
+    let chatBehavior = scenario.config.panelTypes[CHAT_PANEL].behavior;
+    assert.equal(chatBehavior.collapse, 'never', `${scenario.key} chat is collapsible`);
+    assert.equal(chatBehavior.importance, 100);
+
+    // The digest agrees the chat is pinned on the right.
+    assert.equal(scenario.stages.at(-1).digest.pinnedChatRight, true, `${scenario.key} digest disagrees`);
   }
-  assert.ok(final.panels.length >= 5);
 });
 
-test('chat stays pinned as the persistent center', async () => {
-  let { config } = await buildChatFirstWorkspace();
-  assert.equal(config.panelTypes[CHAT_PANEL].behavior.collapse, 'never');
-  assert.equal(config.panelTypes[CHAT_PANEL].behavior.importance, 100);
-  assert.ok(layoutPanels(config.layout).includes(CHAT_PANEL));
+test('at least two workspace panels sit on the left with behavior metadata', async () => {
+  let { scenarios } = await build();
+  for (let scenario of scenarios) {
+    let leftPanels = layoutPanels(scenario.config.layout.first);
+    assert.ok(leftPanels.length >= 2, `${scenario.key} has fewer than 2 left panels`);
+    assert.ok(!leftPanels.includes(CHAT_PANEL), `${scenario.key} chat leaked into the workspace side`);
+    for (let panelType of leftPanels) {
+      let behavior = scenario.config.panelTypes[panelType]?.behavior;
+      assert.ok(behavior && typeof behavior.importance === 'number', `${scenario.key}/${panelType} has no behavior metadata`);
+    }
+  }
 });
 
-test('constructed config is valid and event bridges are wired', async () => {
-  let { config } = await buildChatFirstWorkspace();
-  let validation = validateWorkspaceConfig(config, { strict: true });
-  assert.equal(validation.valid, true, JSON.stringify(validation.errors));
-  assert.equal(config.events.length, 3);
-  assert.ok(config.events.every((b) => b.sourcePanel && b.event));
+test('exported config round-trips through export/import', async () => {
+  let { scenarios } = await build();
+  for (let scenario of scenarios) {
+    assert.ok(scenario.exportJson, `${scenario.key} produced no export JSON`);
+    let relaunch = createSession();
+    let imported = await dispatch('import_config', { json: scenario.exportJson }, relaunch);
+    assert.equal(imported.status, 'ok', `${scenario.key} import failed: ${imported.hint}`);
+    assert.deepEqual(
+      Object.keys(relaunch.config.panelTypes).sort(),
+      Object.keys(scenario.config.panelTypes).sort(),
+      `${scenario.key} panel types changed on round-trip`,
+    );
+    assert.deepEqual(
+      layoutPanels(relaunch.config.layout).sort(),
+      layoutPanels(scenario.config.layout).sort(),
+      `${scenario.key} layout panels changed on round-trip`,
+    );
+  }
 });
 
-test('exported config is portable and relaunches into an equivalent workspace', async () => {
-  let { exportJson, config, roundTripName } = await buildChatFirstWorkspace();
-  assert.equal(roundTripName, 'Chat-First Console');
-
-  let relaunch = createSession();
-  let imported = await dispatch('import_config', { json: exportJson }, relaunch);
-  assert.equal(imported.status, 'ok');
-  assert.deepEqual(
-    Object.keys(relaunch.config.panelTypes).sort(),
-    Object.keys(config.panelTypes).sort(),
-  );
-  assert.deepEqual(layoutPanels(relaunch.config.layout).sort(), layoutPanels(config.layout).sort());
+test('replay stages start chat-only and end with the constructed workspace', async () => {
+  let { scenarios } = await build();
+  for (let scenario of scenarios) {
+    assert.ok(scenario.stages.length >= 2, `${scenario.key} has fewer than 2 replay stages`);
+    let seed = scenario.stages[0];
+    assert.deepEqual(seed.digest.panels, [CHAT_PANEL], `${scenario.key} seed is not chat-only`);
+    let final = scenario.stages.at(-1);
+    assert.ok(final.digest.panels.includes(CHAT_PANEL), `${scenario.key} final stage dropped the chat`);
+    assert.ok(final.digest.panels.length >= 3, `${scenario.key} final stage has too few panels`);
+  }
 });

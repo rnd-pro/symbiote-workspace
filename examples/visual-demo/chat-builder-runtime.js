@@ -1,11 +1,14 @@
 /**
  * Chat-first demo runtime.
  *
- * Writes a self-contained browser bundle that replays the chat-builder step log
- * (built by `chat-builder-state.js` through real dispatch tools) and mounts each
- * intermediate workspace via the public `symbiote-workspace/browser` entry, so a
- * viewer watches the layout assemble around the pinned chat one real tool call at
- * a time — no page reload.
+ * Writes a self-contained browser bundle for the questionnaire-driven, multi-scenario
+ * chat-first demo. The page opens as a full-screen chat (`chat-workspace`) showing a
+ * CLASS MENU — Programming / Video / Automation. Selecting a class mounts that
+ * scenario's constructed `config` through the symbiote-ui `panel-layout` runtime, so the
+ * built workspace appears with the chat docked on the RIGHT at full height and the real
+ * workspace panels on the left. Each panel is seeded with attractive mock content using
+ * the public per-component setters, and the chat is seeded with a transcript/board that
+ * replays the answered questionnaire for the scenario.
  *
  * @module examples/visual-demo/chat-builder-runtime
  */
@@ -14,7 +17,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
 import { demoImportMap } from './server-utils.js';
-import { buildChatFirstWorkspace, CHAT_PANEL } from './chat-builder-state.js';
+import { buildChatFirstWorkspace, CHAT_PANEL, CHAT_COMPONENT } from './chat-builder-state.js';
 
 function escapeScriptJson(value) {
   return JSON.stringify(value).replaceAll('<', '\\u003c').replaceAll('>', '\\u003e');
@@ -34,29 +37,40 @@ ${escapeScriptJson({ imports })}
   <\/script>
   <style>
     :root { color-scheme: dark; }
-    body { margin: 0; font-family: var(--sn-font-family, system-ui, sans-serif);
-      background: var(--sn-color-bg, #0e1116); color: var(--sn-color-fg, #e6edf3); }
-    .cb-shell { display: flex; flex-direction: column; height: 100vh; }
+    html, body { height: 100%; }
+    body { margin: 0; font-family: var(--sn-font, system-ui, sans-serif);
+      background: var(--sn-bg, #0e1116); color: var(--sn-text, #e6edf3); }
+    .cb-shell { display: flex; flex-direction: column; height: 100vh; min-height: 0; }
     .cb-bar { display: flex; align-items: center; gap: 12px; padding: 10px 16px;
-      border-block-end: 1px solid var(--sn-color-border, #30363d); }
-    .cb-bar h1 { font-size: 14px; font-weight: 600; margin: 0; }
-    .cb-step { font-size: 13px; opacity: .85; flex: 1; }
-    .cb-step b { font-variant-numeric: tabular-nums; opacity: .6; margin-inline-end: 8px; }
-    .cb-bar button { font: inherit; padding: 4px 12px; border-radius: 6px; cursor: pointer;
-      border: 1px solid var(--sn-color-border, #30363d); background: var(--sn-color-surface, #161b22);
-      color: inherit; }
-    .cb-tool { font-family: ui-monospace, monospace; font-size: 12px; opacity: .7; }
-    #workspace { flex: 1; min-height: 0; padding: 12px; }
-    #workspace .cb-symbiote-layout {
+      border-block-end: 1px solid color-mix(in srgb, var(--sn-text, #fff) 14%, transparent); }
+    .cb-bar h1 { font-size: 14px; font-weight: 600; margin: 0; flex: 0 0 auto; }
+    .cb-menu { display: flex; gap: 8px; flex: 1; min-width: 0; }
+    .cb-bar button { font: inherit; padding: 5px 14px; border-radius: 7px; cursor: pointer;
+      border: 1px solid color-mix(in srgb, var(--sn-text, #fff) 16%, transparent);
+      background: var(--sn-panel-bg, #161b22); color: inherit; line-height: 1.1; }
+    .cb-bar button.cb-class { display: inline-flex; align-items: center; gap: 6px; }
+    .cb-bar button.cb-class[aria-pressed="true"] {
+      border-color: var(--sn-node-selected, #58a6ff);
+      background: color-mix(in srgb, var(--sn-node-selected, #58a6ff) 22%, transparent);
+      color: var(--sn-text, #fff); }
+    .cb-bar .cb-icon { font-family: "Material Symbols Outlined"; font-size: 18px; line-height: 1; }
+    .cb-back { margin-inline-start: auto; flex: 0 0 auto; }
+    #stage { flex: 1; min-height: 0; padding: 12px; box-sizing: border-box; }
+    #stage.cb-menu-mode { display: flex; }
+    #stage .cb-symbiote-layout {
       display: block; width: 100%; height: 100%; min-width: 0; min-height: 0;
       --sn-layout-border: color-mix(in srgb, var(--sn-text, CanvasText) 14%, transparent);
       --sn-layout-gap-bg: color-mix(in srgb, var(--sn-bg) 86%, var(--sn-node-selected) 14%);
       --sn-layout-header-block-size: 32px;
     }
-    #workspace .cb-symbiote-layout .layout-root,
-    #workspace .cb-symbiote-layout .panel-view,
-    #workspace .cb-symbiote-layout .panel-content { min-width: 0; min-height: 0; }
-    #workspace .cb-symbiote-layout .panel-view { height: 100%; overflow: hidden; }
+    #stage .cb-symbiote-layout .layout-root,
+    #stage .cb-symbiote-layout .split-view,
+    #stage .cb-symbiote-layout .split-first,
+    #stage .cb-symbiote-layout .split-second,
+    #stage .cb-symbiote-layout .panel-view,
+    #stage .cb-symbiote-layout .panel-content { min-width: 0; min-height: 0; }
+    #stage .cb-symbiote-layout .panel-view { height: 100%; overflow: hidden; }
+    #stage .cb-symbiote-layout .panel-content { display: flex; flex-direction: column; overflow: hidden; }
     chat-workspace.chat-workspace-view {
       display: flex; flex: 1 1 auto; min-width: 0; min-height: 0; height: 100%;
     }
@@ -66,37 +80,41 @@ ${escapeScriptJson({ imports })}
   <div class="cb-shell">
     <div class="cb-bar">
       <h1>${title}</h1>
-      <div class="cb-step"><b id="cb-count"></b><span id="cb-title"></span>
-        <span class="cb-tool" id="cb-tool"></span></div>
-      <button id="cb-prev" type="button">Prev</button>
-      <button id="cb-play" type="button">Play</button>
-      <button id="cb-next" type="button">Next</button>
+      <div class="cb-menu" id="cb-menu" role="tablist" aria-label="Workspace classes"></div>
+      <button id="cb-back" class="cb-back" type="button">Back to menu</button>
     </div>
-    <div id="workspace"></div>
+    <div id="stage"></div>
   </div>
   <script type="module" src="./app.js"><\/script>
 </body>
 </html>`;
 }
 
-function generateAppJs(stages) {
-  return `import { mountWorkspace } from 'symbiote-workspace/browser';
-import { applyCascadeTheme, CASCADE_THEME_DEFAULTS, defineModule } from 'symbiote-ui/ui';
+function generateAppJs(scenarios, chatComponent) {
+  return `import { applyCascadeTheme, CASCADE_THEME_DEFAULTS, defineModule } from 'symbiote-ui/ui';
 import 'symbiote-ui/board';
 
-const stages = ${escapeScriptJson(stages)};
+const scenarios = ${escapeScriptJson(scenarios)};
 const CHAT_PANEL = ${JSON.stringify(CHAT_PANEL)};
-const themeAdapter = { applyCascadeTheme };
+const CHAT_COMPONENT = ${JSON.stringify(chatComponent)};
 const definedModuleTags = new Set();
 
 applyCascadeTheme(document.documentElement, CASCADE_THEME_DEFAULTS, { notify: false, source: 'chat-builder' });
 
-let workspace = document.getElementById('workspace');
-let countEl = document.getElementById('cb-count');
-let titleEl = document.getElementById('cb-title');
-let toolEl = document.getElementById('cb-tool');
-let index = 0;
-let timer = null;
+const stageEl = document.getElementById('stage');
+const menuEl = document.getElementById('cb-menu');
+const backEl = document.getElementById('cb-back');
+
+const CLASS_ICONS = { programming: 'code', video: 'movie', automation: 'hub' };
+
+// Some real symbiote-ui components self-register on import instead of being in the
+// defineModule catalog; import their module to trigger the .reg() side effect.
+const SELF_REGISTERING_MODULES = {
+  'sn-canvas-viewport': 'symbiote-ui/viewport/CanvasViewport/CanvasViewport.js',
+  'sn-timeline-editor': 'symbiote-ui/timeline/TimelineEditor/TimelineEditor.js',
+};
+
+let activeKey = null;
 
 // Copy of the realtime-builder layout-node normalizer: panel-layout expects every
 // node to carry a stable id, so derive one from its path when the config omits it.
@@ -116,12 +134,17 @@ function normalizeLayoutNode(node, path = 'root') {
   return node;
 }
 
-function defineWorkspaceModules(config) {
-  let tags = Object.values(config.panelTypes || {}).map((panel) => panel?.component).filter(Boolean);
+async function defineWorkspaceModules(config) {
+  let tags = Object.values(config?.panelTypes || {}).map((panel) => panel?.component).filter(Boolean);
   for (let tag of tags) {
     if (customElements.get(tag)) { definedModuleTags.add(tag); continue; }
     if (definedModuleTags.has(tag)) continue;
-    defineModule(tag, { includeInternal: true, includeExperimental: true });
+    if (SELF_REGISTERING_MODULES[tag]) {
+      await import(SELF_REGISTERING_MODULES[tag]);
+      await customElements.whenDefined(tag);
+    } else {
+      defineModule(tag, { includeInternal: true, includeExperimental: true });
+    }
     definedModuleTags.add(tag);
   }
 }
@@ -131,216 +154,415 @@ function findPanelElement(root, selector) {
   return root?.querySelector?.(selector) || null;
 }
 
-// A short mock agent transcript narrating the chat-first construction, mirroring
-// the professionalChatState shape used by the realtime-builder demo.
-function chatWorkspaceState(stage) {
+function scenarioByKey(key) {
+  return scenarios.find((scenario) => scenario.key === key) || null;
+}
+
+// Build a chat-workspace transcript that replays the answered questionnaire as a
+// board of decisions plus a short agent narration, so the chat shows the offered
+// questions and the chosen options for the scenario.
+function chatWorkspaceState(scenario) {
+  let questions = scenario.questions || [];
+  let messages = [
+    {
+      id: 'cb-user-intent',
+      role: 'user',
+      text: 'Build me a ' + (scenario.label || scenario.key) + ' workspace: ' + (scenario.intent || 'a focused tool console') + '.',
+    },
+    {
+      id: 'cb-agent-plan',
+      role: 'agent',
+      text: 'I will ask a few questions, then assemble the panels around this chat and keep the conversation docked on the right.',
+    },
+  ];
+  for (let question of questions) {
+    let options = question.options || [];
+    let chosen = Array.isArray(question.chosen) ? question.chosen : (question.chosen != null ? [question.chosen] : []);
+    let labelFor = (value) => (options.find((option) => option.value === value)?.label) || String(value);
+    messages.push({
+      id: 'cb-q-' + question.id,
+      role: 'agent',
+      text: question.prompt + (question.type === 'multi-select' ? ' (choose any that apply)' : ''),
+    });
+    messages.push({
+      id: 'cb-board-' + question.id,
+      role: 'board',
+      cardItems: options.map((option) => ({
+        id: question.id + ':' + option.value,
+        title: option.label,
+        status: chosen.includes(option.value) ? 'done' : 'todo',
+        icon: chosen.includes(option.value) ? 'check_circle' : 'radio_button_unchecked',
+      })),
+    });
+    messages.push({
+      id: 'cb-a-' + question.id,
+      role: 'user',
+      text: chosen.length ? chosen.map(labelFor).join(', ') : 'Use the defaults.',
+    });
+  }
+  messages.push({
+    id: 'cb-agent-done',
+    role: 'agent',
+    text: 'Assembled the ' + (scenario.label || scenario.key) + ' workspace from your answers. The conversation stays pinned on the right while you work the panels on the left.',
+    isStreaming: true,
+  });
   return {
     sidebar: 'hidden',
-    chats: [
-      { id: 'chat-builder', title: 'Chat-First Console', subtitle: 'Constructing workspace config' },
-      { id: 'chat-builder-history', title: 'Earlier session', subtitle: 'Video studio layout' },
-    ],
-    activeChatId: 'chat-builder',
-    messages: [
-      {
-        id: 'cb-user-0',
-        role: 'user',
-        text: 'Build a chat-first console with preview, inspector, graph and logs around the conversation.',
-      },
-      {
-        id: 'cb-agent-0',
-        role: 'agent',
-        text: 'Pinning the chat as the persistent center, then splitting the supporting panels in around it with real construction tools.',
-      },
-      {
-        id: 'cb-thinking-0',
-        role: 'thinking',
-        elapsedText: '00:03',
-        status: 'planning layout',
-        text: 'Resolve panel regions, event bridges, and pin behavior for the chat center.',
-      },
-      {
-        id: 'cb-tool-0',
-        role: 'tool',
-        name: 'add_panel',
-        input: { existingPanelType: 'chat', newPanelType: 'preview', direction: 'horizontal', ratio: 0.58 },
-        result: { status: 'ok', panels: ['chat', 'preview'], reload: false },
-        isLatestTool: true,
-      },
-      {
-        id: 'cb-board-0',
-        role: 'board',
-        cardItems: [
-          { id: 'pin', title: 'Chat pinned as center', status: 'done', icon: 'push_pin' },
-          { id: 'split', title: 'Preview / graph / logs split in', status: 'running', icon: 'splitscreen' },
-          { id: 'bridge', title: 'Event bridges wired', status: 'done', icon: 'cable' },
-        ],
-      },
-      {
-        id: 'cb-agent-1',
-        role: 'agent',
-        text: 'Validated the config and exported a portable workspace — no page reload.',
-        isStreaming: true,
-      },
-    ],
+    chats: scenarios.map((entry) => ({
+      id: 'chat-' + entry.key,
+      title: entry.label || entry.key,
+      subtitle: entry.intent || 'workspace class',
+    })),
+    activeChatId: 'chat-' + scenario.key,
+    messages,
     messagesOptions: { scrollToBottom: true },
     composer: {
-      placeholder: 'Describe the next panel, split, bridge, or behavior...',
+      placeholder: 'Refine the ' + (scenario.label || scenario.key) + ' workspace...',
       value: '',
       attachedContext: [
-        { id: 'stage', label: stage.title },
-        { id: 'tool', label: stage.tool + '()' },
+        { id: 'class', label: scenario.label || scenario.key },
+        { id: 'template', label: (scenario.template || 'workspace') + ' template' },
       ],
       footerControls: [
-        { id: 'panels', kind: 'button', icon: 'view_quilt', label: 'Panels', value: String(stage.digest.panels.length) },
-        { id: 'bridges', kind: 'button', icon: 'cable', label: 'Bridges', value: String(stage.digest.bridges) },
+        { id: 'questions', kind: 'button', icon: 'quiz', label: 'Answered', value: String(questions.length) },
+        { id: 'panels', kind: 'button', icon: 'view_quilt', label: 'Panels', value: String(Object.keys(scenario.config?.panelTypes || {}).length) },
       ],
     },
-    liveStatus: { phase: 'running', title: 'Chat-first builder', text: stage.title },
+    liveStatus: { phase: 'running', title: scenario.label || scenario.key, text: scenario.intent || 'workspace ready' },
     backgroundState: 'activity',
   };
 }
 
-const PREVIEW_SNIPPET = [
-  "// Chat-first construction, one real dispatch tool at a time.",
-  "dispatch('register_panel_type', { name: 'chat', component: 'chat-workspace' });",
-  "dispatch('set_layout', { layoutTree: { type: 'panel', panelType: 'chat' } });",
-  "dispatch('set_behavior', { target: 'chat', behavior: { collapse: 'never' } });",
-  "dispatch('add_panel', { existingPanelType: 'chat', newPanelType: 'preview', ratio: 0.58 });",
-  "dispatch('bridge_event', { sourcePanel: 'chat', event: 'intent', targetPanel: 'preview' });",
-].join('\\n');
+// Deterministic mock content keyed by component tag, so every real workspace panel
+// renders attractive, non-trivial content through its public setter.
+function seedPanel(root, panelType, panel, scenario) {
+  let component = panel.component;
+  let title = panel.title || panelType;
 
-const GRAPH_MODEL = {
-  nodes: [
-    { id: 'chat', label: 'chat', type: 'source', status: 'running' },
-    { id: 'preview', label: 'preview', type: 'view', status: 'ready' },
-    { id: 'graph', label: 'graph', type: 'view', status: 'ready' },
-    { id: 'inspector', label: 'inspector', type: 'sidecar', status: 'ready' },
-    { id: 'logs', label: 'logs', type: 'stream', status: 'ready' },
-  ],
-  connections: [
-    { id: 'c-chat-preview', source: 'chat', target: 'preview' },
-    { id: 'c-chat-graph', source: 'chat', target: 'graph' },
-    { id: 'c-graph-inspector', source: 'graph', target: 'inspector' },
-    { id: 'c-chat-logs', source: 'chat', target: 'logs' },
-  ],
-};
-
-const LOG_EVENTS = [
-  { id: 'log-pin', title: 'Chat pinned as persistent center', time: '00:01', variant: 'positive' },
-  { id: 'log-preview', title: 'Preview panel added to the right', time: '00:02', variant: 'info' },
-  { id: 'log-graph', title: 'Graph docked under the chat', time: '00:03', variant: 'info' },
-  { id: 'log-bridge', title: 'Chat intent bridged to preview', time: '00:04', variant: 'neutral' },
-  { id: 'log-validate', title: 'Config validated (strict)', time: '00:05', variant: 'positive' },
-  { id: 'log-export', title: 'Portable workspace exported', time: '00:06', variant: 'positive' },
-];
-
-function seedPanel(root, panelType, component, stage) {
-  if (component === 'chat-workspace') {
-    let chat = findPanelElement(root, 'chat-workspace');
+  if (component === CHAT_COMPONENT) {
+    let chat = findPanelElement(root, CHAT_COMPONENT);
     chat?.classList?.add('chat-workspace-view');
-    chat?.setWorkspaceState?.(chatWorkspaceState(stage));
+    chat?.setWorkspaceState?.(chatWorkspaceState(scenario));
+    return;
   }
-  if (component === 'code-block') {
-    findPanelElement(root, 'code-block')?.setContent?.(PREVIEW_SNIPPET, 'javascript');
+  if (component === 'source-editor') {
+    let editor = findPanelElement(root, 'source-editor');
+    editor?.setSourceDocument?.({
+      name: scenario.key + '/agent.js',
+      language: 'javascript',
+      content: [
+        "// " + title + " — generated by the chat-first builder.",
+        "import { defineAgent } from '@workspace/runtime';",
+        "",
+        "export default defineAgent({",
+        "  intent: " + JSON.stringify(scenario.intent || scenario.label) + ",",
+        "  async run(ctx) {",
+        "    let plan = await ctx.plan(ctx.message);",
+        "    return ctx.apply(plan);",
+        "  },",
+        "});",
+      ].join('\\n'),
+    });
+    return;
+  }
+  if (component === 'sn-canvas-viewport') {
+    let viewport = findPanelElement(root, 'sn-canvas-viewport');
+    viewport?.setAttribute?.('aspect', '16:9');
+    viewport?.setFrame?.(48);
+    return;
+  }
+  if (component === 'sn-timeline-editor') {
+    let timeline = findPanelElement(root, 'sn-timeline-editor');
+    timeline?.loadTimeline?.({
+      fps: 30,
+      duration: 300,
+      tracks: [
+        { id: 'video', type: 'video', label: 'Main cut', clips: [
+          { id: 'v1', start: 0, end: 120, label: 'Intro' },
+          { id: 'v2', start: 130, end: 260, label: 'B-roll' },
+        ] },
+        { id: 'audio', type: 'audio', label: 'Voiceover', clips: [
+          { id: 'a1', start: 10, end: 150, label: 'Narration' },
+          { id: 'a2', start: 170, end: 290, label: 'Music bed' },
+        ] },
+        { id: 'fx', type: 'effect', label: 'Effects', clips: [
+          { id: 'f1', start: 60, end: 110, label: 'Zoom' },
+          { id: 'f2', start: 200, end: 250, label: 'Color' },
+        ] },
+      ],
+      markers: [{ frame: 130, label: 'Scene 2' }],
+    });
+    return;
+  }
+  if (component === 'node-canvas') {
+    let canvas = findPanelElement(root, 'node-canvas');
+    canvas?.setEditorModel?.({
+      nodes: [
+        { id: 'trigger', name: 'Trigger', type: 'trigger', outputs: [{ name: 'event', label: 'event' }] },
+        { id: 'transform', name: 'Transform', type: 'transform', inputs: [{ name: 'in', label: 'in' }], outputs: [{ name: 'out', label: 'out' }] },
+        { id: 'deliver', name: 'Deliver', type: 'deliver', inputs: [{ name: 'payload', label: 'payload' }] },
+      ],
+      connections: [
+        { id: 'c1', from: 'trigger', out: 'event', to: 'transform', in: 'in' },
+        { id: 'c2', from: 'transform', out: 'out', to: 'deliver', in: 'payload' },
+      ],
+      positions: { trigger: [40, 120], transform: [320, 120], deliver: [600, 120] },
+    });
+    canvas?.setAllFlowing?.(true);
+    canvas?.setPathStyle?.('pcb');
+    return;
   }
   if (component === 'inspector-panel') {
-    findPanelElement(root, 'inspector-panel')?.inspect?.({
-      label: 'chat',
-      inputs: { intent: { label: 'intent', socket: { name: 'event' } } },
-      outputs: { render: { label: 'render', socket: { name: 'method' } } },
-      controls: { pinned: { label: 'Pinned', value: 'never collapse', type: 'text' } },
+    let inspector = findPanelElement(root, 'inspector-panel');
+    inspector?.inspect?.({
+      label: title,
+      inputs: { signal: { label: 'signal', socket: { name: 'event' } } },
+      outputs: { result: { label: 'result', socket: { name: 'method' } } },
+      controls: {
+        importance: { label: 'Importance', value: String(panel.behavior?.importance ?? 'auto'), type: 'text' },
+        collapse: { label: 'Collapse', value: panel.behavior?.collapse || 'auto', type: 'text' },
+      },
     });
+    return;
   }
-  if (component === 'canvas-graph') {
-    findPanelElement(root, 'canvas-graph')?.setGraphModel?.(GRAPH_MODEL);
+  if (component === 'sn-data-table') {
+    let table = findPanelElement(root, 'sn-data-table');
+    table?.setData?.({
+      columns: [
+        { key: 'panel', label: 'Panel', sortable: true },
+        { key: 'role', label: 'Role' },
+        { key: 'status', label: 'Status', sortable: true },
+      ],
+      rows: Object.entries(scenario.config?.panelTypes || {}).map(([type, info]) => ({
+        id: type,
+        panel: info.title || type,
+        role: info.component,
+        status: type === CHAT_PANEL ? 'pinned' : 'ready',
+      })),
+      emptyText: 'No panels',
+    });
+    table?.setAttribute?.('selection-mode', 'single');
+    return;
+  }
+  if (component === 'sn-rich-text-editor') {
+    let rich = findPanelElement(root, 'sn-rich-text-editor');
+    if (rich) {
+      rich.value = [
+        '<h2>' + (scenario.label || scenario.key) + ' brief</h2>',
+        '<p>' + (scenario.intent || 'A focused workspace assembled from the questionnaire.') + '</p>',
+        '<ul>' + (scenario.questions || []).map((question) => {
+          let chosen = Array.isArray(question.chosen) ? question.chosen : [question.chosen].filter(Boolean);
+          let labels = chosen.map((value) => (question.options || []).find((option) => option.value === value)?.label || value);
+          return '<li><strong>' + question.prompt + ':</strong> ' + (labels.join(', ') || 'defaults') + '</li>';
+        }).join('') + '</ul>',
+      ].join('');
+    }
+    return;
+  }
+  if (component === 'sn-file-upload') {
+    let upload = findPanelElement(root, 'sn-file-upload');
+    upload?.setAttribute?.('label', 'Drop assets for ' + (scenario.label || scenario.key));
+    upload?.setAttribute?.('accept', 'image/*,video/*');
+    upload?.setAttribute?.('multiple', '');
+    return;
+  }
+  if (component === 'sn-tree-panel') {
+    let tree = findPanelElement(root, 'sn-tree-panel');
+    if (tree) {
+      tree.setAttribute('title', title);
+      tree.setAttribute('title-icon', panel.icon || 'account_tree');
+      tree.setItems?.((scenario.questions || []).map((question) => ({
+        id: question.id,
+        label: question.prompt,
+        children: (question.options || []).map((option) => ({
+          id: question.id + ':' + option.value,
+          label: option.label,
+        })),
+      })));
+      tree.showTree?.();
+    }
+    return;
   }
   if (component === 'sn-event-feed') {
     let feed = findPanelElement(root, 'sn-event-feed');
-    feed?.setAttribute?.('title', 'Construction Log');
-    feed?.setEvents?.(LOG_EVENTS);
+    feed?.setAttribute?.('title', title);
+    feed?.setEvents?.((scenario.stages || []).map((stage, index) => ({
+      id: 'stage-' + index,
+      title: stage.title || ('Step ' + (index + 1)),
+      time: String(index + 1).padStart(2, '0'),
+      variant: 'info',
+    })));
+    return;
+  }
+  if (component === 'code-block') {
+    findPanelElement(root, 'code-block')?.setContent?.(
+      (scenario.exportJson || JSON.stringify(scenario.config, null, 2)).slice(0, 2000),
+      'json',
+    );
+    return;
+  }
+  if (component === 'canvas-graph') {
+    findPanelElement(root, 'canvas-graph')?.setGraphModel?.({
+      nodes: Object.keys(scenario.config?.panelTypes || {}).map((type) => ({
+        id: type, label: type, type: type === CHAT_PANEL ? 'source' : 'view', status: 'ready',
+      })),
+      connections: Object.keys(scenario.config?.panelTypes || {})
+        .filter((type) => type !== CHAT_PANEL)
+        .map((type) => ({ id: 'c-' + type, source: CHAT_PANEL, target: type })),
+    });
+    return;
   }
 }
 
-function render() {
-  let stage = stages[index];
-  workspace.replaceChildren();
-  defineWorkspaceModules(stage.config);
+async function renderScenario(scenario) {
+  stageEl.classList.remove('cb-menu-mode');
+  stageEl.replaceChildren();
+  await defineWorkspaceModules(scenario.config);
+
   let layout = document.createElement('panel-layout');
   layout.className = 'cb-symbiote-layout';
-  layout.setAttribute('responsive-mode', stage.config.rootBehavior?.responsiveMode || 'drawer');
-  layout.setAttribute('responsive-breakpoint', String(stage.config.rootBehavior?.responsiveBreakpoint || 860));
-  layout.setAttribute('swipe-control', stage.config.rootBehavior?.swipeControl || 'edge');
-  workspace.appendChild(layout);
+  let rootBehavior = scenario.config.rootBehavior || {};
+  layout.setAttribute('responsive-mode', rootBehavior.responsiveMode || 'drawer');
+  layout.setAttribute('responsive-breakpoint', String(rootBehavior.responsiveBreakpoint || 860));
+  layout.setAttribute('swipe-control', rootBehavior.swipeControl || 'edge');
+  stageEl.appendChild(layout);
+
   requestAnimationFrame(() => {
-    layout.$.panelTypes = stage.config.panelTypes || {};
-    layout.$.layoutTree = normalizeLayoutNode(stage.config.layout);
+    layout.$.panelTypes = scenario.config.panelTypes || {};
+    layout.$.layoutTree = normalizeLayoutNode(scenario.config.layout);
     requestAnimationFrame(() => {
-      for (let [panelType, panel] of Object.entries(stage.config.panelTypes || {})) {
+      for (let [panelType, panel] of Object.entries(scenario.config.panelTypes || {})) {
         if (!panel.component) continue;
         for (let element of layout.querySelectorAll(panel.component)) {
-          seedPanel(element, panelType, panel.component, stage);
+          seedPanel(element, panelType, panel, scenario);
         }
       }
+      document.body.dataset.seeded = scenario.key;
     });
   });
-  countEl.textContent = (index + 1) + ' / ' + stages.length;
-  titleEl.textContent = stage.title;
-  toolEl.textContent = stage.tool + '()';
-  document.body.dataset.stageIndex = String(index);
-  document.body.dataset.stagePanels = stage.digest.panels.join(',');
-  document.body.dataset.pinnedChat = String(stage.digest.pinnedChat);
+
+  document.body.dataset.activeScenario = scenario.key;
 }
 
-function go(next) {
-  index = (next + stages.length) % stages.length;
-  render();
+// The opening view: a full-screen chat with the class menu seeded into its transcript,
+// so the demo literally starts with the conversation before any workspace is built.
+function renderMenu() {
+  stageEl.classList.add('cb-menu-mode');
+  stageEl.replaceChildren();
+  if (!customElements.get(CHAT_COMPONENT)) {
+    defineModule(CHAT_COMPONENT, { includeInternal: true, includeExperimental: true });
+    definedModuleTags.add(CHAT_COMPONENT);
+  }
+  let chat = document.createElement(CHAT_COMPONENT);
+  chat.classList.add('chat-workspace-view');
+  stageEl.appendChild(chat);
+  requestAnimationFrame(() => {
+    chat.setWorkspaceState?.({
+      sidebar: 'hidden',
+      chats: scenarios.map((entry) => ({ id: 'chat-' + entry.key, title: entry.label || entry.key, subtitle: entry.intent || '' })),
+      activeChatId: scenarios[0] ? 'chat-' + scenarios[0].key : 'chat',
+      messages: [
+        { id: 'menu-user', role: 'user', text: 'What kind of workspace can you build for me?' },
+        { id: 'menu-agent', role: 'agent', text: 'Pick a class and I will run its questionnaire, then assemble the workspace around this chat.' },
+        {
+          id: 'menu-board',
+          role: 'board',
+          cardItems: scenarios.map((entry) => ({
+            id: entry.key,
+            title: entry.label || entry.key,
+            status: 'todo',
+            icon: CLASS_ICONS[entry.key] || 'dashboard',
+          })),
+        },
+      ],
+      messagesOptions: { scrollToBottom: true },
+      composer: { placeholder: 'Choose a class above, or describe your own...', value: '' },
+      liveStatus: { phase: 'idle', title: 'Chat-first builder', text: 'Choose a workspace class' },
+      backgroundState: 'idle',
+    });
+  });
+  document.body.dataset.activeScenario = '';
+  document.body.dataset.seeded = '';
+  activeKey = null;
+  syncMenu();
 }
 
-function stop() { if (timer) { clearInterval(timer); timer = null; document.getElementById('cb-play').textContent = 'Play'; } }
-function play() {
-  if (timer) return stop();
-  document.getElementById('cb-play').textContent = 'Pause';
-  timer = setInterval(() => {
-    if (index >= stages.length - 1) return stop();
-    go(index + 1);
-  }, 1100);
+function syncMenu() {
+  for (let button of menuEl.querySelectorAll('.cb-class')) {
+    button.setAttribute('aria-pressed', String(button.dataset.key === activeKey));
+  }
+  backEl.hidden = activeKey == null;
 }
 
-document.getElementById('cb-prev').addEventListener('click', () => { stop(); go(index - 1); });
-document.getElementById('cb-next').addEventListener('click', () => { stop(); go(index + 1); });
-document.getElementById('cb-play').addEventListener('click', play);
+function show(key) {
+  let scenario = scenarioByKey(key);
+  if (!scenario) return Promise.resolve(false);
+  activeKey = key;
+  let done = renderScenario(scenario).then(() => true);
+  syncMenu();
+  return done;
+}
 
-render();
+function buildMenu() {
+  menuEl.replaceChildren();
+  for (let scenario of scenarios) {
+    let button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'cb-class';
+    button.dataset.key = scenario.key;
+    button.setAttribute('role', 'tab');
+    button.innerHTML = '<span class="cb-icon" aria-hidden="true">' + (CLASS_ICONS[scenario.key] || 'dashboard') + '</span>' +
+      '<span>' + (scenario.label || scenario.key) + '</span>';
+    button.addEventListener('click', () => show(scenario.key));
+    menuEl.appendChild(button);
+  }
+}
+
+buildMenu();
+backEl.addEventListener('click', () => renderMenu());
+renderMenu();
+
 // Expose for headless smoke assertions.
-window.__chatBuilder = { stages, go, stageCount: stages.length, chatPanel: CHAT_PANEL };
+window.__chatBuilder = {
+  scenarios,
+  keys: scenarios.map((scenario) => scenario.key),
+  show,
+  menu: renderMenu,
+  chatComponent: CHAT_COMPONENT,
+  chatPanel: CHAT_PANEL,
+};
 `;
 }
 
 /**
- * Build the chat-first workspace via real tools and write its browser bundle.
- * @param {{outputDir?: string, port?: number}} [options]
- * @returns {Promise<{name: string, url: string, outputDir: string, stageCount: number, stepCount: number, panels: string[]}>}
+ * Build the chat-first multi-scenario workspace bundle and write it to disk.
+ *
+ * @param {{outputDir?: string, port?: number, scenarios?: Array<Object>}} [options]
+ *   When `scenarios` is omitted it defaults to `buildChatFirstWorkspace()`. Pass an
+ *   injected contract-shaped scenarios array to self-test against a fixture.
+ * @returns {Promise<{name: string, url: string, outputDir: string, scenarioCount: number, keys: string[]}>}
  */
 export async function writeChatBuilderDemo(options = {}) {
   let outputDir = resolve(options.outputDir || join(process.cwd(), 'tmp', 'chat-builder-demo'));
   let port = Number(options.port || 4568);
-  let name = 'Chat-First Tool-Driven Construction';
+  let name = 'Chat-First Workspace Builder';
 
-  let built = await buildChatFirstWorkspace();
+  let built = options.scenarios
+    ? { scenarios: options.scenarios, chatComponent: CHAT_COMPONENT }
+    : await buildChatFirstWorkspace();
+  let scenarios = built.scenarios || [];
+  let chatComponent = built.chatComponent || CHAT_COMPONENT;
 
   await mkdir(outputDir, { recursive: true });
   await writeFile(join(outputDir, 'index.html'), generateIndexHtml(name, demoImportMap()));
-  await writeFile(join(outputDir, 'app.js'), generateAppJs(built.stages));
-  await writeFile(join(outputDir, 'workspace.config.json'), built.exportJson);
-  await writeFile(join(outputDir, 'steps.json'), JSON.stringify(built.steps, null, 2));
+  await writeFile(join(outputDir, 'app.js'), generateAppJs(scenarios, chatComponent));
+  await writeFile(join(outputDir, 'scenarios.json'), JSON.stringify(scenarios, null, 2));
 
   return {
     name,
     url: `http://localhost:${port}/`,
     outputDir,
-    stageCount: built.stages.length,
-    stepCount: built.steps.length,
-    panels: built.stages.at(-1).digest.panels,
+    scenarioCount: scenarios.length,
+    keys: scenarios.map((scenario) => scenario.key),
   };
 }

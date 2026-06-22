@@ -4,15 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
-- Added a chat-first tool-driven construction demo (`npm run demo:chat-builder`).
-  It builds the workspace layout entirely around a persistent, pinned chat panel
-  by issuing real `dispatch(...)` construction tools on a single session — no
-  hand-authored config — and replays the construction in the browser through the
-  public `symbiote-workspace/browser` entry, one tool call at a time. The panels
-  render real Symbiote UI components seeded with mock content (`chat-workspace`,
-  `code-block`, `inspector-panel`, `canvas-graph`, `sn-event-feed`) via the
-  `panel-layout` runtime. Covered by `tests/chat-builder-demo.test.js` and an
-  opt-in WebKit smoke (`npm run test:chat-builder-browser`).
+- Added a chat-first, questionnaire-driven construction demo
+  (`npm run demo:chat-builder`). It starts with a single chat that offers a
+  workspace-class menu (Programming / Video / Automation); selecting a class
+  drives the real construction protocol on one session — `classify_workspace` →
+  `build_construction_questions` → `answer_construction_question` →
+  `plan_workspace` → `construct_workspace` — so the system places panels from the
+  canonical template (the agent answers offered options, it does not decide
+  placement). The chat is docked as a global right-hand panel at full height with
+  full layout behavior (importance, min sizes, collapse, overflow, responsive
+  mode), and the workspace renders real Symbiote UI components per template via
+  the `panel-layout` runtime under the Cascade theme. Covered by
+  `tests/chat-builder-demo.test.js` and an opt-in WebKit smoke
+  (`npm run test:chat-builder-browser`).
 - Moved the served visual-demo import map into a shared `demoImportMap()` helper
   in `examples/visual-demo/server-utils.js`, with the direct browser specifiers
   sourced from the public browser contract.

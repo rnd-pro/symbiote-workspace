@@ -1,15 +1,15 @@
 /**
- * Chat-first construction driver.
+ * Chat-first, questionnaire-driven construction driver.
  *
- * Builds a workspace layout AROUND a persistent chat panel using only the real
- * `dispatch(tool, args, session)` construction tools — no hand-authored layout
- * config. Every region around the chat is added by an actual tool call, so the
- * resulting config is proof that the public tool surface can drive chat-first
- * construction end to end.
+ * Each workspace class is built by driving the REAL construction protocol
+ * through `dispatch(tool, args, session)`: the system classifies the intent and
+ * offers a questionnaire, the agent SELECTS from the offered options, and the
+ * system places panels from its canonical template into `session.config`. No
+ * hand-authored panel placement — the layout is whatever the template produces.
  *
- * The returned step log is the source of truth for the live browser replay:
- * each entry is one real tool call plus the resulting hint and a small digest
- * of the config after that call.
+ * After construction the workspace is wrapped so the chat lives as a global
+ * RIGHT panel at full height (withChat-style), exactly as the real agent-portal
+ * docks a persistent conversation beside a constructed workspace.
  *
  * @module examples/visual-demo/chat-builder-state
  */
@@ -22,251 +22,357 @@ export const CHAT_PANEL = 'chat';
 export const CHAT_COMPONENT = 'chat-workspace';
 
 /**
- * Ordered construction recipe. Each entry is a single real tool call.
- * The chat panel is registered, made the whole layout, and pinned first; every
- * other region is then split in around it with `add_panel`.
- * @type {Array<{title: string, tool: string, args?: Object, expect?: 'mutation'|'valid'|'info'|'export'}>}
+ * Workspace classes to construct. Each drives one session through the real
+ * construction protocol; the live-verified template is recorded for reference.
+ * @type {Array<{key: string, label: string, intent: string, template: string}>}
  */
-const RECIPE = [
+const SCENARIOS = [
   {
-    title: 'Classify the intent',
-    tool: 'classify_workspace',
-    args: { intent: 'A chat-first agent console that builds preview, inspector, graph and log panels around the conversation in real time.' },
-    expect: 'info',
+    key: 'programming',
+    label: 'Programming',
+    intent: 'agent programming workspace with source editor, diff and dependency graph',
+    template: 'editor',
   },
   {
-    title: 'Start an empty tool workspace',
-    tool: 'scaffold_from_scratch',
-    args: { name: 'Chat-First Console', register: 'tool' },
-    expect: 'mutation',
+    key: 'video',
+    label: 'Video',
+    intent: 'media studio for video editing with timeline and preview',
+    template: 'video-studio',
   },
   {
-    title: 'Register the chat panel type',
-    tool: 'register_panel_type',
-    args: { name: CHAT_PANEL, title: 'Chat', icon: 'chat', component: CHAT_COMPONENT },
-    expect: 'mutation',
-  },
-  {
-    title: 'Make the chat the whole workspace',
-    tool: 'set_layout',
-    args: { layoutTree: { type: 'panel', panelType: CHAT_PANEL, panelState: {} } },
-    expect: 'mutation',
-  },
-  {
-    title: 'Pin the chat as the persistent center',
-    tool: 'set_behavior',
-    args: { target: CHAT_PANEL, behavior: { collapse: 'never', importance: 100, minInlineSize: 360 } },
-    expect: 'mutation',
-  },
-  {
-    title: 'Register the preview panel type',
-    tool: 'register_panel_type',
-    args: { name: 'preview', title: 'Preview', icon: 'preview', component: 'code-block' },
-    expect: 'mutation',
-  },
-  {
-    title: 'Add the preview to the right of the chat',
-    tool: 'add_panel',
-    args: { existingPanelType: CHAT_PANEL, newPanelType: 'preview', direction: 'horizontal', ratio: 0.58 },
-    expect: 'mutation',
-  },
-  {
-    title: 'Register the inspector panel type',
-    tool: 'register_panel_type',
-    args: { name: 'inspector', title: 'Inspector', icon: 'tune', component: 'inspector-panel' },
-    expect: 'mutation',
-  },
-  {
-    title: 'Split an inspector under the preview',
-    tool: 'add_panel',
-    args: { existingPanelType: 'preview', newPanelType: 'inspector', direction: 'vertical', ratio: 0.62 },
-    expect: 'mutation',
-  },
-  {
-    title: 'Register the graph panel type',
-    tool: 'register_panel_type',
-    args: { name: 'graph', title: 'Graph', icon: 'graph', component: 'canvas-graph' },
-    expect: 'mutation',
-  },
-  {
-    title: 'Add a graph under the chat',
-    tool: 'add_panel',
-    args: { existingPanelType: CHAT_PANEL, newPanelType: 'graph', direction: 'vertical', ratio: 0.7 },
-    expect: 'mutation',
-  },
-  {
-    title: 'Register the logs panel type',
-    tool: 'register_panel_type',
-    args: { name: 'logs', title: 'Logs', icon: 'terminal', component: 'sn-event-feed' },
-    expect: 'mutation',
-  },
-  {
-    title: 'Mount the log stream component',
-    tool: 'mount_widget',
-    args: { panelType: 'logs', componentTag: 'sn-event-feed' },
-    expect: 'mutation',
-  },
-  {
-    title: 'Dock the logs under the inspector',
-    tool: 'add_panel',
-    args: { existingPanelType: 'inspector', newPanelType: 'logs', direction: 'vertical', ratio: 0.66 },
-    expect: 'mutation',
-  },
-  {
-    title: 'Add a console work-mode group',
-    tool: 'add_group',
-    args: { id: 'console', name: 'Console', icon: 'workspaces' },
-    expect: 'mutation',
-  },
-  {
-    title: 'Add the workspace section to the group',
-    tool: 'add_section',
-    args: { groupId: 'console', id: 'workspace', label: 'Workspace', icon: 'dashboard' },
-    expect: 'mutation',
-  },
-  {
-    title: 'Bridge chat intent to the preview',
-    tool: 'bridge_event',
-    args: { sourcePanel: CHAT_PANEL, event: 'intent', targetPanel: 'preview', targetMethod: 'render' },
-    expect: 'mutation',
-  },
-  {
-    title: 'Bridge chat plans to the graph',
-    tool: 'bridge_event',
-    args: { sourcePanel: CHAT_PANEL, event: 'plan', targetPanel: 'graph', targetMethod: 'setGraph' },
-    expect: 'mutation',
-  },
-  {
-    title: 'Bridge graph selection to the inspector',
-    tool: 'bridge_event',
-    args: { sourcePanel: 'graph', event: 'select', targetPanel: 'inspector', targetProperty: 'selection' },
-    expect: 'mutation',
-  },
-  {
-    title: 'Check design guardrails',
-    tool: 'check_guardrails',
-    expect: 'info',
-  },
-  {
-    title: 'Validate the constructed config',
-    tool: 'validate_config',
-    args: { strict: true },
-    expect: 'valid',
-  },
-  {
-    title: 'Export a portable workspace config',
-    tool: 'export_config',
-    args: { strict: true },
-    expect: 'export',
+    key: 'automation',
+    label: 'Automation',
+    intent: 'automation workspace for workflow approvals and process queues',
+    template: 'social-automation',
   },
 ];
 
+/** Behavior preset for the persistent chat: always present, full height, on the right. */
+const CHAT_BEHAVIOR = {
+  collapse: 'never',
+  importance: 100,
+  minInlineSize: 360,
+  minBlockSize: 320,
+  overflow: 'scroll-block',
+  responsiveMode: 'stack',
+  responsiveBreakpoint: 760,
+};
+
+/** agent-portal behavior presets keyed by the role a constructed panel plays. */
+const ROLE_BEHAVIORS = {
+  primary: {
+    importance: 95, minInlineSize: 520, minBlockSize: 320,
+    collapse: 'never', overflow: 'scroll-inline',
+    responsiveMode: 'scroll-inline', responsiveBreakpoint: 860,
+  },
+  board: {
+    importance: 88, minInlineSize: 480, minBlockSize: 320,
+    collapse: 'never', overflow: 'scroll-inline',
+    responsiveMode: 'scroll-inline', responsiveBreakpoint: 860,
+  },
+  secondary: {
+    importance: 68, minInlineSize: 320, minBlockSize: 260,
+    collapse: 'auto', overflow: 'scroll-block',
+    responsiveMode: 'stack', responsiveBreakpoint: 760,
+  },
+};
+
+/** Panel types that read as boards/tables/queues rather than editing surfaces. */
+const BOARD_PANELS = new Set([
+  'queue', 'workflow', 'timeline', 'node-graph', 'history', 'imports',
+]);
+/** Panel types that read as side/navigation/inspector surfaces. */
+const SECONDARY_PANELS = new Set([
+  'files', 'inspector', 'history', 'imports', 'navigation', 'reply',
+]);
+
 /**
- * Summarize a config into a small digest for the step log / browser replay.
+ * Assign an agent-portal behavior role to a constructed panel.
+ * The single most important editing/preview panel becomes `primary`; boards,
+ * tables and queues become `board`; navigation and side panels become
+ * `secondary`.
+ * @param {string} panelType
+ * @param {boolean} isPrimary
+ * @returns {'primary'|'board'|'secondary'}
+ */
+function roleFor(panelType, isPrimary) {
+  if (isPrimary) return 'primary';
+  if (BOARD_PANELS.has(panelType)) return 'board';
+  if (SECONDARY_PANELS.has(panelType)) return 'secondary';
+  return 'board';
+}
+
+/**
+ * Collect panel types in layout order from a BSP layout tree.
+ * @param {Object|null} node
+ * @param {string[]} acc
+ * @returns {string[]}
+ */
+function layoutPanels(node, acc = []) {
+  if (!node) return acc;
+  if (node.type === 'panel') acc.push(node.panelType);
+  else if (node.type === 'split') { layoutPanels(node.first, acc); layoutPanels(node.second, acc); }
+  return acc;
+}
+
+/**
+ * Summarize a config into a small digest for the browser replay.
  * @param {Object|null} config
- * @returns {{panelTypes: string[], panels: string[], bridges: number, groups: number, pinnedChat: boolean}}
+ * @returns {{panels: string[], panelTypes: string[], pinnedChatRight: boolean, bridges: number}}
  */
 function digestConfig(config) {
-  if (!config) return { panelTypes: [], panels: [], bridges: 0, groups: 0, pinnedChat: false };
-  let panels = [];
-  let walk = (node) => {
-    if (!node) return;
-    if (node.type === 'panel') panels.push(node.panelType);
-    else if (node.type === 'split') { walk(node.first); walk(node.second); }
-  };
-  walk(config.layout);
+  if (!config) return { panels: [], panelTypes: [], pinnedChatRight: false, bridges: 0 };
+  let root = config.layout;
+  let pinnedChatRight = Boolean(
+    root
+    && root.type === 'split'
+    && root.direction === 'horizontal'
+    && root.second?.type === 'panel'
+    && root.second.panelType === CHAT_PANEL
+    && config.panelTypes?.[CHAT_PANEL]?.behavior?.collapse === 'never',
+  );
   return {
+    panels: layoutPanels(root),
     panelTypes: Object.keys(config.panelTypes || {}),
-    panels,
+    pinnedChatRight,
     bridges: (config.events || []).length,
-    groups: (config.groups || []).length,
-    pinnedChat: config.panelTypes?.[CHAT_PANEL]?.behavior?.collapse === 'never',
   };
 }
 
 /**
- * Run one recipe step as a real dispatch call and record it.
- * @param {import('../../runtime/session.js').Session} session
- * @param {Array} steps
- * @param {{title: string, tool: string, args?: Object, expect?: string}} step
- * @param {number} index
+ * Require a successful dispatch result or throw with the tool's hint.
+ * @param {string} scenarioKey
+ * @param {string} tool
+ * @param {Object} result
+ * @returns {Object}
  */
-async function runStep(session, steps, step, index) {
-  let result = await dispatch(step.tool, step.args || {}, session);
-  let status = result?.status;
-
-  if (step.expect === 'mutation' && status !== 'ok') {
-    throw new Error(`Step ${index} (${step.tool}) failed: ${result?.hint || JSON.stringify(result)}`);
+function requireOk(scenarioKey, tool, result) {
+  if (result?.status !== 'ok') {
+    throw new Error(`[${scenarioKey}] ${tool} failed: ${result?.hint || JSON.stringify(result)}`);
   }
-  if (step.expect === 'valid' && result?.valid !== true) {
-    throw new Error(`Step ${index} (validate_config) reported invalid: ${JSON.stringify(result?.errors || result)}`);
-  }
-  if (step.expect === 'export' && !result?.json) {
-    throw new Error(`Step ${index} (export_config) produced no portable JSON: ${result?.hint || JSON.stringify(result)}`);
-  }
-
-  steps.push({
-    index,
-    title: step.title,
-    tool: step.tool,
-    args: step.args || {},
-    status: status ?? (result?.valid === true ? 'valid' : 'info'),
-    hint: result?.hint || null,
-    digest: digestConfig(session.config),
-  });
   return result;
 }
 
 /**
- * Build a chat-first workspace by driving the real dispatch tool surface.
- *
- * @returns {Promise<{config: Object, steps: Array, exportJson: string, classification: Object|null, roundTripName: string}>}
+ * Drive one workspace class through the real construction protocol and dock the
+ * chat on the right.
+ * @param {{key: string, label: string, intent: string, template: string}} scenario
+ * @returns {Promise<Object>} One scenario entry of the return contract.
  */
-export async function buildChatFirstWorkspace() {
+async function buildScenario(scenario) {
+  let { key, label, intent, template } = scenario;
   let session = createSession();
-  let steps = [];
   let stages = [];
-  let classification = null;
-  let exportJson = '';
-  let lastSignature = '';
 
-  for (let i = 0; i < RECIPE.length; i++) {
-    let result = await runStep(session, steps, RECIPE[i], i);
-    if (RECIPE[i].tool === 'classify_workspace') classification = result?.classification ?? result ?? null;
-    if (RECIPE[i].tool === 'export_config') exportJson = result.json;
+  // 1. The system classifies the intent and names the canonical template.
+  let classified = requireOk(key, 'classify_workspace', await dispatch('classify_workspace', { intent }, session));
 
-    // Capture a replay stage whenever the visible workspace shape changes, so the
-    // browser can mount the construction progressively, one real tool call at a time.
-    if (session.config) {
-      let digest = digestConfig(session.config);
-      let signature = JSON.stringify([digest.panels, digest.pinnedChat]);
-      if (signature !== lastSignature) {
-        lastSignature = signature;
-        stages.push({
-          index: i,
-          title: RECIPE[i].title,
-          tool: RECIPE[i].tool,
-          hint: result?.hint || null,
-          digest,
-          config: JSON.parse(JSON.stringify(session.config)),
-        });
-      }
-    }
+  // 2. The system builds its questionnaire of offered options.
+  let built = requireOk(key, 'build_construction_questions', await dispatch('build_construction_questions', { intent }, session));
+  let questionnaire = built.questions;
+
+  // 3. The agent SELECTS from the offered options. At minimum it picks every
+  //    offered module; it also confirms the offered register, topology and
+  //    theme so the answered set is explicit rather than defaulted.
+  let moduleQuestion = questionnaire.find((q) => q.id === 'module-selection');
+  let answeredIds = new Set();
+  let selections = [
+    ['module-selection', moduleQuestion ? moduleQuestion.options.map((o) => o.value) : undefined],
+    ['target-register', findOptionDefault(questionnaire, 'target-register')],
+    ['layout-topology', findOptionDefault(questionnaire, 'layout-topology')],
+    ['theme-mode', findOptionDefault(questionnaire, 'theme-mode')],
+  ];
+  for (let [questionId, answer] of selections) {
+    if (answer === undefined) continue;
+    let answered = requireOk(
+      key,
+      'answer_construction_question',
+      await dispatch('answer_construction_question', { questions: questionnaire, questionId, answer }, session),
+    );
+    questionnaire = answered.questions;
+    answeredIds.add(questionId);
   }
 
-  // Prove portability: re-import the exported config into a fresh session.
-  let relaunch = createSession();
-  let imported = await dispatch('import_config', { json: exportJson }, relaunch);
-  if (imported?.status !== 'ok' || !relaunch.config) {
-    throw new Error(`Portable relaunch failed: ${imported?.hint || JSON.stringify(imported)}`);
+  // Collect the answers the system now holds, keyed by question id, to hand to
+  // construction so the canonical template is placed from the agent's choices.
+  let answers = {};
+  for (let q of questionnaire) {
+    if (q.answer !== undefined) answers[q.id] = q.answer;
   }
+
+  // Replay seed: a chat-only workspace before the system places any panel.
+  let seedSession = createSession();
+  requireOk(key, 'scaffold_from_scratch', await dispatch('scaffold_from_scratch', { name: `${label} Console`, register: 'tool' }, seedSession));
+  requireOk(key, 'register_panel_type', await dispatch('register_panel_type', {
+    name: CHAT_PANEL, title: 'Chat', icon: 'chat', component: CHAT_COMPONENT,
+  }, seedSession));
+  requireOk(key, 'set_layout', await dispatch('set_layout', {
+    layoutTree: { type: 'panel', panelType: CHAT_PANEL, panelState: {} },
+  }, seedSession));
+  requireOk(key, 'set_behavior', await dispatch('set_behavior', { target: CHAT_PANEL, behavior: CHAT_BEHAVIOR }, seedSession));
+  stages.push({
+    title: 'Chat-only seed',
+    config: cloneConfig(seedSession.config),
+    digest: digestConfig(seedSession.config),
+  });
+
+  // 4. The system plans, then constructs: it places modules from the canonical
+  //    template into session.config. Planning is no-mutation; construction
+  //    mutates the session.
+  requireOk(key, 'plan_workspace', await dispatch('plan_workspace', { intent, answers }, session));
+  let constructed = requireOk(key, 'construct_workspace', await dispatch('construct_workspace', { intent, answers }, session));
+  if (constructed.templateName !== template) {
+    throw new Error(`[${key}] expected template "${template}" but constructed "${constructed.templateName}"`);
+  }
+  let workspacePanels = layoutPanels(session.config.layout);
+
+  // 5. Dock the chat on the RIGHT at full height, wrapping the constructed
+  //    layout as the LEFT child of a global horizontal split.
+  requireOk(key, 'register_panel_type', await dispatch('register_panel_type', {
+    name: CHAT_PANEL, title: 'Chat', icon: 'chat', component: CHAT_COMPONENT,
+  }, session));
+  let constructedLayout = cloneConfig(session.config.layout);
+  requireOk(key, 'set_layout', await dispatch('set_layout', {
+    layoutTree: {
+      type: 'split',
+      direction: 'horizontal',
+      ratio: 0.64,
+      first: constructedLayout,
+      second: { type: 'panel', panelType: CHAT_PANEL, panelState: {} },
+    },
+  }, session));
+  requireOk(key, 'set_behavior', await dispatch('set_behavior', { target: CHAT_PANEL, behavior: CHAT_BEHAVIOR }, session));
+
+  // Behavior for each constructed workspace panel: the highest-importance
+  // editing/preview panel is primary, boards are board, side panels secondary.
+  let primaryPanel = pickPrimaryPanel(session.config, workspacePanels);
+  for (let panelType of workspacePanels) {
+    let role = roleFor(panelType, panelType === primaryPanel);
+    requireOk(key, 'set_behavior', await dispatch('set_behavior', {
+      target: panelType, behavior: ROLE_BEHAVIORS[role],
+    }, session));
+  }
+  requireOk(key, 'update_layout_behavior', await dispatch('update_layout_behavior', {
+    behavior: { responsiveMode: 'scroll-inline', responsiveBreakpoint: 900 },
+  }, session));
+
+  // 6. Validate strict, then export a portable config.
+  let validation = await dispatch('validate_config', { strict: true }, session);
+  if (validation.valid !== true) {
+    throw new Error(`[${key}] strict validation failed: ${JSON.stringify(validation.errors)}`);
+  }
+  let exported = requireOk(key, 'export_config', await dispatch('export_config', { strict: true }, session));
+
+  stages.push({
+    title: 'Constructed workspace with chat docked right',
+    config: cloneConfig(session.config),
+    digest: digestConfig(session.config),
+  });
+
+  let questions = questionnaire
+    .filter((q) => q.status !== 'skipped')
+    .map((q) => ({
+      id: q.id,
+      type: q.type,
+      prompt: q.title,
+      options: Array.isArray(q.options)
+        ? q.options.map((o) => ({ value: o.value, label: o.label }))
+        : [],
+      chosen: q.answer,
+    }));
 
   return {
-    config: session.config,
-    steps,
+    key,
+    label,
+    intent,
+    template: constructed.templateName,
+    classification: classified.intent,
+    questions,
     stages,
-    exportJson,
-    classification,
-    roundTripName: relaunch.config.name,
+    config: session.config,
+    exportJson: exported.json,
+  };
+}
+
+/**
+ * Read the offered default for a single-select question, if present.
+ * @param {Array} questions
+ * @param {string} id
+ * @returns {string|undefined}
+ */
+function findOptionDefault(questions, id) {
+  let question = questions.find((q) => q.id === id && Array.isArray(q.options) && q.options.length > 0);
+  if (!question) return undefined;
+  let preferred = question.default ?? question.answer;
+  let match = question.options.find((o) => o.value === preferred);
+  return (match || question.options[0]).value;
+}
+
+/**
+ * Pick the primary editing/preview panel: the constructed panel whose template
+ * behavior carries the highest importance, preferring an editor/preview surface.
+ * @param {Object} config
+ * @param {string[]} panels
+ * @returns {string|undefined}
+ */
+function pickPrimaryPanel(config, panels) {
+  let best;
+  let bestScore = -Infinity;
+  for (let panelType of panels) {
+    if (BOARD_PANELS.has(panelType) || SECONDARY_PANELS.has(panelType)) continue;
+    let importance = config.panelTypes?.[panelType]?.behavior?.importance ?? 0;
+    if (importance > bestScore) {
+      bestScore = importance;
+      best = panelType;
+    }
+  }
+  if (best) return best;
+  // Fall back to the highest-importance panel of any kind.
+  for (let panelType of panels) {
+    let importance = config.panelTypes?.[panelType]?.behavior?.importance ?? 0;
+    if (importance > bestScore) {
+      bestScore = importance;
+      best = panelType;
+    }
+  }
+  return best;
+}
+
+/**
+ * Deep clone a JSON config value.
+ * @template T
+ * @param {T} value
+ * @returns {T}
+ */
+function cloneConfig(value) {
+  if (value === undefined) return value;
+  if (typeof structuredClone === 'function') return structuredClone(value);
+  return JSON.parse(JSON.stringify(value));
+}
+
+/**
+ * Build the chat-first, questionnaire-driven workspaces for every class.
+ *
+ * @returns {Promise<{
+ *   chatPanel: string,
+ *   chatComponent: string,
+ *   scenarios: Array<{
+ *     key: string, label: string, intent: string, template: string,
+ *     questions: Array<{id: string, type: string, prompt: string, options: Array<{value: string, label: string}>, chosen: *}>,
+ *     stages: Array<{title: string, config: Object, digest: Object}>,
+ *     config: Object,
+ *     exportJson: string,
+ *   }>,
+ * }>}
+ */
+export async function buildChatFirstWorkspace() {
+  let scenarios = [];
+  for (let scenario of SCENARIOS) {
+    scenarios.push(await buildScenario(scenario));
+  }
+  return {
+    chatPanel: CHAT_PANEL,
+    chatComponent: CHAT_COMPONENT,
+    scenarios,
   };
 }

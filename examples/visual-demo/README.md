@@ -97,23 +97,27 @@ Run the chat-first builder demo:
 npm run demo:chat-builder
 ```
 
-Unlike the realtime builder, this demo authors no layout config. It constructs
-the workspace by issuing real `dispatch(...)` tools on a single session —
-`classify_workspace`, `scaffold_from_scratch`, `register_panel_type`,
-`set_layout`, `set_behavior`, `add_panel`, `mount_widget`, `add_group`,
-`add_section`, `bridge_event`, `check_guardrails`, `validate_config`, and
-`export_config`. A chat panel is registered, made the whole workspace, and
-pinned (`collapse: never`); every other region — preview, inspector, graph, and
-logs — is then split in **around** the chat by an `add_panel` call. The browser
-bundle replays those tool calls one stage at a time through the public
-`symbiote-workspace/browser` `mountWorkspace` entry, so the layout assembles
-around the chat with no page reload.
+This demo is questionnaire-driven: the system offers the choices, the agent
+selects, and the system places panels from canonical templates — the agent does
+not decide placement. It starts with a single chat that presents a
+workspace-class menu — **Programming**, **Video**, or **Automation**. Selecting a
+class drives the real construction protocol on one session via `dispatch(...)`:
+`classify_workspace` → `build_construction_questions` (the questionnaire) →
+`answer_construction_question` (the agent picks offered options) → `plan_workspace`
+→ `construct_workspace` (the system materializes the layout from the canonical
+template). The chat is then docked as a global panel on the **right at full
+height** (`set_behavior` `collapse: never`, high importance), the workspace panels
+sit on the left, and every panel carries full layout behavior — importance, min
+inline/block sizes, collapse policy, overflow, responsive mode/breakpoint — with
+relative `ratio` for sizing.
 
-The panels render real Symbiote UI components seeded with mock content: the chat
-is a mock `chat-workspace` (transcript, status board, composer), and the regions
-around it use `code-block` (preview), `inspector-panel` (inspector),
-`canvas-graph` (graph), and `sn-event-feed` (logs), mounted through the
-`panel-layout` runtime under the default Cascade theme.
+The workspace renders real Symbiote UI components from the chosen template through
+the `panel-layout` runtime under the default Cascade theme: Programming uses
+`source-editor` / `sn-tree-panel` / `sn-canvas-viewport`, Video uses
+`sn-timeline-editor` / `node-canvas` / `inspector-panel` / `sn-canvas-viewport`,
+and Automation uses `sn-data-table` / `sn-rich-text-editor` / `node-canvas` /
+`sn-file-upload`. The chat stays a mock `chat-workspace`, seeded with the answered
+questionnaire.
 
 Generate the bundle without serving (CI/package smoke):
 
@@ -122,9 +126,12 @@ node examples/visual-demo/chat-builder.js --write-only --output-dir tmp/chat-bui
 ```
 
 The headless construction is asserted by `tests/chat-builder-demo.test.js`
-(part of `npm test`). For real-browser evidence, run the opt-in WebKit smoke,
-which serves the bundle, walks every stage, and asserts the chat persists as the
-center, the layout grows around it, and the page has no console errors:
+(part of `npm test`): each class answers the offered questionnaire, the config
+validates, and the chat is the right-hand child of the root split. For
+real-browser evidence, run the opt-in WebKit smoke, which serves the bundle,
+opens on the chat menu, builds each class, and asserts the chat is docked on the
+right at full height with real components and no console errors, capturing a
+screenshot per class:
 
 ```bash
 npx playwright install webkit
