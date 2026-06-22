@@ -88,3 +88,41 @@ SYMBIOTE_BROWSER_DRIVER=playwright SYMBIOTE_PLAYWRIGHT_BROWSER=webkit \
 `SYMBIOTE_PLAYWRIGHT_BROWSER` and `--playwright-browser` accept `chromium`,
 `firefox`, or `webkit`. Smoke output is removed after successful runs unless
 `--keep-output` or `SYMBIOTE_BROWSER_SMOKE_KEEP=1` is set.
+
+## Chat-first tool-driven demo
+
+Run the chat-first builder demo:
+
+```bash
+npm run demo:chat-builder
+```
+
+Unlike the realtime builder, this demo authors no layout config. It constructs
+the workspace by issuing real `dispatch(...)` tools on a single session —
+`classify_workspace`, `scaffold_from_scratch`, `register_panel_type`,
+`set_layout`, `set_behavior`, `add_panel`, `mount_widget`, `add_group`,
+`add_section`, `bridge_event`, `check_guardrails`, `validate_config`, and
+`export_config`. A chat panel is registered, made the whole workspace, and
+pinned (`collapse: never`); every other region — preview, inspector, graph, and
+logs — is then split in **around** the chat by an `add_panel` call. The browser
+bundle replays those tool calls one stage at a time through the public
+`symbiote-workspace/browser` `mountWorkspace` entry, so the layout assembles
+around the chat with no page reload.
+
+Generate the bundle without serving (CI/package smoke):
+
+```bash
+node examples/visual-demo/chat-builder.js --write-only --output-dir tmp/chat-builder-demo
+```
+
+The headless construction is asserted by `tests/chat-builder-demo.test.js`
+(part of `npm test`). For real-browser evidence, run the opt-in WebKit smoke,
+which serves the bundle, walks every stage, and asserts the chat persists as the
+center, the layout grows around it, and the page has no console errors:
+
+```bash
+npx playwright install webkit
+npm run test:chat-builder-browser
+```
+
+Pass `--browser chromium|firefox|webkit` to select the engine.

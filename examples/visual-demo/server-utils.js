@@ -2,6 +2,11 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { dirname, extname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  BROWSER_THEME_IMPORT,
+  BROWSER_ENGINE_IMPORT,
+  BROWSER_ENGINE_CONTRACTS_IMPORT,
+} from '../../sharing/browser-contract.js';
 
 const MIME_TYPES = {
   '.css': 'text/css; charset=utf-8',
@@ -99,6 +104,27 @@ export async function symbioteJsRoot(workspaceRoot) {
     if (root) return root;
   }
   return candidates[0];
+}
+
+/**
+ * Import map for a served demo bundle: maps the public browser specifiers and
+ * their transitive prefixes onto the static-server roots. Kept next to the
+ * serving routes so the served import map has one home, shared by the visual
+ * demos. Direct specifiers come from the public browser contract.
+ * @returns {Object<string, string>}
+ */
+export function demoImportMap() {
+  return {
+    'symbiote-workspace/browser': '/__workspace__/browser.js',
+    [BROWSER_THEME_IMPORT]: '/__symbiote_ui__/ui/index.js',
+    'symbiote-ui/board': '/__symbiote_ui__/board/index.js',
+    'symbiote-ui/': '/__symbiote_ui__/',
+    [BROWSER_ENGINE_IMPORT]: '/__symbiote_engine__/index.js',
+    [BROWSER_ENGINE_CONTRACTS_IMPORT]: '/__symbiote_engine__/contracts/index.js',
+    'symbiote-engine/': '/__symbiote_engine__/',
+    '@symbiotejs/symbiote': '/__symbiote__/core/index.js',
+    '@symbiotejs/symbiote/': '/__symbiote__/',
+  };
 }
 
 export async function startStaticServer({ outputDir, workspaceRoot, uiRoot, engineRoot, symbioteRoot, port }) {

@@ -94,7 +94,9 @@
     "release:preflight": "node scripts/release-preflight.js",
     "demo:visual": "node examples/visual-demo/preview.js",
     "demo:realtime-builder": "node examples/visual-demo/realtime-builder.js",
-    "test:visual-demo-browser": "node examples/visual-demo/browser-smoke.js"
+    "demo:chat-builder": "node examples/visual-demo/chat-builder.js",
+    "test:visual-demo-browser": "node examples/visual-demo/browser-smoke.js",
+    "test:chat-builder-browser": "node examples/visual-demo/chat-builder-smoke.js"
   },
   "keywords": [
     "workspace",

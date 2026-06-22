@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Added a chat-first tool-driven construction demo (`npm run demo:chat-builder`).
+  It builds the workspace layout entirely around a persistent, pinned chat panel
+  by issuing real `dispatch(...)` construction tools on a single session — no
+  hand-authored config — and replays the construction in the browser through the
+  public `symbiote-workspace/browser` entry, one tool call at a time. Covered by
+  `tests/chat-builder-demo.test.js` and an opt-in WebKit smoke
+  (`npm run test:chat-builder-browser`).
+- Moved the served visual-demo import map into a shared `demoImportMap()` helper
+  in `examples/visual-demo/server-utils.js`, with the direct browser specifiers
+  sourced from the public browser contract.
+
 ## [1.0.0] - 2026-06-20
 
 - Added `llms.txt` as a compact agent-facing resource map and included it in
