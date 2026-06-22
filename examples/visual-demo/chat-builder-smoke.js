@@ -39,57 +39,105 @@ function hasArg(name) {
 
 /**
  * Minimal contract-shaped fixture covering all three classes, used to self-test the
- * runtime while the real questionnaire driver lands. Each `config` is a real workspace
- * whose root is a horizontal split with the chat panel as the SECOND child (chat on the
- * right, full height) and the workspace panels on the left.
+ * runtime while the real questionnaire driver lands. Each scenario carries 2 `variants`
+ * with DIFFERENT left-panel sets (so a variant switch visibly changes the workspace) and
+ * a questionnaire-derived `theme` ({mode, hue}). The top-level `config` equals the first
+ * (default) variant. Every `config` is a real workspace whose root is a horizontal split
+ * with the chat panel as the SECOND child (chat on the right, full height) and the
+ * workspace panels on the left.
  */
 const FIXTURE = {
   chatPanel: 'chat',
   chatComponent: 'chat-workspace',
   scenarios: [
-    fixtureScenario('programming', 'Programming', 'agent programming', 'editor', [
-      { id: 'module-selection', type: 'multi-select', prompt: 'Modules',
-        options: [{ value: 'source', label: 'Source' }, { value: 'preview', label: 'Preview' }],
-        chosen: ['source', 'preview'] },
-    ], { source: 'source-editor', preview: 'sn-canvas-viewport' }),
-    fixtureScenario('video', 'Video', 'video editing studio', 'video', [
-      { id: 'tracks', type: 'multi-select', prompt: 'Timeline tracks',
+    fixtureScenario('programming', 'Programming', 'agent programming', 'editor',
+      [{ id: 'module-selection', type: 'multi-select', prompt: 'Modules',
+        options: [{ value: 'source', label: 'Source' }, { value: 'preview', label: 'Preview' }, { value: 'graph', label: 'Graph' }],
+        chosen: ['source', 'preview'] }],
+      { mode: 'dark', hue: 218 },
+      [
+        { id: 'editor-preview', label: 'Editor + Preview', answers: { 'module-selection': ['source', 'preview'] },
+          panels: { source: 'source-editor', preview: 'sn-canvas-viewport' } },
+        { id: 'editor-graph-inspector', label: 'Editor + Graph + Inspector', answers: { 'module-selection': ['source', 'graph', 'inspector'] },
+          panels: { source: 'source-editor', graph: 'canvas-graph', inspector: 'inspector-panel' } },
+      ]),
+    fixtureScenario('video', 'Video', 'video editing studio', 'video',
+      [{ id: 'tracks', type: 'multi-select', prompt: 'Timeline tracks',
         options: [{ value: 'video', label: 'Video' }, { value: 'audio', label: 'Audio' }],
-        chosen: ['video', 'audio'] },
-    ], { stage: 'sn-canvas-viewport', timeline: 'sn-timeline-editor' }),
-    fixtureScenario('automation', 'Automation', 'workflow automation', 'flow', [
-      { id: 'trigger', type: 'single-select', prompt: 'Trigger',
+        chosen: ['video', 'audio'] }],
+      { mode: 'dark', hue: 286 },
+      [
+        { id: 'stage-timeline', label: 'Stage + Timeline', answers: { tracks: ['video', 'audio'] },
+          panels: { stage: 'sn-canvas-viewport', timeline: 'sn-timeline-editor' } },
+        { id: 'stage-table-feed', label: 'Stage + Shots + Events', answers: { tracks: ['video'] },
+          panels: { stage: 'sn-canvas-viewport', shots: 'sn-data-table', events: 'sn-event-feed' } },
+      ]),
+    fixtureScenario('automation', 'Automation', 'workflow automation', 'flow',
+      [{ id: 'trigger', type: 'single-select', prompt: 'Trigger',
         options: [{ value: 'webhook', label: 'Webhook' }, { value: 'schedule', label: 'Schedule' }],
-        chosen: 'webhook' },
-    ], { flow: 'node-canvas', inspector: 'inspector-panel' }),
+        chosen: 'webhook' }],
+      { mode: 'light', hue: 142 },
+      [
+        { id: 'flow-inspector', label: 'Flow + Inspector', answers: { trigger: 'webhook' },
+          panels: { flow: 'node-canvas', inspector: 'inspector-panel' } },
+        { id: 'flow-table-tree', label: 'Flow + Runs + Steps', answers: { trigger: 'schedule' },
+          panels: { flow: 'node-canvas', runs: 'sn-data-table', steps: 'sn-tree-panel' } },
+      ]),
   ],
 };
 
-function fixtureScenario(key, label, intent, template, questions, panels) {
-  let [firstType, firstComponent] = Object.entries(panels)[0];
-  let [secondType, secondComponent] = Object.entries(panels)[1];
-  let panelTypes = {
-    [firstType]: { title: firstComponent, icon: 'code', component: firstComponent,
-      behavior: { importance: 95, minInlineSize: 480, minBlockSize: 300, collapse: 'auto', overflow: 'scroll-block', responsiveMode: 'stack', responsiveBreakpoint: 760 } },
-    [secondType]: { title: secondComponent, icon: 'preview', component: secondComponent,
-      behavior: { importance: 68, minInlineSize: 320, minBlockSize: 260, collapse: 'auto', overflow: 'scroll-block', responsiveMode: 'stack', responsiveBreakpoint: 760 } },
-    chat: { title: 'Chat', icon: 'chat', component: 'chat-workspace',
-      behavior: { collapse: 'never', importance: 100, minInlineSize: 360, minBlockSize: 320, overflow: 'scroll-block', responsiveMode: 'stack', responsiveBreakpoint: 760 } },
-  };
+function panelBehavior(index) {
+  return index === 0
+    ? { importance: 95, minInlineSize: 480, minBlockSize: 300, collapse: 'auto', overflow: 'scroll-block', responsiveMode: 'stack', responsiveBreakpoint: 760 }
+    : { importance: 68, minInlineSize: 320, minBlockSize: 240, collapse: 'auto', overflow: 'scroll-block', responsiveMode: 'stack', responsiveBreakpoint: 760 };
+}
+
+/** Build a real workspace config (chat docked right) from a {type: component} map. */
+function fixtureConfig(label, panels) {
+  let entries = Object.entries(panels);
+  let panelTypes = {};
+  entries.forEach(([type, component], index) => {
+    panelTypes[type] = { title: component, icon: index === 0 ? 'code' : 'preview', component, behavior: panelBehavior(index) };
+  });
+  panelTypes.chat = { title: 'Chat', icon: 'chat', component: 'chat-workspace',
+    behavior: { collapse: 'never', importance: 100, minInlineSize: 360, minBlockSize: 320, overflow: 'scroll-block', responsiveMode: 'stack', responsiveBreakpoint: 760 } };
+  let workspaceLayout = buildLayoutTree(entries.map(([type]) => type));
   return {
-    key, label, intent, template, questions, stages: [],
-    config: {
-      version: '0.2.0', name: label, register: 'tool', groups: [], sections: [],
-      panelTypes, layouts: {},
-      layout: {
-        type: 'split', direction: 'horizontal', ratio: 0.64,
-        first: { type: 'split', direction: 'vertical', ratio: 0.6,
-          first: { type: 'panel', panelType: firstType, panelState: {} },
-          second: { type: 'panel', panelType: secondType, panelState: {} } },
-        second: { type: 'panel', panelType: 'chat', panelState: {} },
-      },
-      events: [], components: { catalog: [firstComponent, secondComponent, 'chat-workspace'] },
+    version: '0.2.0', name: label, register: 'tool', groups: [], sections: [],
+    panelTypes, layouts: {},
+    layout: {
+      type: 'split', direction: 'horizontal', ratio: 0.64,
+      first: workspaceLayout,
+      second: { type: 'panel', panelType: 'chat', panelState: {} },
     },
+    events: [], components: { catalog: [...entries.map(([, component]) => component), 'chat-workspace'] },
+  };
+}
+
+/** Recursive BSP layout over the workspace panel types (chat is added separately). */
+function buildLayoutTree(types, depth = 0) {
+  if (types.length <= 1) return { type: 'panel', panelType: types[0], panelState: {} };
+  let mid = Math.ceil(types.length / 2);
+  return {
+    type: 'split', direction: depth % 2 === 0 ? 'vertical' : 'horizontal', ratio: 0.6,
+    first: buildLayoutTree(types.slice(0, mid), depth + 1),
+    second: buildLayoutTree(types.slice(mid), depth + 1),
+  };
+}
+
+function fixtureScenario(key, label, intent, template, questions, theme, variantSpecs) {
+  let variants = variantSpecs.map((spec) => ({
+    id: spec.id,
+    label: spec.label,
+    answers: spec.answers,
+    config: fixtureConfig(label, spec.panels),
+    exportJson: '',
+    digest: { panelTypes: [...Object.keys(spec.panels), 'chat'] },
+  }));
+  return {
+    key, label, intent, template, questions, stages: [], theme,
+    variants,
+    config: variants[0].config,
     exportJson: '',
   };
 }
@@ -140,15 +188,14 @@ async function run() {
       return Boolean(stage && stage.classList.contains('cb-menu-mode') && chat && !hasLayout);
     }, chatComponent);
 
-    let scenarioResults = {};
-    for (let key of keys) {
-      await page.evaluate((k) => window.__chatBuilder.show(k), key);
+    // Wait for the active panel-layout to hold the chat plus >=2 real workspace
+    // components, then snapshot geometry + the workspace component set.
+    async function waitAndSnapshot() {
       await page.waitForSelector('panel-layout', { timeout });
       await page.waitForFunction(
         () => Boolean(document.querySelector('panel-layout .layout-root, panel-layout layout-node')),
         { timeout },
       );
-      // Wait until the chat-workspace and at least two workspace components hold content.
       await page.waitForFunction(
         ({ tag }) => {
           let layout = document.querySelector('panel-layout');
@@ -165,8 +212,7 @@ async function run() {
         { tag: chatComponent },
         { timeout },
       );
-
-      let snap = await page.evaluate((tag) => {
+      return page.evaluate((tag) => {
         let layout = document.querySelector('panel-layout');
         let layoutBox = layout.getBoundingClientRect();
         let chat = layout.querySelector(tag);
@@ -188,11 +234,70 @@ async function run() {
           layoutHeight: layoutBox.height,
           chatCenter: (chatBox.x - layoutBox.x) + chatBox.width / 2,
           workspaceComponents: components,
+          variant: layout.dataset.variant || '',
           url: location.href,
         };
       }, chatComponent);
+    }
 
+    function panelSignature(components) {
+      return Object.keys(components).sort().join(',') + '#' + Object.keys(components).length;
+    }
+
+    let scenarioResults = {};
+    for (let key of keys) {
+      await page.evaluate((k) => window.__chatBuilder.show(k), key);
+      let snap = await waitAndSnapshot();
       let workspaceTags = Object.keys(snap.workspaceComponents);
+
+      // #2 Real choice: switch to a DIFFERENT variant and assert the left-panel set
+      // changed (different workspace components/count), with no navigation/reload.
+      let variantList = await page.evaluate((k) => window.__chatBuilder.variants(k), key);
+      let otherVariant = variantList.find((variant) => variant.id !== snap.variant) || variantList[1] || variantList[0];
+      let beforeSignature = panelSignature(snap.workspaceComponents);
+      await page.evaluate(
+        ({ k, v }) => window.__chatBuilder.selectVariant(k, v),
+        { k: key, v: otherVariant.id },
+      );
+      await page.waitForFunction(
+        ({ sig }) => {
+          let layout = document.querySelector('panel-layout');
+          if (!layout) return false;
+          let names = new Set();
+          for (let el of layout.querySelectorAll('*')) {
+            let name = el.tagName.toLowerCase();
+            if (name === 'chat-workspace' || !name.includes('-')) continue;
+            if (name.startsWith('layout-') || name === 'panel-layout' || name === 'split-node') continue;
+            if (el.textContent.trim().length > 8) names.add(name);
+          }
+          let current = [...names].sort().join(',') + '#' + names.size;
+          return names.size >= 1 && current !== sig;
+        },
+        { sig: beforeSignature },
+        { timeout },
+      );
+      let variantSnap = await waitAndSnapshot();
+      let afterSignature = panelSignature(variantSnap.workspaceComponents);
+
+      // #3 Theme readiness: read a color token, flip the mode control, assert it
+      // changed live (no reload). --sn-bg recomputes between dark and light modes.
+      let themeToken = '--sn-bg';
+      let themeBefore = await page.evaluate((t) => window.__chatBuilder.getThemeToken(t), themeToken);
+      let currentMode = await page.evaluate(() => window.__chatBuilder.getThemeState().mode);
+      let targetMode = currentMode === 'light' ? 'dark' : 'light';
+      await page.evaluate((m) => window.__chatBuilder.setTheme({ mode: m }), targetMode);
+      await page.waitForFunction(
+        ({ t, prev }) => window.__chatBuilder.getThemeToken(t).trim() !== prev.trim(),
+        { t: themeToken, prev: themeBefore },
+        { timeout },
+      );
+      let themeAfter = await page.evaluate((t) => window.__chatBuilder.getThemeToken(t), themeToken);
+      // Also exercise the geometry register (tool vs product) on a geometry token.
+      let geometryToken = '--sn-step-1';
+      let geometryBefore = await page.evaluate((t) => window.__chatBuilder.getThemeToken(t), geometryToken);
+      await page.evaluate(() => window.__chatBuilder.setTheme({ register: 'tool' }));
+      let geometryAfter = await page.evaluate((t) => window.__chatBuilder.getThemeToken(t), geometryToken);
+
       let screenshot = join(screenshotDir, `chat-builder-${key}.png`);
       await page.screenshot({ path: screenshot, fullPage: true });
 
@@ -204,19 +309,36 @@ async function run() {
         // Chat at full height: covers most of the layout's block size.
         chatFullHeight: snap.chatHeight >= snap.layoutHeight * 0.85,
         realComponentsRendered: workspaceTags.length >= 2,
-        noNavigation: snap.url === startUrl,
+        // Switching variants produced a different left-panel set, chat still right.
+        variantSwitchChangesPanels: afterSignature !== beforeSignature,
+        chatStillRightAfterSwitch: variantSnap.chatCenter > variantSnap.layoutWidth / 2,
+        // Live theme: the color token recomputed when the mode control toggled.
+        themeTokenChanged: themeAfter.trim() !== themeBefore.trim() && themeAfter.trim().length > 0,
+        // Live geometry: the register toggle recomputed a geometry primitive.
+        geometryTokenChanged: geometryAfter.trim() !== geometryBefore.trim(),
+        noNavigation: snap.url === startUrl && variantSnap.url === startUrl,
       };
 
       scenarioResults[key] = {
         ...assertions,
         ok: Object.values(assertions).every(Boolean),
         layoutWidth: Math.round(snap.layoutWidth),
-        chatX: Math.round(snap.chatX),
         chatCenter: Math.round(snap.chatCenter),
         chatWidth: Math.round(snap.chatWidth),
         chatHeight: Math.round(snap.chatHeight),
         layoutHeight: Math.round(snap.layoutHeight),
+        defaultVariant: snap.variant,
+        switchedVariant: variantSnap.variant,
+        panelsBefore: beforeSignature,
+        panelsAfter: afterSignature,
         workspaceComponents: snap.workspaceComponents,
+        switchedComponents: variantSnap.workspaceComponents,
+        themeToken,
+        themeBefore: themeBefore.trim(),
+        themeAfter: themeAfter.trim(),
+        geometryToken,
+        geometryBefore: geometryBefore.trim(),
+        geometryAfter: geometryAfter.trim(),
         screenshot,
       };
     }

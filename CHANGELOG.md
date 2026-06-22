@@ -14,8 +14,11 @@ All notable changes to this project will be documented in this file.
   placement). The chat is docked as a global right-hand panel at full height with
   full layout behavior (importance, min sizes, collapse, overflow, responsive
   mode), and the workspace renders real Symbiote UI components per template via
-  the `panel-layout` runtime under the Cascade theme. Covered by
-  `tests/chat-builder-demo.test.js` and an opt-in WebKit smoke
+  the `panel-layout` runtime under the Cascade theme. Each class offers two or
+  three constructed variants (different module selections) surfaced as a real
+  interactive choice that re-mounts with no reload, and a live theme control
+  (mode, hue, geometry register) re-applies the Cascade color/geometry/motion
+  scales. Covered by `tests/chat-builder-demo.test.js` and an opt-in WebKit smoke
   (`npm run test:chat-builder-browser`).
 - Moved the served visual-demo import map into a shared `demoImportMap()` helper
   in `examples/visual-demo/server-utils.js`, with the direct browser specifiers

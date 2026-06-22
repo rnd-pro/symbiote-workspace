@@ -119,6 +119,13 @@ and Automation uses `sn-data-table` / `sn-rich-text-editor` / `node-canvas` /
 `sn-file-upload`. The chat stays a mock `chat-workspace`, seeded with the answered
 questionnaire.
 
+The choice is real and interactive. Each class offers two or three constructed
+**variants** (different `module-selection` answers → different left panels),
+surfaced as selectable chips alongside the answered questionnaire; picking one
+re-mounts that workspace with no reload. A live **theme control** (mode, accent
+hue, and the geometry register tool/product) re-applies the Cascade theme, so the
+color, geometry, and motion scales are exercised live in the browser.
+
 Generate the bundle without serving (CI/package smoke):
 
 ```bash
@@ -130,8 +137,9 @@ The headless construction is asserted by `tests/chat-builder-demo.test.js`
 validates, and the chat is the right-hand child of the root split. For
 real-browser evidence, run the opt-in WebKit smoke, which serves the bundle,
 opens on the chat menu, builds each class, and asserts the chat is docked on the
-right at full height with real components and no console errors, capturing a
-screenshot per class:
+right at full height with real components, that switching a variant changes the
+rendered panels, that the theme control changes a live `--sn-*` token (color and
+geometry register), and no console errors, capturing a screenshot per class:
 
 ```bash
 npx playwright install webkit

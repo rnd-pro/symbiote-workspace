@@ -7,6 +7,12 @@
  * system places panels from its canonical template into `session.config`. No
  * hand-authored panel placement — the layout is whatever the template produces.
  *
+ * The selection is a REAL choice. Each class offers two or three fully
+ * constructed `variants`, each answering `module-selection` (and, where a class
+ * has too few modules to differentiate, `layout-topology`) differently, so the
+ * demo can switch between distinct left-panel sets. The scenario's top-level
+ * `config`/`exportJson` mirror the default variant.
+ *
  * After construction the workspace is wrapped so the chat lives as a global
  * RIGHT panel at full height (withChat-style), exactly as the real agent-portal
  * docks a persistent conversation beside a constructed workspace.
@@ -24,7 +30,19 @@ export const CHAT_COMPONENT = 'chat-workspace';
 /**
  * Workspace classes to construct. Each drives one session through the real
  * construction protocol; the live-verified template is recorded for reference.
- * @type {Array<{key: string, label: string, intent: string, template: string}>}
+ *
+ * `variants` are curated answer-sets. Each picks a DIFFERENT meaningful
+ * `module-selection` so the constructed left-panel set is distinct; `theme`
+ * supplies the `theme-mode` (+ `theme-hue` when custom) answers that drive the
+ * cascade theme. `default` names the variant the scenario surfaces at the top
+ * level. Module values are the canonical template modules (verified live):
+ * editor → files/preview/source, video-studio → inspector/node-graph/timeline/
+ * viewport, social-automation → history/imports/queue/reply/workflow.
+ * @type {Array<{
+ *   key: string, label: string, intent: string, template: string,
+ *   default: string,
+ *   variants: Array<{id: string, label: string, modules: string[], topology?: string, theme: {mode: string, hue?: number}}>,
+ * }>}
  */
 const SCENARIOS = [
   {
@@ -32,18 +50,38 @@ const SCENARIOS = [
     label: 'Programming',
     intent: 'agent programming workspace with source editor, diff and dependency graph',
     template: 'editor',
+    default: 'standard',
+    // Only three modules are offered, so the two-module subsets must differ by
+    // WHICH modules they keep rather than only by count.
+    variants: [
+      { id: 'minimal', label: 'Minimal — source + files', modules: ['source', 'files'], theme: { mode: 'dark' } },
+      { id: 'standard', label: 'Standard — source + preview', modules: ['source', 'preview'], theme: { mode: 'light' } },
+      { id: 'full', label: 'Full — files, preview, source', modules: ['files', 'preview', 'source'], theme: { mode: 'custom', hue: 265 } },
+    ],
   },
   {
     key: 'video',
     label: 'Video',
     intent: 'media studio for video editing with timeline and preview',
     template: 'video-studio',
+    default: 'standard',
+    variants: [
+      { id: 'minimal', label: 'Minimal — viewport + timeline', modules: ['viewport', 'timeline'], theme: { mode: 'dark' } },
+      { id: 'standard', label: 'Standard — viewport, timeline, inspector', modules: ['viewport', 'timeline', 'inspector'], theme: { mode: 'dark' } },
+      { id: 'full', label: 'Full — all four modules', modules: ['inspector', 'node-graph', 'timeline', 'viewport'], theme: { mode: 'custom', hue: 300 } },
+    ],
   },
   {
     key: 'automation',
     label: 'Automation',
     intent: 'automation workspace for workflow approvals and process queues',
     template: 'social-automation',
+    default: 'standard',
+    variants: [
+      { id: 'minimal', label: 'Minimal — queue + workflow', modules: ['queue', 'workflow'], theme: { mode: 'light' } },
+      { id: 'standard', label: 'Standard — queue, workflow, reply', modules: ['queue', 'workflow', 'reply'], theme: { mode: 'dark' } },
+      { id: 'full', label: 'Full — all five modules', modules: ['history', 'imports', 'queue', 'reply', 'workflow'], theme: { mode: 'custom', hue: 200 } },
+    ],
   },
 ];
 
@@ -154,12 +192,62 @@ function requireOk(scenarioKey, tool, result) {
 }
 
 /**
- * Drive one workspace class through the real construction protocol and dock the
- * chat on the right.
- * @param {{key: string, label: string, intent: string, template: string}} scenario
- * @returns {Promise<Object>} One scenario entry of the return contract.
+ * Translate a variant definition into the explicit questionnaire answers the
+ * agent submits: a curated module selection, the offered register and topology,
+ * and the variant's theme mode (plus a hue when the mode is custom).
+ * @param {Object} questionnaire
+ * @param {{modules: string[], topology?: string, theme: {mode: string, hue?: number}}} variant
+ * @returns {Array<[string, *]>}
  */
-async function buildScenario(scenario) {
+function variantSelections(questionnaire, variant) {
+  let moduleQuestion = questionnaire.find((q) => q.id === 'module-selection');
+  let offered = moduleQuestion ? new Set(moduleQuestion.options.map((o) => o.value)) : new Set();
+  // Keep only modules the system actually offers, in the curated order.
+  let modules = variant.modules.filter((value) => offered.has(value));
+  let selections = [
+    ['module-selection', modules.length ? modules : undefined],
+    ['target-register', findOptionDefault(questionnaire, 'target-register')],
+    ['layout-topology', variant.topology ?? findOptionDefault(questionnaire, 'layout-topology')],
+    ['theme-mode', variant.theme.mode],
+  ];
+  if (variant.theme.mode === 'custom' && typeof variant.theme.hue === 'number') {
+    selections.push(['theme-hue', variant.theme.hue]);
+  }
+  return selections;
+}
+
+/**
+ * Read the variant's theme back from the answered questionnaire, so the runtime
+ * can apply the cascade theme. Defaults to dark when the questionnaire skips the
+ * theme question entirely.
+ * @param {Array} questionnaire
+ * @param {{theme: {mode: string, hue?: number}}} variant
+ * @returns {{mode: string, hue: number}}
+ */
+function themeFromQuestions(questionnaire, variant) {
+  let modeQuestion = questionnaire.find((q) => q.id === 'theme-mode');
+  let hueQuestion = questionnaire.find((q) => q.id === 'theme-hue');
+  let mode = modeQuestion?.answer ?? variant.theme.mode ?? 'dark';
+  let hue = (mode === 'custom' && typeof variant.theme.hue === 'number')
+    ? variant.theme.hue
+    : (hueQuestion?.answer ?? hueQuestion?.default ?? variant.theme.hue ?? 210);
+  return { mode, hue };
+}
+
+/**
+ * Drive one VARIANT of a workspace class through the real construction protocol
+ * and dock the chat on the right.
+ * @param {{key: string, label: string, intent: string, template: string}} scenario
+ * @param {{id: string, label: string, modules: string[], topology?: string, theme: {mode: string, hue?: number}}} variant
+ * @returns {Promise<{
+ *   id: string, label: string,
+ *   answers: Object, config: Object, exportJson: string,
+ *   theme: {mode: string, hue: number},
+ *   questions: Array, stages: Array,
+ *   digest: {panels: string[], panelTypes: string[], pinnedChatRight: boolean, bridges: number},
+ * }>}
+ */
+async function buildVariant(scenario, variant) {
   let { key, label, intent, template } = scenario;
   let session = createSession();
   let stages = [];
@@ -171,18 +259,11 @@ async function buildScenario(scenario) {
   let built = requireOk(key, 'build_construction_questions', await dispatch('build_construction_questions', { intent }, session));
   let questionnaire = built.questions;
 
-  // 3. The agent SELECTS from the offered options. At minimum it picks every
-  //    offered module; it also confirms the offered register, topology and
-  //    theme so the answered set is explicit rather than defaulted.
-  let moduleQuestion = questionnaire.find((q) => q.id === 'module-selection');
+  // 3. The agent SELECTS from the offered options. This variant submits a
+  //    curated module subset (not blanket select-all), the offered register and
+  //    topology, and its theme so the answered set is an explicit choice.
   let answeredIds = new Set();
-  let selections = [
-    ['module-selection', moduleQuestion ? moduleQuestion.options.map((o) => o.value) : undefined],
-    ['target-register', findOptionDefault(questionnaire, 'target-register')],
-    ['layout-topology', findOptionDefault(questionnaire, 'layout-topology')],
-    ['theme-mode', findOptionDefault(questionnaire, 'theme-mode')],
-  ];
-  for (let [questionId, answer] of selections) {
+  for (let [questionId, answer] of variantSelections(questionnaire, variant)) {
     if (answer === undefined) continue;
     let answered = requireOk(
       key,
@@ -259,7 +340,7 @@ async function buildScenario(scenario) {
   // 6. Validate strict, then export a portable config.
   let validation = await dispatch('validate_config', { strict: true }, session);
   if (validation.valid !== true) {
-    throw new Error(`[${key}] strict validation failed: ${JSON.stringify(validation.errors)}`);
+    throw new Error(`[${key}/${variant.id}] strict validation failed: ${JSON.stringify(validation.errors)}`);
   }
   let exported = requireOk(key, 'export_config', await dispatch('export_config', { strict: true }, session));
 
@@ -282,16 +363,76 @@ async function buildScenario(scenario) {
     }));
 
   return {
+    id: variant.id,
+    label: variant.label,
+    answers,
+    config: session.config,
+    exportJson: exported.json,
+    theme: themeFromQuestions(questionnaire, variant),
+    questions,
+    stages,
+    digest: digestConfig(session.config),
+  };
+}
+
+/**
+ * Build every variant of a workspace class and surface the default variant's
+ * config, export, questions and stages at the scenario top level.
+ * @param {Object} scenario
+ * @returns {Promise<Object>} One scenario entry of the return contract.
+ */
+async function buildScenario(scenario) {
+  let { key, label, intent } = scenario;
+  let variants = [];
+  for (let variantDef of scenario.variants) {
+    let variant = await buildVariant(scenario, variantDef);
+    variants.push({
+      id: variant.id,
+      label: variant.label,
+      answers: variant.answers,
+      config: variant.config,
+      exportJson: variant.exportJson,
+      theme: variant.theme,
+      digest: variant.digest,
+    });
+  }
+
+  let defaultIndex = pickDefaultVariantIndex(scenario, variants);
+  let defaultVariant = variants[defaultIndex];
+  // Re-run the default variant to recover its full questions/stages without
+  // bloating every variant with the heavy replay payloads.
+  let defaultBuild = await buildVariant(scenario, scenario.variants[defaultIndex]);
+
+  return {
     key,
     label,
     intent,
-    template: constructed.templateName,
-    classification: classified.intent,
-    questions,
-    stages,
-    config: session.config,
-    exportJson: exported.json,
+    template: scenario.template,
+    classification: intent,
+    default: defaultVariant.id,
+    variants,
+    theme: defaultVariant.theme,
+    questions: defaultBuild.questions,
+    stages: defaultBuild.stages,
+    config: defaultVariant.config,
+    exportJson: defaultVariant.exportJson,
   };
+}
+
+/**
+ * Resolve which constructed variant is the scenario default: the configured
+ * `default` id, else `standard`, else `full`, else the first variant.
+ * @param {{default?: string}} scenario
+ * @param {Array<{id: string}>} variants
+ * @returns {number}
+ */
+function pickDefaultVariantIndex(scenario, variants) {
+  let preference = [scenario.default, 'standard', 'full'].filter(Boolean);
+  for (let id of preference) {
+    let index = variants.findIndex((v) => v.id === id);
+    if (index !== -1) return index;
+  }
+  return 0;
 }
 
 /**
@@ -358,6 +499,9 @@ function cloneConfig(value) {
  *   chatComponent: string,
  *   scenarios: Array<{
  *     key: string, label: string, intent: string, template: string,
+ *     default: string,
+ *     theme: {mode: string, hue: number},
+ *     variants: Array<{id: string, label: string, answers: Object, config: Object, exportJson: string, theme: {mode: string, hue: number}, digest: Object}>,
  *     questions: Array<{id: string, type: string, prompt: string, options: Array<{value: string, label: string}>, chosen: *}>,
  *     stages: Array<{title: string, config: Object, digest: Object}>,
  *     config: Object,

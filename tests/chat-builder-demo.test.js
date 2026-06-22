@@ -2,9 +2,10 @@
  * Chat-first, questionnaire-driven demo — construction proof.
  *
  * Verifies that each workspace class is built by answering the system's
- * questionnaire (the agent selects from offered options), that the system then
- * places panels from its canonical template, and that the chat is docked as a
- * global RIGHT panel at full height around a valid, portable config.
+ * questionnaire (the agent selects a REAL, curated subset from offered options),
+ * that the system then places panels from its canonical template, that each
+ * class offers two or three distinct constructed variants, and that the chat is
+ * docked as a global RIGHT panel at full height around a valid, portable config.
  */
 
 import { test } from 'node:test';
@@ -25,6 +26,23 @@ function layoutPanels(node, acc = []) {
   return acc;
 }
 
+/** Panels of the workspace side (left child of the root split). */
+function leftPanels(config) {
+  return layoutPanels(config.layout.first);
+}
+
+/** Assert a config docks the chat on the right of a horizontal root split. */
+function assertChatDockedRight(config, label) {
+  let root = config.layout;
+  assert.equal(root.type, 'split', `${label} root is not a split`);
+  assert.equal(root.direction, 'horizontal', `${label} root split is not horizontal`);
+  assert.equal(root.second.type, 'panel', `${label} root second child is not a panel`);
+  assert.equal(root.second.panelType, CHAT_PANEL, `${label} chat is not the right child`);
+  let chatBehavior = config.panelTypes[CHAT_PANEL].behavior;
+  assert.equal(chatBehavior.collapse, 'never', `${label} chat is collapsible`);
+  assert.equal(chatBehavior.importance, 100, `${label} chat importance changed`);
+}
+
 let cached;
 async function build() {
   if (!cached) cached = await buildChatFirstWorkspace();
@@ -39,7 +57,7 @@ test('all three workspace classes are present', async () => {
   assert.deepEqual(keys, ['automation', 'programming', 'video']);
 });
 
-test('each scenario answers the offered questionnaire', async () => {
+test('each scenario answers the offered questionnaire with a curated choice', async () => {
   let { scenarios } = await build();
   for (let scenario of scenarios) {
     assert.ok(scenario.questions.length > 0, `${scenario.key} has no questions`);
@@ -47,13 +65,88 @@ test('each scenario answers the offered questionnaire', async () => {
     for (let q of scenario.questions) {
       assert.notEqual(q.chosen, undefined, `${scenario.key}/${q.id} has no chosen value`);
     }
-    // The module selection is the agent picking every offered module value.
+    // The module selection is a real multi-select of offered modules; the
+    // default (standard) variant is a curated subset, not blanket select-all.
     let moduleQuestion = scenario.questions.find((q) => q.id === 'module-selection');
     assert.ok(moduleQuestion, `${scenario.key} is missing the module-selection question`);
     assert.equal(moduleQuestion.type, 'multi-select');
-    let offered = moduleQuestion.options.map((o) => o.value).sort();
+    let offered = moduleQuestion.options.map((o) => o.value);
     assert.ok(offered.length > 0, `${scenario.key} module-selection offered no options`);
-    assert.deepEqual([...moduleQuestion.chosen].sort(), offered, `${scenario.key} did not select all offered modules`);
+    assert.ok(Array.isArray(moduleQuestion.chosen) && moduleQuestion.chosen.length >= 2,
+      `${scenario.key} chose fewer than 2 modules`);
+    for (let value of moduleQuestion.chosen) {
+      assert.ok(offered.includes(value), `${scenario.key} chose unoffered module "${value}"`);
+    }
+  }
+});
+
+test('each scenario exposes at least two constructed variants', async () => {
+  let { scenarios } = await build();
+  for (let scenario of scenarios) {
+    assert.ok(Array.isArray(scenario.variants), `${scenario.key} has no variants array`);
+    assert.ok(scenario.variants.length >= 2, `${scenario.key} has fewer than 2 variants`);
+    let ids = scenario.variants.map((v) => v.id);
+    assert.equal(new Set(ids).size, ids.length, `${scenario.key} has duplicate variant ids`);
+    // The named default must exist among the variants.
+    assert.ok(ids.includes(scenario.default), `${scenario.key} default "${scenario.default}" is not a variant`);
+  }
+});
+
+test('every variant validates strict, docks the chat right, and keeps behavior metadata', async () => {
+  let { scenarios } = await build();
+  for (let scenario of scenarios) {
+    for (let variant of scenario.variants) {
+      let label = `${scenario.key}/${variant.id}`;
+      let validation = validateWorkspaceConfig(variant.config, { strict: true });
+      assert.equal(validation.valid, true, `${label}: ${JSON.stringify(validation.errors)}`);
+
+      assertChatDockedRight(variant.config, label);
+      assert.equal(variant.digest.pinnedChatRight, true, `${label} digest disagrees on pinned chat`);
+
+      let left = leftPanels(variant.config);
+      assert.ok(left.length >= 2, `${label} has fewer than 2 left panels`);
+      assert.ok(!left.includes(CHAT_PANEL), `${label} chat leaked into the workspace side`);
+      for (let panelType of left) {
+        let behavior = variant.config.panelTypes[panelType]?.behavior;
+        assert.ok(behavior && typeof behavior.importance === 'number', `${label}/${panelType} has no behavior metadata`);
+      }
+    }
+  }
+});
+
+test('at least one scenario has two variants with different left-panel sets', async () => {
+  let { scenarios } = await build();
+  let anyDistinct = false;
+  for (let scenario of scenarios) {
+    let sets = scenario.variants.map((v) => leftPanels(v.config).slice().sort().join(','));
+    if (new Set(sets).size >= 2) {
+      anyDistinct = true;
+      break;
+    }
+  }
+  assert.ok(anyDistinct, 'no scenario produced two variants with distinct left-panel sets');
+});
+
+test('each scenario exposes a theme with a mode', async () => {
+  let { scenarios } = await build();
+  for (let scenario of scenarios) {
+    assert.ok(scenario.theme && typeof scenario.theme === 'object', `${scenario.key} has no theme`);
+    assert.equal(typeof scenario.theme.mode, 'string', `${scenario.key} theme has no mode`);
+    assert.ok(scenario.theme.mode.length > 0, `${scenario.key} theme mode is empty`);
+    for (let variant of scenario.variants) {
+      assert.equal(typeof variant.theme.mode, 'string', `${scenario.key}/${variant.id} variant theme has no mode`);
+    }
+  }
+});
+
+test('the scenario config and export mirror the default variant', async () => {
+  let { scenarios } = await build();
+  for (let scenario of scenarios) {
+    let defaultVariant = scenario.variants.find((v) => v.id === scenario.default);
+    assert.ok(defaultVariant, `${scenario.key} default variant missing`);
+    assert.deepEqual(scenario.config, defaultVariant.config, `${scenario.key} config is not the default variant`);
+    assert.equal(scenario.exportJson, defaultVariant.exportJson, `${scenario.key} export is not the default variant`);
+    assert.deepEqual(scenario.theme, defaultVariant.theme, `${scenario.key} theme is not the default variant`);
   }
 });
 
@@ -68,16 +161,7 @@ test('the final config validates strict', async () => {
 test('chat is docked on the right of the root horizontal split', async () => {
   let { scenarios } = await build();
   for (let scenario of scenarios) {
-    let root = scenario.config.layout;
-    assert.equal(root.type, 'split', `${scenario.key} root is not a split`);
-    assert.equal(root.direction, 'horizontal', `${scenario.key} root split is not horizontal`);
-    assert.equal(root.second.type, 'panel', `${scenario.key} root second child is not a panel`);
-    assert.equal(root.second.panelType, CHAT_PANEL, `${scenario.key} chat is not the right child`);
-
-    let chatBehavior = scenario.config.panelTypes[CHAT_PANEL].behavior;
-    assert.equal(chatBehavior.collapse, 'never', `${scenario.key} chat is collapsible`);
-    assert.equal(chatBehavior.importance, 100);
-
+    assertChatDockedRight(scenario.config, scenario.key);
     // The digest agrees the chat is pinned on the right.
     assert.equal(scenario.stages.at(-1).digest.pinnedChatRight, true, `${scenario.key} digest disagrees`);
   }
@@ -86,10 +170,10 @@ test('chat is docked on the right of the root horizontal split', async () => {
 test('at least two workspace panels sit on the left with behavior metadata', async () => {
   let { scenarios } = await build();
   for (let scenario of scenarios) {
-    let leftPanels = layoutPanels(scenario.config.layout.first);
-    assert.ok(leftPanels.length >= 2, `${scenario.key} has fewer than 2 left panels`);
-    assert.ok(!leftPanels.includes(CHAT_PANEL), `${scenario.key} chat leaked into the workspace side`);
-    for (let panelType of leftPanels) {
+    let left = leftPanels(scenario.config);
+    assert.ok(left.length >= 2, `${scenario.key} has fewer than 2 left panels`);
+    assert.ok(!left.includes(CHAT_PANEL), `${scenario.key} chat leaked into the workspace side`);
+    for (let panelType of left) {
       let behavior = scenario.config.panelTypes[panelType]?.behavior;
       assert.ok(behavior && typeof behavior.importance === 'number', `${scenario.key}/${panelType} has no behavior metadata`);
     }
