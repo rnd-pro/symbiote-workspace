@@ -109,6 +109,12 @@ bundle replays those tool calls one stage at a time through the public
 `symbiote-workspace/browser` `mountWorkspace` entry, so the layout assembles
 around the chat with no page reload.
 
+The panels render real Symbiote UI components seeded with mock content: the chat
+is a mock `chat-workspace` (transcript, status board, composer), and the regions
+around it use `code-block` (preview), `inspector-panel` (inspector),
+`canvas-graph` (graph), and `sn-event-feed` (logs), mounted through the
+`panel-layout` runtime under the default Cascade theme.
+
 Generate the bundle without serving (CI/package smoke):
 
 ```bash

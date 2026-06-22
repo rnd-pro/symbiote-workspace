@@ -61,7 +61,7 @@ const RECIPE = [
   {
     title: 'Register the preview panel type',
     tool: 'register_panel_type',
-    args: { name: 'preview', title: 'Preview', icon: 'preview', component: 'workspace-preview' },
+    args: { name: 'preview', title: 'Preview', icon: 'preview', component: 'code-block' },
     expect: 'mutation',
   },
   {
@@ -73,7 +73,7 @@ const RECIPE = [
   {
     title: 'Register the inspector panel type',
     tool: 'register_panel_type',
-    args: { name: 'inspector', title: 'Inspector', icon: 'tune', component: 'workspace-inspector' },
+    args: { name: 'inspector', title: 'Inspector', icon: 'tune', component: 'inspector-panel' },
     expect: 'mutation',
   },
   {
@@ -85,7 +85,7 @@ const RECIPE = [
   {
     title: 'Register the graph panel type',
     tool: 'register_panel_type',
-    args: { name: 'graph', title: 'Graph', icon: 'graph', component: 'workspace-graph' },
+    args: { name: 'graph', title: 'Graph', icon: 'graph', component: 'canvas-graph' },
     expect: 'mutation',
   },
   {
@@ -97,13 +97,13 @@ const RECIPE = [
   {
     title: 'Register the logs panel type',
     tool: 'register_panel_type',
-    args: { name: 'logs', title: 'Logs', icon: 'terminal', component: 'workspace-logs' },
+    args: { name: 'logs', title: 'Logs', icon: 'terminal', component: 'sn-event-feed' },
     expect: 'mutation',
   },
   {
     title: 'Mount the log stream component',
     tool: 'mount_widget',
-    args: { panelType: 'logs', componentTag: 'workspace-logs' },
+    args: { panelType: 'logs', componentTag: 'sn-event-feed' },
     expect: 'mutation',
   },
   {

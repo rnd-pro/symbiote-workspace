@@ -8,9 +8,11 @@ All notable changes to this project will be documented in this file.
   It builds the workspace layout entirely around a persistent, pinned chat panel
   by issuing real `dispatch(...)` construction tools on a single session — no
   hand-authored config — and replays the construction in the browser through the
-  public `symbiote-workspace/browser` entry, one tool call at a time. Covered by
-  `tests/chat-builder-demo.test.js` and an opt-in WebKit smoke
-  (`npm run test:chat-builder-browser`).
+  public `symbiote-workspace/browser` entry, one tool call at a time. The panels
+  render real Symbiote UI components seeded with mock content (`chat-workspace`,
+  `code-block`, `inspector-panel`, `canvas-graph`, `sn-event-feed`) via the
+  `panel-layout` runtime. Covered by `tests/chat-builder-demo.test.js` and an
+  opt-in WebKit smoke (`npm run test:chat-builder-browser`).
 - Moved the served visual-demo import map into a shared `demoImportMap()` helper
   in `examples/visual-demo/server-utils.js`, with the direct browser specifiers
   sourced from the public browser contract.
