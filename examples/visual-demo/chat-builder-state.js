@@ -8,10 +8,17 @@
  * hand-authored panel placement — the layout is whatever the template produces.
  *
  * The selection is a REAL choice. Each class offers two or three fully
- * constructed `variants`, each answering `module-selection` (and, where a class
- * has too few modules to differentiate, `layout-topology`) differently, so the
- * demo can switch between distinct left-panel sets. The scenario's top-level
- * `config`/`exportJson` mirror the default variant.
+ * constructed `variants`, each answering `module-selection` and
+ * `layout-topology` differently, so the demo can switch between distinct
+ * left-panel sets arranged with a class-appropriate topology. The scenario's
+ * top-level `config`/`exportJson` mirror the default variant.
+ *
+ * The topology answer materially reshapes the WORKSPACE side: the constructor
+ * maps it to a split arrangement (`grid` → balanced 2D, `workbench` →
+ * horizontal workbench, `focus-canvas` → one dominant panel, `studio` →
+ * vertical timeline-first stack), so each class lands in a fitting layout
+ * instead of the bare template default. The chat is still docked RIGHT after
+ * construction regardless of topology.
  *
  * After construction the workspace is wrapped so the chat lives as a global
  * RIGHT panel at full height (withChat-style), exactly as the real agent-portal
@@ -32,12 +39,16 @@ export const CHAT_COMPONENT = 'chat-workspace';
  * construction protocol; the live-verified template is recorded for reference.
  *
  * `variants` are curated answer-sets. Each picks a DIFFERENT meaningful
- * `module-selection` so the constructed left-panel set is distinct; `theme`
- * supplies the `theme-mode` (+ `theme-hue` when custom) answers that drive the
- * cascade theme. `default` names the variant the scenario surfaces at the top
- * level. Module values are the canonical template modules (verified live):
- * editor → files/preview/source, video-studio → inspector/node-graph/timeline/
- * viewport, social-automation → history/imports/queue/reply/workflow.
+ * `module-selection` so the constructed left-panel set is distinct, and a
+ * class-appropriate `layout-topology` so the workspace side is arranged to fit
+ * the class; `theme` supplies the `theme-mode` (+ `theme-hue` when custom)
+ * answers that drive the cascade theme. `default` names the variant the
+ * scenario surfaces at the top level. Module values are the canonical template
+ * modules (verified live): editor → files/preview/source, video-studio →
+ * inspector/node-graph/timeline/viewport, social-automation →
+ * history/imports/queue/reply/workflow. Topology values are drawn from the
+ * offered `layout-topology` options; only `grid`, `workbench`, `focus-canvas`
+ * and `studio` produce a distinct constructed arrangement.
  * @type {Array<{
  *   key: string, label: string, intent: string, template: string,
  *   default: string,
@@ -52,11 +63,13 @@ const SCENARIOS = [
     template: 'editor',
     default: 'standard',
     // Only three modules are offered, so the two-module subsets must differ by
-    // WHICH modules they keep rather than only by count.
+    // WHICH modules they keep rather than only by count. The standard variant
+    // keeps all three so the workspace reads as a balanced workbench instead of
+    // one dominant editor with empty space.
     variants: [
-      { id: 'minimal', label: 'Minimal — source + files', modules: ['source', 'files'], theme: { mode: 'dark' } },
-      { id: 'standard', label: 'Standard — source + preview', modules: ['source', 'preview'], theme: { mode: 'light' } },
-      { id: 'full', label: 'Full — files, preview, source', modules: ['files', 'preview', 'source'], theme: { mode: 'custom', hue: 265 } },
+      { id: 'minimal', label: 'Minimal — source + files', modules: ['source', 'files'], topology: 'focus-canvas', theme: { mode: 'dark' } },
+      { id: 'standard', label: 'Standard — files, source, preview', modules: ['files', 'source', 'preview'], topology: 'workbench', theme: { mode: 'light' } },
+      { id: 'full', label: 'Full — files, preview, source', modules: ['files', 'preview', 'source'], topology: 'grid', theme: { mode: 'custom', hue: 265 } },
     ],
   },
   {
@@ -66,9 +79,9 @@ const SCENARIOS = [
     template: 'video-studio',
     default: 'standard',
     variants: [
-      { id: 'minimal', label: 'Minimal — viewport + timeline', modules: ['viewport', 'timeline'], theme: { mode: 'dark' } },
-      { id: 'standard', label: 'Standard — viewport, timeline, inspector', modules: ['viewport', 'timeline', 'inspector'], theme: { mode: 'dark' } },
-      { id: 'full', label: 'Full — all four modules', modules: ['inspector', 'node-graph', 'timeline', 'viewport'], theme: { mode: 'custom', hue: 300 } },
+      { id: 'minimal', label: 'Minimal — viewport + timeline', modules: ['viewport', 'timeline'], topology: 'studio', theme: { mode: 'dark' } },
+      { id: 'standard', label: 'Standard — viewport, timeline, inspector', modules: ['viewport', 'timeline', 'inspector'], topology: 'studio', theme: { mode: 'dark' } },
+      { id: 'full', label: 'Full — all four modules', modules: ['inspector', 'node-graph', 'timeline', 'viewport'], topology: 'studio', theme: { mode: 'custom', hue: 300 } },
     ],
   },
   {
@@ -78,9 +91,9 @@ const SCENARIOS = [
     template: 'social-automation',
     default: 'standard',
     variants: [
-      { id: 'minimal', label: 'Minimal — queue + workflow', modules: ['queue', 'workflow'], theme: { mode: 'light' } },
-      { id: 'standard', label: 'Standard — queue, workflow, reply', modules: ['queue', 'workflow', 'reply'], theme: { mode: 'dark' } },
-      { id: 'full', label: 'Full — all five modules', modules: ['history', 'imports', 'queue', 'reply', 'workflow'], theme: { mode: 'custom', hue: 200 } },
+      { id: 'minimal', label: 'Minimal — queue + workflow', modules: ['queue', 'workflow'], topology: 'grid', theme: { mode: 'light' } },
+      { id: 'standard', label: 'Standard — queue, workflow, reply', modules: ['queue', 'workflow', 'reply'], topology: 'grid', theme: { mode: 'dark' } },
+      { id: 'full', label: 'Full — all five modules', modules: ['history', 'imports', 'queue', 'reply', 'workflow'], topology: 'grid', theme: { mode: 'custom', hue: 200 } },
     ],
   },
 ];
@@ -242,7 +255,7 @@ function themeFromQuestions(questionnaire, variant) {
  * @returns {Promise<{
  *   id: string, label: string,
  *   answers: Object, config: Object, exportJson: string,
- *   theme: {mode: string, hue: number},
+ *   theme: {mode: string, hue: number}, topology: string,
  *   questions: Array, stages: Array,
  *   digest: {panels: string[], panelTypes: string[], pinnedChatRight: boolean, bridges: number},
  * }>}
@@ -362,6 +375,11 @@ async function buildVariant(scenario, variant) {
       chosen: q.answer,
     }));
 
+  // The topology the construction actually used, read back from the answered
+  // questionnaire so it always reflects the choice the system accepted.
+  let topologyQuestion = questionnaire.find((q) => q.id === 'layout-topology');
+  let topology = topologyQuestion?.answer ?? variant.topology;
+
   return {
     id: variant.id,
     label: variant.label,
@@ -369,6 +387,7 @@ async function buildVariant(scenario, variant) {
     config: session.config,
     exportJson: exported.json,
     theme: themeFromQuestions(questionnaire, variant),
+    topology,
     questions,
     stages,
     digest: digestConfig(session.config),
@@ -393,6 +412,7 @@ async function buildScenario(scenario) {
       config: variant.config,
       exportJson: variant.exportJson,
       theme: variant.theme,
+      topology: variant.topology,
       digest: variant.digest,
     });
   }
@@ -412,6 +432,7 @@ async function buildScenario(scenario) {
     default: defaultVariant.id,
     variants,
     theme: defaultVariant.theme,
+    topology: defaultVariant.topology,
     questions: defaultBuild.questions,
     stages: defaultBuild.stages,
     config: defaultVariant.config,
@@ -500,8 +521,8 @@ function cloneConfig(value) {
  *   scenarios: Array<{
  *     key: string, label: string, intent: string, template: string,
  *     default: string,
- *     theme: {mode: string, hue: number},
- *     variants: Array<{id: string, label: string, answers: Object, config: Object, exportJson: string, theme: {mode: string, hue: number}, digest: Object}>,
+ *     theme: {mode: string, hue: number}, topology: string,
+ *     variants: Array<{id: string, label: string, answers: Object, config: Object, exportJson: string, theme: {mode: string, hue: number}, topology: string, digest: Object}>,
  *     questions: Array<{id: string, type: string, prompt: string, options: Array<{value: string, label: string}>, chosen: *}>,
  *     stages: Array<{title: string, config: Object, digest: Object}>,
  *     config: Object,

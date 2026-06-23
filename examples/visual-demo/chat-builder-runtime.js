@@ -90,17 +90,20 @@ ${escapeScriptJson({ imports })}
     #stage { flex: 1; min-height: 0; padding: 12px; box-sizing: border-box;
       display: flex; flex-direction: column; gap: 10px; }
     #stage.cb-menu-mode > .cb-scenario-head { display: none; }
-    /* Scenario header: the interactive choice surface + live theme control. */
-    .cb-scenario-head { flex: 0 0 auto; display: flex; flex-wrap: wrap; align-items: center;
-      gap: 10px 16px; padding: 8px 12px; border-radius: 9px;
+    /* Scenario header: a single tidy bar — the Layout (variant) choice on the left,
+       a compact answered-questionnaire summary in the middle, the live theme control
+       on the right. No wrapping option-chip strip; the chat already shows the full
+       answered questionnaire as a board, so the header keeps only a condensed summary. */
+    .cb-scenario-head { flex: 0 0 auto; display: flex; flex-wrap: nowrap; align-items: center;
+      gap: 16px; padding: 8px 14px; border-radius: 9px; min-width: 0;
       border: 1px solid color-mix(in srgb, var(--sn-text, #fff) 12%, transparent);
       background: color-mix(in srgb, var(--sn-panel-bg, #161b22) 80%, transparent); }
-    .cb-choice { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1 1 auto; }
+    .cb-choice { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 0 1 auto; }
     .cb-choice-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
       color: var(--sn-text-dim, #8b949e); flex: 0 0 auto; }
     .cb-variants { display: flex; gap: 6px; flex-wrap: wrap; min-width: 0; }
     .cb-variant { font: inherit; font-size: 12px; padding: 4px 12px; border-radius: 999px; cursor: pointer;
-      line-height: 1.2; color: inherit;
+      line-height: 1.2; color: inherit; white-space: nowrap;
       border: 1px solid color-mix(in srgb, var(--sn-text, #fff) 18%, transparent);
       background: color-mix(in srgb, var(--sn-bg, #0e1116) 70%, transparent);
       transition: border-color 150ms ease, background 150ms ease, color 150ms ease; }
@@ -108,18 +111,18 @@ ${escapeScriptJson({ imports })}
       border-color: var(--sn-node-selected, #58a6ff);
       background: color-mix(in srgb, var(--sn-node-selected, #58a6ff) 24%, transparent);
       color: var(--sn-text, #fff); }
-    .cb-answers { display: flex; gap: 6px; flex-wrap: wrap; min-width: 0; align-items: center; }
-    .cb-answer-group { display: inline-flex; align-items: center; gap: 4px; }
-    .cb-answer-q { font-size: 11px; color: var(--sn-text-dim, #8b949e); }
-    .cb-opt { font-size: 11px; padding: 2px 8px; border-radius: 6px; line-height: 1.3;
-      border: 1px solid color-mix(in srgb, var(--sn-text, #fff) 12%, transparent);
+    /* Compact answered-questionnaire summary: one truncating line, no chip grid. */
+    .cb-answers { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1 1 auto;
+      overflow: hidden; }
+    .cb-answers-icon { font-family: "Material Symbols Outlined"; font-size: 15px; line-height: 1;
+      color: var(--sn-text-dim, #8b949e); flex: 0 0 auto; }
+    .cb-answers-text { font-size: 11px; line-height: 1.3; min-width: 0; flex: 1 1 auto;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
       color: var(--sn-text-dim, #8b949e); }
-    .cb-opt.cb-opt-chosen {
-      border-color: var(--sn-node-selected, #58a6ff);
-      background: color-mix(in srgb, var(--sn-node-selected, #58a6ff) 18%, transparent);
-      color: var(--sn-text, #fff); }
-    .cb-opt.cb-opt-chosen::before { content: "check"; font-family: "Material Symbols Outlined";
-      font-size: 12px; vertical-align: -2px; margin-inline-end: 3px; }
+    .cb-answer-q { color: color-mix(in srgb, var(--sn-text, #fff) 78%, transparent); font-weight: 600; }
+    .cb-answer-v { color: var(--sn-text-dim, #8b949e); }
+    .cb-answer-sep { color: color-mix(in srgb, var(--sn-text, #fff) 22%, transparent);
+      margin: 0 8px; }
     /* Live theme control. */
     .cb-theme { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; margin-inline-start: auto;
       padding-inline-start: 14px; border-inline-start: 1px solid color-mix(in srgb, var(--sn-text, #fff) 12%, transparent); }
@@ -632,10 +635,12 @@ async function mountVariant(scenario, variant) {
   });
 }
 
-// Build the scenario header: the interactive CHOICE surface (variant chips + the
-// questionnaire's offered options with the chosen ones marked) and the live THEME
-// control. Selecting a chip re-mounts that variant; the theme control re-applies the
-// cascade theme without reload.
+// Build the scenario header as a single tidy bar: the Layout (variant) CHOICE chips
+// on the left, a compact one-line answered-questionnaire SUMMARY in the middle, and
+// the live THEME control on the right. Selecting a chip re-mounts that variant; the
+// theme control re-applies the cascade theme without reload. The verbose per-option
+// chip grid is intentionally dropped here — the chat transcript already replays the
+// full answered questionnaire as a board, so the header keeps only a condensed recap.
 function renderScenarioHead(scenario) {
   let head = document.createElement('div');
   head.className = 'cb-scenario-head';
@@ -645,11 +650,11 @@ function renderScenarioHead(scenario) {
   choice.className = 'cb-choice';
   let choiceLabel = document.createElement('span');
   choiceLabel.className = 'cb-choice-label';
-  choiceLabel.textContent = 'Variant';
+  choiceLabel.textContent = 'Layout';
   let variantWrap = document.createElement('div');
   variantWrap.className = 'cb-variants';
   variantWrap.setAttribute('role', 'tablist');
-  variantWrap.setAttribute('aria-label', 'Workspace variants');
+  variantWrap.setAttribute('aria-label', 'Workspace layout variants');
   for (let variant of variants) {
     let button = document.createElement('button');
     button.type = 'button';
@@ -662,33 +667,58 @@ function renderScenarioHead(scenario) {
     variantWrap.appendChild(button);
   }
   choice.append(choiceLabel, variantWrap);
+  head.appendChild(choice);
 
-  // The answered questionnaire: each question's offered options, chosen ones marked.
+  // Compact answered-questionnaire summary: a single truncating line of
+  // "Question: chosen, chosen" pairs, with the full recap available on hover. The
+  // detailed board lives in the chat; this is only a scannable header recap.
+  let answers = renderAnswerSummary(scenario);
+  if (answers) head.appendChild(answers);
+
+  head.appendChild(buildThemeControl());
+  return head;
+}
+
+// Condense the answered questionnaire into one compact line for the header. Returns
+// null when the scenario carries no questions, so the bar stays clean.
+function renderAnswerSummary(scenario) {
+  let questions = scenario.questions || [];
+  if (!questions.length) return null;
   let answers = document.createElement('div');
   answers.className = 'cb-answers';
-  for (let question of (scenario.questions || [])) {
+  let icon = document.createElement('span');
+  icon.className = 'cb-answers-icon';
+  icon.setAttribute('aria-hidden', 'true');
+  icon.textContent = 'quiz';
+  let line = document.createElement('span');
+  line.className = 'cb-answers-text';
+  let plainParts = [];
+  questions.forEach((question, index) => {
     let chosen = Array.isArray(question.chosen)
       ? question.chosen
       : (question.chosen != null ? [question.chosen] : []);
-    let group = document.createElement('div');
-    group.className = 'cb-answer-group';
-    let qLabel = document.createElement('span');
-    qLabel.className = 'cb-answer-q';
-    qLabel.textContent = (question.prompt || question.id) + ':';
-    group.appendChild(qLabel);
-    for (let option of (question.options || [])) {
-      let opt = document.createElement('span');
-      opt.className = 'cb-opt' + (chosen.includes(option.value) ? ' cb-opt-chosen' : '');
-      opt.textContent = option.label;
-      group.appendChild(opt);
+    let labels = chosen.map((value) =>
+      (question.options || []).find((option) => option.value === value)?.label || value);
+    let chosenText = labels.join(', ') || 'defaults';
+    if (index > 0) {
+      let sep = document.createElement('span');
+      sep.className = 'cb-answer-sep';
+      sep.setAttribute('aria-hidden', 'true');
+      sep.textContent = '·';
+      line.appendChild(sep);
     }
-    answers.appendChild(group);
-  }
-  if (answers.childElementCount) choice.appendChild(answers);
-
-  head.appendChild(choice);
-  head.appendChild(buildThemeControl());
-  return head;
+    let q = document.createElement('span');
+    q.className = 'cb-answer-q';
+    q.textContent = (question.prompt || question.id) + ': ';
+    let v = document.createElement('span');
+    v.className = 'cb-answer-v';
+    v.textContent = chosenText;
+    line.append(q, v);
+    plainParts.push((question.prompt || question.id) + ': ' + chosenText);
+  });
+  answers.title = 'Answered — ' + plainParts.join('  ·  ');
+  answers.append(icon, line);
+  return answers;
 }
 
 // A compact theme control: mode light/dark, accent hue, and the geometry register

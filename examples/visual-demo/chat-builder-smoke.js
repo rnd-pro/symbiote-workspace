@@ -356,6 +356,43 @@ async function run() {
       await page.evaluate(() => window.__chatBuilder.setTheme({ register: 'tool' }));
       let geometryAfter = await page.evaluate((t) => window.__chatBuilder.getThemeToken(t), geometryToken);
 
+      // Header structure & density: the scenario header is present with the Layout
+      // (variant) control and the live theme control both laid out within the header's
+      // own width, and the bar does not overflow horizontally (scrollWidth ~= clientWidth).
+      let header = await page.evaluate(() => {
+        let head = document.querySelector('#stage .cb-scenario-head');
+        if (!head) return { present: false };
+        let headBox = head.getBoundingClientRect();
+        let variants = head.querySelector('.cb-variants');
+        let variantChips = head.querySelectorAll('.cb-variant').length;
+        let theme = head.querySelector('.cb-theme');
+        let within = (el) => {
+          if (!el) return false;
+          let box = el.getBoundingClientRect();
+          return box.width > 0 && box.left >= headBox.left - 1 && box.right <= headBox.right + 1;
+        };
+        return {
+          present: true,
+          variantChips,
+          hasVariants: Boolean(variants) && variantChips >= 1,
+          hasTheme: Boolean(theme),
+          variantsWithin: within(variants),
+          themeWithin: within(theme),
+          scrollWidth: head.scrollWidth,
+          clientWidth: head.clientWidth,
+          overflow: head.scrollWidth - head.clientWidth,
+        };
+      });
+      header.ok = Boolean(
+        header.present &&
+        header.hasVariants &&
+        header.hasTheme &&
+        header.variantsWithin &&
+        header.themeWithin &&
+        // No horizontal overflow of the header bar (small tolerance for sub-pixel rounding).
+        header.overflow <= 2,
+      );
+
       let screenshot = join(screenshotDir, `chat-builder-${key}.png`);
       await page.screenshot({ path: screenshot, fullPage: true });
 
@@ -374,6 +411,9 @@ async function run() {
         themeTokenChanged: themeAfter.trim() !== themeBefore.trim() && themeAfter.trim().length > 0,
         // Live geometry: the register toggle recomputed a geometry primitive.
         geometryTokenChanged: geometryAfter.trim() !== geometryBefore.trim(),
+        // Header is a tidy single bar: variant control + theme control both present
+        // and within the header, and the bar does not overflow its width.
+        headerStructured: header.ok,
         noNavigation: snap.url === startUrl && variantSnap.url === startUrl,
       };
 
@@ -397,6 +437,7 @@ async function run() {
         geometryToken,
         geometryBefore: geometryBefore.trim(),
         geometryAfter: geometryAfter.trim(),
+        header,
         screenshot,
       };
     }

@@ -31,6 +31,58 @@ function leftPanels(config) {
   return layoutPanels(config.layout.first);
 }
 
+/** The workspace-side root node (left child of the chat-docking root split). */
+function workspaceRoot(config) {
+  return config.layout.first;
+}
+
+/**
+ * Walk a layout subtree and collect the (direction, ratio) of every split, so a
+ * topology's arrangement can be checked structurally rather than by a single
+ * brittle root ratio.
+ */
+function splitSignature(node, acc = []) {
+  if (!node || node.type !== 'split') return acc;
+  acc.push({ direction: node.direction, ratio: node.ratio });
+  splitSignature(node.first, acc);
+  splitSignature(node.second, acc);
+  return acc;
+}
+
+/**
+ * Assert that a workspace-side subtree matches the arrangement the constructor
+ * produces for a given topology. Robust to the exact panel count: it checks the
+ * direction/ratio family rather than a hardcoded tree shape.
+ */
+function assertTopologyArrangement(root, topology, label) {
+  let splits = splitSignature(root);
+  assert.ok(splits.length >= 1, `${label} workspace side has no splits for topology ${topology}`);
+  if (topology === 'grid') {
+    // Balanced 2D: ratios sit at 0.5 and, with >=3 panels, directions mix.
+    for (let { ratio } of splits) {
+      assert.ok(Math.abs(ratio - 0.5) < 1e-6, `${label} grid split ratio ${ratio} is not balanced`);
+    }
+    let panels = layoutPanels(root);
+    if (panels.length >= 3) {
+      let dirs = new Set(splits.map((s) => s.direction));
+      assert.equal(dirs.size, 2, `${label} grid with ${panels.length} panels is not a mixed 2D arrangement`);
+    }
+    return;
+  }
+  // Linear topologies: a single split direction across the subtree at a
+  // topology-specific ratio family.
+  let expected = {
+    workbench: { direction: 'horizontal', ratio: 0.36 },
+    'focus-canvas': { direction: 'horizontal', ratio: 0.78 },
+    studio: { direction: 'vertical', ratio: 0.72 },
+  }[topology];
+  assert.ok(expected, `${label} unexpected topology ${topology}`);
+  for (let { direction, ratio } of splits) {
+    assert.equal(direction, expected.direction, `${label} ${topology} split direction ${direction} unexpected`);
+    assert.ok(Math.abs(ratio - expected.ratio) < 0.06, `${label} ${topology} split ratio ${ratio} far from ${expected.ratio}`);
+  }
+}
+
 /** Assert a config docks the chat on the right of a horizontal root split. */
 function assertChatDockedRight(config, label) {
   let root = config.layout;
@@ -210,4 +262,84 @@ test('replay stages start chat-only and end with the constructed workspace', asy
     assert.ok(final.digest.panels.includes(CHAT_PANEL), `${scenario.key} final stage dropped the chat`);
     assert.ok(final.digest.panels.length >= 3, `${scenario.key} final stage has too few panels`);
   }
+});
+
+test('each scenario answers layout-topology with a chosen offered value', async () => {
+  let { scenarios } = await build();
+  for (let scenario of scenarios) {
+    let topologyQuestion = scenario.questions.find((q) => q.id === 'layout-topology');
+    assert.ok(topologyQuestion, `${scenario.key} is missing the layout-topology question`);
+    assert.notEqual(topologyQuestion.chosen, undefined, `${scenario.key} did not choose a topology`);
+    let offered = topologyQuestion.options.map((o) => o.value);
+    assert.ok(offered.includes(topologyQuestion.chosen),
+      `${scenario.key} chose unoffered topology "${topologyQuestion.chosen}"`);
+
+    // The scenario and every variant carry the chosen topology on the contract.
+    assert.equal(typeof scenario.topology, 'string', `${scenario.key} has no scenario.topology`);
+    assert.ok(offered.includes(scenario.topology), `${scenario.key} topology "${scenario.topology}" is not offered`);
+    let defaultVariant = scenario.variants.find((v) => v.id === scenario.default);
+    assert.equal(scenario.topology, defaultVariant.topology,
+      `${scenario.key} scenario topology is not the default variant topology`);
+    for (let variant of scenario.variants) {
+      assert.equal(typeof variant.topology, 'string', `${scenario.key}/${variant.id} has no topology`);
+      assert.ok(offered.includes(variant.topology),
+        `${scenario.key}/${variant.id} topology "${variant.topology}" is not offered`);
+      // The recorded topology is exactly the answer the construction accepted.
+      assert.equal(variant.answers['layout-topology'], variant.topology,
+        `${scenario.key}/${variant.id} topology disagrees with the answered questionnaire`);
+    }
+  }
+});
+
+test('the chosen topology shapes the constructed workspace layout', async () => {
+  let { scenarios } = await build();
+  for (let scenario of scenarios) {
+    for (let variant of scenario.variants) {
+      let label = `${scenario.key}/${variant.id}`;
+      let root = workspaceRoot(variant.config);
+      // The workspace side is a real split arrangement (not a lone panel).
+      assert.equal(root.type, 'split', `${label} workspace side is not a split`);
+      // ...and that arrangement matches the chosen topology's signature.
+      assertTopologyArrangement(root, variant.topology, label);
+    }
+  }
+});
+
+test('topology produces distinct workspace arrangements across the demo', async () => {
+  let { scenarios } = await build();
+  // Collect the workspace-side root (direction, ratio) for every variant; the
+  // topology choice must yield more than one arrangement family across classes,
+  // proving the answer drives layout shape rather than a fixed template default.
+  let roots = new Set();
+  for (let scenario of scenarios) {
+    for (let variant of scenario.variants) {
+      let root = workspaceRoot(variant.config);
+      roots.add(`${root.direction}:${root.ratio}`);
+    }
+  }
+  assert.ok(roots.size >= 2,
+    `topology never changed the workspace arrangement (roots: ${[...roots].join(', ')})`);
+
+  // Per class the default variant's arrangement signature is the one we expect
+  // for that class's topology (grid mixes directions, studio is vertical, etc.).
+  let byKey = Object.fromEntries(scenarios.map((s) => [s.key, s]));
+  let programmingDefault = byKey.programming.variants.find((v) => v.id === byKey.programming.default);
+  // Programming default reads as a balanced multi-panel workbench, not one
+  // dominant editor: at least three workspace panels under a workbench split.
+  assert.ok(leftPanels(programmingDefault.config).length >= 3,
+    'programming default has fewer than 3 workspace panels (sparse layout)');
+  assert.equal(programmingDefault.topology, 'workbench', 'programming default is not the workbench topology');
+  assert.equal(workspaceRoot(programmingDefault.config).direction, 'horizontal',
+    'programming workbench is not horizontal');
+
+  // Video default uses the studio topology: a vertical, timeline-first stack.
+  let videoDefault = byKey.video.variants.find((v) => v.id === byKey.video.default);
+  assert.equal(videoDefault.topology, 'studio', 'video default is not the studio topology');
+  assert.equal(workspaceRoot(videoDefault.config).direction, 'vertical', 'video studio is not vertical');
+
+  // Automation default uses the grid topology: a balanced 2D desk.
+  let automationDefault = byKey.automation.variants.find((v) => v.id === byKey.automation.default);
+  assert.equal(automationDefault.topology, 'grid', 'automation default is not the grid topology');
+  assert.ok(Math.abs(workspaceRoot(automationDefault.config).ratio - 0.5) < 1e-6,
+    'automation grid root is not balanced');
 });

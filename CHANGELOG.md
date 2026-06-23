@@ -26,7 +26,11 @@ All notable changes to this project will be documented in this file.
   three constructed variants (different module selections) surfaced as a real
   interactive choice that re-mounts with no reload, and a live theme control
   (mode, hue, geometry register) re-applies the Cascade color/geometry/motion
-  scales. Covered by `tests/chat-builder-demo.test.js` and an opt-in WebKit smoke
+  scales. Each class also answers `layout-topology` (programming → workbench,
+  video → studio, automation → grid) so the workspace side is arranged to fit the
+  class instead of the bare template default, and the demo header is a single tidy
+  bar (layout chips + condensed answer summary + theme control). Covered by
+  `tests/chat-builder-demo.test.js` and an opt-in WebKit smoke
   (`npm run test:chat-builder-browser`).
 - Moved the served visual-demo import map into a shared `demoImportMap()` helper
   in `examples/visual-demo/server-utils.js`, with the direct browser specifiers
