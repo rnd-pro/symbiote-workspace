@@ -24,11 +24,24 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
+import { renderWorkspaceShell, WORKSPACE_SHELL_PLACEHOLDER } from '../../ssr/index.js';
 import { demoImportMap } from './server-utils.js';
 import { buildChatFirstWorkspace, CHAT_PANEL, CHAT_COMPONENT } from './chat-builder-state.js';
 
 function escapeScriptJson(value) {
   return JSON.stringify(value).replaceAll('<', '\\u003c').replaceAll('>', '\\u003e');
+}
+
+// Build-time SSG: render the workspace shell chrome (Node-only) and inject it into
+// the served HTML, mirroring agent-portal's build-web.js injectSsrShell — replace the
+// WORKSPACE_SHELL_PLACEHOLDER with the rendered <workspace-shell> so the served page
+// already contains the topbar + #workspace-stage host before app.js runs.
+async function injectSsrShell(html) {
+  if (!html.includes(WORKSPACE_SHELL_PLACEHOLDER)) {
+    throw new Error('Failed to locate <workspace-shell> placeholder in chat-builder index.html');
+  }
+  let shellHtml = await renderWorkspaceShell();
+  return html.replace(WORKSPACE_SHELL_PLACEHOLDER, shellHtml);
 }
 
 function generateIndexHtml(title, imports) {
@@ -48,7 +61,18 @@ ${escapeScriptJson({ imports })}
     html, body { height: 100%; }
     body { margin: 0; font-family: var(--sn-font, system-ui, sans-serif);
       background: var(--sn-bg, #0e1116); color: var(--sn-text, #e6edf3); }
-    .cb-shell { display: flex; flex-direction: column; height: 100vh; min-height: 0; }
+    /* SSR'd shell chrome (server-rendered <workspace-shell>, hydrated via isoMode). */
+    workspace-shell.workspace-shell { display: flex; flex-direction: column; height: 100vh; min-height: 0; }
+    .workspace-topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      flex: 0 0 auto; padding: 8px 16px;
+      border-block-end: 1px solid color-mix(in srgb, var(--sn-text, #fff) 14%, transparent); }
+    .workspace-topbar-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .workspace-title { font-size: 13px; font-weight: 600; color: var(--sn-text-dim, #8b949e); }
+    .workspace-topbar-right { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
+    .workspace-stage { flex: 1 1 auto; min-height: 0; display: flex; }
+    /* The demo UI mounts into the shell's stage host and fills it. */
+    .workspace-stage > .cb-shell { flex: 1 1 auto; }
+    .cb-shell { display: flex; flex-direction: column; min-height: 0; width: 100%; }
     .cb-bar { display: flex; align-items: center; gap: 12px; padding: 10px 16px;
       border-block-end: 1px solid color-mix(in srgb, var(--sn-text, #fff) 14%, transparent); }
     .cb-bar h1 { font-size: 14px; font-weight: 600; margin: 0; flex: 0 0 auto; }
@@ -136,14 +160,17 @@ ${escapeScriptJson({ imports })}
   </style>
 </head>
 <body>
-  <div class="cb-shell">
-    <div class="cb-bar">
-      <h1>${title}</h1>
-      <div class="cb-menu" id="cb-menu" role="tablist" aria-label="Workspace classes"></div>
-      <button id="cb-back" class="cb-back" type="button">Back to menu</button>
+  ${WORKSPACE_SHELL_PLACEHOLDER}
+  <template id="cb-demo-template">
+    <div class="cb-shell">
+      <div class="cb-bar">
+        <h1>${title}</h1>
+        <div class="cb-menu" id="cb-menu" role="tablist" aria-label="Workspace classes"></div>
+        <button id="cb-back" class="cb-back" type="button">Back to menu</button>
+      </div>
+      <div id="stage"></div>
     </div>
-    <div id="stage"></div>
-  </div>
+  </template>
   <script type="module" src="./app.js"><\/script>
 </body>
 </html>`;
@@ -153,11 +180,24 @@ function generateAppJs(scenarios, chatComponent) {
   return `import { applyCascadeTheme, CASCADE_THEME_DEFAULTS, defineModule } from 'symbiote-ui/ui';
 import { geometrySpacePrimitives, GEOMETRY_PROFILE_NAMES } from 'symbiote-ui/tokens/scale.js';
 import 'symbiote-ui/board';
+// Register <workspace-shell>; isoMode hydrates the build-time SSR markup in <body>
+// instead of re-rendering it. The bare '@symbiotejs/symbiote' import it pulls in is
+// resolved by the served import map. The shell chrome is the only SSR'd surface; the
+// data-driven demo UI mounts into its stage host and is rendered fully on the client.
+import '/__workspace__/ssr/WorkspaceShell.js';
 
 const scenarios = ${escapeScriptJson(scenarios)};
 const CHAT_PANEL = ${JSON.stringify(CHAT_PANEL)};
 const CHAT_COMPONENT = ${JSON.stringify(chatComponent)};
 const definedModuleTags = new Set();
+
+// Mount the demo UI (class-menu bar + dynamic stage) INTO the hydrated SSR shell's
+// stage host. The shell is server-rendered and present at first paint; here we only
+// move the client-rendered demo chrome into its [data-workspace-host] mount point.
+const shellEl = document.querySelector('workspace-shell');
+const hostEl = shellEl?.querySelector('[data-workspace-host]') || document.body;
+const demoTemplate = document.getElementById('cb-demo-template');
+if (demoTemplate) hostEl.appendChild(demoTemplate.content.cloneNode(true));
 
 const stageEl = document.getElementById('stage');
 const menuEl = document.getElementById('cb-menu');
@@ -889,7 +929,8 @@ export async function writeChatBuilderDemo(options = {}) {
   let chatComponent = built.chatComponent || CHAT_COMPONENT;
 
   await mkdir(outputDir, { recursive: true });
-  await writeFile(join(outputDir, 'index.html'), generateIndexHtml(name, demoImportMap()));
+  let indexHtml = await injectSsrShell(generateIndexHtml(name, demoImportMap()));
+  await writeFile(join(outputDir, 'index.html'), indexHtml);
   await writeFile(join(outputDir, 'app.js'), generateAppJs(scenarios, chatComponent));
   await writeFile(join(outputDir, 'scenarios.json'), JSON.stringify(scenarios, null, 2));
 

@@ -54,6 +54,10 @@
       "import": "./runtime/index.js",
       "default": "./runtime/index.js"
     },
+    "./ssr": {
+      "import": "./ssr/index.js",
+      "default": "./ssr/index.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -70,6 +74,7 @@
     "handlers/",
     "mcp/",
     "runtime/",
+    "ssr/",
     "scripts/",
     "examples/",
     "docs/",
@@ -113,15 +118,24 @@
     "ws": "^8.21.0"
   },
   "peerDependencies": {
+    "@symbiotejs/symbiote": "3.8.0-webmcp.2",
+    "linkedom": "^0.18.12",
     "symbiote-engine": ">=0.3.0-alpha.12",
     "symbiote-ui": ">=0.3.0-alpha.46"
   },
   "peerDependenciesMeta": {
+    "@symbiotejs/symbiote": {
+      "optional": true
+    },
+    "linkedom": {
+      "optional": true
+    },
     "symbiote-engine": {
       "optional": true
     }
   },
   "devDependencies": {
+    "linkedom": "^0.18.12",
     "playwright": "1.61.0",
     "symbiote-engine": "0.3.0-alpha.12",
     "symbiote-ui": "0.3.0-alpha.46"

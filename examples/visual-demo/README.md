@@ -147,3 +147,15 @@ npm run test:chat-builder-browser
 ```
 
 Pass `--browser chromium|firefox|webkit` to select the engine.
+
+### Server-side first paint (SSR)
+
+The demo proves the SSR migration: at write time it server-renders the workspace
+shell chrome via `symbiote-workspace/ssr` (`renderWorkspaceShell()`, built on
+`@symbiotejs/symbiote/node/SSR.js`) and injects it into the served `index.html`,
+so the page's first paint already contains the `<workspace-shell>` topbar and the
+stage host before `app.js` runs. On the client the shell hydrates in place via
+`isoMode` (it is reused, not re-rendered) and the workspace mounts into its host;
+data-driven panels stay client-rendered to avoid double render. The WebKit smoke
+asserts the shell is present in the raw HTML (pre-JS) and that exactly one
+hydrated shell exists after load.

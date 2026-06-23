@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Added an opt-in SSR entry point, `symbiote-workspace/ssr`. `renderWorkspaceShell()`
+  server-renders the workspace shell chrome (topbar + stage host) to HTML at
+  build time via `@symbiotejs/symbiote/node/SSR.js`; the `workspace-shell`
+  component hydrates that markup in place on the client through `isoMode`, so
+  first paint shows the shell before the app boots and data-driven panels mount
+  client-side (no double render). `@symbiotejs/symbiote` and `linkedom` are
+  declared as optional peer dependencies (only needed for SSR). The chat-builder
+  demo and its WebKit smoke prove SSR first paint and single-shell hydration.
 - Added a chat-first, questionnaire-driven construction demo
   (`npm run demo:chat-builder`). It starts with a single chat that offers a
   workspace-class menu (Programming / Video / Automation); selecting a class
