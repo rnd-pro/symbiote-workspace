@@ -198,12 +198,12 @@ const ROLE_BEHAVIORS = {
   primary: {
     importance: 95, minInlineSize: 520, minBlockSize: 320,
     collapse: 'never', overflow: 'scroll-inline',
-    responsiveMode: 'scroll-inline', responsiveBreakpoint: 860,
+    responsiveMode: 'stack', responsiveBreakpoint: 760,
   },
   board: {
     importance: 88, minInlineSize: 480, minBlockSize: 320,
     collapse: 'never', overflow: 'scroll-inline',
-    responsiveMode: 'scroll-inline', responsiveBreakpoint: 860,
+    responsiveMode: 'stack', responsiveBreakpoint: 760,
   },
   secondary: {
     importance: 68, minInlineSize: 320, minBlockSize: 260,
@@ -434,8 +434,13 @@ async function buildVariant(scenario, variant) {
       target: panelType, behavior: ROLE_BEHAVIORS[role],
     }, session));
   }
+  // Root reflow policy: below the narrow breakpoint the whole workspace STACKS
+  // vertically (Queue/Flow → Chat) instead of scroll-compressing the panels
+  // below their minInlineSize. Matched to CHAT_BEHAVIOR and the role presets so
+  // the demo tells one coherent narrow-reflow story rather than two contradictory
+  // ones (a 720px viewport clearly stacks).
   requireOk(key, 'update_layout_behavior', await dispatch('update_layout_behavior', {
-    behavior: { responsiveMode: 'scroll-inline', responsiveBreakpoint: 900 },
+    behavior: { responsiveMode: 'stack', responsiveBreakpoint: 760 },
   }, session));
 
   // 6. Validate strict, then export a portable config.

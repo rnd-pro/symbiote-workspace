@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Polished the chat-builder demo UX (following a UX audit of the live demo).
+  Responsive chrome: the demo header, class tabs, and theme control now reflow
+  below `@media` breakpoints (900px wrap, 600px icon-only tabs) instead of
+  overlapping/clipping at narrow widths, and the workspace panels stack vertically
+  below 760px (root + per-panel `responsiveMode: stack`) instead of
+  scroll-compressing — so the showcase demonstrates the adaptive layout it
+  advertises. The WebKit smoke now asserts no chrome overlap and panel stacking at
+  720px.
 - Added the customization / free-creation path to the chat-builder demo as a
   fourth `Customization` class — the one place the agent free-creates, when the
   canonical catalog cannot satisfy a requested capability. The class runs the real

@@ -187,6 +187,45 @@ test('every variant validates strict, docks the chat right, and keeps behavior m
   }
 });
 
+test('the workspace stacks vertically at the narrow breakpoint (no scroll-compression)', async () => {
+  let { scenarios } = await build();
+  // The narrow-reflow contract: below ~760px the whole workspace must STACK
+  // vertically (Queue/Flow → Chat) rather than scroll-compress the panels below
+  // their minInlineSize into a squeezed multi-column scroll. This is enforced on
+  // three surfaces that must agree: the root layout behavior the panel-layout
+  // element honors at runtime, every workspace-side panel preset, and the docked
+  // chat. A regression to 'scroll-inline' or a wider breakpoint would re-break the
+  // 720px viewport the UX audit flagged (delegation/2026-06-24-chat-builder-ux-audit.md, rank 2).
+  for (let scenario of scenarios) {
+    for (let variant of scenario.variants) {
+      let label = `${scenario.key}/${variant.id}`;
+
+      // Root reflow policy (mounted onto panel-layout responsive-mode/-breakpoint).
+      let root = variant.config.rootBehavior;
+      assert.ok(root, `${label} has no rootBehavior`);
+      assert.equal(root.responsiveMode, 'stack', `${label} root responsiveMode is not stack`);
+      assert.ok(root.responsiveBreakpoint <= 760,
+        `${label} root responsiveBreakpoint ${root.responsiveBreakpoint} would not stack a 720px viewport`);
+
+      // Every workspace-side panel stacks at the same narrow breakpoint, so none
+      // is left scroll-compressing while its siblings stack.
+      for (let panelType of leftPanels(variant.config)) {
+        let behavior = variant.config.panelTypes[panelType]?.behavior;
+        assert.equal(behavior?.responsiveMode, 'stack',
+          `${label}/${panelType} responsiveMode is not stack`);
+        assert.ok(behavior.responsiveBreakpoint <= 760,
+          `${label}/${panelType} responsiveBreakpoint ${behavior.responsiveBreakpoint} would not stack a 720px viewport`);
+      }
+
+      // The docked chat shares the same narrow policy (Queue/Flow → Chat stack).
+      let chatBehavior = variant.config.panelTypes[CHAT_PANEL].behavior;
+      assert.equal(chatBehavior.responsiveMode, 'stack', `${label} chat responsiveMode is not stack`);
+      assert.ok(chatBehavior.responsiveBreakpoint <= 760,
+        `${label} chat responsiveBreakpoint ${chatBehavior.responsiveBreakpoint} would not stack a 720px viewport`);
+    }
+  }
+});
+
 test('at least one scenario has two variants with different left-panel sets', async () => {
   let { scenarios } = await build();
   let anyDistinct = false;

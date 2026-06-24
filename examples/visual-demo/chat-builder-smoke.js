@@ -811,9 +811,137 @@ async function run() {
       };
     }
 
+    // RESPONSIVE (narrow viewport): the per-scenario header-overflow check above runs
+    // only at 1440. Here we shrink to a 720x900 phone-ish width and assert the demo
+    // chrome reflows instead of clipping/overprinting: (i) the scenario header and the
+    // class-tab bar carry no horizontal overflow OR are explicitly scrollable, (ii) the
+    // tab bar, scenario header, and theme control stack vertically with no row overlap,
+    // and (iii) the workspace panels are no longer side-by-side (the chat spans ~full
+    // width, the side-by-side splits collapse). The viewport is restored to 1440 after.
+    let responsiveReady = { applicable: keys.length >= 1 };
+    if (keys.length >= 1) {
+      await page.evaluate((k) => window.__chatBuilder.show(k), keys[keys.length - 1]);
+      await waitAndSnapshot();
+      await page.setViewportSize({ width: 720, height: 900 });
+      // Let the layout's ResizeObserver + the CSS media queries settle before measuring.
+      await page.waitForFunction(() => window.innerWidth === 720, { timeout });
+      await page.waitForFunction(() => {
+        let layout = document.querySelector('panel-layout');
+        let chat = layout?.querySelector('chat-workspace');
+        if (!chat) return false;
+        let lb = layout.getBoundingClientRect();
+        let cb = chat.getBoundingClientRect();
+        // Wait until the chat has reflowed to span ~full layout width (no longer docked
+        // into a narrow right column), i.e. the responsive collapse has applied.
+        return lb.width > 0 && cb.width >= lb.width * 0.9;
+      }, { timeout }).catch(() => {});
+
+      let narrow = await page.evaluate(() => {
+        let round = (box) => ({
+          left: box.left, right: box.right, top: box.top, bottom: box.bottom,
+          width: box.width, height: box.height,
+        });
+        let scrollableX = (el) => {
+          if (!el) return false;
+          let overflowX = getComputedStyle(el).overflowX;
+          return overflowX === 'auto' || overflowX === 'scroll';
+        };
+        let noOverflow = (el) => Boolean(el) && (el.scrollWidth - el.clientWidth <= 2 || scrollableX(el));
+
+        let head = document.querySelector('#stage .cb-scenario-head');
+        let menu = document.getElementById('cb-menu');
+        let theme = document.querySelector('#stage .cb-theme');
+        let layout = document.querySelector('panel-layout');
+        let chat = layout?.querySelector('chat-workspace') || null;
+
+        // (i) No horizontal overflow (or explicitly horizontally scrollable) for the
+        // scenario header and the class-tab bar.
+        let headNoOverflow = noOverflow(head);
+        let menuNoOverflow = noOverflow(menu);
+
+        // (ii) Rows stack vertically with no overprint. The class-tab bar sits above the
+        // scenario header (sibling rows in the chrome), and WITHIN the header its direct
+        // children — the Layout choice, the answer/customization summary, and the theme
+        // control — each drop onto their own line (each child's bottom is at/above the
+        // next child's top, within tolerance). A nested element (theme is a child of the
+        // header) is checked against its siblings, not the header it lives in.
+        let inOrder = (boxes) => {
+          for (let i = 0; i < boxes.length - 1; i += 1) {
+            if (boxes[i].bottom > boxes[i + 1].top + 2) return false;
+          }
+          return true;
+        };
+        let chromeRows = [menu, head].filter(Boolean).map((el) => round(el.getBoundingClientRect()));
+        let chromeStacked = inOrder(chromeRows);
+        let headChildren = head
+          ? [...head.children].map((el) => round(el.getBoundingClientRect())).filter((b) => b.width > 0 && b.height > 0)
+          : [];
+        let headChildrenStacked = inOrder(headChildren);
+        let stacked = chromeStacked && headChildrenStacked;
+
+        // (iii) The workspace panels are not side-by-side: at this width the layout
+        // collapses to a single column, so the chat spans ~full layout width and there
+        // is no visible horizontal split holding two panels beside each other.
+        let layoutBox = layout ? round(layout.getBoundingClientRect()) : null;
+        let chatBox = chat ? round(chat.getBoundingClientRect()) : null;
+        let chatFullWidth = Boolean(layoutBox && chatBox && layoutBox.width > 0 &&
+          chatBox.width >= layoutBox.width * 0.9);
+        // Any horizontal split that is visible AND holds two visibly-sized children
+        // side by side would mean panels are still beside each other.
+        let sideBySideSplit = [...document.querySelectorAll('panel-layout .split-view[direction="horizontal"]')]
+          .some((split) => {
+            if (split.hasAttribute('hidden')) return false;
+            let box = split.getBoundingClientRect();
+            if (box.width <= 0 || box.height <= 0) return false;
+            let kids = [...split.children]
+              .filter((kid) => kid.classList.contains('split-first') || kid.classList.contains('split-second'))
+              .map((kid) => kid.getBoundingClientRect())
+              .filter((b) => b.width > 24 && b.height > 24);
+            return kids.length >= 2;
+          });
+        let panelsStacked = chatFullWidth || !sideBySideSplit;
+
+        return {
+          headNoOverflow,
+          menuNoOverflow,
+          headOverflow: head ? head.scrollWidth - head.clientWidth : null,
+          menuOverflow: menu ? menu.scrollWidth - menu.clientWidth : null,
+          menuScrollable: scrollableX(menu),
+          rowsStacked: stacked,
+          chromeStacked,
+          headChildrenStacked,
+          chromeRowCount: chromeRows.length,
+          headChildCount: headChildren.length,
+          chatFullWidth,
+          sideBySideSplit,
+          panelsStacked,
+        };
+      });
+
+      // Restore the viewport so the function's contract (1440) holds for any later work.
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.waitForFunction(() => window.innerWidth === 1440, { timeout }).catch(() => {});
+
+      responsiveReady = {
+        ...narrow,
+        applicable: true,
+        ok: Boolean(
+          narrow.headNoOverflow &&
+          narrow.menuNoOverflow &&
+          narrow.rowsStacked &&
+          narrow.chromeRowCount >= 2 &&
+          narrow.headChildCount >= 2 &&
+          narrow.panelsStacked,
+        ),
+      };
+    } else {
+      responsiveReady.ok = true;
+    }
+
     let ok = opensOnChat &&
       firstPaintSsr.ok &&
       singleHydratedShell.ok &&
+      responsiveReady.ok &&
       errors.length === 0 &&
       keys.length >= 1 &&
       Object.values(scenarioResults).every((entry) => entry.ok);
@@ -826,6 +954,7 @@ async function run() {
       opensOnChat,
       firstPaintSsr,
       singleHydratedShell,
+      responsiveReady,
       scenarios: scenarioResults,
       noConsoleErrors: errors.length === 0,
       errors: errors.slice(0, 5),

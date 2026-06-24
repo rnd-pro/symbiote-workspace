@@ -189,6 +189,38 @@ ${escapeScriptJson({ imports })}
     chat-workspace.chat-workspace-view {
       display: flex; flex: 1 1 auto; min-width: 0; min-height: 0; height: 100%;
     }
+    /* Responsive chrome: below 900px the desktop single-bar layout no longer fits, so
+       each chrome row reflows onto its own line instead of overprinting. The class-tab
+       bar scrolls horizontally rather than clipping its tabs, the scenario header wraps
+       its Layout choice / summary / theme control onto stacked rows, and the theme
+       sub-groups wrap. The 1440 desktop layout is untouched. */
+    @media (max-width: 900px) {
+      .workspace-topbar { flex-wrap: wrap; row-gap: 6px; }
+      .workspace-topbar-left, .workspace-topbar-right { min-width: 0; flex: 1 1 auto; }
+      .workspace-topbar-right { justify-content: flex-end; }
+      .cb-bar { flex-wrap: wrap; row-gap: 8px; }
+      .cb-menu { flex: 1 1 100%; min-width: 0; overflow-x: auto; flex-wrap: nowrap;
+        scrollbar-width: thin; -webkit-overflow-scrolling: touch; }
+      .cb-bar button.cb-class { flex: 0 0 auto; }
+      .cb-back { margin-inline-start: 0; }
+      .cb-scenario-head { flex-wrap: wrap; gap: 10px; }
+      .cb-choice, .cb-answers, .cb-customization { flex: 1 1 100%; }
+      .cb-answers-text { white-space: normal; }
+      /* The theme control drops to its own full-width row and loses the left divider
+         so its sub-groups wrap cleanly instead of forcing one overflowing line. */
+      .cb-theme { flex: 1 1 100%; flex-wrap: wrap; margin-inline-start: 0;
+        padding-inline-start: 0; border-inline-start: 0; row-gap: 6px; }
+    }
+    /* Tighter phones: collapse the class-tab labels to icon-only so the tab bar stops
+       needing horizontal scroll, while keeping the (now visually-hidden) text label for
+       assistive tech. Essential controls stay present — nothing is display:none'd away. */
+    @media (max-width: 600px) {
+      .cb-bar button.cb-class > span:not(.cb-icon) {
+        position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+        overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+      .cb-bar button.cb-class { gap: 0; padding-inline: 9px; }
+      .cb-theme input[type="range"] { width: 72px; }
+    }
   </style>
 </head>
 <body>
