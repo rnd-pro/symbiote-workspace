@@ -26,6 +26,7 @@ import {
   symbioteUiRoot,
   workspacePackageRoot,
 } from './server-utils.js';
+import { exportConfig } from '../../sharing/index.js';
 import { writeChatBuilderDemo } from './chat-builder-runtime.js';
 
 function readArg(name, fallback) {
@@ -128,19 +129,25 @@ function buildLayoutTree(types, depth = 0) {
 }
 
 function fixtureScenario(key, label, intent, template, questions, theme, variantSpecs) {
-  let variants = variantSpecs.map((spec) => ({
-    id: spec.id,
-    label: spec.label,
-    answers: spec.answers,
-    config: fixtureConfig(label, spec.panels),
-    exportJson: '',
-    digest: { panelTypes: [...Object.keys(spec.panels), 'chat'] },
-  }));
+  let variants = variantSpecs.map((spec) => {
+    let config = fixtureConfig(label, spec.panels);
+    // Mirror the driver contract: each variant carries the PORTABLE exportConfig JSON
+    // its relaunchFromExport restore reads. exportConfig strips host/identity keys, so
+    // the fixture round-trips through importConfig exactly as a real exported config.
+    return {
+      id: spec.id,
+      label: spec.label,
+      answers: spec.answers,
+      config,
+      exportJson: exportConfig(config).json,
+      digest: { panelTypes: [...Object.keys(spec.panels), 'chat'] },
+    };
+  });
   return {
     key, label, intent, template, questions, stages: [], theme,
     variants,
     config: variants[0].config,
-    exportJson: '',
+    exportJson: variants[0].exportJson,
   };
 }
 
@@ -302,6 +309,16 @@ async function run() {
 
     function panelSignature(components) {
       return Object.keys(components).sort().join(',') + '#' + Object.keys(components).length;
+    }
+
+    // Module-identity signature: drop Symbiote's auto-generated `sym-N` tags (anonymous
+    // sub-components whose numeric suffix increments on every fresh registration) so the
+    // signature reflects topology + module set, not render-instance counters. A cold
+    // relaunch builds a brand-new node, so equivalence is module identity, not the
+    // volatile auto-tag numbers.
+    function stableSignature(components) {
+      let keys = Object.keys(components).filter((name) => !/^sym-\d+$/.test(name)).sort();
+      return keys.join(',') + '#' + keys.length;
     }
 
     let scenarioResults = {};
@@ -561,6 +578,86 @@ async function run() {
       let screenshot = join(screenshotDir, `chat-builder-${key}.png`);
       await page.screenshot({ path: screenshot, fullPage: true });
 
+      // PORTABILITY relaunch: capture the live workspace, then rebuild it cold from the
+      // active variant's exported portable JSON ONLY (relaunchFromExport reads exportJson,
+      // never variant.config). The restored workspace must match in topology, theme, and
+      // module set, the old node must be torn down, and nothing must navigate.
+      let preRelaunch = await waitAndSnapshot();
+      let preRelaunchSignature = panelSignature(preRelaunch.workspaceComponents);
+      let preRelaunchStable = stableSignature(preRelaunch.workspaceComponents);
+      let preRelaunchThemeBg = await page.evaluate(() => window.__chatBuilder.getThemeToken('--sn-bg'));
+      let preRelaunchLayout = await page.$('panel-layout');
+      let activeVariant = await page.evaluate(() => document.body.dataset.activeVariant || '');
+      let relaunchTeardownBefore = ignoredErrors.length;
+      let relaunched = await page.evaluate((k) => window.__chatBuilder.relaunchFromExport(k), key);
+      await page.waitForFunction(
+        ({ k, v }) => document.body.dataset.relaunched === k + ':' + v,
+        { k: key, v: activeVariant },
+        { timeout },
+      );
+      let relaunchSnap = await waitAndSnapshot();
+      let relaunchSignature = panelSignature(relaunchSnap.workspaceComponents);
+      let relaunchStable = stableSignature(relaunchSnap.workspaceComponents);
+      let relaunchThemeBg = await page.evaluate(() => window.__chatBuilder.getThemeToken('--sn-bg'));
+      let oldNodeGone = preRelaunchLayout ? !(await preRelaunchLayout.evaluate((el) => el.isConnected)) : false;
+      // The exported JSON alone reconstructs the rendered component set: parse the active
+      // variant's exportJson and check its panelTypes component tags match what rendered.
+      let relaunchFromExportOnly = await page.evaluate(({ k, tag }) => {
+        let variant = document.body.dataset.activeVariant || '';
+        let scenario = window.__chatBuilder.scenarios.find((entry) => entry.key === k);
+        let json = scenario?.variants?.find((v) => v.id === variant)?.exportJson || '';
+        let parsed;
+        try { parsed = JSON.parse(json); } catch { return false; }
+        let exportedTags = Object.values(parsed.panelTypes || {})
+          .map((panel) => panel.component)
+          .filter((component) => component && component !== tag)
+          .sort();
+        let rendered = [...document.querySelectorAll('panel-layout *')]
+          .map((el) => el.tagName.toLowerCase())
+          .filter((name) => name !== tag && name.includes('-') &&
+            !name.startsWith('layout-') && name !== 'panel-layout' && name !== 'split-node');
+        return exportedTags.every((t) => rendered.includes(t)) && exportedTags.length >= 1;
+      }, { k: key, tag: chatComponent });
+      let relaunchTeardownDelta = ignoredErrors.length - relaunchTeardownBefore;
+
+      let relaunch = {
+        called: relaunched,
+        activeVariant,
+        signatureBefore: preRelaunchSignature,
+        signatureAfter: relaunchSignature,
+        stableBefore: preRelaunchStable,
+        stableAfter: relaunchStable,
+        themeBefore: preRelaunchThemeBg.trim(),
+        themeAfter: relaunchThemeBg.trim(),
+        teardownDelta: relaunchTeardownDelta,
+        // The cold replace queues at most one extra benign LayoutNode teardown frame.
+        teardownBounded: relaunchTeardownDelta <= 1,
+        // Old node torn down cold.
+        relaunchTearsDown: oldNodeGone,
+        // Restored module set identical (topology + module identity preserved). Compared
+        // on the stable signature: a cold rebuild necessarily renumbers Symbiote's
+        // anonymous sym-N sub-components, which are not module identity.
+        relaunchPanelsIdentical: relaunchStable === preRelaunchStable,
+        // Chat still docked right at near-full height after the cold rebuild.
+        relaunchChatStillRight: relaunchSnap.chatCenter > relaunchSnap.layoutWidth / 2 &&
+          relaunchSnap.chatHeight >= relaunchSnap.layoutHeight * 0.85,
+        // Theme token preserved across the relaunch.
+        relaunchThemePreserved: relaunchThemeBg.trim() === preRelaunchThemeBg.trim(),
+        // Reconstructed from exportJson alone.
+        relaunchFromExportOnly,
+        // No navigation/reload.
+        relaunchNoNavigation: relaunchSnap.url === startUrl,
+      };
+      relaunch.ok = Boolean(
+        relaunch.relaunchTearsDown &&
+        relaunch.relaunchPanelsIdentical &&
+        relaunch.relaunchChatStillRight &&
+        relaunch.relaunchThemePreserved &&
+        relaunch.relaunchFromExportOnly &&
+        relaunch.relaunchNoNavigation &&
+        relaunch.teardownBounded,
+      );
+
       let assertions = {
         layoutMounted: snap.layoutWidth > 0,
         chatPresent: snap.chatWidth > 0,
@@ -582,6 +679,8 @@ async function run() {
         // a11y: tab pattern (aria-selected + roving tabindex), keyboard variant switch,
         // keyboard-driven theme change, focus outline, bounded teardown-race count.
         a11yReady: a11y.ok,
+        // PORTABILITY: cold relaunch from exported JSON restores topology + theme + chat.
+        relaunchReady: relaunch.ok,
         noNavigation: snap.url === startUrl && variantSnap.url === startUrl,
       };
 
@@ -607,6 +706,7 @@ async function run() {
         geometryAfter: geometryAfter.trim(),
         header,
         a11y,
+        relaunch,
         screenshot,
       };
     }

@@ -189,6 +189,7 @@ ${escapeScriptJson({ imports })}
 function generateAppJs(scenarios, chatComponent) {
   return `import { applyCascadeTheme, CASCADE_THEME_DEFAULTS, defineModule } from 'symbiote-ui/ui';
 import { geometrySpacePrimitives, GEOMETRY_PROFILE_NAMES } from 'symbiote-ui/tokens/scale.js';
+import { importConfig } from 'symbiote-workspace/browser';
 import 'symbiote-ui/board';
 // Register <workspace-shell>; isoMode hydrates the build-time SSR markup in <body>
 // instead of re-rendering it. The bare '@symbiotejs/symbiote' import it pulls in is
@@ -320,6 +321,9 @@ const SELF_REGISTERING_MODULES = {
 let activeKey = null;
 let activeVariantId = null;
 let activeLayout = null;
+// The active variant's exported portable JSON string, captured on mount so a relaunch
+// can rebuild the workspace from exportConfig output alone (never from variant.config).
+let activeVariantExportJson = '';
 
 // Resolve a scenario's selectable variants. The contract carries
 // scenario.variants = [{ id, label, answers, config, exportJson, digest }] with
@@ -659,6 +663,33 @@ function seedPanel(root, panelType, panel, scenario, config = scenario.config) {
   }
 }
 
+// Drive a panel-layout's config in over a double rAF: the outer frame sets panelTypes
+// + layoutTree so the node renders its panels, the inner frame seeds each rendered
+// component through its public setter and marks document.body.dataset.seeded. Shared by
+// the variant mount and the portable-JSON relaunch so both run one identical seed path.
+// onSeeded runs inside the inner frame after seeding, before the promise resolves.
+function seedLayout(layout, config, scenario, variantId, onSeeded) {
+  document.body.dataset.seeded = '';
+  return new Promise((done) => {
+    requestAnimationFrame(() => {
+      layout.$.panelTypes = config.panelTypes || {};
+      layout.$.layoutTree = normalizeLayoutNode(config.layout);
+      requestAnimationFrame(() => {
+        for (let [panelType, panel] of Object.entries(config.panelTypes || {})) {
+          if (!panel.component) continue;
+          for (let element of layout.querySelectorAll(panel.component)) {
+            seedPanel(element, panelType, panel, scenario, config);
+          }
+        }
+        document.body.dataset.seeded = scenario.key + ':' + variantId;
+        document.body.dataset.activeVariant = variantId;
+        if (onSeeded) onSeeded();
+        done();
+      });
+    });
+  });
+}
+
 // Mount (or re-mount) one variant's config into the scenario's single panel-layout
 // instance. Re-mounting swaps panelTypes + layoutTree in place — no page reload — so
 // selecting a different variant visibly produces a different left-panel set while the
@@ -667,6 +698,7 @@ async function mountVariant(scenario, variant) {
   if (!stageEl) throw new Error('chat-builder: stage host (#' + STAGE_HOST_ID + ') is missing; cannot mount a variant');
   let config = variant.config || scenario.config;
   activeVariantId = variant.id;
+  activeVariantExportJson = typeof variant.exportJson === 'string' ? variant.exportJson : '';
   await defineWorkspaceModules(config);
 
   let layout = activeLayout;
@@ -682,24 +714,42 @@ async function mountVariant(scenario, variant) {
   layout.setAttribute('swipe-control', rootBehavior.swipeControl || 'edge');
   layout.dataset.variant = variant.id;
 
-  document.body.dataset.seeded = '';
-  await new Promise((done) => {
-    requestAnimationFrame(() => {
-      layout.$.panelTypes = config.panelTypes || {};
-      layout.$.layoutTree = normalizeLayoutNode(config.layout);
-      requestAnimationFrame(() => {
-        for (let [panelType, panel] of Object.entries(config.panelTypes || {})) {
-          if (!panel.component) continue;
-          for (let element of layout.querySelectorAll(panel.component)) {
-            seedPanel(element, panelType, panel, scenario, config);
-          }
-        }
-        document.body.dataset.seeded = scenario.key + ':' + variant.id;
-        document.body.dataset.activeVariant = variant.id;
-        done();
-      });
-    });
+  await seedLayout(layout, config, scenario, variant.id);
+}
+
+// PORTABILITY relaunch: rebuild the active variant in a genuinely fresh panel-layout
+// node sourced ONLY from the variant's exported portable JSON, proving the demo can be
+// reconstructed from exportConfig output alone. The original node is torn down cold and
+// replaced; restored topology + theme + module set must match the live workspace.
+async function relaunchFromExport(key) {
+  let scenario = scenarioByKey(key);
+  if (!scenario || !stageEl) return false;
+  let variantId = activeVariantId;
+  let { config: config2 } = importConfig(activeVariantExportJson);
+  if (!config2) return false;
+
+  // COLD teardown: drop the live node and its reference, then build a brand-new
+  // panel-layout under the stage so the relaunch starts from an empty container.
+  if (activeLayout && activeLayout.isConnected) activeLayout.remove();
+  activeLayout = null;
+  let layout = document.createElement('panel-layout');
+  layout.className = 'cb-symbiote-layout';
+  stageEl.appendChild(layout);
+  activeLayout = layout;
+
+  await defineWorkspaceModules(config2);
+  let rootBehavior = config2.rootBehavior || {};
+  layout.setAttribute('responsive-mode', rootBehavior.responsiveMode || 'drawer');
+  layout.setAttribute('responsive-breakpoint', String(rootBehavior.responsiveBreakpoint || 860));
+  layout.setAttribute('swipe-control', rootBehavior.swipeControl || 'edge');
+  layout.dataset.variant = variantId;
+
+  await seedLayout(layout, config2, scenario, variantId, () => {
+    document.body.dataset.relaunched = key + ':' + variantId;
   });
+  // Re-apply E's tab wiring so the fresh stage tabpanel stays labelled by the active tab.
+  syncVariantButtons();
+  return true;
 }
 
 // Build the scenario header as a single tidy bar: the Layout (variant) CHOICE chips
@@ -1016,6 +1066,7 @@ window.__chatBuilder = {
   keys: scenarios.map((scenario) => scenario.key),
   show,
   selectVariant,
+  relaunchFromExport,
   setTheme,
   getThemeState,
   getThemeToken,

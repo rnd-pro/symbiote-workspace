@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Proved workspace portability live in the chat-builder demo. A constructed
+  variant can now be relaunched from its exported portable JSON: the runtime
+  imports `variant.exportJson` in-browser via `importConfig`, cold-tears the live
+  `panel-layout` (removes the node), and mounts a brand-new container seeded
+  solely from that artifact — so "export → teardown → relaunch in a fresh host"
+  is observable, not just covered headless. The WebKit smoke asserts the original
+  layout is torn down, the panel set / chat-on-right / theme token survive the
+  round-trip, and the relaunch is sourced from the export with no navigation. The
+  headless round-trip test now asserts the imported config matches the in-memory
+  build config's full layout tree (split direction/ratio/order at every node) and
+  theme block, and the strict relaunch harness now covers every chat-builder
+  variant.
 - Hardened the SSR entry, the construction error surface, and the chat-builder
   demo. `renderWorkspaceShell()` is now serialized behind a single-flight lock so
   overlapping calls share one in-flight render instead of racing the shared Node

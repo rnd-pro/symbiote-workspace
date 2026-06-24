@@ -50,6 +50,27 @@ function splitSignature(node, acc = []) {
 }
 
 /**
+ * Assert two layout trees are structurally identical: same node type, and at
+ * every split the same direction, ratio (or sizes) and child ordering, recursing
+ * into both children. Unlike a flat panel-key comparison this catches a reordered
+ * or reshaped tree that happens to keep the same panel set.
+ */
+function assertLayoutTreeEqual(a, b, path = 'layout') {
+  assert.ok(a && b, `${path} missing on one side`);
+  assert.equal(a.type, b.type, `${path} node type differs (${a.type} vs ${b.type})`);
+  if (a.type === 'panel') {
+    assert.equal(a.panelType, b.panelType, `${path} panel type differs`);
+    assert.deepEqual(a.panelState ?? {}, b.panelState ?? {}, `${path} panel state differs`);
+    return;
+  }
+  assert.equal(a.direction, b.direction, `${path} split direction differs`);
+  assert.equal(a.ratio, b.ratio, `${path} split ratio differs`);
+  assert.deepEqual(a.sizes, b.sizes, `${path} split sizes differ`);
+  assertLayoutTreeEqual(a.first, b.first, `${path}.first`);
+  assertLayoutTreeEqual(a.second, b.second, `${path}.second`);
+}
+
+/**
  * Assert that a workspace-side subtree matches the arrangement the constructor
  * produces for a given topology. Robust to the exact panel count: it checks the
  * direction/ratio family rather than a hardcoded tree shape.
@@ -235,20 +256,39 @@ test('at least two workspace panels sit on the left with behavior metadata', asy
 test('exported config round-trips through export/import', async () => {
   let { scenarios } = await build();
   for (let scenario of scenarios) {
-    assert.ok(scenario.exportJson, `${scenario.key} produced no export JSON`);
-    let relaunch = createSession();
-    let imported = await dispatch('import_config', { json: scenario.exportJson }, relaunch);
-    assert.equal(imported.status, 'ok', `${scenario.key} import failed: ${imported.hint}`);
-    assert.deepEqual(
-      Object.keys(relaunch.config.panelTypes).sort(),
-      Object.keys(scenario.config.panelTypes).sort(),
-      `${scenario.key} panel types changed on round-trip`,
-    );
-    assert.deepEqual(
-      layoutPanels(relaunch.config.layout).sort(),
-      layoutPanels(scenario.config.layout).sort(),
-      `${scenario.key} layout panels changed on round-trip`,
-    );
+    for (let variant of scenario.variants) {
+      let label = `${scenario.key}/${variant.id}`;
+      assert.ok(variant.exportJson, `${label} produced no export JSON`);
+
+      // Import the portable JSON into a fresh session.
+      let relaunch = createSession();
+      let imported = await dispatch('import_config', { json: variant.exportJson }, relaunch);
+      assert.equal(imported.status, 'ok', `${label} import failed: ${imported.hint}`);
+
+      // The export must preserve the in-memory BUILD config, not merely import
+      // deterministically. exportConfig strips top-level host/identity keys, but
+      // the layout tree, panel-type set and theme block survive identically — so
+      // the config imported from the portable artifact must match the variant's
+      // own build config on exactly those dimensions (topology + theme identity,
+      // not byte-identity).
+      // (a) Full layout-tree equality at every node: split direction, ratio/sizes
+      //     and child ordering, not just the flat panel-key set.
+      assertLayoutTreeEqual(relaunch.config.layout, variant.config.layout, `${label} layout`);
+
+      // The panel-type set survives the round-trip identically.
+      assert.deepEqual(
+        Object.keys(relaunch.config.panelTypes).sort(),
+        Object.keys(variant.config.panelTypes).sort(),
+        `${label} panel types changed on round-trip`,
+      );
+
+      // (b) Theme-block equality on the theme sub-object that survives export.
+      assert.deepEqual(
+        relaunch.config.theme,
+        variant.config.theme,
+        `${label} theme block changed on round-trip`,
+      );
+    }
   }
 });
 

@@ -17,6 +17,7 @@ import {
 import { collectPluginWorkspaceTemplates } from '../plugins/index.js';
 import { WORKSPACE_SCHEMA_VERSION } from '../schema/index.js';
 import { buildRealtimeChatStateDemo } from '../examples/visual-demo/realtime-builder.js';
+import { buildChatFirstWorkspace } from '../examples/visual-demo/chat-builder-state.js';
 
 function fixtureHomePath(...parts) {
   return ['', 'Users', ...parts].join('/');
@@ -447,6 +448,27 @@ describe('portable workspace relaunch', () => {
 
     let reexported = exportConfig(imported.config, { strict: true });
     assert.equal(reexported.json, exported.json);
+  });
+
+  it('relaunches every exported chat-builder demo variant through the strict harness', async () => {
+    let demo = await buildChatFirstWorkspace();
+    let count = 0;
+    for (let scenario of demo.scenarios) {
+      for (let variant of scenario.variants) {
+        let label = `${scenario.key}/${variant.id}`;
+        assert.ok(variant.exportJson, `${label} produced no export JSON`);
+
+        // The exported portable JSON string is the sole relaunch input. Importing
+        // it yields the config the strict harness exports, imports, loads, mounts,
+        // destroys, and re-exports deterministically — headlessly covering the
+        // public mountWorkspace path the live demo (mechanism A) does not exercise.
+        let imported = importConfig(variant.exportJson);
+        assert.deepEqual(imported.errors, [], `${label} imports from exported JSON`);
+        assertRelaunchable(imported.config, label);
+        count += 1;
+      }
+    }
+    assert.ok(count >= 6, `expected the demo to expose multiple variants, got ${count}`);
   });
 
   it('packages and relaunches the realtime builder handoff with host browser requirements intact', () => {
