@@ -228,6 +228,40 @@ ${escapeScriptJson({ imports })}
        Upstream fix belongs in symbiote-ui DataTable.css.js. sn-data-table is light
        DOM, so this global rule reaches the overlay. */
     sn-data-table .sn-data-table-loading-overlay[hidden] { display: none !important; }
+    /* Menu first-move: the in-chat class board IS the primary control (a delegated
+       click on a card runs show(card-id)), so its cards must read as interactive —
+       a pointer cursor and a hover/focus lift — not as the dead, decorative duplicate
+       of the topbar tabs they used to be. Scoped to menu mode (#stage.cb-menu-mode) so
+       only the class board, not the answered-questionnaire boards inside a built
+       scenario, becomes clickable. */
+    #stage.cb-menu-mode .status-card { cursor: pointer;
+      transition: border-color 150ms ease, background 150ms ease, transform 120ms ease; }
+    #stage.cb-menu-mode .status-card:hover, #stage.cb-menu-mode .status-card:focus-visible {
+      border-color: var(--sn-node-selected, #58a6ff);
+      background: color-mix(in srgb, var(--sn-node-selected, #58a6ff) 14%, transparent);
+      transform: translateY(-1px); }
+    #stage.cb-menu-mode .status-card:focus-visible {
+      outline: 2px solid var(--sn-node-selected, #58a6ff); outline-offset: 2px; }
+    /* The recommended class is the one obvious starting point: a stronger ring and a
+       'Recommended' badge (injected into its card header) so first-run lands on it. */
+    #stage.cb-menu-mode .status-card[data-recommended="true"] {
+      border-color: var(--sn-node-selected, #58a6ff);
+      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sn-node-selected, #58a6ff) 60%, transparent); }
+    .cb-card-badge { display: inline-flex; align-items: center; gap: 4px; margin-inline-start: auto;
+      font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+      padding: 2px 7px; border-radius: 999px; line-height: 1.4; white-space: nowrap;
+      color: var(--sn-text, #fff);
+      background: color-mix(in srgb, var(--sn-node-selected, #58a6ff) 26%, transparent);
+      border: 1px solid color-mix(in srgb, var(--sn-node-selected, #58a6ff) 60%, transparent); }
+    /* A one-line ghost hint behind the menu canvas, pre-selling that a class fills the
+       empty stage with panels. It sits under the chat (the chat is the menu surface) so
+       it never fights the chat component; it just fills the otherwise-dead canvas. */
+    .cb-menu-ghost { flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
+      gap: 8px; padding: 8px 12px; color: var(--sn-text-dim, #8b949e); font-size: 12px;
+      border: 1px dashed color-mix(in srgb, var(--sn-text, #fff) 16%, transparent);
+      border-radius: 9px; background: color-mix(in srgb, var(--sn-bg, #0e1116) 60%, transparent); }
+    .cb-menu-ghost .cb-icon { font-family: "Material Symbols Outlined"; font-size: 16px; line-height: 1; }
+    #stage:not(.cb-menu-mode) .cb-menu-ghost { display: none; }
   </style>
 </head>
 <body>
@@ -1148,6 +1182,61 @@ async function selectVariant(key, variantId) {
   return true;
 }
 
+// The menu card sublabel that SHOWS the questionnaire value-prop: the driver's
+// per-class teaser ('N questions -> M panels'), built from the real construction.
+// Tolerate a driver that predates the teaser fields — synthesize the line from
+// questionsCount/panelCount, then from the questions array length, else 'Available'.
+function menuCardTeaser(scenario) {
+  if (typeof scenario.teaser === 'string' && scenario.teaser.trim()) return scenario.teaser;
+  let questions = Number.isFinite(scenario.questionsCount)
+    ? scenario.questionsCount
+    : (scenario.questions ? scenario.questions.length : 0);
+  let panels = Number.isFinite(scenario.panelCount)
+    ? scenario.panelCount
+    : panelComponentsOf(scenario.config).length;
+  if (questions > 0 && panels > 0) {
+    return questions + ' question' + (questions === 1 ? '' : 's') +
+      ' → ' + panels + ' panel' + (panels === 1 ? '' : 's');
+  }
+  return 'Available';
+}
+
+// Resolve the recommended scenario: the driver flags one class with recommended:true
+// (or names it via recommendedKey). Returns its key, or '' when none is marked so the
+// menu simply shows no badge rather than forcing a default.
+function recommendedScenarioKey() {
+  let flagged = scenarios.find((entry) => entry.recommended === true);
+  if (flagged) return flagged.key;
+  let named = scenarios.find((entry) => entry.key === recommendedScenarioKey.named);
+  return named ? named.key : '';
+}
+recommendedScenarioKey.named = scenarios.find((entry) => typeof entry.recommendedKey === 'string')?.recommendedKey || '';
+
+// Decorate the rendered menu board: mark each card with data-card-id already carries
+// the scenario key; here we emphasize the recommended card with a data-recommended hook
+// (drives the stronger ring) and an injected 'Recommended' badge in its header, so the
+// first run has one obvious starting point. Idempotent — re-running it does not stack
+// badges. No-op when no scenario is recommended.
+function decorateMenuCards(chat) {
+  let recommendedKey = recommendedScenarioKey();
+  for (let card of chat.querySelectorAll('.status-card[data-card-id]')) {
+    let isRecommended = Boolean(recommendedKey) && card.dataset.cardId === recommendedKey;
+    card.dataset.recommended = String(isRecommended);
+    // A focusable card reads as the button it now is, for keyboard activation.
+    if (!card.hasAttribute('tabindex')) card.tabIndex = 0;
+    let header = card.querySelector('.status-card-header');
+    let existing = card.querySelector('.cb-card-badge');
+    if (isRecommended && header && !existing) {
+      let badge = document.createElement('span');
+      badge.className = 'cb-card-badge';
+      badge.textContent = 'Recommended';
+      header.appendChild(badge);
+    } else if (!isRecommended && existing) {
+      existing.remove();
+    }
+  }
+}
+
 // The opening view: a full-screen chat with the class menu seeded into its transcript,
 // so the demo literally starts with the conversation before any workspace is built.
 function renderMenu() {
@@ -1160,6 +1249,37 @@ function renderMenu() {
   let chat = document.createElement(CHAT_COMPONENT);
   chat.classList.add('chat-workspace-view');
   stageEl.appendChild(chat);
+  // A one-line ghost hint fills the otherwise-dead menu canvas, pre-selling that
+  // picking a class assembles real panels here. Removed when a scenario mounts
+  // (renderScenario clears the stage); it never overlays the chat.
+  let ghost = document.createElement('div');
+  ghost.className = 'cb-menu-ghost';
+  ghost.innerHTML = '<span class="cb-icon" aria-hidden="true">view_quilt</span>' +
+    '<span>Your panels will assemble here once you pick a class.</span>';
+  stageEl.appendChild(ghost);
+  // The in-chat class board IS the primary first move: a single delegated click
+  // handler maps a card to its scenario and runs show(key), so clicking a card builds
+  // that class (the persistent topbar tabs stay as nav). Each card carries id = the
+  // scenario key, surfaced as data-card-id by the chat board, so the click resolves
+  // the key from data-card-id of the clicked .status-card and only acts when it names a
+  // real scenario — the answered-questionnaire boards inside a built scenario use
+  // composite ids (question:value) that never match a scenario key, so they are inert.
+  let onMenuCardActivate = (event) => {
+    let card = event.target.closest?.('.status-card');
+    if (!card || !stageEl.classList.contains('cb-menu-mode')) return;
+    let key = card.dataset.cardId || '';
+    if (scenarioByKey(key)) {
+      event.preventDefault();
+      show(key);
+    }
+  };
+  chat.addEventListener('click', onMenuCardActivate);
+  // Keyboard parity: a focused card activates on Enter/Space like a button.
+  chat.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ' && event.key !== 'Spacebar') return;
+    if (!event.target.closest?.('.status-card[data-card-id]')) return;
+    onMenuCardActivate(event);
+  });
   requestAnimationFrame(() => {
     chat.setWorkspaceState?.({
       sidebar: 'hidden',
@@ -1167,29 +1287,37 @@ function renderMenu() {
       activeChatId: scenarios[0] ? 'chat-' + scenarios[0].key : 'chat',
       messages: [
         { id: 'menu-user', role: 'user', text: 'What kind of workspace can you build for me?' },
-        { id: 'menu-agent', role: 'agent', text: 'Pick a class and I will run its questionnaire, then assemble the workspace around this chat.' },
+        { id: 'menu-agent', role: 'agent', text: 'Pick a class below and I will run its questionnaire, then assemble the workspace around this chat. Programming is a good first build.' },
         {
           id: 'menu-board',
           role: 'board',
-          // Each card is a selectable workspace class, so carry an explicit 'Available'
-          // statusText instead of inheriting the board's 'Queued' in-flight fallback.
+          // Each card is the REAL, clickable workspace-class control (a delegated click
+          // runs show(card-id)). Its sublabel SHOWS the questionnaire value-prop rather
+          // than just telling it: the scenario teaser ('N questions -> M panels'), built
+          // from the real construction by the driver. Tolerate a driver that predates the
+          // teaser fields by synthesizing the line from questionsCount/panelCount, then
+          // the question array length, falling back to 'Available'.
           cardItems: scenarios.map((entry) => ({
             id: entry.key,
             title: entry.label || entry.key,
             status: 'todo',
-            statusText: 'Available',
+            statusText: menuCardTeaser(entry),
             icon: CLASS_ICONS[entry.key] || 'dashboard',
           })),
         },
       ],
       messagesOptions: { scrollToBottom: true },
-      composer: { placeholder: 'Choose a class above, or describe your own...', value: '' },
+      composer: { placeholder: 'Pick a class above to build a workspace...', value: '' },
       // The opening menu is idle, not processing — renderLiveStatus draws its
       // 'Processing...' spinner for any non-null meta, so pass null to keep the menu
       // free of a perpetual spinner. The agent message + composer already guide the user.
       liveStatus: null,
       backgroundState: 'idle',
     });
+    // After the board paints, mark each card with its scenario key for clarity and
+    // tag + badge the recommended class so first-run has one obvious starting point.
+    // A second rAF lets the board's reactive render flush before we decorate it.
+    requestAnimationFrame(() => decorateMenuCards(chat));
   });
   document.body.dataset.activeScenario = '';
   document.body.dataset.seeded = '';
@@ -1219,8 +1347,11 @@ function show(key) {
   let scenario = scenarioByKey(key);
   if (!scenario) return Promise.resolve(false);
   activeKey = key;
-  // Start every scenario on its default (first) variant.
-  activeVariantId = variantsOf(scenario)[0].id;
+  // Start every scenario on its declared default variant (the one the menu teaser's
+  // panel count describes), falling back to the first variant if no default matches.
+  activeVariantId = (scenario.default && variantById(scenario, scenario.default))
+    ? scenario.default
+    : variantsOf(scenario)[0].id;
   let done = renderScenario(scenario).then(() => true);
   syncMenu();
   return done;
@@ -1263,6 +1394,12 @@ window.__chatBuilder = {
     panels: panelComponentsOf(variant.config),
   })),
   menu: renderMenu,
+  // The class the driver recommends as the first move (recommended:true / recommendedKey),
+  // or '' when none — so smoke can assert the right card is badged without hardcoding it.
+  recommendedKey: recommendedScenarioKey(),
+  // The per-class menu teaser line ('N questions -> M panels'), so smoke can assert the
+  // card sublabel SHOWS the questionnaire value-prop rather than re-deriving it.
+  menuTeaser: (key) => menuCardTeaser(scenarioByKey(key) || {}),
   chatComponent: CHAT_COMPONENT,
   chatPanel: CHAT_PANEL,
   unseededComponents,

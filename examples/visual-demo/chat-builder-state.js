@@ -125,6 +125,10 @@ const SCENARIOS = [
     intent: 'agent programming workspace with source editor, diff and dependency graph',
     template: 'editor',
     default: 'standard',
+    // The recommended first-run class: the canonical editor template is the most
+    // recognizable to a newcomer, and its standard variant builds a balanced
+    // three-panel workbench that best shows the questionnaire-to-panels payoff.
+    recommended: true,
     // Only three modules are offered, so the two-module subsets must differ by
     // WHICH modules they keep rather than only by count. The standard variant
     // keeps all three so the workspace reads as a balanced workbench instead of
@@ -248,6 +252,23 @@ function layoutPanels(node, acc = []) {
   if (node.type === 'panel') acc.push(node.panelType);
   else if (node.type === 'split') { layoutPanels(node.first, acc); layoutPanels(node.second, acc); }
   return acc;
+}
+
+/**
+ * Count the workspace-side panels of a constructed config: the panels under the
+ * LEFT child of the chat-docking root split (the docked chat on the right is not
+ * a workspace panel and is excluded). Falls back to the whole layout minus the
+ * chat panel if the config is not yet chat-docked.
+ * @param {Object|null} config
+ * @returns {number}
+ */
+function workspacePanelCount(config) {
+  let root = config?.layout;
+  if (!root) return 0;
+  let workspaceSide = (root.type === 'split' && root.second?.panelType === CHAT_PANEL)
+    ? root.first
+    : root;
+  return layoutPanels(workspaceSide).filter((panelType) => panelType !== CHAT_PANEL).length;
 }
 
 /**
@@ -516,6 +537,14 @@ async function buildScenario(scenario) {
   // bloating every variant with the heavy replay payloads.
   let defaultBuild = await buildVariant(scenario, scenario.variants[defaultIndex]);
 
+  // Menu teaser, derived from the REAL constructed default so the questionnaire
+  // value-prop is shown, not just told: how many questions the class answers and
+  // how many panels the default variant builds (chat docks separately and is not
+  // a workspace panel, so it is excluded from the count).
+  let questionsCount = defaultBuild.questions.length;
+  let panelCount = workspacePanelCount(defaultVariant.config);
+  let teaser = `${questionsCount} questions → ${panelCount} panels`;
+
   return {
     key,
     label,
@@ -523,6 +552,10 @@ async function buildScenario(scenario) {
     template: scenario.template,
     classification: intent,
     default: defaultVariant.id,
+    recommended: scenario.recommended === true,
+    questionsCount,
+    panelCount,
+    teaser,
     variants,
     theme: defaultVariant.theme,
     topology: defaultVariant.topology,
@@ -752,7 +785,8 @@ async function buildCustomScenario(scenario) {
  *   chatComponent: string,
  *   scenarios: Array<{
  *     key: string, label: string, intent: string, template: string,
- *     default: string,
+ *     default: string, recommended: boolean,
+ *     questionsCount: number, panelCount: number, teaser: string,
  *     theme: {mode: string, hue: number}, topology: string,
  *     variants: Array<{id: string, label: string, answers: Object, config: Object, exportJson: string, theme: {mode: string, hue: number}, topology: string, digest: Object}>,
  *     questions: Array<{id: string, type: string, prompt: string, options: Array<{value: string, label: string}>, chosen: *}>,

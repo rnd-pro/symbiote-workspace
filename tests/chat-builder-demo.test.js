@@ -251,6 +251,47 @@ test('each scenario exposes a theme with a mode', async () => {
   }
 });
 
+test('each scenario exposes a derived questionnaire teaser for the menu', async () => {
+  let { scenarios } = await build();
+  for (let scenario of scenarios) {
+    // The menu shows the questionnaire value-prop concretely: how many questions
+    // the class answers and how many panels the default variant builds.
+    assert.equal(typeof scenario.questionsCount, 'number', `${scenario.key} has no questionsCount`);
+    assert.ok(scenario.questionsCount > 0, `${scenario.key} questionsCount is not positive`);
+    assert.equal(typeof scenario.panelCount, 'number', `${scenario.key} has no panelCount`);
+    assert.ok(scenario.panelCount > 0, `${scenario.key} panelCount is not positive`);
+    assert.equal(typeof scenario.teaser, 'string', `${scenario.key} has no teaser string`);
+    assert.ok(scenario.teaser.length > 0, `${scenario.key} teaser is empty`);
+
+    // The counts are DERIVED from the real constructed default, not hardcoded:
+    // questionsCount matches the answered questions, panelCount matches the
+    // default variant's workspace-side (non-chat) panels, and the teaser embeds
+    // both numbers.
+    assert.equal(scenario.questionsCount, scenario.questions.length,
+      `${scenario.key} questionsCount disagrees with the answered questions`);
+    let defaultVariant = scenario.variants.find((v) => v.id === scenario.default);
+    let left = leftPanels(defaultVariant.config).filter((p) => p !== CHAT_PANEL);
+    assert.equal(scenario.panelCount, left.length,
+      `${scenario.key} panelCount disagrees with the default variant's workspace panels`);
+    assert.ok(scenario.teaser.includes(String(scenario.questionsCount)),
+      `${scenario.key} teaser omits the question count`);
+    assert.ok(scenario.teaser.includes(String(scenario.panelCount)),
+      `${scenario.key} teaser omits the panel count`);
+  }
+});
+
+test('exactly one scenario is marked as the recommended first move', async () => {
+  let { scenarios } = await build();
+  for (let scenario of scenarios) {
+    assert.equal(typeof scenario.recommended, 'boolean', `${scenario.key} has no recommended flag`);
+  }
+  let recommended = scenarios.filter((s) => s.recommended === true);
+  assert.equal(recommended.length, 1,
+    `expected exactly one recommended scenario, got ${recommended.map((s) => s.key).join(', ') || 'none'}`);
+  assert.equal(recommended[0].key, 'programming',
+    'the recommended first-run class is not programming');
+});
+
 test('the scenario config and export mirror the default variant', async () => {
   let { scenarios } = await build();
   for (let scenario of scenarios) {

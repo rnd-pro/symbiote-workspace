@@ -18,7 +18,12 @@ All notable changes to this project will be documented in this file.
   symbiote-ui `DataTable` overlay sets `display:flex` and so was painting "Loading…"
   over a fully-loaded table despite its `[hidden]` gate — worked around at the demo
   layer; the upstream fix belongs in `DataTable.css.js`). The smoke now checks the
-  overlay's computed visibility, not just its `hidden` attribute.
+  overlay's computed visibility, not just its `hidden` attribute. One clear first
+  move: the opening menu's class cards are now the real control (clicking a card
+  builds that class), each shows a derived questionnaire teaser ("N questions · M
+  panels"), one class is marked the recommended first build, the empty canvas shows
+  a "your panels will assemble here" hint, and selecting a class now mounts its
+  declared default variant (matching the teaser's panel count).
 - Added the customization / free-creation path to the chat-builder demo as a
   fourth `Customization` class — the one place the agent free-creates, when the
   canonical catalog cannot satisfy a requested capability. The class runs the real

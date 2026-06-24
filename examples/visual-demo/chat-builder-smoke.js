@@ -368,6 +368,101 @@ async function run() {
       return keys.join(',') + '#' + keys.length;
     }
 
+    // MENU first-move (UX Slice 3): while still in menu mode — BEFORE any class is
+    // selected — prove the opening menu is ONE clear first move: (i) the in-chat class
+    // board is the REAL control, so a real click on the card whose data-card-id is a
+    // known scenario key leaves menu mode and mounts THAT scenario (body.dataset.seeded
+    // starts with the key); (ii) every class card SHOWS the questionnaire teaser as its
+    // sublabel ('N questions -> M panels'), not a bare 'Available'; (iii) the recommended
+    // class card is visibly marked (data-recommended + a 'Recommended' badge), or — when
+    // the driver flags no recommendation (e.g. the minimal fixture) — no card is marked,
+    // which is the honest no-forced-default state. Runs once at the start; the menu is
+    // restored afterwards so the per-scenario loop begins from a clean menu.
+    let menuReady = await (async () => {
+      let recommendedKey = await page.evaluate(() => window.__chatBuilder.recommendedKey);
+      // (ii)/(iii) Read the rendered menu board: each class key's card, its sublabel,
+      // and its recommended marking; plus the expected teaser line for each key.
+      let board = await page.evaluate(({ tag, keyList }) => {
+        let chat = document.querySelector(tag);
+        let cardFor = (k) => chat?.querySelector('.status-card[data-card-id="' + k + '"]') || null;
+        return keyList.map((k) => {
+          let card = cardFor(k);
+          let sub = card?.querySelector('.status-card-status');
+          return {
+            key: k,
+            present: Boolean(card),
+            sublabel: sub ? sub.textContent.trim() : '',
+            marked: card?.dataset.recommended === 'true',
+            hasBadge: Boolean(card?.querySelector('.cb-card-badge')),
+            expectedTeaser: window.__chatBuilder.menuTeaser(k),
+          };
+        });
+      }, { tag: chatComponent, keyList: keys });
+
+      let allCardsPresent = board.every((c) => c.present);
+      // Each card's sublabel SHOWS the teaser (matches the runtime-derived teaser line)
+      // and is not the bare 'Available' fallback, so the value-prop is shown, not told.
+      let cardsShowTeaser = board.every((c) =>
+        c.sublabel.length > 0 && c.sublabel !== 'Available' && c.sublabel === c.expectedTeaser);
+      // Recommended marking: when the driver names a recommendation, exactly that card is
+      // marked (data-recommended + badge) and no other; when none is named, no card is.
+      let markedKeys = board.filter((c) => c.marked).map((c) => c.key);
+      let badgedKeys = board.filter((c) => c.hasBadge).map((c) => c.key);
+      let recommendedMarked = recommendedKey
+        ? (markedKeys.length === 1 && markedKeys[0] === recommendedKey &&
+            badgedKeys.length === 1 && badgedKeys[0] === recommendedKey)
+        : (markedKeys.length === 0 && badgedKeys.length === 0);
+
+      // (i) The card IS the control: real-click the recommended card (or, when none is
+      // recommended, the first class card) and assert the stage builds THAT class.
+      let targetKey = recommendedKey || keys[0];
+      // Use Playwright's real pointer click on the card element (not a JS show() call) so
+      // the delegated click handler is what drives construction.
+      await page.click(`${chatComponent} .status-card[data-card-id="${targetKey}"]`, { timeout });
+      let built = await page.waitForFunction(
+        ({ k }) => {
+          let stage = document.getElementById('stage');
+          let seeded = document.body.dataset.seeded || '';
+          return Boolean(stage && !stage.classList.contains('cb-menu-mode') &&
+            seeded.startsWith(k + ':') && document.querySelector('panel-layout'));
+        },
+        { k: targetKey },
+        { timeout },
+      ).then(() => true).catch(() => false);
+      let afterClick = await page.evaluate(() => ({
+        seeded: document.body.dataset.seeded || '',
+        menuModeCleared: !document.getElementById('stage')?.classList.contains('cb-menu-mode'),
+        activeScenario: document.body.dataset.activeScenario || '',
+        url: location.href,
+      }));
+      let cardClickBuilds = built && afterClick.menuModeCleared &&
+        afterClick.seeded.startsWith(targetKey + ':') && afterClick.activeScenario === targetKey;
+
+      // Restore the clean menu for the per-scenario loop that follows.
+      await page.evaluate(() => window.__chatBuilder.menu());
+      await page.waitForFunction(
+        () => document.getElementById('stage')?.classList.contains('cb-menu-mode') &&
+          !document.querySelector('panel-layout'),
+        undefined,
+        { timeout },
+      ).catch(() => {});
+
+      let result = {
+        recommendedKey,
+        targetKey,
+        allCardsPresent,
+        cardsShowTeaser,
+        recommendedMarked,
+        cardClickBuilds,
+        clickedSeeded: afterClick.seeded,
+        noNavigation: afterClick.url === startUrl,
+        board,
+      };
+      result.ok = Boolean(allCardsPresent && cardsShowTeaser && recommendedMarked &&
+        cardClickBuilds && result.noNavigation);
+      return result;
+    })();
+
     let scenarioResults = {};
     for (let key of keys) {
       await page.evaluate((k) => window.__chatBuilder.show(k), key);
@@ -655,11 +750,21 @@ async function run() {
         let json = scenario?.variants?.find((v) => v.id === variant)?.exportJson || '';
         let parsed;
         try { parsed = JSON.parse(json); } catch { return false; }
-        // Resolve each exported component through the render alias: a free-created
+        // Use the panel types actually PLACED in the exported layout — a config may
+        // register more panelTypes than it lays out (available-but-unplaced panels),
+        // and only the laid-out ones render. Walk the layout tree to collect them.
+        let placed = [];
+        (function walk(node) {
+          if (!node) return;
+          if (node.type === 'panel' && node.panelType) placed.push(node.panelType);
+          walk(node.first); walk(node.second);
+        })(parsed.layout);
+        // Resolve each placed component through the render alias: a free-created
         // custom recipe tag (e.g. sn-cohort-heatmap) paints as its sn-data-table
         // stand-in, so the rendered tag is the alias, not the exported recipe tag.
-        let exportedTags = Object.values(parsed.panelTypes || {})
-          .map((panel) => window.__chatBuilder.resolveModuleTag(panel.component))
+        let exportedTags = placed
+          .map((key) => parsed.panelTypes?.[key]?.component)
+          .map((component) => window.__chatBuilder.resolveModuleTag(component))
           .filter((component) => component && component !== tag)
           .sort();
         let rendered = [...document.querySelectorAll('panel-layout *')]
@@ -1027,6 +1132,7 @@ async function run() {
     let ok = opensOnChat &&
       firstPaintSsr.ok &&
       singleHydratedShell.ok &&
+      menuReady.ok &&
       responsiveReady.ok &&
       errors.length === 0 &&
       keys.length >= 1 &&
@@ -1040,6 +1146,7 @@ async function run() {
       opensOnChat,
       firstPaintSsr,
       singleHydratedShell,
+      menuReady,
       responsiveReady,
       scenarios: scenarioResults,
       noConsoleErrors: errors.length === 0,
