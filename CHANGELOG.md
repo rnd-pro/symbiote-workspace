@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Hardened the SSR entry, the construction error surface, and the chat-builder
+  demo. `renderWorkspaceShell()` is now serialized behind a single-flight lock so
+  overlapping calls share one in-flight render instead of racing the shared Node
+  SSR globals, and its `SSR.init`/`processHtml`/`SSR.destroy` sequence runs under
+  `try`/`finally` so a failed render always tears the environment down and clears
+  the lock (it remains build-time-only). The chat-builder class menu and variant
+  chips are now a fully modelled tab pattern — `aria-selected` with roving
+  `tabindex`, arrow-key/Home/End navigation, `aria-controls` to the stage
+  `tabpanel`, and `:focus-visible` outlines — and the theme control exposes its
+  hue value and is keyboard-operable; the demo runtime now throws on a missing
+  stage host, surfaces unseeded component tags, and warns when the SSR host is
+  absent instead of failing silently. Added headless coverage for the dispatch
+  error paths (unknown tool, invalid construction question/answer, invalid and
+  not-ready handoffs) and for SSR render serialization and failure recovery, and
+  the WebKit smoke now asserts keyboard operability and a bounded teardown-error
+  count.
 - Added an opt-in SSR entry point, `symbiote-workspace/ssr`. `renderWorkspaceShell()`
   server-renders the workspace shell chrome (topbar + stage host) to HTML at
   build time via `@symbiotejs/symbiote/node/SSR.js`; the `workspace-shell`

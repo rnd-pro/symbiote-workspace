@@ -44,7 +44,9 @@ function hasArg(name) {
  * a questionnaire-derived `theme` ({mode, hue}). The top-level `config` equals the first
  * (default) variant. Every `config` is a real workspace whose root is a horizontal split
  * with the chat panel as the SECOND child (chat on the right, full height) and the
- * workspace panels on the left.
+ * workspace panels on the left. Variant ORDER is load-bearing for the keyboard a11y
+ * check: the chips form a tablist where the default is `aria-selected`, so ArrowRight
+ * from it must land on a sibling whose panel set differs (variant[0] vs variant[1]).
  */
 const FIXTURE = {
   chatPanel: 'chat',
@@ -393,6 +395,169 @@ async function run() {
         header.overflow <= 2,
       );
 
+      // #a11y Tab pattern + keyboard operability. The class menu is a tablist whose
+      // tabs carry aria-selected + roving tabindex; the variant chips are keyboard-
+      // operable (ArrowRight moves focus+selection and re-mounts); the theme controls
+      // are key-operable and change a live --sn-* token; focused controls show a
+      // non-zero focus outline; the teardown-race count stays bounded across re-mounts.
+      let classTabs = await page.evaluate(() => {
+        let menu = document.getElementById('cb-menu');
+        let tabs = [...menu.querySelectorAll('.cb-class')];
+        return {
+          menuRole: menu.getAttribute('role'),
+          total: tabs.length,
+          usesAriaSelected: tabs.every((t) => t.hasAttribute('aria-selected')),
+          usesAriaPressed: tabs.some((t) => t.hasAttribute('aria-pressed')),
+          selectedCount: tabs.filter((t) => t.getAttribute('aria-selected') === 'true').length,
+          selectedTabbable: tabs
+            .filter((t) => t.getAttribute('aria-selected') === 'true')
+            .every((t) => t.getAttribute('tabindex') === '0'),
+          unselectedRoving: tabs
+            .filter((t) => t.getAttribute('aria-selected') !== 'true')
+            .every((t) => t.getAttribute('tabindex') === '-1'),
+        };
+      });
+      classTabs.ok = classTabs.menuRole === 'tablist' &&
+        classTabs.total >= 1 &&
+        classTabs.usesAriaSelected &&
+        !classTabs.usesAriaPressed &&
+        classTabs.selectedCount === 1 &&
+        classTabs.selectedTabbable &&
+        classTabs.unselectedRoving;
+
+      // Keyboard variant switch: focus the selected chip, press ArrowRight, and assert
+      // focus+selection moved to the next chip, that chip re-mounted (panel set changed),
+      // with no navigation/reload — only when the scenario offers >=2 variants.
+      let teardownBeforeKeyNav = ignoredErrors.length;
+      let keyVariant = await page.evaluate(() => {
+        let chips = [...document.querySelectorAll('#stage .cb-variant')];
+        let selected = chips.find((c) => c.getAttribute('aria-selected') === 'true') || chips[0];
+        selected?.focus();
+        let names = new Set();
+        for (let el of document.querySelectorAll('panel-layout *')) {
+          let name = el.tagName.toLowerCase();
+          if (name === 'chat-workspace' || !name.includes('-')) continue;
+          if (name.startsWith('layout-') || name === 'panel-layout' || name === 'split-node') continue;
+          if (el.textContent.trim().length > 8) names.add(name);
+        }
+        return {
+          chipCount: chips.length,
+          focusedSelected: Boolean(selected && document.activeElement === selected),
+          selectedId: selected?.dataset.variant || '',
+          signature: [...names].sort().join(',') + '#' + names.size,
+        };
+      });
+      let keyVariantResult = { applicable: keyVariant.chipCount >= 2, focusedSelected: keyVariant.focusedSelected };
+      if (keyVariant.chipCount >= 2) {
+        await page.keyboard.press('ArrowRight');
+        await page.waitForFunction(
+          ({ sig, prevId }) => {
+            let chips = [...document.querySelectorAll('#stage .cb-variant')];
+            let active = chips.find((c) => c.getAttribute('aria-selected') === 'true');
+            if (!active || active.dataset.variant === prevId) return false;
+            if (document.activeElement !== active) return false;
+            let names = new Set();
+            for (let el of document.querySelectorAll('panel-layout *')) {
+              let name = el.tagName.toLowerCase();
+              if (name === 'chat-workspace' || !name.includes('-')) continue;
+              if (name.startsWith('layout-') || name === 'panel-layout' || name === 'split-node') continue;
+              if (el.textContent.trim().length > 8) names.add(name);
+            }
+            let current = [...names].sort().join(',') + '#' + names.size;
+            return names.size >= 1 && current !== sig;
+          },
+          { sig: keyVariant.signature, prevId: keyVariant.selectedId },
+          { timeout },
+        );
+        let afterKey = await page.evaluate(() => {
+          let chips = [...document.querySelectorAll('#stage .cb-variant')];
+          let active = chips.find((c) => c.getAttribute('aria-selected') === 'true');
+          return {
+            movedSelection: Boolean(active),
+            focusFollowsSelection: document.activeElement === active,
+            url: location.href,
+          };
+        });
+        keyVariantResult.movedSelection = afterKey.movedSelection;
+        keyVariantResult.focusFollowsSelection = afterKey.focusFollowsSelection;
+        keyVariantResult.noNavigation = afterKey.url === startUrl;
+      }
+      keyVariantResult.ok = keyVariantResult.applicable
+        ? Boolean(keyVariantResult.focusedSelected && keyVariantResult.movedSelection &&
+            keyVariantResult.focusFollowsSelection && keyVariantResult.noNavigation)
+        : keyVariantResult.focusedSelected;
+
+      // Keyboard-driven theme change: focus the inactive mode button and activate it by
+      // key (Enter), then assert a live --sn-* token recomputed — same contract as the
+      // pointer-driven themeTokenChanged check, driven via keyboard.
+      let keyThemeToken = '--sn-bg';
+      let keyThemeBefore = await page.evaluate((t) => window.__chatBuilder.getThemeToken(t), keyThemeToken);
+      let keyThemeFocus = await page.evaluate(() => {
+        let mode = window.__chatBuilder.getThemeState().mode;
+        let target = [...document.querySelectorAll('#stage [data-theme-mode]')]
+          .find((b) => b.dataset.themeMode !== mode);
+        target?.focus();
+        return { focusable: Boolean(target && document.activeElement === target) };
+      });
+      await page.keyboard.press('Enter');
+      await page.waitForFunction(
+        ({ t, prev }) => window.__chatBuilder.getThemeToken(t).trim() !== prev.trim(),
+        { t: keyThemeToken, prev: keyThemeBefore },
+        { timeout },
+      ).catch(() => {});
+      let keyThemeAfter = await page.evaluate((t) => window.__chatBuilder.getThemeToken(t), keyThemeToken);
+      // Register buttons and hue range are keyboard-focusable (Tab-reachable: tabindex
+      // not -1) and the hue range responds to an arrow key by changing its value.
+      let keyControls = await page.evaluate(async () => {
+        let register = document.querySelector('#stage [data-theme-register]');
+        let hue = document.querySelector('#stage [data-theme-control="hue"]');
+        register?.focus();
+        let registerFocusable = Boolean(register && document.activeElement === register &&
+          register.tabIndex !== -1);
+        hue?.focus();
+        let hueFocusable = Boolean(hue && document.activeElement === hue && hue.tabIndex !== -1);
+        let hueBefore = hue ? hue.value : '';
+        return { registerFocusable, hueFocusable, hueBefore };
+      });
+      await page.keyboard.press('ArrowLeft');
+      let hueAfter = await page.evaluate(() =>
+        document.querySelector('#stage [data-theme-control="hue"]')?.value || '');
+      let keyTheme = {
+        modeButtonFocusable: keyThemeFocus.focusable,
+        themeTokenChanged: keyThemeAfter.trim() !== keyThemeBefore.trim() && keyThemeAfter.trim().length > 0,
+        registerFocusable: keyControls.registerFocusable,
+        hueFocusable: keyControls.hueFocusable,
+        hueRespondsToKey: hueAfter !== keyControls.hueBefore,
+      };
+      keyTheme.ok = keyTheme.modeButtonFocusable && keyTheme.themeTokenChanged &&
+        keyTheme.registerFocusable && keyTheme.hueFocusable && keyTheme.hueRespondsToKey;
+
+      // Focus outline: a :focus-visible-driven outline must be a non-zero width when a
+      // control is focused (proves the keyboard focus affordance is present).
+      let focusOutline = await page.evaluate(() => {
+        let target = document.querySelector('#stage .cb-variant') ||
+          document.getElementById('cb-menu')?.querySelector('.cb-class');
+        if (!target) return { width: 0 };
+        target.focus();
+        let style = getComputedStyle(target);
+        let width = parseFloat(style.outlineWidth) || 0;
+        return { width, hasOutline: width > 0 && style.outlineStyle !== 'none' };
+      });
+      focusOutline.ok = Boolean(focusOutline.hasOutline);
+
+      // The teardown-race count must stay bounded across the multiple variant re-mounts
+      // run in this scenario (pointer switch + keyboard switch), not grow unbounded.
+      let teardownDelta = ignoredErrors.length - teardownBeforeKeyNav;
+      let a11y = {
+        classTabs,
+        keyVariant: keyVariantResult,
+        keyTheme,
+        focusOutline,
+        teardownDelta,
+        teardownBounded: teardownDelta <= 2,
+      };
+      a11y.ok = classTabs.ok && keyVariantResult.ok && keyTheme.ok && focusOutline.ok && a11y.teardownBounded;
+
       let screenshot = join(screenshotDir, `chat-builder-${key}.png`);
       await page.screenshot({ path: screenshot, fullPage: true });
 
@@ -414,6 +579,9 @@ async function run() {
         // Header is a tidy single bar: variant control + theme control both present
         // and within the header, and the bar does not overflow its width.
         headerStructured: header.ok,
+        // a11y: tab pattern (aria-selected + roving tabindex), keyboard variant switch,
+        // keyboard-driven theme change, focus outline, bounded teardown-race count.
+        a11yReady: a11y.ok,
         noNavigation: snap.url === startUrl && variantSnap.url === startUrl,
       };
 
@@ -438,6 +606,7 @@ async function run() {
         geometryBefore: geometryBefore.trim(),
         geometryAfter: geometryAfter.trim(),
         header,
+        a11y,
         screenshot,
       };
     }

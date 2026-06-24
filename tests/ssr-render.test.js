@@ -40,4 +40,23 @@ describe('workspace shell SSR', () => {
     assert.ok(second.includes('workspace-shell'));
     assert.equal(first, second, 'repeated renders must be identical');
   });
+
+  it('serializes overlapping renders into identical output (single-flight)', async () => {
+    let results = await Promise.all(Array.from({ length: 5 }, () => renderWorkspaceShell()));
+    let [first] = results;
+    assert.ok(first.includes('workspace-shell'), 'concurrent renders must produce the shell');
+    for (let html of results) {
+      assert.equal(html, first, 'overlapping renders must resolve to identical HTML');
+    }
+  });
+
+  it('clears the single-flight lock after a render failure', async () => {
+    // A non-string placeholder forces SSR.processHtml to throw mid-render.
+    await assert.rejects(renderWorkspaceShell({ placeholder: 0xbad }));
+
+    // The lock must be released and the SSR env destroyed, so the next render succeeds.
+    let recovered = await renderWorkspaceShell();
+    assert.ok(recovered.includes('workspace-shell'), 'render must recover after a failure');
+    assert.equal(typeof globalThis.document, 'undefined', 'SSR globals must not leak after failure');
+  });
 });

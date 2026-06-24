@@ -81,7 +81,7 @@ ${escapeScriptJson({ imports })}
       border: 1px solid color-mix(in srgb, var(--sn-text, #fff) 16%, transparent);
       background: var(--sn-panel-bg, #161b22); color: inherit; line-height: 1.1; }
     .cb-bar button.cb-class { display: inline-flex; align-items: center; gap: 6px; }
-    .cb-bar button.cb-class[aria-pressed="true"] {
+    .cb-bar button.cb-class[aria-selected="true"] {
       border-color: var(--sn-node-selected, #58a6ff);
       background: color-mix(in srgb, var(--sn-node-selected, #58a6ff) 22%, transparent);
       color: var(--sn-text, #fff); }
@@ -107,7 +107,7 @@ ${escapeScriptJson({ imports })}
       border: 1px solid color-mix(in srgb, var(--sn-text, #fff) 18%, transparent);
       background: color-mix(in srgb, var(--sn-bg, #0e1116) 70%, transparent);
       transition: border-color 150ms ease, background 150ms ease, color 150ms ease; }
-    .cb-variant[aria-pressed="true"] {
+    .cb-variant[aria-selected="true"] {
       border-color: var(--sn-node-selected, #58a6ff);
       background: color-mix(in srgb, var(--sn-node-selected, #58a6ff) 24%, transparent);
       color: var(--sn-text, #fff); }
@@ -142,6 +142,13 @@ ${escapeScriptJson({ imports })}
     .cb-theme-swatch { width: 18px; height: 18px; border-radius: 50%;
       background: var(--sn-node-selected, #58a6ff);
       box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--sn-bg, #0e1116) 55%, transparent); }
+    .cb-theme-value { font-size: 11px; color: var(--sn-text-dim, #8b949e);
+      min-width: 28px; text-align: end; font-variant-numeric: tabular-nums; }
+    /* Keyboard focus affordance for the interactive controls: a visible, non-zero
+       outline only on keyboard focus (:focus-visible), so mouse use stays clean. */
+    .cb-class:focus-visible, .cb-variant:focus-visible, .cb-theme button:focus-visible,
+    .cb-theme input[type="range"]:focus-visible {
+      outline: 2px solid var(--sn-node-selected, #58a6ff); outline-offset: 2px; }
     #stage > panel-layout, #stage > .cb-symbiote-layout { flex: 1 1 auto; min-height: 0; }
     #stage .cb-symbiote-layout {
       display: block; width: 100%; height: 100%; min-width: 0; min-height: 0;
@@ -193,18 +200,70 @@ const scenarios = ${escapeScriptJson(scenarios)};
 const CHAT_PANEL = ${JSON.stringify(CHAT_PANEL)};
 const CHAT_COMPONENT = ${JSON.stringify(chatComponent)};
 const definedModuleTags = new Set();
+// Component tags a variant config places that seedPanel has no seeder for. Recorded
+// (not silently swallowed) so an unseeded panel is visible to diagnostics/smoke.
+const unseededComponents = [];
 
 // Mount the demo UI (class-menu bar + dynamic stage) INTO the hydrated SSR shell's
 // stage host. The shell is server-rendered and present at first paint; here we only
 // move the client-rendered demo chrome into its [data-workspace-host] mount point.
 const shellEl = document.querySelector('workspace-shell');
-const hostEl = shellEl?.querySelector('[data-workspace-host]') || document.body;
+const ssrHost = shellEl?.querySelector('[data-workspace-host]');
+if (!ssrHost) {
+  console.warn('chat-builder: SSR shell stage host ([data-workspace-host]) missing; falling back to <body>. This indicates an SSR/hydration regression.');
+}
+const hostEl = ssrHost || document.body;
 const demoTemplate = document.getElementById('cb-demo-template');
 if (demoTemplate) hostEl.appendChild(demoTemplate.content.cloneNode(true));
 
 const stageEl = document.getElementById('stage');
 const menuEl = document.getElementById('cb-menu');
 const backEl = document.getElementById('cb-back');
+
+// The stage host is the tabpanel each tab (class / variant) controls.
+const STAGE_HOST_ID = 'stage';
+
+// Roving-tabindex + arrow-key navigation for a role=tablist. ArrowLeft/Right move
+// selection+focus to the prev/next tab, Home/End to the first/last; each move runs
+// onSelect(button), which re-mounts that class/variant (same effect as a click).
+function enableTablistKeys(listEl, tabSelector, onSelect) {
+  listEl.addEventListener('keydown', (event) => {
+    let tabs = [...listEl.querySelectorAll(tabSelector)];
+    if (!tabs.length) return;
+    let current = tabs.indexOf(document.activeElement);
+    if (current === -1) current = tabs.findIndex((tab) => tab.getAttribute('aria-selected') === 'true');
+    let next = current === -1 ? 0 : current;
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') next = (current + 1) % tabs.length;
+    else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') next = (current - 1 + tabs.length) % tabs.length;
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = tabs.length - 1;
+    else return;
+    event.preventDefault();
+    let target = tabs[next];
+    target.focus();
+    onSelect(target);
+  });
+}
+
+// Apply aria-selected + roving tabindex over a tablist's tabs: the tab matching
+// isActive is selected and tabbable (tabindex 0), the rest are tabindex -1. Also
+// labels the stage tabpanel by the active tab so the tab/tabpanel pair is complete.
+function syncRovingTabs(tabs, isActive) {
+  let selectedId = '';
+  tabs.forEach((tab, index) => {
+    let active = isActive(tab, index);
+    tab.setAttribute('aria-selected', String(active));
+    tab.tabIndex = active ? 0 : -1;
+    if (active) {
+      if (!tab.id) tab.id = 'cb-tab-' + (tab.dataset.key || tab.dataset.variant || index);
+      selectedId = tab.id;
+    }
+  });
+  if (selectedId && stageEl) {
+    stageEl.setAttribute('role', 'tabpanel');
+    stageEl.setAttribute('aria-labelledby', selectedId);
+  }
+}
 
 const CLASS_ICONS = { programming: 'code', video: 'movie', automation: 'hub' };
 const REGISTERS = (GEOMETRY_PROFILE_NAMES || []).filter((name) => name === 'tool' || name === 'product');
@@ -591,6 +650,13 @@ function seedPanel(root, panelType, panel, scenario, config = scenario.config) {
     });
     return;
   }
+  // No seeder matched this tag: record it instead of silently leaving the panel
+  // empty, so an unseeded component surfaces in diagnostics rather than passing
+  // unnoticed.
+  if (!unseededComponents.includes(component)) {
+    unseededComponents.push(component);
+    console.warn('chat-builder: no seeder for component', component, '(panel ' + panelType + ')');
+  }
 }
 
 // Mount (or re-mount) one variant's config into the scenario's single panel-layout
@@ -598,6 +664,7 @@ function seedPanel(root, panelType, panel, scenario, config = scenario.config) {
 // selecting a different variant visibly produces a different left-panel set while the
 // chat stays docked on the right.
 async function mountVariant(scenario, variant) {
+  if (!stageEl) throw new Error('chat-builder: stage host (#' + STAGE_HOST_ID + ') is missing; cannot mount a variant');
   let config = variant.config || scenario.config;
   activeVariantId = variant.id;
   await defineWorkspaceModules(config);
@@ -661,11 +728,13 @@ function renderScenarioHead(scenario) {
     button.className = 'cb-variant';
     button.dataset.variant = variant.id;
     button.setAttribute('role', 'tab');
+    button.setAttribute('aria-controls', STAGE_HOST_ID);
     button.textContent = variant.label || variant.id;
     button.title = panelComponentsOf(variant.config).join(', ') || 'variant';
     button.addEventListener('click', () => selectVariant(scenario.key, variant.id));
     variantWrap.appendChild(button);
   }
+  enableTablistKeys(variantWrap, '.cb-variant', (button) => selectVariant(scenario.key, button.dataset.variant));
   choice.append(choiceLabel, variantWrap);
   head.appendChild(choice);
 
@@ -762,7 +831,13 @@ function buildThemeControl() {
   hue.dataset.themeControl = 'hue';
   hue.setAttribute('aria-label', 'Accent hue');
   hue.addEventListener('input', () => setTheme({ hue: Number(hue.value) }));
-  hueGroup.append(swatch, hue);
+  // Expose the current hue both to assistive tech (aria-valuetext) and visually,
+  // via an adjacent live value that syncThemeControl keeps in step.
+  let hueValue = document.createElement('span');
+  hueValue.className = 'cb-theme-value';
+  hueValue.dataset.themeValue = 'hue';
+  hueValue.setAttribute('aria-hidden', 'true');
+  hueGroup.append(swatch, hue, hueValue);
   theme.appendChild(hueGroup);
 
   if (REGISTERS.length >= 2) {
@@ -795,10 +870,15 @@ function syncThemeControl() {
   }
   for (let input of stageEl.querySelectorAll('[data-theme-control="hue"]')) {
     input.value = String(themeState.hue);
+    input.setAttribute('aria-valuetext', themeState.hue + ' degrees');
+  }
+  for (let value of stageEl.querySelectorAll('[data-theme-value="hue"]')) {
+    value.textContent = themeState.hue + '°';
   }
 }
 
 async function renderScenario(scenario) {
+  if (!stageEl) throw new Error('chat-builder: stage host (#' + STAGE_HOST_ID + ') is missing; cannot render a scenario');
   stageEl.classList.remove('cb-menu-mode');
   stageEl.replaceChildren();
   activeLayout = null;
@@ -820,9 +900,10 @@ async function renderScenario(scenario) {
 }
 
 function syncVariantButtons() {
-  for (let button of stageEl.querySelectorAll('.cb-variant')) {
-    button.setAttribute('aria-pressed', String(button.dataset.variant === activeVariantId));
-  }
+  syncRovingTabs(
+    [...stageEl.querySelectorAll('.cb-variant')],
+    (button) => button.dataset.variant === activeVariantId,
+  );
 }
 
 // Re-mount a different variant of the active scenario in place, with no reload.
@@ -882,8 +963,17 @@ function renderMenu() {
 }
 
 function syncMenu() {
-  for (let button of menuEl.querySelectorAll('.cb-class')) {
-    button.setAttribute('aria-pressed', String(button.dataset.key === activeKey));
+  let tabs = [...menuEl.querySelectorAll('.cb-class')];
+  let hasActive = tabs.some((button) => button.dataset.key === activeKey);
+  if (hasActive) {
+    syncRovingTabs(tabs, (button) => button.dataset.key === activeKey);
+  } else {
+    // Menu mode: no class is chosen yet, so announce none as selected. Keep the
+    // first tab tabbable so the tablist still has a single keyboard tab stop.
+    tabs.forEach((button, index) => {
+      button.setAttribute('aria-selected', 'false');
+      button.tabIndex = index === 0 ? 0 : -1;
+    });
   }
   backEl.hidden = activeKey == null;
 }
@@ -907,11 +997,13 @@ function buildMenu() {
     button.className = 'cb-class';
     button.dataset.key = scenario.key;
     button.setAttribute('role', 'tab');
+    button.setAttribute('aria-controls', STAGE_HOST_ID);
     button.innerHTML = '<span class="cb-icon" aria-hidden="true">' + (CLASS_ICONS[scenario.key] || 'dashboard') + '</span>' +
       '<span>' + (scenario.label || scenario.key) + '</span>';
     button.addEventListener('click', () => show(scenario.key));
     menuEl.appendChild(button);
   }
+  enableTablistKeys(menuEl, '.cb-class', (button) => show(button.dataset.key));
 }
 
 buildMenu();
@@ -935,6 +1027,7 @@ window.__chatBuilder = {
   menu: renderMenu,
   chatComponent: CHAT_COMPONENT,
   chatPanel: CHAT_PANEL,
+  unseededComponents,
 };
 `;
 }

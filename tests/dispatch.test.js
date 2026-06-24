@@ -752,4 +752,113 @@ describe('dispatch', () => {
     let result = await dispatch('check_guardrails', {}, session);
     assert.equal(result.pass, true);
   });
+
+  it('dispatch surfaces an unknown-tool hint without touching the session', async () => {
+    let session = createSession();
+    let result = await dispatch('unknown_tool', {}, session);
+    assert.equal(result.status, 'error');
+    assert.match(result.hint, /Unknown tool:/);
+    assert.equal(session.config, null);
+  });
+
+  it('answer_construction_question rejects an unknown question id', async () => {
+    let session = createSession();
+    let built = await dispatch('build_construction_questions', { intent: 'chat workspace' }, session);
+
+    let result = await dispatch('answer_construction_question', {
+      questions: built.questions,
+      questionId: 'no-such-question',
+      answer: 'anything',
+    }, session);
+
+    assert.equal(result.status, 'error');
+    assert.match(result.hint, /Unknown construction question/);
+    assert.equal(session.config, null);
+  });
+
+  it('answer_construction_question rejects an out-of-range select value', async () => {
+    let session = createSession();
+    let built = await dispatch('build_construction_questions', { intent: 'chat workspace' }, session);
+
+    let result = await dispatch('answer_construction_question', {
+      questions: built.questions,
+      questionId: 'target-register',
+      answer: 'not-a-register',
+    }, session);
+
+    assert.equal(result.status, 'error');
+    assert.match(result.hint, /does not accept "not-a-register"/);
+    assert.equal(session.config, null);
+  });
+
+  it('plan_workspace rejects an invalid construction handoff', async () => {
+    let session = createSession();
+    let handoff = await dispatch('create_workspace_construction_handoff', {
+      context: {
+        valid: false,
+        ready: false,
+        workspaceTemplates: [],
+        moduleCapabilities: [],
+        requiredCapabilities: [],
+        errors: [{ path: 'kind', message: 'Invalid package kind.', severity: 'error' }],
+        warnings: [],
+      },
+      intent: { brief: 'chat workspace', template: 'chat' },
+    }, session);
+
+    let result = await dispatch('plan_workspace', handoff, session);
+
+    assert.equal(result.status, 'error');
+    assert.equal(result.code, 'construction_handoff_invalid');
+    assert.equal(session.config, null);
+  });
+
+  it('construct_workspace rejects an invalid construction handoff without mutating session', async () => {
+    let session = createSession();
+    await dispatch('scaffold_from_scratch', { name: 'Existing Config' }, session);
+    let handoff = await dispatch('create_workspace_construction_handoff', {
+      context: {
+        valid: false,
+        ready: false,
+        workspaceTemplates: [],
+        moduleCapabilities: [],
+        requiredCapabilities: [],
+        errors: [{ path: 'kind', message: 'Invalid package kind.', severity: 'error' }],
+        warnings: [],
+      },
+      intent: { brief: 'chat workspace', template: 'chat' },
+    }, session);
+
+    let result = await dispatch('construct_workspace', handoff, session);
+
+    assert.equal(result.status, 'error');
+    assert.equal(result.code, 'construction_handoff_invalid');
+    assert.equal(session.config.name, 'Existing Config');
+  });
+
+  it('construct_workspace rejects a not-ready construction handoff without mutating session', async () => {
+    let session = createSession();
+    await dispatch('scaffold_from_scratch', { name: 'Existing Config' }, session);
+    let handoff = {
+      _type: 'workspace-construction-handoff',
+      valid: true,
+      intent: { brief: 'chat workspace', template: 'chat' },
+      options: {
+        packageContext: {
+          valid: true,
+          ready: false,
+          missing: { components: ['sn-team-room'] },
+          warnings: [{ path: 'available.components', message: 'Package missing available components.', severity: 'warning' }],
+        },
+      },
+      missing: { components: ['sn-team-room'] },
+      warnings: [{ path: 'available.components', message: 'Package missing available components.', severity: 'warning' }],
+    };
+
+    let result = await dispatch('construct_workspace', handoff, session);
+
+    assert.equal(result.status, 'error');
+    assert.equal(result.code, 'construction_handoff_not_ready');
+    assert.equal(session.config.name, 'Existing Config');
+  });
 });

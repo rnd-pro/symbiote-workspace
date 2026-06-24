@@ -159,3 +159,18 @@ stage host before `app.js` runs. On the client the shell hydrates in place via
 data-driven panels stay client-rendered to avoid double render. The WebKit smoke
 asserts the shell is present in the raw HTML (pre-JS) and that exactly one
 hydrated shell exists after load.
+
+`renderWorkspaceShell()` is **build-time only and non-concurrent**: `SSR.init()`
+patches Node process globals (`document`/`window`/`customElements`) via linkedom,
+so it must run as an isolated one-shot during the bundle write and never in a live
+request path. It is serialized (single-flight): concurrent calls share one
+in-flight render rather than racing the shared globals, so the build can call it
+freely without overlapping `init`/`destroy` cycles.
+
+The class menu and variant chips are keyboard-operable: each is a `role=tablist`
+whose tabs track state with `aria-selected` and a roving `tabindex` (one tab is
+`tabindex="0"`, the rest `-1`); ArrowLeft/ArrowRight move selection and focus
+(re-mounting that class/variant), and Home/End jump to the first/last. The live
+theme control (mode, accent hue, geometry register) is keyboard-operable too —
+its buttons and the hue range are focusable and respond to keys, the hue exposes
+its current value, and focused controls show a visible `:focus-visible` outline.

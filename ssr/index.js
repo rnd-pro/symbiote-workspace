@@ -4,11 +4,14 @@
  * Server-renders the workspace shell chrome at build time (SSG). `SSR.init()`
  * patches Node process globals (document/window/customElements) via linkedom, so
  * it must never run in a live request path — build-time is the isolated, one-shot
- * place for it. The rendered `<workspace-shell>` markup is hydrated on the client
- * via isoMode, so first paint shows the shell chrome before the client boots and
- * reuses the server DOM instead of re-rendering it. Data-driven content (the
- * panel layout, `cascade-theme-widget`) is left as an empty mount and rendered on
- * the client; SSR-ing it would double-render since it does not opt into isoMode.
+ * place for it. Those globals are shared process state, so {@link renderWorkspaceShell}
+ * serializes through a module-level single-flight lock: overlapping calls chain
+ * onto the in-flight render instead of patching the environment concurrently. The
+ * rendered `<workspace-shell>` markup is hydrated on the client via isoMode, so
+ * first paint shows the shell chrome before the client boots and reuses the server
+ * DOM instead of re-rendering it. Data-driven content (the panel layout,
+ * `cascade-theme-widget`) is left as an empty mount and rendered on the client;
+ * SSR-ing it would double-render since it does not opt into isoMode.
  *
  * This module has no DOM access at load time. The `WorkspaceShell` class extends
  * `HTMLElement`, which does not exist in Node until `SSR.init()` runs, so the
@@ -52,16 +55,45 @@ export async function loadWorkspaceShell() {
  * @returns {Promise<string>} The rendered shell HTML.
  */
 export async function renderWorkspaceShell(options = {}) {
+  let previous = _inFlight ?? Promise.resolve();
+  let current = previous
+    .catch(() => {})
+    .then(() => renderShellOnce(options));
+  _inFlight = current.then(
+    () => { if (_inFlight === current) _inFlight = null; },
+    () => { if (_inFlight === current) _inFlight = null; },
+  );
+  return current;
+}
+
+/**
+ * Module-level single-flight lock. Holds the tail of the render chain so the
+ * shared SSR globals are never patched by two renders at once.
+ * @type {Promise<void>|null}
+ */
+let _inFlight = null;
+
+/**
+ * Render the shell once with a balanced SSR environment. The try/finally
+ * guarantees `SSR.destroy()` runs even if `processHtml` throws, so the process
+ * globals are never left patched and the single-flight lock cannot deadlock.
+ *
+ * @param {object} options See {@link renderWorkspaceShell}.
+ * @returns {Promise<string>}
+ */
+async function renderShellOnce(options) {
   let { SSR } = await import('@symbiotejs/symbiote/node/SSR.js');
   await SSR.init();
-  await import(new URL('./WorkspaceShell.js', import.meta.url).href);
-  let placeholder = options.placeholder || WORKSPACE_SHELL_PLACEHOLDER;
-  if (options.theme && placeholder === WORKSPACE_SHELL_PLACEHOLDER) {
-    placeholder = withThemeStyle(placeholder, options.theme);
+  try {
+    await import(new URL('./WorkspaceShell.js', import.meta.url).href);
+    let placeholder = options.placeholder || WORKSPACE_SHELL_PLACEHOLDER;
+    if (options.theme && placeholder === WORKSPACE_SHELL_PLACEHOLDER) {
+      placeholder = withThemeStyle(placeholder, options.theme);
+    }
+    return await SSR.processHtml(placeholder);
+  } finally {
+    SSR.destroy();
   }
-  let html = await SSR.processHtml(placeholder);
-  SSR.destroy();
-  return html;
 }
 
 /**
