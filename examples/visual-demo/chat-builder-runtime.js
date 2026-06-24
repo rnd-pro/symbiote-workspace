@@ -61,49 +61,63 @@ ${escapeScriptJson({ imports })}
     html, body { height: 100%; }
     body { margin: 0; font-family: var(--sn-font, system-ui, sans-serif);
       background: var(--sn-bg, #0e1116); color: var(--sn-text, #e6edf3); }
-    /* SSR'd shell chrome (server-rendered <workspace-shell>, hydrated via isoMode). */
+    /* SSR'd shell chrome (server-rendered <workspace-shell>, hydrated via isoMode).
+       After hydration the demo relocates its class-tab nav and live theme control INTO
+       the topbar's left/right slots, so the topbar is the ONE unified header: product
+       title + class tabs on the left, the live theme control on the right. The empty
+       SSR-mounted <cascade-theme-widget> is the orphan slot the real theme control fills,
+       so it is hidden once the real control lands (the SSR markup stays for first-paint). */
     workspace-shell.workspace-shell { display: flex; flex-direction: column; height: 100vh; min-height: 0; }
-    .workspace-topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    .workspace-topbar { display: flex; align-items: center; justify-content: space-between; gap: 16px;
       flex: 0 0 auto; padding: 8px 16px;
       border-block-end: 1px solid color-mix(in srgb, var(--sn-text, #fff) 14%, transparent); }
-    .workspace-topbar-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
-    .workspace-title { font-size: 13px; font-weight: 600; color: var(--sn-text-dim, #8b949e); }
+    .workspace-topbar-left { display: flex; align-items: center; gap: 14px; min-width: 0; flex: 1 1 auto; }
+    .workspace-title { font-size: 13px; font-weight: 600; color: var(--sn-text, #e6edf3);
+      flex: 0 0 auto; white-space: nowrap; }
     .workspace-topbar-right { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
+    /* The orphan SSR theme-widget mount: hidden once the real .cb-theme control is
+       relocated into the topbar-right slot, so it never reads as a dead empty control. */
+    .workspace-topbar-right cascade-theme-widget:empty { display: none; }
     .workspace-stage { flex: 1 1 auto; min-height: 0; display: flex; }
     /* The demo UI mounts into the shell's stage host and fills it. */
     .workspace-stage > .cb-shell { flex: 1 1 auto; }
     .cb-shell { display: flex; flex-direction: column; min-height: 0; width: 100%; }
-    .cb-bar { display: flex; align-items: center; gap: 12px; padding: 10px 16px;
-      border-block-end: 1px solid color-mix(in srgb, var(--sn-text, #fff) 14%, transparent); }
-    .cb-bar h1 { font-size: 14px; font-weight: 600; margin: 0; flex: 0 0 auto; }
-    .cb-menu { display: flex; gap: 8px; flex: 1; min-width: 0; }
-    .cb-bar button { font: inherit; padding: 5px 14px; border-radius: 7px; cursor: pointer;
+    /* Class-tab nav: now hosted in the topbar (relocated after hydration), so it reads as
+       one row of product-level navigation beside the title rather than a second header. */
+    .cb-menu { display: flex; gap: 8px; min-width: 0; }
+    .cb-class, .cb-back { font: inherit; padding: 5px 14px; border-radius: 7px; cursor: pointer;
       border: 1px solid color-mix(in srgb, var(--sn-text, #fff) 16%, transparent);
       background: var(--sn-panel-bg, #161b22); color: inherit; line-height: 1.1; }
-    .cb-bar button.cb-class { display: inline-flex; align-items: center; gap: 6px; }
-    .cb-bar button.cb-class[aria-selected="true"] {
+    button.cb-class { display: inline-flex; align-items: center; gap: 6px; }
+    button.cb-class[aria-selected="true"] {
       border-color: var(--sn-node-selected, #58a6ff);
       background: color-mix(in srgb, var(--sn-node-selected, #58a6ff) 22%, transparent);
       color: var(--sn-text, #fff); }
-    .cb-bar .cb-icon { font-family: "Material Symbols Outlined"; font-size: 18px; line-height: 1; }
-    .cb-back { margin-inline-start: auto; flex: 0 0 auto; }
+    .cb-menu .cb-icon { font-family: "Material Symbols Outlined"; font-size: 18px; line-height: 1; }
+    .cb-back { flex: 0 0 auto; }
     #stage { flex: 1; min-height: 0; padding: 12px; box-sizing: border-box;
       display: flex; flex-direction: column; gap: 10px; }
     #stage.cb-menu-mode > .cb-scenario-head { display: none; }
-    /* Scenario header: a single tidy bar — the Layout (variant) choice on the left,
-       a compact answered-questionnaire summary in the middle, the live theme control
-       on the right. No wrapping option-chip strip; the chat already shows the full
-       answered questionnaire as a board, so the header keeps only a condensed summary. */
+    /* Scenario header: the Layout (variant) choice is the clear visual PRIMARY — its
+       chips lead the bar with a strong "Layout" label — and the answered-questionnaire
+       summary is the secondary, dimmed recap that follows. The live theme control no
+       longer competes here; it now lives in the topbar. No wrapping option-chip strip;
+       the chat already shows the full answered questionnaire as a board. */
     .cb-scenario-head { flex: 0 0 auto; display: flex; flex-wrap: nowrap; align-items: center;
-      gap: 16px; padding: 8px 14px; border-radius: 9px; min-width: 0;
+      gap: 18px; padding: 8px 14px; border-radius: 9px; min-width: 0;
       border: 1px solid color-mix(in srgb, var(--sn-text, #fff) 12%, transparent);
       background: color-mix(in srgb, var(--sn-panel-bg, #161b22) 80%, transparent); }
-    .cb-choice { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 0 1 auto; }
-    .cb-choice-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
-      color: var(--sn-text-dim, #8b949e); flex: 0 0 auto; }
-    .cb-variants { display: flex; gap: 6px; flex-wrap: wrap; min-width: 0; }
+    /* The Layout choice is the lead element: a prominent label + the variant chips, set
+       off from the secondary summary by a trailing separator so the primary reads first. */
+    .cb-choice { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 0 0 auto;
+      padding-inline-end: 18px;
+      border-inline-end: 1px solid color-mix(in srgb, var(--sn-text, #fff) 12%, transparent); }
+    .cb-choice-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+      color: color-mix(in srgb, var(--sn-text, #fff) 82%, transparent); flex: 0 0 auto; }
+    .cb-variants { display: flex; gap: 6px; flex-wrap: nowrap; min-width: 0; overflow-x: auto;
+      scrollbar-width: thin; -webkit-overflow-scrolling: touch; }
     .cb-variant { font: inherit; font-size: 12px; padding: 4px 12px; border-radius: 999px; cursor: pointer;
-      line-height: 1.2; color: inherit; white-space: nowrap;
+      line-height: 1.2; color: inherit; white-space: nowrap; flex: 0 0 auto;
       border: 1px solid color-mix(in srgb, var(--sn-text, #fff) 18%, transparent);
       background: color-mix(in srgb, var(--sn-bg, #0e1116) 70%, transparent);
       transition: border-color 150ms ease, background 150ms ease, color 150ms ease; }
@@ -145,13 +159,18 @@ ${escapeScriptJson({ imports })}
     .cb-cz-preview { color: var(--sn-text, #fff);
       border-color: var(--sn-node-selected, #58a6ff);
       background: color-mix(in srgb, var(--sn-node-selected, #58a6ff) 18%, transparent); }
-    /* Live theme control. */
-    .cb-theme { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; margin-inline-start: auto;
-      padding-inline-start: 14px; border-inline-start: 1px solid color-mix(in srgb, var(--sn-text, #fff) 12%, transparent); }
+    /* Live theme control, now hosted in the topbar-right slot. Its sub-controls
+       (mode | hue | register) are grouped with light separators between the groups so
+       the control reads as three tidy clusters, not a loose row of fiddly widgets. */
+    .cb-theme { display: flex; align-items: center; gap: 12px; flex: 0 0 auto; }
     .cb-theme-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
       color: var(--sn-text-dim, #8b949e); display: inline-flex; align-items: center; gap: 4px; }
     .cb-theme-label .cb-icon { font-family: "Material Symbols Outlined"; font-size: 15px; }
-    .cb-theme-group { display: inline-flex; align-items: center; gap: 5px; }
+    /* A thin separator before each group after the first, so the groups read as units. */
+    .cb-theme-group + .cb-theme-group, .cb-theme-label + .cb-theme-group {
+      padding-inline-start: 12px;
+      border-inline-start: 1px solid color-mix(in srgb, var(--sn-text, #fff) 14%, transparent); }
+    .cb-theme-group { display: inline-flex; align-items: center; gap: 6px; }
     .cb-theme-modes, .cb-theme-registers { display: inline-flex;
       border: 1px solid color-mix(in srgb, var(--sn-text, #fff) 18%, transparent);
       border-radius: 7px; overflow: hidden; }
@@ -189,36 +208,39 @@ ${escapeScriptJson({ imports })}
     chat-workspace.chat-workspace-view {
       display: flex; flex: 1 1 auto; min-width: 0; min-height: 0; height: 100%;
     }
-    /* Responsive chrome: below 900px the desktop single-bar layout no longer fits, so
-       each chrome row reflows onto its own line instead of overprinting. The class-tab
-       bar scrolls horizontally rather than clipping its tabs, the scenario header wraps
-       its Layout choice / summary / theme control onto stacked rows, and the theme
-       sub-groups wrap. The 1440 desktop layout is untouched. */
+    /* Responsive chrome: below 900px the unified topbar can no longer hold the title,
+       the class-tab nav, and the theme control on one line, so the topbar wraps its
+       left/right slots onto stacked rows. The class-tab nav scrolls horizontally rather
+       than clipping its tabs; the theme control drops to its own full-width row and its
+       sub-groups wrap, losing the inter-group dividers so nothing forces one overflowing
+       line. The scenario header reflows its Layout choice and summary onto stacked rows
+       (the Layout choice drops its trailing divider). The 1440 desktop layout is untouched. */
     @media (max-width: 900px) {
-      .workspace-topbar { flex-wrap: wrap; row-gap: 6px; }
-      .workspace-topbar-left, .workspace-topbar-right { min-width: 0; flex: 1 1 auto; }
-      .workspace-topbar-right { justify-content: flex-end; }
-      .cb-bar { flex-wrap: wrap; row-gap: 8px; }
+      .workspace-topbar { flex-wrap: wrap; row-gap: 8px; }
+      .workspace-topbar-left { min-width: 0; flex: 1 1 100%; flex-wrap: wrap; row-gap: 8px; }
+      .workspace-topbar-right { min-width: 0; flex: 1 1 100%; justify-content: flex-end; }
       .cb-menu { flex: 1 1 100%; min-width: 0; overflow-x: auto; flex-wrap: nowrap;
         scrollbar-width: thin; -webkit-overflow-scrolling: touch; }
-      .cb-bar button.cb-class { flex: 0 0 auto; }
-      .cb-back { margin-inline-start: 0; }
+      button.cb-class { flex: 0 0 auto; }
       .cb-scenario-head { flex-wrap: wrap; gap: 10px; }
       .cb-choice, .cb-answers, .cb-customization { flex: 1 1 100%; }
+      .cb-choice { padding-inline-end: 0; border-inline-end: 0; }
+      .cb-variants { flex-wrap: wrap; overflow-x: visible; }
       .cb-answers-text { white-space: normal; }
-      /* The theme control drops to its own full-width row and loses the left divider
-         so its sub-groups wrap cleanly instead of forcing one overflowing line. */
-      .cb-theme { flex: 1 1 100%; flex-wrap: wrap; margin-inline-start: 0;
-        padding-inline-start: 0; border-inline-start: 0; row-gap: 6px; }
+      /* The theme control fills its own full-width row and its sub-groups wrap, dropping
+         the inter-group dividers so they reflow cleanly instead of one overflowing line. */
+      .cb-theme { flex: 1 1 100%; flex-wrap: wrap; row-gap: 6px; }
+      .cb-theme-group + .cb-theme-group, .cb-theme-label + .cb-theme-group {
+        padding-inline-start: 0; border-inline-start: 0; }
     }
     /* Tighter phones: collapse the class-tab labels to icon-only so the tab bar stops
        needing horizontal scroll, while keeping the (now visually-hidden) text label for
        assistive tech. Essential controls stay present — nothing is display:none'd away. */
     @media (max-width: 600px) {
-      .cb-bar button.cb-class > span:not(.cb-icon) {
+      button.cb-class > span:not(.cb-icon) {
         position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
         overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
-      .cb-bar button.cb-class { gap: 0; padding-inline: 9px; }
+      button.cb-class { gap: 0; padding-inline: 9px; }
       .cb-theme input[type="range"] { width: 72px; }
     }
     /* symbiote-ui DataTable's loading overlay sets display:flex with no [hidden]
@@ -268,13 +290,16 @@ ${escapeScriptJson({ imports })}
   ${WORKSPACE_SHELL_PLACEHOLDER}
   <template id="cb-demo-template">
     <div class="cb-shell">
-      <div class="cb-bar">
-        <h1>${title}</h1>
-        <div class="cb-menu" id="cb-menu" role="tablist" aria-label="Workspace classes"></div>
-        <button id="cb-back" class="cb-back" type="button">Back to menu</button>
-      </div>
       <div id="stage"></div>
     </div>
+  </template>
+  <!-- Class-tab nav + Back control, relocated into the SSR topbar's left slot after
+       hydration so the topbar is the single unified header (one product title in the
+       SSR shell, the class tabs beside it). Kept in a template so app.js can move the
+       live nodes into the hydrated shell rather than rebuilding the SSR chrome. -->
+  <template id="cb-topbar-nav-template">
+    <div class="cb-menu" id="cb-menu" role="tablist" aria-label="Workspace classes"></div>
+    <button id="cb-back" class="cb-back" type="button">Back to menu</button>
   </template>
   <script type="module" src="./app.js"><\/script>
 </body>
@@ -300,9 +325,13 @@ const definedModuleTags = new Set();
 // (not silently swallowed) so an unseeded panel is visible to diagnostics/smoke.
 const unseededComponents = [];
 
-// Mount the demo UI (class-menu bar + dynamic stage) INTO the hydrated SSR shell's
-// stage host. The shell is server-rendered and present at first paint; here we only
-// move the client-rendered demo chrome into its [data-workspace-host] mount point.
+// Mount the demo UI INTO the hydrated SSR shell. The shell is server-rendered and
+// present at first paint; here we only move the client-rendered demo chrome into it.
+// The unified header IS the SSR topbar: the dynamic stage goes into its stage host,
+// the class-tab nav is relocated into the topbar's LEFT slot (beside the one product
+// title), and the live theme control fills the topbar's RIGHT slot (the orphan empty
+// <cascade-theme-widget> mount), so there is a single coherent header — no separate
+// builder title bar, no empty theme widget.
 const shellEl = document.querySelector('workspace-shell');
 const ssrHost = shellEl?.querySelector('[data-workspace-host]');
 if (!ssrHost) {
@@ -311,6 +340,19 @@ if (!ssrHost) {
 const hostEl = ssrHost || document.body;
 const demoTemplate = document.getElementById('cb-demo-template');
 if (demoTemplate) hostEl.appendChild(demoTemplate.content.cloneNode(true));
+
+// Relocate the class-tab nav (#cb-menu + #cb-back) into the topbar's left slot, after
+// the product title, so the topbar carries title + class navigation as one row.
+const topbarLeft = shellEl?.querySelector('.workspace-topbar-left');
+const topbarRight = shellEl?.querySelector('.workspace-topbar-right');
+const navTemplate = document.getElementById('cb-topbar-nav-template');
+if (topbarLeft && navTemplate) {
+  topbarLeft.appendChild(navTemplate.content.cloneNode(true));
+} else if (navTemplate) {
+  // No topbar (SSR/hydration regression): fall back to mounting the nav above the stage
+  // so the class tabs are never lost.
+  hostEl.insertBefore(navTemplate.content.cloneNode(true), hostEl.firstChild);
+}
 
 const stageEl = document.getElementById('stage');
 const menuEl = document.getElementById('cb-menu');
@@ -917,12 +959,13 @@ async function relaunchFromExport(key) {
   return true;
 }
 
-// Build the scenario header as a single tidy bar: the Layout (variant) CHOICE chips
-// on the left, a compact one-line answered-questionnaire SUMMARY in the middle, and
-// the live THEME control on the right. Selecting a chip re-mounts that variant; the
-// theme control re-applies the cascade theme without reload. The verbose per-option
-// chip grid is intentionally dropped here — the chat transcript already replays the
-// full answered questionnaire as a board, so the header keeps only a condensed recap.
+// Build the scenario header with the Layout (variant) CHOICE chips as the clear visual
+// PRIMARY — they lead the bar, set off from a secondary, dimmed answered-questionnaire
+// SUMMARY. The live theme control no longer lives here; it has moved to the topbar, so
+// the Layout choice is uncontested as the scenario header's lead element. Selecting a
+// chip re-mounts that variant with no reload. The verbose per-option chip grid is
+// intentionally dropped — the chat transcript already replays the full answered
+// questionnaire as a board, so the header keeps only a condensed recap.
 function renderScenarioHead(scenario) {
   let head = document.createElement('div');
   head.className = 'cb-scenario-head';
@@ -955,11 +998,11 @@ function renderScenarioHead(scenario) {
 
   // The custom scenario surfaces the free-creation seam (discover -> gap -> recipe
   // -> organic-fit -> preview) as a compact strip in place of the answered-summary
-  // recap; every other class keeps its condensed questionnaire summary.
+  // recap; every other class keeps its condensed questionnaire summary. This secondary
+  // recap follows the primary Layout choice; the theme control is in the topbar.
   let strip = scenario.customization ? renderCustomizationStrip(scenario) : renderAnswerSummary(scenario);
   if (strip) head.appendChild(strip);
 
-  head.appendChild(buildThemeControl());
   return head;
 }
 
@@ -1106,6 +1149,8 @@ function buildThemeControl() {
   theme.appendChild(hueGroup);
 
   if (REGISTERS.length >= 2) {
+    let registerGroup = document.createElement('div');
+    registerGroup.className = 'cb-theme-group';
     let registers = document.createElement('div');
     registers.className = 'cb-theme-registers';
     registers.setAttribute('role', 'group');
@@ -1118,26 +1163,51 @@ function buildThemeControl() {
       button.addEventListener('click', () => setTheme({ register }));
       registers.appendChild(button);
     }
-    theme.appendChild(registers);
+    registerGroup.appendChild(registers);
+    theme.appendChild(registerGroup);
   }
 
   return theme;
 }
 
-// Reflect the live theme state into the header control widgets.
+// The live theme control is built once and hosted in the topbar (persistent across
+// menu/scenario changes), so it controls the document theme regardless of what the
+// stage shows. themeControlEl is the scope syncThemeControl reflects state into.
+let themeControlEl = null;
+
+// Build the theme control once and place it in the SSR topbar's right slot, hiding the
+// orphan empty <cascade-theme-widget> mount so the slot reads as the real control, not a
+// dead widget. Falls back to the stage host only if the topbar slot is missing (an
+// SSR/hydration regression), so the control is never lost.
+function mountThemeControl() {
+  if (themeControlEl && themeControlEl.isConnected) return themeControlEl;
+  themeControlEl = buildThemeControl();
+  if (topbarRight) {
+    let orphan = topbarRight.querySelector('cascade-theme-widget');
+    if (orphan) orphan.remove();
+    topbarRight.appendChild(themeControlEl);
+  } else {
+    hostEl.appendChild(themeControlEl);
+  }
+  return themeControlEl;
+}
+
+// Reflect the live theme state into the (topbar-hosted) theme control widgets.
 function syncThemeControl() {
-  for (let button of stageEl.querySelectorAll('[data-theme-mode]')) {
+  let scope = themeControlEl;
+  if (!scope) return;
+  for (let button of scope.querySelectorAll('[data-theme-mode]')) {
     button.setAttribute('aria-pressed', String(button.dataset.themeMode === themeState.mode));
   }
-  for (let button of stageEl.querySelectorAll('[data-theme-register]')) {
+  for (let button of scope.querySelectorAll('[data-theme-register]')) {
     let active = (geometryRegister || 'product') === button.dataset.themeRegister;
     button.setAttribute('aria-pressed', String(active));
   }
-  for (let input of stageEl.querySelectorAll('[data-theme-control="hue"]')) {
+  for (let input of scope.querySelectorAll('[data-theme-control="hue"]')) {
     input.value = String(themeState.hue);
     input.setAttribute('aria-valuetext', themeState.hue + ' degrees');
   }
-  for (let value of stageEl.querySelectorAll('[data-theme-value="hue"]')) {
+  for (let value of scope.querySelectorAll('[data-theme-value="hue"]')) {
     value.textContent = themeState.hue + '°';
   }
 }
@@ -1375,6 +1445,10 @@ function buildMenu() {
 }
 
 buildMenu();
+// Mount the persistent live theme control into the topbar's right slot (filling the
+// orphan widget) before the first render, then reflect the initial theme state into it.
+mountThemeControl();
+syncThemeControl();
 backEl.addEventListener('click', () => renderMenu());
 renderMenu();
 

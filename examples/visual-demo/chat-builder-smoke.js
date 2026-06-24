@@ -270,14 +270,17 @@ async function run() {
     // SSR hydration proof: after the page boots, assert there is EXACTLY ONE
     // <workspace-shell> in the DOM (Symbiote hydrated the server markup via isoMode
     // instead of duplicating/re-creating it), it still carries the SSR `workspace-shell`
-    // class, and the demo UI mounted INTO the shell's #workspace-stage host (so the
-    // server chrome was reused, not replaced).
+    // class, and the demo UI mounted INTO the hydrated shell — its dynamic stage into the
+    // shell's #workspace-stage host, and (UX Slice 4) its class-tab nav into the shell's
+    // topbar — so the server chrome was reused, not replaced.
     let singleHydratedShell = await page.evaluate(() => {
       let shells = document.querySelectorAll('workspace-shell');
       let shell = shells[0] || null;
       let host = shell?.querySelector('#workspace-stage[data-workspace-host]') || null;
       let demoStage = host?.querySelector('#stage') || null;
-      let demoMenu = host?.querySelector('#cb-menu') || null;
+      // The class-tab nav is relocated into the shell's topbar (not the stage host) by
+      // the unified-chrome restructure; it must still live inside the single hydrated shell.
+      let demoMenu = shell?.querySelector('.workspace-topbar #cb-menu') || null;
       return {
         shellCount: shells.length,
         exactlyOneShell: shells.length === 1,
@@ -517,16 +520,18 @@ async function run() {
       await page.evaluate(() => window.__chatBuilder.setTheme({ register: 'tool' }));
       let geometryAfter = await page.evaluate((t) => window.__chatBuilder.getThemeToken(t), geometryToken);
 
-      // Header structure & density: the scenario header is present with the Layout
-      // (variant) control and the live theme control both laid out within the header's
-      // own width, and the bar does not overflow horizontally (scrollWidth ~= clientWidth).
+      // Header structure & density (UX Slice 4 — unified chrome): the scenario header is
+      // present with the Layout (variant) chips as its LEAD element, laid out within the
+      // header's own width and not overflowing horizontally. The live theme control no
+      // longer lives in this header — it has moved to the topbar — so the Layout choice
+      // is the uncontested primary; chromeUnified (below) checks the topbar placement.
       let header = await page.evaluate(() => {
         let head = document.querySelector('#stage .cb-scenario-head');
         if (!head) return { present: false };
         let headBox = head.getBoundingClientRect();
         let variants = head.querySelector('.cb-variants');
         let variantChips = head.querySelectorAll('.cb-variant').length;
-        let theme = head.querySelector('.cb-theme');
+        let choice = head.querySelector('.cb-choice');
         let within = (el) => {
           if (!el) return false;
           let box = el.getBoundingClientRect();
@@ -536,9 +541,11 @@ async function run() {
           present: true,
           variantChips,
           hasVariants: Boolean(variants) && variantChips >= 1,
-          hasTheme: Boolean(theme),
+          // The theme control has been relocated out of the scenario header.
+          themeInHead: Boolean(head.querySelector('.cb-theme')),
+          // The Layout choice leads the header (it is the header's first child element).
+          choiceIsLead: head.firstElementChild === choice,
           variantsWithin: within(variants),
-          themeWithin: within(theme),
           scrollWidth: head.scrollWidth,
           clientWidth: head.clientWidth,
           overflow: head.scrollWidth - head.clientWidth,
@@ -547,11 +554,69 @@ async function run() {
       header.ok = Boolean(
         header.present &&
         header.hasVariants &&
-        header.hasTheme &&
+        header.choiceIsLead &&
+        // The theme control is gone from the scenario header (moved to the topbar).
+        !header.themeInHead &&
         header.variantsWithin &&
-        header.themeWithin &&
         // No horizontal overflow of the header bar (small tolerance for sub-pixel rounding).
         header.overflow <= 2,
+      );
+
+      // chromeUnified (UX Slice 4): the three stacked header bars are collapsed into one
+      // coherent header. (a) exactly ONE product title (no separate redundant builder
+      // title); (b) the live theme control lives in the SSR topbar and the orphan empty
+      // <cascade-theme-widget> mount is gone/hidden; (c) the class-tab nav is hosted in
+      // the topbar; (d) the scenario header's Layout chips lead. Read the live DOM.
+      let chromeUnified = await page.evaluate(() => {
+        let shell = document.querySelector('workspace-shell');
+        let topbar = shell?.querySelector('.workspace-topbar') || null;
+        let topbarRight = shell?.querySelector('.workspace-topbar-right') || null;
+        let isVisible = (el) => {
+          if (!el) return false;
+          let cs = getComputedStyle(el);
+          if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+          let box = el.getBoundingClientRect();
+          return box.width > 0 && box.height > 0;
+        };
+        // (a) ONE product title: the SSR topbar's .workspace-title, and no separate
+        // builder <h1> title bar survives anywhere in the chrome.
+        let titles = [...document.querySelectorAll('.workspace-title')];
+        let builderTitleBars = document.querySelectorAll('.cb-bar').length;
+        let h1Count = document.querySelectorAll('.cb-shell h1, .workspace-topbar h1').length;
+        // (b) theme control in the topbar; orphan cascade-theme-widget gone or not visible.
+        let themeInTopbar = Boolean(topbar && topbar.querySelector('.cb-theme'));
+        let themeControls = document.querySelectorAll('.cb-theme').length;
+        let orphanWidget = topbarRight?.querySelector('cascade-theme-widget') || null;
+        let orphanGone = !orphanWidget || !isVisible(orphanWidget);
+        // The theme sub-controls (mode | hue | register) are present and grouped.
+        let themeGroups = topbar ? topbar.querySelectorAll('.cb-theme .cb-theme-group').length : 0;
+        // (c) class-tab nav hosted in the topbar (relocated out of a second header bar).
+        let menu = document.getElementById('cb-menu');
+        let menuInTopbar = Boolean(topbar && menu && topbar.contains(menu));
+        // (d) scenario header Layout chips lead.
+        let head = document.querySelector('#stage .cb-scenario-head');
+        let leadIsLayout = Boolean(head && head.firstElementChild &&
+          head.firstElementChild.classList.contains('cb-choice') &&
+          head.firstElementChild.querySelector('.cb-variant'));
+        return {
+          titleCount: titles.length,
+          singleProductTitle: titles.length === 1 && builderTitleBars === 0 && h1Count === 0,
+          themeInTopbar,
+          singleThemeControl: themeControls === 1,
+          orphanGone,
+          themeGroupsGrouped: themeGroups >= 2,
+          menuInTopbar,
+          leadIsLayout,
+        };
+      });
+      chromeUnified.ok = Boolean(
+        chromeUnified.singleProductTitle &&
+        chromeUnified.themeInTopbar &&
+        chromeUnified.singleThemeControl &&
+        chromeUnified.orphanGone &&
+        chromeUnified.themeGroupsGrouped &&
+        chromeUnified.menuInTopbar &&
+        chromeUnified.leadIsLayout,
       );
 
       // #a11y Tab pattern + keyboard operability. The class menu is a tablist whose
@@ -648,12 +713,13 @@ async function run() {
 
       // Keyboard-driven theme change: focus the inactive mode button and activate it by
       // key (Enter), then assert a live --sn-* token recomputed — same contract as the
-      // pointer-driven themeTokenChanged check, driven via keyboard.
+      // pointer-driven themeTokenChanged check, driven via keyboard. The theme control now
+      // lives in the topbar (UX Slice 4), so the controls are queried under .workspace-topbar.
       let keyThemeToken = '--sn-bg';
       let keyThemeBefore = await page.evaluate((t) => window.__chatBuilder.getThemeToken(t), keyThemeToken);
       let keyThemeFocus = await page.evaluate(() => {
         let mode = window.__chatBuilder.getThemeState().mode;
-        let target = [...document.querySelectorAll('#stage [data-theme-mode]')]
+        let target = [...document.querySelectorAll('.workspace-topbar [data-theme-mode]')]
           .find((b) => b.dataset.themeMode !== mode);
         target?.focus();
         return { focusable: Boolean(target && document.activeElement === target) };
@@ -668,8 +734,8 @@ async function run() {
       // Register buttons and hue range are keyboard-focusable (Tab-reachable: tabindex
       // not -1) and the hue range responds to an arrow key by changing its value.
       let keyControls = await page.evaluate(async () => {
-        let register = document.querySelector('#stage [data-theme-register]');
-        let hue = document.querySelector('#stage [data-theme-control="hue"]');
+        let register = document.querySelector('.workspace-topbar [data-theme-register]');
+        let hue = document.querySelector('.workspace-topbar [data-theme-control="hue"]');
         register?.focus();
         let registerFocusable = Boolean(register && document.activeElement === register &&
           register.tabIndex !== -1);
@@ -680,7 +746,7 @@ async function run() {
       });
       await page.keyboard.press('ArrowLeft');
       let hueAfter = await page.evaluate(() =>
-        document.querySelector('#stage [data-theme-control="hue"]')?.value || '');
+        document.querySelector('.workspace-topbar [data-theme-control="hue"]')?.value || '');
       let keyTheme = {
         modeButtonFocusable: keyThemeFocus.focusable,
         themeTokenChanged: keyThemeAfter.trim() !== keyThemeBefore.trim() && keyThemeAfter.trim().length > 0,
@@ -955,9 +1021,14 @@ async function run() {
         themeTokenChanged: themeAfter.trim() !== themeBefore.trim() && themeAfter.trim().length > 0,
         // Live geometry: the register toggle recomputed a geometry primitive.
         geometryTokenChanged: geometryAfter.trim() !== geometryBefore.trim(),
-        // Header is a tidy single bar: variant control + theme control both present
-        // and within the header, and the bar does not overflow its width.
+        // Header is a tidy bar led by the Layout variant chips, within its width, no
+        // overflow, and the theme control no longer competes there.
         headerStructured: header.ok,
+        // CHROME UNIFIED (UX Slice 4): the three stacked header bars collapse into one —
+        // a single product title, the class-tab nav + live theme control hosted in the
+        // SSR topbar (orphan empty widget gone), and the scenario header's Layout chips
+        // leading.
+        chromeUnified: chromeUnified.ok,
         // a11y: tab pattern (aria-selected + roving tabindex), keyboard variant switch,
         // keyboard-driven theme change, focus outline, bounded teardown-race count.
         a11yReady: a11y.ok,
@@ -994,6 +1065,7 @@ async function run() {
         geometryBefore: geometryBefore.trim(),
         geometryAfter: geometryAfter.trim(),
         header,
+        chromeUnified,
         a11y,
         relaunch,
         customization,

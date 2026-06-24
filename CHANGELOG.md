@@ -23,7 +23,12 @@ All notable changes to this project will be documented in this file.
   builds that class), each shows a derived questionnaire teaser ("N questions · M
   panels"), one class is marked the recommended first build, the empty canvas shows
   a "your panels will assemble here" hint, and selecting a class now mounts its
-  declared default variant (matching the teaser's panel count).
+  declared default variant (matching the teaser's panel count). Unified the header:
+  the three stacked bars collapse into one — the class tabs and the live theme
+  control are relocated into the SSR topbar (filling its previously-orphan
+  theme-widget slot), the redundant "Chat-First Workspace Builder" title is dropped,
+  and the scenario header now leads with the Layout variant chips as its clear
+  primary with a dimmed answer summary.
 - Added the customization / free-creation path to the chat-builder demo as a
   fourth `Customization` class — the one place the agent free-creates, when the
   canonical catalog cannot satisfy a requested capability. The class runs the real
