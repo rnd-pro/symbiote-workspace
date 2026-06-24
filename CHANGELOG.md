@@ -11,7 +11,14 @@ All notable changes to this project will be documented in this file.
   below 760px (root + per-panel `responsiveMode: stack`) instead of
   scroll-compressing — so the showcase demonstrates the adaptive layout it
   advertises. The WebKit smoke now asserts no chrome overlap and panel stacking at
-  720px.
+  720px. False states removed: the chat board cards now carry explicit resolved
+  statuses (no more "Queued" on answered cards), the assembled state clears its
+  live-status so no perpetual "Processing…" spinner or typing caret lingers, and a
+  CSS guard keeps `sn-data-table`'s loading overlay hidden once rows are seeded (a
+  symbiote-ui `DataTable` overlay sets `display:flex` and so was painting "Loading…"
+  over a fully-loaded table despite its `[hidden]` gate — worked around at the demo
+  layer; the upstream fix belongs in `DataTable.css.js`). The smoke now checks the
+  overlay's computed visibility, not just its `hidden` attribute.
 - Added the customization / free-creation path to the chat-builder demo as a
   fourth `Customization` class — the one place the agent free-creates, when the
   canonical catalog cannot satisfy a requested capability. The class runs the real

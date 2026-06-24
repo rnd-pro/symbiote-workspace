@@ -754,6 +754,87 @@ async function run() {
           )
         : true;
 
+      // STATES (UX Slice 2): prove the demo no longer ships visibly FALSE states on a
+      // finished, assembled workspace. Re-show the scenario for a canonical assembled
+      // state (the relaunch above left the cold-rebuilt node active), then read the
+      // rendered chat + workspace DOM: (a) no mounted sn-data-table shows a VISIBLE
+      // 'Loading...' overlay (it renders real rows, not a permanent spinner); (b) the
+      // chat live-status region is terminal — no 'Processing...'/'Running...' indicator
+      // and no spinning icon — after assembly; (c) no settled chat message renders a
+      // streaming/typing caret; (d) board cards show a resolved status, never the
+      // in-flight 'Queued'/'Running...' sublabel fallback.
+      await page.evaluate((k) => window.__chatBuilder.show(k), key);
+      await waitAndSnapshot();
+      let statesReady = await page.evaluate((tag) => {
+        let layout = document.querySelector('panel-layout');
+        let chat = layout?.querySelector(tag) || null;
+
+        // (a) Data tables render rows, not a visible 'Loading...' overlay. The overlay
+        // div stays in the DOM gated by `@hidden: '!loading'`, BUT its CSS sets
+        // display:flex which overrides the UA `[hidden] { display:none }`, so the
+        // `hidden` attribute alone does NOT mean invisible — check COMPUTED visibility.
+        let isVisible = (el) => {
+          if (!el) return false;
+          let cs = getComputedStyle(el);
+          return cs.display !== 'none' && cs.visibility !== 'hidden' && cs.opacity !== '0';
+        };
+        let tables = [...(layout?.querySelectorAll('sn-data-table') || [])];
+        let tableState = tables.map((t) => ({
+          loadingVisible: isVisible(t.querySelector('.sn-data-table-loading-overlay')),
+          emptyVisible: isVisible(t.querySelector('.sn-data-table-empty')),
+          rowCount: t.querySelectorAll('tbody tr:not(.sn-data-table-details-row)').length,
+        }));
+        let noTableLoading = tableState.every((t) => !t.loadingVisible);
+        // Every mounted table renders real rows (and is therefore not stuck empty).
+        let tablesHaveRows = tableState.every((t) => t.rowCount > 0);
+
+        // (b) Live-status region is terminal: no indicator drawn at all (the component
+        // draws its spinning 'Processing...' indicator for ANY non-null live status), so
+        // the absence of the indicator node is the terminal, no-spinner state.
+        let indicator = chat?.querySelector('.live-status-indicator') || null;
+        let indicatorText = indicator ? indicator.textContent.trim() : '';
+        let liveStatusTerminal = !indicator;
+        let noSpinner = !indicator || !indicator.querySelector('.spin-icon');
+        let noProcessingText = !/Processing\.\.\.|Running\.\.\./i.test(indicatorText);
+
+        // (c) No settled message renders a streaming/typing caret. The chat marks a
+        // streaming message via its reactive isStreaming flag / a streaming attribute /
+        // a caret element; none must be present on the assembled transcript.
+        let streamingMessages = [...(chat?.querySelectorAll('chat-message-item') || [])]
+          .filter((m) => m.$?.isStreaming === true || m.hasAttribute('streaming') ||
+            m.querySelector('.streaming-cursor, .typing-cursor, .text-cursor, [data-streaming="true"]'))
+          .length;
+
+        // (d) Board cards carry a resolved status, never the 'Queued'/'Running...'
+        // in-flight fallback the component substitutes when statusText is absent.
+        let cardStatuses = [...(chat?.querySelectorAll('.status-card-status') || [])]
+          .map((c) => c.textContent.trim());
+        let cardsResolved = cardStatuses.length > 0 &&
+          cardStatuses.every((s) => s.length > 0 && !/^(Queued|Running\.\.\.)$/i.test(s));
+
+        return {
+          tableCount: tables.length,
+          noTableLoading,
+          tablesHaveRows,
+          liveStatusTerminal,
+          noSpinner,
+          noProcessingText,
+          streamingMessages,
+          noStreamingCaret: streamingMessages === 0,
+          cardCount: cardStatuses.length,
+          cardsResolved,
+        };
+      }, chatComponent);
+      statesReady.ok = Boolean(
+        statesReady.noTableLoading &&
+        statesReady.tablesHaveRows &&
+        statesReady.liveStatusTerminal &&
+        statesReady.noSpinner &&
+        statesReady.noProcessingText &&
+        statesReady.noStreamingCaret &&
+        statesReady.cardsResolved,
+      );
+
       let assertions = {
         layoutMounted: snap.layoutWidth > 0,
         chatPresent: snap.chatWidth > 0,
@@ -780,6 +861,10 @@ async function run() {
         // CUSTOMIZATION: free-creation seam strip + free-created module beside chat
         // (custom scenario only; trivially true for the canonical classes).
         customizationReady: customization.ok,
+        // STATES: no visibly-false states on the assembled workspace — data tables show
+        // rows (not 'Loading...'), the live status is terminal (no spinner), no settled
+        // message shows a typing caret, and board cards show a resolved status.
+        statesReady: statesReady.ok,
         noNavigation: snap.url === startUrl && variantSnap.url === startUrl,
       };
 
@@ -807,6 +892,7 @@ async function run() {
         a11y,
         relaunch,
         customization,
+        statesReady,
         screenshot,
       };
     }

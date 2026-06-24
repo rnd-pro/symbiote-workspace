@@ -221,6 +221,13 @@ ${escapeScriptJson({ imports })}
       .cb-bar button.cb-class { gap: 0; padding-inline: 9px; }
       .cb-theme input[type="range"] { width: 72px; }
     }
+    /* symbiote-ui DataTable's loading overlay sets display:flex with no [hidden]
+       guard, so the UA [hidden]{display:none} is overridden and the "Loading..."
+       overlay stays painted over fully-loaded rows (loading is false). Force the
+       hidden (loaded) overlay to stay hidden so completed tables read as ready.
+       Upstream fix belongs in symbiote-ui DataTable.css.js. sn-data-table is light
+       DOM, so this global rule reaches the overlay. */
+    sn-data-table .sn-data-table-loading-overlay[hidden] { display: none !important; }
   </style>
 </head>
 <body>
@@ -514,12 +521,19 @@ function chatWorkspaceState(scenario, config = scenario.config) {
     messages.push({
       id: 'cb-board-' + question.id,
       role: 'board',
-      cardItems: options.map((option) => ({
-        id: question.id + ':' + option.value,
-        title: option.label,
-        status: chosen.includes(option.value) ? 'done' : 'todo',
-        icon: chosen.includes(option.value) ? 'check_circle' : 'radio_button_unchecked',
-      })),
+      // Every card represents an ALREADY-ANSWERED option, so carry an explicit
+      // statusText. Without it the chat board falls back to its in-flight
+      // 'Queued'/'Running...' sublabel, which reads as broken on a settled answer.
+      cardItems: options.map((option) => {
+        let isChosen = chosen.includes(option.value);
+        return {
+          id: question.id + ':' + option.value,
+          title: option.label,
+          status: isChosen ? 'done' : 'todo',
+          statusText: isChosen ? 'Selected' : 'Not chosen',
+          icon: isChosen ? 'check_circle' : 'radio_button_unchecked',
+        };
+      }),
     });
     messages.push({
       id: 'cb-a-' + question.id,
@@ -530,8 +544,9 @@ function chatWorkspaceState(scenario, config = scenario.config) {
   messages.push({
     id: 'cb-agent-done',
     role: 'agent',
+    // Settled, terminal message — no isStreaming, so the chat does not render a
+    // typing caret on a workspace that is already fully assembled.
     text: 'Assembled the ' + (scenario.label || scenario.key) + ' workspace from your answers. The conversation stays pinned on the right while you work the panels on the left.',
-    isStreaming: true,
   });
   return {
     sidebar: 'hidden',
@@ -555,8 +570,14 @@ function chatWorkspaceState(scenario, config = scenario.config) {
         { id: 'panels', kind: 'button', icon: 'view_quilt', label: 'Panels', value: String(Object.keys(config?.panelTypes || {}).length) },
       ],
     },
-    liveStatus: { phase: 'running', title: scenario.label || scenario.key, text: scenario.intent || 'workspace ready' },
-    backgroundState: 'activity',
+    // The workspace is already assembled — there is no in-flight action — so the chat
+    // must show a TERMINAL live status, not a spinner. renderLiveStatus draws its
+    // 'Processing...' spinner for ANY non-null meta (it only special-cases the
+    // thinking/tool/responding phases), so a terminal phase alone cannot clear it;
+    // passing null removes the indicator entirely. The background is settled to 'idle'
+    // (a BACKGROUND_STOP_STATES value) so the cell-bg stops animating.
+    liveStatus: null,
+    backgroundState: 'idle',
   };
 }
 
@@ -1150,17 +1171,23 @@ function renderMenu() {
         {
           id: 'menu-board',
           role: 'board',
+          // Each card is a selectable workspace class, so carry an explicit 'Available'
+          // statusText instead of inheriting the board's 'Queued' in-flight fallback.
           cardItems: scenarios.map((entry) => ({
             id: entry.key,
             title: entry.label || entry.key,
             status: 'todo',
+            statusText: 'Available',
             icon: CLASS_ICONS[entry.key] || 'dashboard',
           })),
         },
       ],
       messagesOptions: { scrollToBottom: true },
       composer: { placeholder: 'Choose a class above, or describe your own...', value: '' },
-      liveStatus: { phase: 'idle', title: 'Chat-first builder', text: 'Choose a workspace class' },
+      // The opening menu is idle, not processing — renderLiveStatus draws its
+      // 'Processing...' spinner for any non-null meta, so pass null to keep the menu
+      // free of a perpetual spinner. The agent message + composer already guide the user.
+      liveStatus: null,
       backgroundState: 'idle',
     });
   });
