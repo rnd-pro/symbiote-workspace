@@ -86,6 +86,52 @@ const FIXTURE = {
         { id: 'flow-table-tree', label: 'Flow + Runs + Steps', answers: { trigger: 'schedule' },
           panels: { flow: 'node-canvas', runs: 'sn-data-table', steps: 'sn-tree-panel' } },
       ]),
+    // CUSTOMIZATION class: the only scenario where the agent free-creates a module
+    // because the canonical catalog cannot satisfy the requested capability. The
+    // free-created tag (sn-cohort-heatmap) has no real component, so the runtime
+    // aliases it to sn-data-table for rendering. Both variants place the free-created
+    // module beside the docked chat. The customization payload carries the CONTRACT
+    // shape the driver populates from real dispatch; the specific capability/tag
+    // strings here are arbitrary fixture stand-ins (the real driver picks its own,
+    // e.g. geospatial.map / geo-situation-map) — the runtime aliases generically
+    // over recipe.tagName, so no code path depends on these strings matching.
+    fixtureScenario('custom', 'Custom', 'a cohort retention heatmap the catalog cannot build', 'custom',
+      [{ id: 'capability', type: 'single-select', prompt: 'Missing capability',
+        options: [{ value: 'cohort-heatmap', label: 'Cohort heatmap' }],
+        chosen: 'cohort-heatmap' }],
+      { mode: 'dark', hue: 24 },
+      [
+        { id: 'heatmap-inspector', label: 'Heatmap + Inspector', answers: { capability: 'cohort-heatmap' },
+          panels: { heatmap: 'sn-cohort-heatmap', inspector: 'inspector-panel' } },
+        { id: 'heatmap-table', label: 'Heatmap + Records', answers: { capability: 'cohort-heatmap' },
+          panels: { heatmap: 'sn-cohort-heatmap', records: 'sn-tree-panel' } },
+      ],
+      {
+        catalogDigest: {
+          categories: ['editing', 'visualization', 'navigation', 'automation'],
+          sampleTags: ['source-editor', 'sn-data-table', 'node-canvas', 'sn-timeline-editor'],
+        },
+        gap: {
+          capability: 'cohort-heatmap',
+          recovery: [{ kind: 'author-module', detail: 'Author a module descriptor for cohort-heatmap' }],
+          alternatives: [{ tagName: 'sn-data-table', reason: 'tabular, but not a heatmap surface' }],
+        },
+        recipe: {
+          tagName: 'sn-cohort-heatmap',
+          capabilities: ['cohort-heatmap', 'retention-grid'],
+          panelType: { title: 'Cohort Heatmap', icon: 'grid_on', component: 'sn-cohort-heatmap' },
+        },
+        organicFit: {
+          accepted: true,
+          surface: 'modules',
+          summary: 'New module descriptor fits the workspace design policy',
+          diagnostics: [{ level: 'info', message: 'panelTypes patch is organic' }],
+        },
+        patchPreview: {
+          count: 1,
+          changes: [{ op: 'add', surface: 'modules', tagName: 'sn-cohort-heatmap' }],
+        },
+      }),
   ],
 };
 
@@ -128,7 +174,7 @@ function buildLayoutTree(types, depth = 0) {
   };
 }
 
-function fixtureScenario(key, label, intent, template, questions, theme, variantSpecs) {
+function fixtureScenario(key, label, intent, template, questions, theme, variantSpecs, customization) {
   let variants = variantSpecs.map((spec) => {
     let config = fixtureConfig(label, spec.panels);
     // Mirror the driver contract: each variant carries the PORTABLE exportConfig JSON
@@ -148,6 +194,7 @@ function fixtureScenario(key, label, intent, template, questions, theme, variant
     variants,
     config: variants[0].config,
     exportJson: variants[0].exportJson,
+    ...(customization ? { customization } : {}),
   };
 }
 
@@ -608,8 +655,11 @@ async function run() {
         let json = scenario?.variants?.find((v) => v.id === variant)?.exportJson || '';
         let parsed;
         try { parsed = JSON.parse(json); } catch { return false; }
+        // Resolve each exported component through the render alias: a free-created
+        // custom recipe tag (e.g. sn-cohort-heatmap) paints as its sn-data-table
+        // stand-in, so the rendered tag is the alias, not the exported recipe tag.
         let exportedTags = Object.values(parsed.panelTypes || {})
-          .map((panel) => panel.component)
+          .map((panel) => window.__chatBuilder.resolveModuleTag(panel.component))
           .filter((component) => component && component !== tag)
           .sort();
         let rendered = [...document.querySelectorAll('panel-layout *')]
@@ -658,6 +708,52 @@ async function run() {
         relaunch.teardownBounded,
       );
 
+      // CUSTOMIZATION (custom scenario only): the free-creation seam is surfaced as a
+      // header strip and the free-created module renders beside the docked chat. The
+      // strip carries data-customization-gap / data-organic-fit / data-patch-preview;
+      // the aliased module element (sn-data-table) and the chat both live in the
+      // mounted panel-layout, with the menu-mode class cleared.
+      let isCustom = await page.evaluate((k) => {
+        let scenario = window.__chatBuilder.scenarios.find((entry) => entry.key === k);
+        return Boolean(scenario && scenario.customization);
+      }, key);
+      let customization = { applicable: isCustom };
+      if (isCustom) {
+        customization = await page.evaluate((tag) => {
+          let strip = document.querySelector('#stage .cb-customization');
+          let stage = document.getElementById('stage');
+          let layout = document.querySelector('panel-layout');
+          let aliased = layout?.querySelector('sn-data-table') || null;
+          let chat = layout?.querySelector(tag) || null;
+          let text = strip ? strip.textContent : '';
+          let gap = strip?.dataset.customizationGap || '';
+          return {
+            applicable: true,
+            stripPresent: Boolean(strip),
+            gapHook: gap,
+            showsGapText: Boolean(gap && text.includes('Gap: ' + gap)),
+            organicFitAccepted: strip?.dataset.organicFit === 'accepted',
+            patchPreviewCount: Number(strip?.dataset.patchPreview || '0'),
+            showsPreviewBadge: Boolean(strip?.querySelector('.cb-cz-preview')),
+            menuModeCleared: Boolean(stage && !stage.classList.contains('cb-menu-mode')),
+            aliasedModuleRendered: Boolean(aliased),
+            chatBesideModule: Boolean(aliased && chat),
+          };
+        }, chatComponent);
+      }
+      customization.ok = isCustom
+        ? Boolean(
+            customization.stripPresent &&
+            customization.showsGapText &&
+            customization.organicFitAccepted &&
+            customization.patchPreviewCount > 0 &&
+            customization.showsPreviewBadge &&
+            customization.menuModeCleared &&
+            customization.aliasedModuleRendered &&
+            customization.chatBesideModule,
+          )
+        : true;
+
       let assertions = {
         layoutMounted: snap.layoutWidth > 0,
         chatPresent: snap.chatWidth > 0,
@@ -681,6 +777,9 @@ async function run() {
         a11yReady: a11y.ok,
         // PORTABILITY: cold relaunch from exported JSON restores topology + theme + chat.
         relaunchReady: relaunch.ok,
+        // CUSTOMIZATION: free-creation seam strip + free-created module beside chat
+        // (custom scenario only; trivially true for the canonical classes).
+        customizationReady: customization.ok,
         noNavigation: snap.url === startUrl && variantSnap.url === startUrl,
       };
 
@@ -707,6 +806,7 @@ async function run() {
         header,
         a11y,
         relaunch,
+        customization,
         screenshot,
       };
     }

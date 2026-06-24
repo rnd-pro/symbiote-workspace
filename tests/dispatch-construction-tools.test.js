@@ -666,6 +666,103 @@ describe('construction workflow dispatch', () => {
     assert.equal(session.config.name, 'Existing Config');
   });
 
+  it('round-trips a missing capability into a provided free-created module', async () => {
+    let CUSTOM_TAG = 'geo-situation-map';
+    let CUSTOM_CAPABILITY = 'geospatial.map';
+    let MODULE_CAPABILITIES = [{ tagName: CUSTOM_TAG, capabilities: [CUSTOM_CAPABILITY, 'geospatial.layers'] }];
+    let CUSTOM_TEMPLATE = {
+      name: 'custom-geospatial',
+      description: 'Free-created geospatial situational workspace.',
+      config: {
+        version: WORKSPACE_SCHEMA_VERSION,
+        name: 'Geospatial Console',
+        register: 'tool',
+        groups: [{ id: 'ops', name: 'Operations', icon: 'public' }],
+        sections: [{ id: 'map', label: 'Map', icon: 'public', order: 0, groupId: 'ops' }],
+        panelTypes: {
+          situationMap: { title: 'Situation Map', icon: 'public', component: CUSTOM_TAG, behavior: { importance: 90, minInlineSize: 420 } },
+        },
+        layout: { type: 'panel', panelType: 'situationMap' },
+        components: { catalog: [CUSTOM_TAG], modules: MODULE_CAPABILITIES },
+      },
+    };
+
+    // (a) The canonical catalog cannot satisfy the geospatial capability, so
+    //     construction rejects with a recovery step that names the agent action.
+    let missingSession = createSession();
+    let rejected = await dispatch('construct_workspace', {
+      intent: 'geospatial situational map operations workspace',
+      template: 'admin',
+      requiredCapabilities: [CUSTOM_CAPABILITY],
+    }, missingSession);
+
+    assert.equal(rejected.status, 'error');
+    assert.equal(rejected.tool, 'construct_workspace');
+    assert.equal(rejected.code, 'construction_capabilities_missing');
+    assert.deepEqual(rejected.readiness.missing.moduleCapabilities, [CUSTOM_CAPABILITY]);
+    assert.ok(rejected.readiness.recovery.length > 0);
+    assert.equal(rejected.readiness.recovery[0].action, 'provide-module-capability');
+    assert.equal(missingSession.config, null);
+
+    // (b) The SAME call WITH the free-created module + workspace template succeeds.
+    let providedSession = createSession();
+    let provided = await dispatch('construct_workspace', {
+      intent: 'geospatial situational map operations workspace',
+      template: 'custom-geospatial',
+      requiredCapabilities: [CUSTOM_CAPABILITY],
+      moduleCapabilities: MODULE_CAPABILITIES,
+      workspaceTemplates: [CUSTOM_TEMPLATE],
+    }, providedSession);
+
+    assert.equal(provided.status, 'ok');
+    assert.equal(provided.templateName, 'custom-geospatial');
+    assert.deepEqual(provided.plan.answers.moduleSelection, ['situationMap']);
+    assert.deepEqual(provided.plan.capabilities.missing, []);
+    assert.equal(providedSession.config.panelTypes.situationMap.component, CUSTOM_TAG);
+    assert.ok(layoutReferencesPanel(providedSession.config.layout, 'situationMap'));
+
+    // (c) Proposing the free-created module as a {modules:{panelTypes}} patch on a
+    //     constructed base is accepted on the modules surface (preview only).
+    let baseSession = createSession();
+    await dispatch('construct_workspace', {
+      intent: 'admin records operations console',
+      template: 'admin',
+      answers: { 'theme-mode': 'dark' },
+    }, baseSession);
+
+    let patch = {
+      modules: {
+        panelTypes: {
+          ...baseSession.config.panelTypes,
+          situationMap: { title: 'Situation Map', icon: 'public', component: CUSTOM_TAG, behavior: { importance: 80, minInlineSize: 420 } },
+        },
+      },
+    };
+    let proposal = await dispatch('propose_workspace_patch', { patch }, baseSession);
+
+    assert.equal(proposal.status, 'ok');
+    assert.equal(proposal.accepted, true);
+    assert.ok(proposal.count > 0);
+    let situationChange = proposal.changes.find((change) => change.path === 'panelTypes.situationMap');
+    assert.ok(situationChange, 'patch preview did not add the free-created module');
+    // The preview does not mutate the base session.
+    assert.equal(baseSession.config.panelTypes.situationMap, undefined);
+
+    // A {modules:{panelTypes}} patch routes panelTypes diagnostics to the
+    // 'modules' surface — the seam the customization organic-fit reads.
+    let invalidPatch = {
+      modules: {
+        panelTypes: { ...baseSession.config.panelTypes, badPanel: { title: 'Bad' } },
+      },
+    };
+    let invalid = await dispatch('propose_workspace_patch', { patch: invalidPatch }, baseSession);
+    assert.equal(invalid.accepted, false);
+    let moduleDiagnostic = invalid.diagnostics.find((item) => item.path.startsWith('/modules/panelTypes/'));
+    assert.ok(moduleDiagnostic, 'panelTypes diagnostic was not routed to the modules surface');
+    assert.equal(moduleDiagnostic.surface, 'modules');
+    assert.equal(baseSession.config.panelTypes.badPanel, undefined);
+  });
+
   it('plan_workspace accepts a construction handoff object without mutating', async () => {
     let session = createSession();
     let handoff = await dispatch('create_workspace_construction_handoff', {

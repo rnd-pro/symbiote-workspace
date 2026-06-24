@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Added the customization / free-creation path to the chat-builder demo as a
+  fourth `Customization` class — the one place the agent free-creates, when the
+  canonical catalog cannot satisfy a requested capability. The class runs the real
+  flow on throwaway sessions: `discover_components` surfaces the catalog, a
+  `construct_workspace` with an uncovered `requiredCapabilities` is genuinely
+  rejected (`construction_capabilities_missing`), a new module descriptor is
+  hand-authored, `validate_workspace_patch` checks its organic fit on the modules
+  surface, and `propose_workspace_patch` previews the overlay — preview only, never
+  applied, no live writes. The demo header surfaces the gap → recipe → organic-fit
+  → proposed-preview trace, and the free-created module renders beside the docked
+  chat (aliased to `sn-data-table` as a visible demo stand-in). Covered by new
+  headless tests over the construction protocol (the missing → provided-capability
+  round trip, modules-surface patch routing) and the WebKit smoke.
 - Proved workspace portability live in the chat-builder demo. A constructed
   variant can now be relaunched from its exported portable JSON: the runtime
   imports `variant.exportJson` in-browser via `importConfig`, cold-tears the live

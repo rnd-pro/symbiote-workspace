@@ -123,6 +123,28 @@ ${escapeScriptJson({ imports })}
     .cb-answer-v { color: var(--sn-text-dim, #8b949e); }
     .cb-answer-sep { color: color-mix(in srgb, var(--sn-text, #fff) 22%, transparent);
       margin: 0 8px; }
+    /* Customization strip (custom scenario only): the discover -> gap -> recipe ->
+       organic-fit -> preview seam as a compact row of chips. */
+    .cb-customization { display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+      min-width: 0; flex: 1 1 auto; }
+    .cb-cz-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 11px;
+      line-height: 1.2; padding: 4px 10px; border-radius: 999px; white-space: nowrap;
+      border: 1px solid color-mix(in srgb, var(--sn-text, #fff) 18%, transparent);
+      background: color-mix(in srgb, var(--sn-bg, #0e1116) 70%, transparent);
+      color: var(--sn-text-dim, #8b949e); }
+    .cb-cz-chip .cb-icon { font-family: "Material Symbols Outlined"; font-size: 14px; line-height: 1; }
+    .cb-cz-gap { color: var(--sn-text, #fff);
+      border-color: color-mix(in srgb, var(--sn-danger, #f85149) 60%, transparent);
+      background: color-mix(in srgb, var(--sn-danger, #f85149) 18%, transparent); }
+    .cb-cz-recipe { color: var(--sn-text, #fff);
+      border-color: color-mix(in srgb, var(--sn-success, #3fb950) 60%, transparent);
+      background: color-mix(in srgb, var(--sn-success, #3fb950) 18%, transparent); }
+    .cb-cz-fit { color: var(--sn-text, #fff);
+      border-color: color-mix(in srgb, var(--sn-success, #3fb950) 50%, transparent);
+      background: color-mix(in srgb, var(--sn-success, #3fb950) 12%, transparent); }
+    .cb-cz-preview { color: var(--sn-text, #fff);
+      border-color: var(--sn-node-selected, #58a6ff);
+      background: color-mix(in srgb, var(--sn-node-selected, #58a6ff) 18%, transparent); }
     /* Live theme control. */
     .cb-theme { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; margin-inline-start: auto;
       padding-inline-start: 14px; border-inline-start: 1px solid color-mix(in srgb, var(--sn-text, #fff) 12%, transparent); }
@@ -266,7 +288,7 @@ function syncRovingTabs(tabs, isActive) {
   }
 }
 
-const CLASS_ICONS = { programming: 'code', video: 'movie', automation: 'hub' };
+const CLASS_ICONS = { programming: 'code', video: 'movie', automation: 'hub', custom: 'auto_awesome' };
 const REGISTERS = (GEOMETRY_PROFILE_NAMES || []).filter((name) => name === 'tool' || name === 'product');
 
 // Live theme state, applied to the document root via the cascade theme so every
@@ -317,6 +339,35 @@ const SELF_REGISTERING_MODULES = {
   'sn-canvas-viewport': 'symbiote-ui/viewport/CanvasViewport/CanvasViewport.js',
   'sn-timeline-editor': 'symbiote-ui/timeline/TimelineEditor/TimelineEditor.js',
 };
+
+// Demo stand-in for the custom scenario's FREE-CREATED module: its hand-authored
+// recipe tag has no .reg() in symbiote-ui, so for RENDERING we alias every custom
+// recipe tagName to the real sn-data-table component. The alias is collected from
+// each scenario's customization.recipe so a defined custom element actually paints.
+const MODULE_ALIASES = Object.create(null);
+for (let scenario of scenarios) {
+  let tagName = scenario.customization?.recipe?.tagName;
+  if (tagName && tagName !== 'sn-data-table') MODULE_ALIASES[tagName] = 'sn-data-table';
+}
+function resolveModuleTag(tag) {
+  return MODULE_ALIASES[tag] || tag;
+}
+
+// Rewrite a config's panelTypes component tags through the render alias so the
+// free-created custom module renders as its sn-data-table stand-in. Returns the
+// original config untouched when no panel uses an aliased tag.
+function aliasConfig(config) {
+  let panelTypes = config?.panelTypes;
+  if (!panelTypes) return config;
+  let aliased = null;
+  for (let [type, panel] of Object.entries(panelTypes)) {
+    let resolved = resolveModuleTag(panel?.component);
+    if (resolved === panel?.component) continue;
+    if (!aliased) aliased = { ...config, panelTypes: { ...panelTypes } };
+    aliased.panelTypes[type] = { ...panel, component: resolved, aliasedFrom: panel.component };
+  }
+  return aliased || config;
+}
 
 let activeKey = null;
 let activeVariantId = null;
@@ -377,7 +428,9 @@ function normalizeLayoutNode(node, path = 'root') {
 }
 
 async function defineWorkspaceModules(config) {
-  let tags = Object.values(config?.panelTypes || {}).map((panel) => panel?.component).filter(Boolean);
+  let tags = Object.values(config?.panelTypes || {})
+    .map((panel) => resolveModuleTag(panel?.component))
+    .filter(Boolean);
   for (let tag of tags) {
     if (customElements.get(tag)) { definedModuleTags.add(tag); continue; }
     if (definedModuleTags.has(tag)) continue;
@@ -567,6 +620,30 @@ function seedPanel(root, panelType, panel, scenario, config = scenario.config) {
     });
     return;
   }
+  // Free-created custom module: it has no real component, so it was aliased to
+  // sn-data-table for rendering. Seed it through the same sn-data-table setter as
+  // a clearly-mocked heatmap of the requested capability's signal intensity.
+  if (component === 'sn-data-table' && panel.aliasedFrom) {
+    let table = findPanelElement(root, 'sn-data-table');
+    let capability = scenario.customization?.recipe?.capabilities?.[0] || 'signal';
+    let bands = ['Cold', 'Low', 'Warm', 'High', 'Peak'];
+    table?.setData?.({
+      columns: [
+        { key: 'segment', label: 'Segment', sortable: true },
+        ...bands.map((band) => ({ key: band.toLowerCase(), label: band })),
+      ],
+      rows: ['Acquisition', 'Activation', 'Retention', 'Revenue'].map((segment, row) => ({
+        id: segment,
+        segment,
+        ...Object.fromEntries(bands.map((band, col) =>
+          [band.toLowerCase(), String(((row * 7 + col * 13) % 9) * 11 + 5) + '%'])),
+      })),
+      emptyText: 'No ' + capability + ' signal',
+    });
+    table?.setAttribute?.('selection-mode', 'single');
+    table?.setAttribute?.('title', panel.title || (panel.aliasedFrom + ' (demo stand-in)'));
+    return;
+  }
   if (component === 'sn-data-table') {
     let table = findPanelElement(root, 'sn-data-table');
     table?.setData?.({
@@ -696,7 +773,7 @@ function seedLayout(layout, config, scenario, variantId, onSeeded) {
 // chat stays docked on the right.
 async function mountVariant(scenario, variant) {
   if (!stageEl) throw new Error('chat-builder: stage host (#' + STAGE_HOST_ID + ') is missing; cannot mount a variant');
-  let config = variant.config || scenario.config;
+  let config = aliasConfig(variant.config || scenario.config);
   activeVariantId = variant.id;
   activeVariantExportJson = typeof variant.exportJson === 'string' ? variant.exportJson : '';
   await defineWorkspaceModules(config);
@@ -725,7 +802,8 @@ async function relaunchFromExport(key) {
   let scenario = scenarioByKey(key);
   if (!scenario || !stageEl) return false;
   let variantId = activeVariantId;
-  let { config: config2 } = importConfig(activeVariantExportJson);
+  let imported = importConfig(activeVariantExportJson);
+  let config2 = aliasConfig(imported.config);
   if (!config2) return false;
 
   // COLD teardown: drop the live node and its reference, then build a brand-new
@@ -788,14 +866,64 @@ function renderScenarioHead(scenario) {
   choice.append(choiceLabel, variantWrap);
   head.appendChild(choice);
 
-  // Compact answered-questionnaire summary: a single truncating line of
-  // "Question: chosen, chosen" pairs, with the full recap available on hover. The
-  // detailed board lives in the chat; this is only a scannable header recap.
-  let answers = renderAnswerSummary(scenario);
-  if (answers) head.appendChild(answers);
+  // The custom scenario surfaces the free-creation seam (discover -> gap -> recipe
+  // -> organic-fit -> preview) as a compact strip in place of the answered-summary
+  // recap; every other class keeps its condensed questionnaire summary.
+  let strip = scenario.customization ? renderCustomizationStrip(scenario) : renderAnswerSummary(scenario);
+  if (strip) head.appendChild(strip);
 
   head.appendChild(buildThemeControl());
   return head;
+}
+
+// Render the customization strip for the custom scenario: a discover/catalog chip,
+// a red gap badge for the capability the canonical catalog could not satisfy, a green
+// recipe chip naming the hand-authored module tag, an organic-fit chip, and a
+// preview badge with the proposed-patch change count. Carries the data-* hooks the
+// smoke reads: data-customization-gap, data-organic-fit, data-patch-preview.
+function renderCustomizationStrip(scenario) {
+  let customization = scenario.customization || {};
+  let gap = customization.gap || {};
+  let recipe = customization.recipe || {};
+  let organicFit = customization.organicFit || {};
+  let preview = customization.patchPreview || {};
+  let catalog = customization.catalogDigest || {};
+  let capability = gap.capability || 'capability';
+  let accepted = organicFit.accepted === true;
+  let count = Number.isFinite(preview.count) ? preview.count : (preview.changes || []).length;
+
+  let strip = document.createElement('div');
+  strip.className = 'cb-customization';
+  strip.dataset.customizationGap = capability;
+  strip.dataset.organicFit = accepted ? 'accepted' : 'rejected';
+  strip.dataset.patchPreview = String(count);
+
+  let chip = (className, icon, text, title) => {
+    let el = document.createElement('span');
+    el.className = 'cb-cz-chip ' + className;
+    el.innerHTML = '<span class="cb-icon" aria-hidden="true">' + icon + '</span>';
+    let label = document.createElement('span');
+    label.textContent = text;
+    el.appendChild(label);
+    if (title) el.title = title;
+    return el;
+  };
+
+  let categories = Array.isArray(catalog.categories) ? catalog.categories.length : 0;
+  strip.appendChild(chip('cb-cz-catalog', 'travel_explore',
+    'Catalog: ' + categories + ' categories',
+    (catalog.sampleTags || []).join(', ') || 'discovered component catalog'));
+  strip.appendChild(chip('cb-cz-gap', 'block', 'Gap: ' + capability,
+    'No canonical module covers "' + capability + '"'));
+  strip.appendChild(chip('cb-cz-recipe', 'auto_awesome', 'Recipe: ' + (recipe.tagName || 'module'),
+    (recipe.capabilities || []).join(', ') || 'hand-authored module descriptor'));
+  strip.appendChild(chip('cb-cz-fit', accepted ? 'verified' : 'error',
+    'Organic-fit: ' + (accepted ? 'accepted' : 'rejected') + ' (' + (organicFit.surface || 'modules') + ')',
+    organicFit.summary || 'workspace-level design-policy validation'));
+  strip.appendChild(chip('cb-cz-preview', 'difference', 'Proposed (preview): ' + count,
+    'propose_workspace_patch preview, not applied'));
+
+  return strip;
 }
 
 // Condense the answered questionnaire into one compact line for the header. Returns
@@ -1079,6 +1207,9 @@ window.__chatBuilder = {
   chatComponent: CHAT_COMPONENT,
   chatPanel: CHAT_PANEL,
   unseededComponents,
+  // Render alias for free-created custom modules (recipe tag -> sn-data-table stand-in),
+  // so smoke can resolve an exported recipe tag to the element that actually paints.
+  resolveModuleTag,
 };
 `;
 }

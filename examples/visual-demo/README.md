@@ -100,8 +100,9 @@ npm run demo:chat-builder
 This demo is questionnaire-driven: the system offers the choices, the agent
 selects, and the system places panels from canonical templates — the agent does
 not decide placement. It starts with a single chat that presents a
-workspace-class menu — **Programming**, **Video**, or **Automation**. Selecting a
-class drives the real construction protocol on one session via `dispatch(...)`:
+workspace-class menu — **Programming**, **Video**, **Automation**, or
+**Customization**. Selecting a class drives the real construction protocol on one
+session via `dispatch(...)`:
 `classify_workspace` → `build_construction_questions` (the questionnaire) →
 `answer_construction_question` (the agent picks offered options) → `plan_workspace`
 → `construct_workspace` (the system materializes the layout from the canonical
@@ -125,6 +126,24 @@ surfaced as selectable chips alongside the answered questionnaire; picking one
 re-mounts that workspace with no reload. A live **theme control** (mode, accent
 hue, and the geometry register tool/product) re-applies the Cascade theme, so the
 color, geometry, and motion scales are exercised live in the browser.
+
+The constructed workspace is **portable**: a variant can be relaunched from its
+exported portable JSON. `relaunchFromExport` imports the variant's `export_config`
+artifact in-browser, tears the live `panel-layout` down, and mounts a fresh
+container seeded solely from that JSON — proving "export → teardown → relaunch in a
+fresh host = the same workspace" with the panel set, docked-right chat, and theme
+token preserved.
+
+**Customization** is the one place the agent free-creates — when the canonical
+catalog cannot satisfy a requested capability. The class runs the real path:
+`discover_components` shows the catalog, `construct_workspace` with an uncovered
+`requiredCapabilities` is genuinely rejected (`construction_capabilities_missing`),
+a new module descriptor is hand-authored, `validate_workspace_patch` checks its
+organic fit, and `propose_workspace_patch` previews the overlay — **preview only,
+never applied, no live writes**. The header surfaces the gap → recipe → organic-fit
+→ proposed-preview trace, and the free-created module renders beside the docked chat
+(aliased to `sn-data-table` as a visible demo stand-in, since no real component
+exists for it).
 
 Generate the bundle without serving (CI/package smoke):
 

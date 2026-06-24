@@ -122,12 +122,12 @@ async function build() {
   return cached;
 }
 
-test('all three workspace classes are present', async () => {
+test('all workspace classes are present', async () => {
   let { scenarios, chatPanel, chatComponent } = await build();
   assert.equal(chatPanel, CHAT_PANEL);
   assert.equal(chatComponent, CHAT_COMPONENT);
   let keys = scenarios.map((s) => s.key).sort();
-  assert.deepEqual(keys, ['automation', 'programming', 'video']);
+  assert.deepEqual(keys, ['automation', 'custom', 'programming', 'video']);
 });
 
 test('each scenario answers the offered questionnaire with a curated choice', async () => {
@@ -382,4 +382,89 @@ test('topology produces distinct workspace arrangements across the demo', async 
   assert.equal(automationDefault.topology, 'grid', 'automation default is not the grid topology');
   assert.ok(Math.abs(workspaceRoot(automationDefault.config).ratio - 0.5) < 1e-6,
     'automation grid root is not balanced');
+});
+
+test('the custom scenario surfaces a customization payload', async () => {
+  let { scenarios } = await build();
+  let custom = scenarios.find((s) => s.key === 'custom');
+  assert.ok(custom, 'custom scenario is missing');
+  let c = custom.customization;
+  assert.ok(c && typeof c === 'object', 'custom scenario has no customization payload');
+  assert.deepEqual(
+    Object.keys(c).sort(),
+    ['catalogDigest', 'gap', 'organicFit', 'patchPreview', 'recipe'],
+    'customization payload keys differ from the contract',
+  );
+  assert.ok(Array.isArray(c.catalogDigest.categories), 'catalogDigest.categories is not an array');
+  assert.ok(Array.isArray(c.catalogDigest.sampleTags), 'catalogDigest.sampleTags is not an array');
+});
+
+test('customization.gap captures a real, uncovered capability rejection', async () => {
+  let { scenarios } = await build();
+  let { gap } = scenarios.find((s) => s.key === 'custom').customization;
+  assert.equal(typeof gap.capability, 'string', 'gap has no capability');
+  assert.ok(gap.capability.length > 0, 'gap capability is empty');
+  assert.ok(Array.isArray(gap.recovery) && gap.recovery.length > 0, 'gap recovery is empty');
+  // The recovery names the agent action that unblocks the gap: author a module.
+  assert.ok(
+    gap.recovery.every((step) => step.action === 'provide-module-capability'),
+    'gap recovery action is not provide-module-capability',
+  );
+  assert.ok(Array.isArray(gap.alternatives), 'gap alternatives is not an array');
+});
+
+test('customization.recipe is the free-created module and renders a real component', async () => {
+  let { scenarios } = await build();
+  let custom = scenarios.find((s) => s.key === 'custom');
+  let { recipe, gap } = custom.customization;
+  assert.equal(typeof recipe.tagName, 'string', 'recipe has no tagName');
+  assert.ok(recipe.tagName.length > 0, 'recipe tagName is empty');
+  assert.ok(Array.isArray(recipe.capabilities), 'recipe capabilities is not an array');
+  assert.ok(recipe.capabilities.includes(gap.capability),
+    'recipe does not cover the gap capability it was authored for');
+  assert.equal(recipe.panelType.component, recipe.tagName,
+    'recipe panelType component is not the free-created tag');
+  // The free-created tag is materialized as a real panel in the constructed config.
+  for (let variant of custom.variants) {
+    let situation = variant.config.panelTypes.situationMap;
+    assert.ok(situation, `${variant.id} did not construct the free-created module panel`);
+    assert.equal(situation.component, recipe.tagName,
+      `${variant.id} free-created panel renders the wrong component`);
+  }
+});
+
+test('customization.organicFit accepts on the modules surface with a non-empty preview', async () => {
+  let { scenarios } = await build();
+  let { organicFit, patchPreview } = scenarios.find((s) => s.key === 'custom').customization;
+  assert.equal(organicFit.accepted, true, 'organic fit was not accepted');
+  assert.equal(organicFit.surface, 'modules', 'organic fit surface is not modules');
+  assert.equal(typeof organicFit.summary, 'string', 'organic fit has no summary');
+  assert.ok(Array.isArray(organicFit.diagnostics), 'organic fit diagnostics is not an array');
+  assert.ok(patchPreview.count > 0, 'patch preview produced no changes');
+  assert.ok(Array.isArray(patchPreview.changes), 'patch preview changes is not an array');
+  assert.equal(patchPreview.changes.length, patchPreview.count,
+    'patch preview count disagrees with the changes list');
+});
+
+test('the custom scenario constructs a strict, chat-right workspace', async () => {
+  let { scenarios } = await build();
+  let custom = scenarios.find((s) => s.key === 'custom');
+  assert.ok(custom.variants.length >= 2, 'custom scenario has fewer than 2 variants');
+  for (let variant of custom.variants) {
+    let label = `custom/${variant.id}`;
+    let validation = validateWorkspaceConfig(variant.config, { strict: true });
+    assert.equal(validation.valid, true, `${label}: ${JSON.stringify(validation.errors)}`);
+    assertChatDockedRight(variant.config, label);
+
+    // The constructed config also passes the strict dispatch validator.
+    let session = createSession();
+    session.config = variant.config;
+    let strict = await dispatch('validate_config', { strict: true }, session);
+    assert.equal(strict.valid, true, `${label} dispatch strict validation failed: ${JSON.stringify(strict.errors)}`);
+
+    // The free-created module sits on the workspace side, beside the docked chat.
+    let left = leftPanels(variant.config);
+    assert.ok(left.includes('situationMap'), `${label} free-created module is not on the workspace side`);
+    assert.ok(!left.includes(CHAT_PANEL), `${label} chat leaked into the workspace side`);
+  }
 });

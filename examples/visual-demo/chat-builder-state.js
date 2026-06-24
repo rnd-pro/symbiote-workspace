@@ -28,11 +28,74 @@
  */
 
 import { createSession, dispatch } from '../../runtime/index.js';
+import { symbioteUiRoot, workspacePackageRoot } from './server-utils.js';
 
 /** Panel-type name for the persistent chat region. */
 export const CHAT_PANEL = 'chat';
 /** symbiote-ui component tag mounted into the chat region. */
 export const CHAT_COMPONENT = 'chat-workspace';
+
+/**
+ * Free-created module for the CUSTOMIZATION class. Its capability tokens
+ * (`geospatial`, `map`, `layers`) deliberately do not overlap any canonical
+ * module capability, so `construct_workspace` with `requiredCapabilities:
+ * ['geospatial.map']` genuinely rejects until this module is authored — the one
+ * place the agent free-creates instead of selecting from the catalog. The tag
+ * aliases to the real `sn-data-table` component for RENDERING; it is a clear
+ * demo stand-in for a geospatial surface.
+ */
+const CUSTOM_INTENT = 'geospatial situational map operations workspace';
+const CUSTOM_TEMPLATE_NAME = 'custom-geospatial';
+const CUSTOM_REQUIRED_CAPABILITY = 'geospatial.map';
+const CUSTOM_MODULE_TAG = 'geo-situation-map';
+const CUSTOM_MODULE_CAPABILITIES = [
+  { tagName: CUSTOM_MODULE_TAG, capabilities: ['geospatial.map', 'geospatial.layers'] },
+];
+/** One-panel workspace template entry whose panel mounts the free-created tag. */
+const CUSTOM_PANEL_TYPE = {
+  title: 'Situation Map',
+  icon: 'public',
+  component: CUSTOM_MODULE_TAG,
+};
+/**
+ * Hand-authored workspace template. It pairs the free-created module with two
+ * canonical companions (a records table and an activity feed) so the class can
+ * offer the questionnaire more than one module and the variants differ by which
+ * canonical panels join the new module.
+ */
+const CUSTOM_WORKSPACE_TEMPLATE = {
+  name: CUSTOM_TEMPLATE_NAME,
+  description: 'Free-created geospatial situational workspace with records and activity.',
+  config: {
+    version: '0.1.0',
+    name: 'Geospatial Console',
+    register: 'tool',
+    groups: [{ id: 'ops', name: 'Operations', icon: 'public' }],
+    sections: [{ id: 'map', label: 'Map', icon: 'public', order: 0, groupId: 'ops' }],
+    panelTypes: {
+      situationMap: { ...CUSTOM_PANEL_TYPE, behavior: { importance: 90, minInlineSize: 420 } },
+      records: { title: 'Records', icon: 'table', component: 'sn-data-table', behavior: { importance: 70, minInlineSize: 320 } },
+      activity: { title: 'Activity', icon: 'history', component: 'sn-event-feed', behavior: { importance: 60, minInlineSize: 280 } },
+    },
+    layout: {
+      type: 'split', direction: 'horizontal', ratio: 0.6,
+      first: { type: 'panel', panelType: 'situationMap' },
+      second: {
+        type: 'split', direction: 'vertical', ratio: 0.5,
+        first: { type: 'panel', panelType: 'records' },
+        second: { type: 'panel', panelType: 'activity' },
+      },
+    },
+    components: {
+      catalog: [CUSTOM_MODULE_TAG, 'sn-data-table', 'sn-event-feed'],
+      modules: [
+        ...CUSTOM_MODULE_CAPABILITIES,
+        { tagName: 'sn-data-table', capabilities: ['data.table', 'admin.records'] },
+        { tagName: 'sn-event-feed', capabilities: ['activity.feed'] },
+      ],
+    },
+  },
+};
 
 /**
  * Workspace classes to construct. Each drives one session through the real
@@ -94,6 +157,27 @@ const SCENARIOS = [
       { id: 'minimal', label: 'Minimal — queue + workflow', modules: ['queue', 'workflow'], topology: 'grid', theme: { mode: 'light' } },
       { id: 'standard', label: 'Standard — queue, workflow, reply', modules: ['queue', 'workflow', 'reply'], topology: 'grid', theme: { mode: 'dark' } },
       { id: 'full', label: 'Full — all five modules', modules: ['history', 'imports', 'queue', 'reply', 'workflow'], topology: 'grid', theme: { mode: 'custom', hue: 200 } },
+    ],
+  },
+  {
+    // CUSTOMIZATION class: the canonical catalog cannot satisfy a geospatial
+    // capability, so the agent free-creates a module and a workspace template and
+    // constructs from them. `construction` carries those extras into every
+    // dispatch in the build pipeline so the same docking/topology/export path the
+    // other classes use also serves the custom class.
+    key: 'custom',
+    label: 'Customization',
+    intent: CUSTOM_INTENT,
+    template: CUSTOM_TEMPLATE_NAME,
+    default: 'standard',
+    construction: {
+      workspaceTemplates: [CUSTOM_WORKSPACE_TEMPLATE],
+      moduleCapabilities: CUSTOM_MODULE_CAPABILITIES,
+      requiredCapabilities: [CUSTOM_REQUIRED_CAPABILITY],
+    },
+    variants: [
+      { id: 'minimal', label: 'Lean — new module + activity', modules: ['situationMap', 'activity'], topology: 'focus-canvas', theme: { mode: 'dark' } },
+      { id: 'standard', label: 'Full desk — new module + records + activity', modules: ['situationMap', 'records', 'activity'], topology: 'grid', theme: { mode: 'custom', hue: 150 } },
     ],
   },
 ];
@@ -262,14 +346,18 @@ function themeFromQuestions(questionnaire, variant) {
  */
 async function buildVariant(scenario, variant) {
   let { key, label, intent, template } = scenario;
+  // Construction extras let a class hand the system a free-created module and
+  // workspace template (the CUSTOMIZATION class); canonical classes pass none.
+  let extras = scenario.construction || {};
   let session = createSession();
   let stages = [];
 
-  // 1. The system classifies the intent and names the canonical template.
-  let classified = requireOk(key, 'classify_workspace', await dispatch('classify_workspace', { intent }, session));
+  // 1. The system classifies the intent and names the (canonical or free-created)
+  //    template.
+  let classified = requireOk(key, 'classify_workspace', await dispatch('classify_workspace', { intent, ...extras }, session));
 
   // 2. The system builds its questionnaire of offered options.
-  let built = requireOk(key, 'build_construction_questions', await dispatch('build_construction_questions', { intent }, session));
+  let built = requireOk(key, 'build_construction_questions', await dispatch('build_construction_questions', { intent, template, ...extras }, session));
   let questionnaire = built.questions;
 
   // 3. The agent SELECTS from the offered options. This variant submits a
@@ -313,8 +401,8 @@ async function buildVariant(scenario, variant) {
   // 4. The system plans, then constructs: it places modules from the canonical
   //    template into session.config. Planning is no-mutation; construction
   //    mutates the session.
-  requireOk(key, 'plan_workspace', await dispatch('plan_workspace', { intent, answers }, session));
-  let constructed = requireOk(key, 'construct_workspace', await dispatch('construct_workspace', { intent, answers }, session));
+  requireOk(key, 'plan_workspace', await dispatch('plan_workspace', { intent, template, answers, ...extras }, session));
+  let constructed = requireOk(key, 'construct_workspace', await dispatch('construct_workspace', { intent, template, answers, ...extras }, session));
   if (constructed.templateName !== template) {
     throw new Error(`[${key}] expected template "${template}" but constructed "${constructed.templateName}"`);
   }
@@ -513,6 +601,145 @@ function cloneConfig(value) {
 }
 
 /**
+ * Read the symbiote-ui catalog through `discover_components` and reduce it to a
+ * small digest. Falls back to a minimal digest (never throws) when symbiote-ui
+ * cannot be resolved, so the demo build stays offline-safe.
+ * @returns {Promise<{categories: string[], sampleTags: string[]}>}
+ */
+async function readCatalogDigest() {
+  let fallback = { categories: ['display', 'board'], sampleTags: ['sn-data-table', 'sn-event-feed'] };
+  try {
+    let uiPath = await symbioteUiRoot(workspacePackageRoot());
+    let session = createSession();
+    let result = await dispatch('discover_components', { uiPath }, session);
+    let categories = Object.keys(result?.categories || {});
+    if (categories.length === 0) return fallback;
+    let sampleTags = Object.values(result.categories).flat().slice(0, 8);
+    return { categories: categories.sort(), sampleTags };
+  } catch {
+    return fallback;
+  }
+}
+
+/**
+ * Drive the genuine capability rejection: `construct_workspace` with a required
+ * capability the canonical catalog cannot cover. Returns the gap (capability,
+ * recovery, alternatives) read straight from the rejection's readiness; throws
+ * if the rejection does NOT fire, since a covered capability would contradict
+ * the "catalog cannot satisfy" premise.
+ * @returns {Promise<{capability: string, recovery: object[], alternatives: object[]}>}
+ */
+async function readConstructionGap() {
+  let session = createSession();
+  let rejection = await dispatch('construct_workspace', {
+    intent: CUSTOM_INTENT,
+    template: 'admin',
+    requiredCapabilities: [CUSTOM_REQUIRED_CAPABILITY],
+  }, session);
+  if (rejection.status !== 'error' || rejection.code !== 'construction_capabilities_missing') {
+    throw new Error(`[custom] expected a capability rejection but got: ${JSON.stringify(rejection.status)}/${rejection.code}`);
+  }
+  let recovery = rejection.readiness?.recovery || [];
+  if (recovery.length === 0) {
+    throw new Error('[custom] capability rejection carried no recovery steps');
+  }
+  let alternatives = recovery.flatMap((step) => step.alternatives || []);
+  return {
+    capability: CUSTOM_REQUIRED_CAPABILITY,
+    recovery: cloneConfig(recovery),
+    alternatives: cloneConfig(alternatives),
+  };
+}
+
+/**
+ * Run the organic-fit check: PREVIEW-only `validate_workspace_patch` +
+ * `propose_workspace_patch` for adding the free-created module beside the panels
+ * of a constructed base, on the `modules` patch surface. Never applies the patch
+ * and never writes to disk.
+ * @param {Object} baseConfig Constructed (pre-dock) workspace config.
+ * @returns {Promise<{
+ *   organicFit: {accepted: boolean, surface: string, summary: string, diagnostics: object[]},
+ *   patchPreview: {count: number, changes: object[]},
+ * }>}
+ */
+async function readOrganicFit(baseConfig) {
+  let session = createSession();
+  session.config = cloneConfig(baseConfig);
+  // The modules patch keeps every existing panel and ADDS the free-created
+  // module, so the workspace-level design policy validates a clean superset.
+  let patch = {
+    modules: {
+      panelTypes: {
+        ...session.config.panelTypes,
+        situationMap: { ...CUSTOM_PANEL_TYPE, behavior: { importance: 80, minInlineSize: 420 } },
+      },
+    },
+  };
+  let validation = await dispatch('validate_workspace_patch', { patch }, session);
+  let proposal = await dispatch('propose_workspace_patch', { patch }, session);
+  let summary = validation.accepted
+    ? `Free-created module fits the modules surface (${proposal.count} change${proposal.count === 1 ? '' : 's'}).`
+    : 'Free-created module was rejected by the design policy.';
+  return {
+    organicFit: {
+      accepted: validation.accepted === true,
+      // The patch-key surface being validated (a `{modules:{panelTypes}}` patch),
+      // i.e. the dimension the free-created module fits — distinct from the tool's
+      // top-level `surface` ('workspace'). The modules-surface routing is asserted
+      // in tests/dispatch-construction-tools.test.js.
+      surface: 'modules',
+      summary,
+      diagnostics: cloneConfig(validation.diagnostics || []),
+    },
+    patchPreview: {
+      count: proposal.count,
+      changes: cloneConfig(proposal.changes || []),
+    },
+  };
+}
+
+/**
+ * Build the CUSTOMIZATION class. It first reuses the shared variant pipeline to
+ * construct the workspace from the free-created module + template, then records
+ * the customization seam (catalog digest, genuine gap, hand-authored recipe,
+ * organic fit, and a preview-only patch) the render side reads.
+ * @param {Object} scenario
+ * @returns {Promise<Object>} One scenario entry plus its `customization` payload.
+ */
+async function buildCustomScenario(scenario) {
+  let entry = await buildScenario(scenario);
+
+  let catalogDigest = await readCatalogDigest();
+  let gap = await readConstructionGap();
+
+  // Constructed (pre-dock) CANONICAL base for the organic-fit preview: the patch
+  // ADDS the free-created module beside the catalog panels, proving it fits a
+  // workspace it was never part of. Throwaway session; nothing writes to disk.
+  let baseSession = createSession();
+  requireOk('custom', 'construct_workspace', await dispatch('construct_workspace', {
+    intent: 'admin records operations console',
+    template: 'admin',
+    answers: { 'theme-mode': 'dark' },
+  }, baseSession));
+  let { organicFit, patchPreview } = await readOrganicFit(baseSession.config);
+
+  return {
+    ...entry,
+    customization: {
+      catalogDigest,
+      gap,
+      recipe: {
+        tagName: CUSTOM_MODULE_TAG,
+        capabilities: CUSTOM_MODULE_CAPABILITIES[0].capabilities.slice(),
+        panelType: { ...CUSTOM_PANEL_TYPE },
+      },
+      organicFit,
+      patchPreview,
+    },
+  };
+}
+
+/**
  * Build the chat-first, questionnaire-driven workspaces for every class.
  *
  * @returns {Promise<{
@@ -527,13 +754,22 @@ function cloneConfig(value) {
  *     stages: Array<{title: string, config: Object, digest: Object}>,
  *     config: Object,
  *     exportJson: string,
+ *     customization?: {
+ *       catalogDigest: {categories: string[], sampleTags: string[]},
+ *       gap: {capability: string, recovery: object[], alternatives: object[]},
+ *       recipe: {tagName: string, capabilities: string[], panelType: {title: string, icon: string, component: string}},
+ *       organicFit: {accepted: boolean, surface: string, summary: string, diagnostics: object[]},
+ *       patchPreview: {count: number, changes: object[]},
+ *     },
  *   }>,
  * }>}
  */
 export async function buildChatFirstWorkspace() {
   let scenarios = [];
   for (let scenario of SCENARIOS) {
-    scenarios.push(await buildScenario(scenario));
+    scenarios.push(scenario.key === 'custom'
+      ? await buildCustomScenario(scenario)
+      : await buildScenario(scenario));
   }
   return {
     chatPanel: CHAT_PANEL,
