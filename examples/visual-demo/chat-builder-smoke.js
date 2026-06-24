@@ -896,13 +896,19 @@ async function run() {
           let layout = document.querySelector('panel-layout');
           let aliased = layout?.querySelector('sn-data-table') || null;
           let chat = layout?.querySelector(tag) || null;
-          let text = strip ? strip.textContent : '';
           let gap = strip?.dataset.customizationGap || '';
+          // The gap is surfaced OUTCOME-FIRST (UX Slice 5): the gap chip's visible label
+          // is plain language and the precise capability moves to its tooltip (title),
+          // while the data-customization-gap hook stays the capability. Assert the gap
+          // chip exists and carries the capability in its title, not as raw 'Gap:' text.
+          let gapChip = strip?.querySelector('.cb-cz-gap') || null;
+          let gapChipTitle = gapChip?.getAttribute('title') || '';
           return {
             applicable: true,
             stripPresent: Boolean(strip),
             gapHook: gap,
-            showsGapText: Boolean(gap && text.includes('Gap: ' + gap)),
+            gapChipPresent: Boolean(gapChip),
+            gapCapabilityInTitle: Boolean(gap && gapChipTitle.includes(gap)),
             organicFitAccepted: strip?.dataset.organicFit === 'accepted',
             patchPreviewCount: Number(strip?.dataset.patchPreview || '0'),
             showsPreviewBadge: Boolean(strip?.querySelector('.cb-cz-preview')),
@@ -915,7 +921,8 @@ async function run() {
       customization.ok = isCustom
         ? Boolean(
             customization.stripPresent &&
-            customization.showsGapText &&
+            customization.gapChipPresent &&
+            customization.gapCapabilityInTitle &&
             customization.organicFitAccepted &&
             customization.patchPreviewCount > 0 &&
             customization.showsPreviewBadge &&
@@ -1006,6 +1013,120 @@ async function run() {
         statesReady.cardsResolved,
       );
 
+      // HEADLINE CAPABILITIES legible & honest (UX Slice 5). On the freshly-shown,
+      // assembled scenario (statesReady re-showed it), prove the four headline-honesty
+      // fixes: (a) a VISIBLE relaunch control exists and a REAL click on it triggers a
+      // relaunch (body.dataset.relaunched updates to this scenario:variant); (b) the
+      // custom scenario's aliased stand-in module renders a title containing 'stand-in';
+      // (c) the customization chips read OUTCOME-FIRST (no raw 'Gap:'/'Recipe:' visible
+      // labels), with the precise terms kept in tooltips; (d) the built-scenario chat
+      // composer placeholder is honest about the read-only scope (no 'Refine'/'describe').
+      let activeVariantForRelaunch = await page.evaluate(() => document.body.dataset.activeVariant || '');
+      let relaunchControl = await page.evaluate(() => {
+        let btn = document.querySelector('#stage .cb-relaunch');
+        if (!btn) return { present: false };
+        let box = btn.getBoundingClientRect();
+        let cs = getComputedStyle(btn);
+        return {
+          present: true,
+          isButton: btn.tagName.toLowerCase() === 'button',
+          visible: box.width > 0 && box.height > 0 && cs.display !== 'none' && cs.visibility !== 'hidden',
+          label: btn.textContent.trim(),
+        };
+      });
+      // (a) Real pointer click on the visible relaunch button drives the cold rebuild.
+      // Clear the relaunch marker first so the wait observes THIS click re-setting it (the
+      // earlier programmatic relaunchReady test may have left it at the same key:variant).
+      let relaunchClicked = false;
+      if (relaunchControl.present) {
+        await page.evaluate(() => { document.body.dataset.relaunched = ''; });
+        let preClickLayout = await page.$('panel-layout');
+        await page.click('#stage .cb-relaunch', { timeout });
+        relaunchClicked = await page.waitForFunction(
+          ({ k, v }) => document.body.dataset.relaunched === k + ':' + v &&
+            Boolean(document.querySelector('panel-layout')),
+          { k: key, v: activeVariantForRelaunch },
+          { timeout },
+        ).then(() => true).catch(() => false);
+        // The button click rebuilt the workspace COLD: the pre-click panel-layout node was
+        // torn down and replaced (proves a real rebuild, not a no-op).
+        relaunchClicked = relaunchClicked && (preClickLayout
+          ? !(await preClickLayout.evaluate((el) => el.isConnected).catch(() => false))
+          : true);
+        // A transient confirmation toast is shown on completion (role=status).
+        await waitAndSnapshot();
+      }
+      let toastShown = await page.evaluate(() => {
+        let toast = document.querySelector('.cb-toast');
+        return Boolean(toast && /relaunch/i.test(toast.textContent || ''));
+      });
+
+      // (c) Customization chips read outcome-first; (b) the stand-in title; both are
+      // custom-scenario specific (trivially satisfied for the canonical classes).
+      let standInTitleHonest = true;
+      let chipsOutcomeFirst = true;
+      let chipLabels = [];
+      if (isCustom) {
+        let headline = await page.evaluate(() => {
+          let strip = document.querySelector('#stage .cb-customization');
+          let chipLabels = strip
+            ? [...strip.querySelectorAll('.cb-cz-chip')].map((c) => {
+                let label = [...c.querySelectorAll('span')].find((s) => !s.classList.contains('cb-icon'));
+                return (label?.textContent || c.textContent || '').trim();
+              })
+            : [];
+          // The aliased stand-in module is the sn-data-table whose own title carries the
+          // honest suffix; its panel chrome header (.panel-title for that node) also reads
+          // as a stand-in. Read both the seeded element title and the rendered header.
+          let aliased = document.querySelector('panel-layout sn-data-table[title]');
+          let elementTitle = aliased?.getAttribute('title') || '';
+          let headerTitles = [...document.querySelectorAll('panel-layout .panel-title, panel-layout .panel-header')]
+            .map((el) => el.textContent.trim());
+          return { chipLabels, elementTitle, headerTitles };
+        });
+        chipLabels = headline.chipLabels;
+        // (c) No chip's VISIBLE label uses the raw debug jargon prefixes.
+        chipsOutcomeFirst = chipLabels.length > 0 &&
+          chipLabels.every((t) => !/^(Gap:|Recipe:|Organic-fit:|Proposed)/i.test(t));
+        // (b) The stand-in module's title (element or its panel header) reads 'stand-in'.
+        standInTitleHonest = /stand-in/i.test(headline.elementTitle) ||
+          headline.headerTitles.some((t) => /stand-in/i.test(t));
+      }
+
+      // (d) The built-scenario chat composer placeholder is honest (no 'Refine'/'describe').
+      let composerPlaceholder = await page.evaluate((tag) => {
+        let chat = document.querySelector('panel-layout ' + tag);
+        let field = chat?.querySelector('textarea, input[type="text"], [contenteditable="true"], [placeholder]') || null;
+        return field ? (field.getAttribute('placeholder') || '') : '';
+      }, chatComponent);
+      let composerHonest = composerPlaceholder.length > 0 &&
+        !/refine|describe/i.test(composerPlaceholder);
+
+      let headlineReady = {
+        relaunchControlPresent: relaunchControl.present,
+        relaunchControlIsButton: Boolean(relaunchControl.isButton),
+        relaunchControlVisible: Boolean(relaunchControl.visible),
+        relaunchControlLabel: relaunchControl.label || '',
+        relaunchClicked,
+        toastShown,
+        isCustom,
+        chipLabels,
+        chipsOutcomeFirst,
+        standInTitleHonest,
+        composerPlaceholder,
+        composerHonest,
+      };
+      headlineReady.ok = Boolean(
+        headlineReady.relaunchControlPresent &&
+        headlineReady.relaunchControlIsButton &&
+        headlineReady.relaunchControlVisible &&
+        headlineReady.relaunchClicked &&
+        headlineReady.toastShown &&
+        headlineReady.chipsOutcomeFirst &&
+        headlineReady.standInTitleHonest &&
+        headlineReady.composerHonest,
+      );
+
       let assertions = {
         layoutMounted: snap.layoutWidth > 0,
         chatPresent: snap.chatWidth > 0,
@@ -1041,6 +1162,12 @@ async function run() {
         // rows (not 'Loading...'), the live status is terminal (no spinner), no settled
         // message shows a typing caret, and board cards show a resolved status.
         statesReady: statesReady.ok,
+        // HEADLINE (UX Slice 5): the differentiators are legible & honest — a visible
+        // relaunch button whose real click cold-rebuilds from export (+ a toast), the
+        // customization chips read outcome-first (not raw 'Gap:'/'Recipe:'), the custom
+        // stand-in module's title says 'stand-in', and the composer placeholder is honest
+        // about the read-only scope (no 'Refine'/'describe').
+        headlineReady: headlineReady.ok,
         noNavigation: snap.url === startUrl && variantSnap.url === startUrl,
       };
 
@@ -1070,6 +1197,7 @@ async function run() {
         relaunch,
         customization,
         statesReady,
+        headlineReady,
         screenshot,
       };
     }

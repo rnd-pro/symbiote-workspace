@@ -159,6 +159,32 @@ ${escapeScriptJson({ imports })}
     .cb-cz-preview { color: var(--sn-text, #fff);
       border-color: var(--sn-node-selected, #58a6ff);
       background: color-mix(in srgb, var(--sn-node-selected, #58a6ff) 18%, transparent); }
+    /* PORTABILITY relaunch control: a real button trailing the scenario header, sized as
+       a compact secondary action so the Layout choice stays the primary. It surfaces the
+       cold-rebuild-from-export story that was previously devtools-only. */
+    .cb-relaunch { font: inherit; font-size: 12px; line-height: 1.2; cursor: pointer;
+      display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto;
+      padding: 5px 12px; border-radius: 7px; white-space: nowrap; color: inherit;
+      border: 1px solid color-mix(in srgb, var(--sn-text, #fff) 18%, transparent);
+      background: color-mix(in srgb, var(--sn-bg, #0e1116) 70%, transparent);
+      transition: border-color 150ms ease, background 150ms ease; }
+    .cb-relaunch .cb-icon { font-family: "Material Symbols Outlined"; font-size: 16px; line-height: 1; }
+    .cb-relaunch:hover { border-color: var(--sn-node-selected, #58a6ff);
+      background: color-mix(in srgb, var(--sn-node-selected, #58a6ff) 14%, transparent); }
+    .cb-relaunch:disabled { opacity: 0.6; cursor: default; }
+    .cb-relaunch:focus-visible {
+      outline: 2px solid var(--sn-node-selected, #58a6ff); outline-offset: 2px; }
+    /* Transient completion toast for the relaunch: pinned to the viewport corner, fades
+       in/out on data-visible, and never blocks interaction (pointer-events: none). */
+    .cb-toast { position: fixed; inset-block-end: 18px; inset-inline-end: 18px; z-index: 50;
+      max-width: 320px; padding: 9px 14px; border-radius: 9px; font-size: 12px; line-height: 1.3;
+      pointer-events: none; opacity: 0; transform: translateY(6px);
+      transition: opacity 180ms ease, transform 180ms ease;
+      color: var(--sn-text, #e6edf3);
+      background: color-mix(in srgb, var(--sn-panel-bg, #161b22) 92%, var(--sn-node-selected, #58a6ff) 8%);
+      border: 1px solid color-mix(in srgb, var(--sn-node-selected, #58a6ff) 45%, transparent);
+      box-shadow: 0 6px 24px color-mix(in srgb, var(--sn-bg, #0e1116) 70%, transparent); }
+    .cb-toast[data-visible="true"] { opacity: 1; transform: translateY(0); }
     /* Live theme control, now hosted in the topbar-right slot. Its sub-controls
        (mode | hue | register) are grouped with light separators between the groups so
        the control reads as three tidy clusters, not a loose row of fiddly widgets. */
@@ -224,6 +250,9 @@ ${escapeScriptJson({ imports })}
       button.cb-class { flex: 0 0 auto; }
       .cb-scenario-head { flex-wrap: wrap; gap: 10px; }
       .cb-choice, .cb-answers, .cb-customization { flex: 1 1 100%; }
+      /* The relaunch button drops to its own full-width row (justified to the start) so
+         the scenario header's children stay cleanly stacked at narrow widths. */
+      .cb-relaunch { flex: 1 1 100%; justify-content: flex-start; }
       .cb-choice { padding-inline-end: 0; border-inline-end: 0; }
       .cb-variants { flex-wrap: wrap; overflow-x: visible; }
       .cb-answers-text { white-space: normal; }
@@ -468,9 +497,16 @@ function resolveModuleTag(tag) {
   return MODULE_ALIASES[tag] || tag;
 }
 
+// The suffix appended to a free-created module's title so its rendered panel header
+// (and seeded element title) reads honestly as a demo stand-in rather than passing the
+// generic sn-data-table off as the requested module.
+const STANDIN_TITLE_SUFFIX = ' (demo stand-in)';
+
 // Rewrite a config's panelTypes component tags through the render alias so the
-// free-created custom module renders as its sn-data-table stand-in. Returns the
-// original config untouched when no panel uses an aliased tag.
+// free-created custom module renders as its sn-data-table stand-in. The aliased panel
+// also gets an honest title (suffixed ' (demo stand-in)') so the layout chrome's panel
+// header — driven by panelTypes[type].title — does not present the stand-in table as the
+// real module. Returns the original config untouched when no panel uses an aliased tag.
 function aliasConfig(config) {
   let panelTypes = config?.panelTypes;
   if (!panelTypes) return config;
@@ -479,7 +515,9 @@ function aliasConfig(config) {
     let resolved = resolveModuleTag(panel?.component);
     if (resolved === panel?.component) continue;
     if (!aliased) aliased = { ...config, panelTypes: { ...panelTypes } };
-    aliased.panelTypes[type] = { ...panel, component: resolved, aliasedFrom: panel.component };
+    let baseTitle = panel.title || type;
+    let title = baseTitle.endsWith(STANDIN_TITLE_SUFFIX) ? baseTitle : baseTitle + STANDIN_TITLE_SUFFIX;
+    aliased.panelTypes[type] = { ...panel, component: resolved, aliasedFrom: panel.component, title };
   }
   return aliased || config;
 }
@@ -635,7 +673,12 @@ function chatWorkspaceState(scenario, config = scenario.config) {
     messages,
     messagesOptions: { scrollToBottom: true },
     composer: {
-      placeholder: 'Refine the ' + (scenario.label || scenario.key) + ' workspace...',
+      // Honest about the static scope: this built-scenario chat is a read-only replay
+      // of the answered questionnaire, not a live free-text channel (there is no send
+      // path). Point the user at the controls that DO mutate the workspace — the class
+      // tabs and the Layout variant chips above — rather than inviting a 'Refine...'
+      // free-text message that would silently no-op.
+      placeholder: 'Switch class or Layout above — this demo is read-only',
       value: '',
       attachedContext: [
         { id: 'class', label: scenario.label || scenario.key },
@@ -661,6 +704,9 @@ function chatWorkspaceState(scenario, config = scenario.config) {
 // renders attractive, non-trivial content through its public setter.
 function seedPanel(root, panelType, panel, scenario, config = scenario.config) {
   let component = panel.component;
+  // Title for content seeding. For an aliased (free-created) module the honest
+  // ' (demo stand-in)' suffix is already baked into panel.title by aliasConfig, so the
+  // panel chrome header and this seeded title agree.
   let title = panel.title || panelType;
 
   if (component === CHAT_COMPONENT) {
@@ -770,7 +816,9 @@ function seedPanel(root, panelType, panel, scenario, config = scenario.config) {
       emptyText: 'No ' + capability + ' signal',
     });
     table?.setAttribute?.('selection-mode', 'single');
-    table?.setAttribute?.('title', panel.title || (panel.aliasedFrom + ' (demo stand-in)'));
+    // panel.title already carries the honest ' (demo stand-in)' suffix (aliasConfig),
+    // so the stand-in table's own title reads as a stand-in too.
+    table?.setAttribute?.('title', title);
     return;
   }
   if (component === 'sn-data-table') {
@@ -869,6 +917,27 @@ function seedPanel(root, panelType, panel, scenario, config = scenario.config) {
   }
 }
 
+// Map each PLACED panelType to the layout-node id(s) it occupies in a normalized tree.
+// LayoutNode stamps every mounted component with dataset.panelId = its node id, so this
+// map lets seeding target a panel BY IDENTITY rather than by component tag — essential
+// when two panelTypes share a component (the custom class places both the free-created
+// stand-in and a real records table as sn-data-table, so a tag-wide seed would let the
+// records seeder overwrite the heatmap stand-in).
+function panelTypeNodeIds(tree) {
+  let map = new Map();
+  (function walk(node) {
+    if (!node || typeof node !== 'object') return;
+    if (node.type === 'panel' && node.panelType) {
+      let ids = map.get(node.panelType) || new Set();
+      if (node.id) ids.add(node.id);
+      map.set(node.panelType, ids);
+    }
+    walk(node.first);
+    walk(node.second);
+  })(tree);
+  return map;
+}
+
 // Drive a panel-layout's config in over a double rAF: the outer frame sets panelTypes
 // + layoutTree so the node renders its panels, the inner frame seeds each rendered
 // component through its public setter and marks document.body.dataset.seeded. Shared by
@@ -876,14 +945,23 @@ function seedPanel(root, panelType, panel, scenario, config = scenario.config) {
 // onSeeded runs inside the inner frame after seeding, before the promise resolves.
 function seedLayout(layout, config, scenario, variantId, onSeeded) {
   document.body.dataset.seeded = '';
+  let layoutTree = normalizeLayoutNode(config.layout);
+  let nodeIdsByType = panelTypeNodeIds(layoutTree);
   return new Promise((done) => {
     requestAnimationFrame(() => {
       layout.$.panelTypes = config.panelTypes || {};
-      layout.$.layoutTree = normalizeLayoutNode(config.layout);
+      layout.$.layoutTree = layoutTree;
       requestAnimationFrame(() => {
         for (let [panelType, panel] of Object.entries(config.panelTypes || {})) {
           if (!panel.component) continue;
+          // Seed BY IDENTITY: only the element(s) mounted for THIS panelType's node id,
+          // so a panelType sharing a component tag with another (e.g. the aliased
+          // stand-in vs a real records table, both sn-data-table) is never overwritten.
+          // Fall back to tag-wide selection only when the placed-node id map has no entry
+          // for this type (e.g. a panel the config registers but does not place).
+          let nodeIds = nodeIdsByType.get(panelType);
           for (let element of layout.querySelectorAll(panel.component)) {
+            if (nodeIds && nodeIds.size && !nodeIds.has(element.dataset.panelId)) continue;
             seedPanel(element, panelType, panel, scenario, config);
           }
         }
@@ -1003,7 +1081,53 @@ function renderScenarioHead(scenario) {
   let strip = scenario.customization ? renderCustomizationStrip(scenario) : renderAnswerSummary(scenario);
   if (strip) head.appendChild(strip);
 
+  // PORTABILITY relaunch, surfaced as a real control. The scenario header only renders
+  // once a class is built, so this button is visible exactly when a relaunch is valid.
+  // It cold-rebuilds the active variant from its exported portable JSON (the same path
+  // devtools could reach via __chatBuilder.relaunchFromExport) and shows a transient
+  // confirmation, so the portability story is discoverable without devtools.
+  head.appendChild(renderRelaunchControl(scenario));
+
   return head;
+}
+
+// A small, keyboard-accessible 'Relaunch from export' button. Clicking it rebuilds the
+// active variant cold from its exported portable JSON and surfaces a transient toast on
+// completion, so the user sees the workspace reconstructed from exportConfig output.
+function renderRelaunchControl(scenario) {
+  let button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'cb-relaunch';
+  button.dataset.relaunchControl = scenario.key;
+  button.innerHTML = '<span class="cb-icon" aria-hidden="true">restart_alt</span>' +
+    '<span>Relaunch from export</span>';
+  button.title = 'Cold-rebuild this workspace from its exported portable JSON';
+  button.addEventListener('click', async () => {
+    button.disabled = true;
+    let done = await relaunchFromExport(scenario.key);
+    button.disabled = false;
+    if (done) showToast('Relaunched from exported JSON');
+  });
+  return button;
+}
+
+// Transient confirmation toast: a single, reused, role=status element pinned to the
+// viewport corner that announces a brief message and auto-dismisses, so a completed
+// relaunch gives visible + assistive-tech feedback without a persistent banner.
+let toastEl = null;
+let toastTimer = 0;
+function showToast(message) {
+  if (!toastEl) {
+    toastEl = document.createElement('div');
+    toastEl.className = 'cb-toast';
+    toastEl.setAttribute('role', 'status');
+    toastEl.setAttribute('aria-live', 'polite');
+    document.body.appendChild(toastEl);
+  }
+  toastEl.textContent = message;
+  toastEl.dataset.visible = 'true';
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { if (toastEl) toastEl.dataset.visible = 'false'; }, 2600);
 }
 
 // Render the customization strip for the custom scenario: a discover/catalog chip,
@@ -1039,19 +1163,28 @@ function renderCustomizationStrip(scenario) {
     return el;
   };
 
+  // Outcome-first pipeline: each chip leads with a plain-language outcome and keeps the
+  // precise internal term in its tooltip (title), reading left-to-right as the story
+  // 'the catalog couldn't build this -> so a new module was authored -> it fits the
+  // workspace -> shown as a preview, not applied'. The leading catalog chip is a neutral
+  // scene-setter; the four outcome chips carry the gap/recipe/fit/preview detail in
+  // their tooltips. The data-* hooks above stay intact for the smoke.
   let categories = Array.isArray(catalog.categories) ? catalog.categories.length : 0;
   strip.appendChild(chip('cb-cz-catalog', 'travel_explore',
-    'Catalog: ' + categories + ' categories',
-    (catalog.sampleTags || []).join(', ') || 'discovered component catalog'));
-  strip.appendChild(chip('cb-cz-gap', 'block', 'Gap: ' + capability,
-    'No canonical module covers "' + capability + '"'));
-  strip.appendChild(chip('cb-cz-recipe', 'auto_awesome', 'Recipe: ' + (recipe.tagName || 'module'),
-    (recipe.capabilities || []).join(', ') || 'hand-authored module descriptor'));
+    'Checked the catalog',
+    'Discovered component catalog: ' + categories + ' categories' +
+      ((catalog.sampleTags || []).length ? ' (' + catalog.sampleTags.join(', ') + ')' : '')));
+  strip.appendChild(chip('cb-cz-gap', 'block', "Catalog can't build this",
+    'Capability gap: no canonical module covers "' + capability + '"'));
+  strip.appendChild(chip('cb-cz-recipe', 'auto_awesome', 'New module authored',
+    'Authored module recipe: ' + (recipe.tagName || 'module') +
+      ((recipe.capabilities || []).length ? ' (' + recipe.capabilities.join(', ') + ')' : '')));
   strip.appendChild(chip('cb-cz-fit', accepted ? 'verified' : 'error',
-    'Organic-fit: ' + (accepted ? 'accepted' : 'rejected') + ' (' + (organicFit.surface || 'modules') + ')',
-    organicFit.summary || 'workspace-level design-policy validation'));
-  strip.appendChild(chip('cb-cz-preview', 'difference', 'Proposed (preview): ' + count,
-    'propose_workspace_patch preview, not applied'));
+    accepted ? 'Fits the workspace' : "Doesn't fit the workspace",
+    'Organic-fit ' + (accepted ? 'accepted' : 'rejected') + ' on ' + (organicFit.surface || 'modules') +
+      (organicFit.summary ? ': ' + organicFit.summary : '')));
+  strip.appendChild(chip('cb-cz-preview', 'difference', 'Preview only — not applied',
+    'Proposed workspace patch preview: ' + count + ' change' + (count === 1 ? '' : 's') + ', not applied'));
 
   return strip;
 }

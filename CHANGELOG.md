@@ -28,7 +28,15 @@ All notable changes to this project will be documented in this file.
   control are relocated into the SSR topbar (filling its previously-orphan
   theme-widget slot), the redundant "Chat-First Workspace Builder" title is dropped,
   and the scenario header now leads with the Layout variant chips as its clear
-  primary with a dimmed answer summary.
+  primary with a dimmed answer summary. Headline capabilities made discoverable and
+  honest: a visible "Relaunch from export" button (with a completion toast) surfaces
+  the portability story without devtools; the aliased customization module is
+  honestly titled "… (demo stand-in)"; the customization trace chips read
+  outcome-first as a pipeline ("Catalog can't build this" → "New module authored" →
+  "Fits the workspace" → "Preview only — not applied") with the precise terms in
+  tooltips; the built-scenario composer is honest about the read-only demo; and
+  seed-by-identity stops the records seeder from overwriting the stand-in (both
+  custom tables now render).
 - Added the customization / free-creation path to the chat-builder demo as a
   fourth `Customization` class — the one place the agent free-creates, when the
   canonical catalog cannot satisfy a requested capability. The class runs the real
