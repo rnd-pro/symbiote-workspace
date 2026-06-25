@@ -36,7 +36,12 @@ All notable changes to this project will be documented in this file.
   "Fits the workspace" → "Preview only — not applied") with the precise terms in
   tooltips; the built-scenario composer is honest about the read-only demo; and
   seed-by-identity stops the records seeder from overwriting the stand-in (both
-  custom tables now render).
+  custom tables now render). Theming/a11y polish: the document `color-scheme` now
+  follows the active theme mode (was hard-pinned dark, so light mode leaked dark
+  native chrome), `:focus-visible` uses a distinct focus token instead of the
+  selection accent (so a focused-and-selected control still shows focus), the
+  selected tab/chip state is stronger, the geometry register starts initialized, and
+  the wordmark uses a legible text token.
 - Added the customization / free-creation path to the chat-builder demo as a
   fourth `Customization` class — the one place the agent free-creates, when the
   canonical catalog cannot satisfy a requested capability. The class runs the real

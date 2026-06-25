@@ -57,7 +57,16 @@ function generateIndexHtml(title, imports) {
 ${escapeScriptJson({ imports })}
   <\/script>
   <style>
-    :root { color-scheme: dark; }
+    /* color-scheme is driven from the ACTIVE theme mode, not hard-pinned: the theme-apply
+       path sets document.documentElement.style.colorScheme to 'light'/'dark' so native
+       chrome (scrollbars, range tracks, focus rings) tracks the mode instead of leaking
+       dark in light mode. The fallback below only seeds first paint before app.js runs. */
+    html { color-scheme: light dark;
+      /* A DISTINCT keyboard-focus color, deliberately NOT the selection accent
+         (--sn-node-selected): a focused-AND-selected tab/chip must still show a visible
+         focus ring. The cascade's warm warning hue (amber, hue ~36) contrasts the blue
+         selection accent (hue ~218) in both light and dark modes; the hex is a fallback. */
+      --cb-focus-ring: var(--sn-warning-color, #f0a020); }
     html, body { height: 100%; }
     body { margin: 0; font-family: var(--sn-font, system-ui, sans-serif);
       background: var(--sn-bg, #0e1116); color: var(--sn-text, #e6edf3); }
@@ -72,6 +81,9 @@ ${escapeScriptJson({ imports })}
       flex: 0 0 auto; padding: 8px 16px;
       border-block-end: 1px solid color-mix(in srgb, var(--sn-text, #fff) 14%, transparent); }
     .workspace-topbar-left { display: flex; align-items: center; gap: 14px; min-width: 0; flex: 1 1 auto; }
+    /* The product wordmark uses the full-contrast text token (>=4.5:1 in both light and
+       dark), NOT --sn-text-dim — the dim token is reserved for genuinely secondary labels
+       such as the answered-questionnaire summary, so the wordmark stays legible. */
     .workspace-title { font-size: 13px; font-weight: 600; color: var(--sn-text, #e6edf3);
       flex: 0 0 auto; white-space: nowrap; }
     .workspace-topbar-right { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
@@ -90,8 +102,9 @@ ${escapeScriptJson({ imports })}
       background: var(--sn-panel-bg, #161b22); color: inherit; line-height: 1.1; }
     button.cb-class { display: inline-flex; align-items: center; gap: 6px; }
     button.cb-class[aria-selected="true"] {
-      border-color: var(--sn-node-selected, #58a6ff);
-      background: color-mix(in srgb, var(--sn-node-selected, #58a6ff) 22%, transparent);
+      border-color: var(--sn-node-selected, #58a6ff); font-weight: 700;
+      background: color-mix(in srgb, var(--sn-node-selected, #58a6ff) 40%, transparent);
+      box-shadow: inset 0 0 0 1px var(--sn-node-selected, #58a6ff);
       color: var(--sn-text, #fff); }
     .cb-menu .cb-icon { font-family: "Material Symbols Outlined"; font-size: 18px; line-height: 1; }
     .cb-back { flex: 0 0 auto; }
@@ -116,14 +129,17 @@ ${escapeScriptJson({ imports })}
       color: color-mix(in srgb, var(--sn-text, #fff) 82%, transparent); flex: 0 0 auto; }
     .cb-variants { display: flex; gap: 6px; flex-wrap: nowrap; min-width: 0; overflow-x: auto;
       scrollbar-width: thin; -webkit-overflow-scrolling: touch; }
+    /* Unselected variant chips rest at a softer border so the selected chip's stronger
+       fill + inset ring + bold weight is instantly the dominant one. */
     .cb-variant { font: inherit; font-size: 12px; padding: 4px 12px; border-radius: 999px; cursor: pointer;
       line-height: 1.2; color: inherit; white-space: nowrap; flex: 0 0 auto;
-      border: 1px solid color-mix(in srgb, var(--sn-text, #fff) 18%, transparent);
+      border: 1px solid color-mix(in srgb, var(--sn-text, #fff) 13%, transparent);
       background: color-mix(in srgb, var(--sn-bg, #0e1116) 70%, transparent);
       transition: border-color 150ms ease, background 150ms ease, color 150ms ease; }
     .cb-variant[aria-selected="true"] {
-      border-color: var(--sn-node-selected, #58a6ff);
-      background: color-mix(in srgb, var(--sn-node-selected, #58a6ff) 24%, transparent);
+      border-color: var(--sn-node-selected, #58a6ff); font-weight: 700;
+      background: color-mix(in srgb, var(--sn-node-selected, #58a6ff) 42%, transparent);
+      box-shadow: inset 0 0 0 1px var(--sn-node-selected, #58a6ff);
       color: var(--sn-text, #fff); }
     /* Compact answered-questionnaire summary: one truncating line, no chip grid. */
     .cb-answers { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1 1 auto;
@@ -173,7 +189,7 @@ ${escapeScriptJson({ imports })}
       background: color-mix(in srgb, var(--sn-node-selected, #58a6ff) 14%, transparent); }
     .cb-relaunch:disabled { opacity: 0.6; cursor: default; }
     .cb-relaunch:focus-visible {
-      outline: 2px solid var(--sn-node-selected, #58a6ff); outline-offset: 2px; }
+      outline: 2px solid var(--cb-focus-ring); outline-offset: 2px; }
     /* Transient completion toast for the relaunch: pinned to the viewport corner, fades
        in/out on data-visible, and never blocks interaction (pointer-events: none). */
     .cb-toast { position: fixed; inset-block-end: 18px; inset-inline-end: 18px; z-index: 50;
@@ -211,11 +227,13 @@ ${escapeScriptJson({ imports })}
       box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--sn-bg, #0e1116) 55%, transparent); }
     .cb-theme-value { font-size: 11px; color: var(--sn-text-dim, #8b949e);
       min-width: 28px; text-align: end; font-variant-numeric: tabular-nums; }
-    /* Keyboard focus affordance for the interactive controls: a visible, non-zero
-       outline only on keyboard focus (:focus-visible), so mouse use stays clean. */
+    /* Keyboard focus affordance for the interactive controls: a visible, non-zero outline
+       only on keyboard focus (:focus-visible), so mouse use stays clean. The outline color
+       is the DISTINCT focus token (--cb-focus-ring), not the selection accent, so a tab/chip
+       that is focused AND selected still shows a focus ring that differs from its selection. */
     .cb-class:focus-visible, .cb-variant:focus-visible, .cb-theme button:focus-visible,
     .cb-theme input[type="range"]:focus-visible {
-      outline: 2px solid var(--sn-node-selected, #58a6ff); outline-offset: 2px; }
+      outline: 2px solid var(--cb-focus-ring); outline-offset: 2px; }
     #stage > panel-layout, #stage > .cb-symbiote-layout { flex: 1 1 auto; min-height: 0; }
     #stage .cb-symbiote-layout {
       display: block; width: 100%; height: 100%; min-width: 0; min-height: 0;
@@ -292,7 +310,7 @@ ${escapeScriptJson({ imports })}
       background: color-mix(in srgb, var(--sn-node-selected, #58a6ff) 14%, transparent);
       transform: translateY(-1px); }
     #stage.cb-menu-mode .status-card:focus-visible {
-      outline: 2px solid var(--sn-node-selected, #58a6ff); outline-offset: 2px; }
+      outline: 2px solid var(--cb-focus-ring); outline-offset: 2px; }
     /* The recommended class is the one obvious starting point: a stronger ring and a
        'Recommended' badge (injected into its card header) so first-run lands on it. */
     #stage.cb-menu-mode .status-card[data-recommended="true"] {
@@ -439,7 +457,23 @@ const REGISTERS = (GEOMETRY_PROFILE_NAMES || []).filter((name) => name === 'tool
 // --sn-* token recomputes without a reload. Seeded from the active scenario's
 // theme on mount and mutated by the header theme control.
 let themeState = { ...CASCADE_THEME_DEFAULTS };
-let geometryRegister = '';
+// The geometry register defaults to 'product' (when the profile set offers it) so one
+// register option is pressed AND applied from the very first paint — the toggle never
+// reads as a dead control with neither option active. Falls back to '' only if neither
+// 'product' nor 'tool' is a known register.
+const DEFAULT_REGISTER = REGISTERS.includes('product') ? 'product' : (REGISTERS[0] || '');
+let geometryRegister = DEFAULT_REGISTER;
+
+// Resolve the active theme mode to a native color-scheme keyword. Explicit 'light'/'dark'
+// map straight through; any other (custom) mode is resolved by the rendered background
+// lightness — a light surface picks 'light' — defaulting to 'dark' when it can't be read.
+function resolveColorScheme(mode) {
+  if (mode === 'light' || mode === 'dark') return mode;
+  let bg = getComputedStyle(document.documentElement).getPropertyValue('--sn-bg').trim();
+  let lightness = /(\\d+(?:\\.\\d+)?)%\\s*\\)?\\s*$/.exec(bg);
+  if (lightness) return Number(lightness[1]) >= 50 ? 'light' : 'dark';
+  return 'dark';
+}
 
 // Re-apply the cascade theme (color/geometry/motion scales) plus the geometry
 // register primitives, so a control change recomputes the live --sn-* tokens.
@@ -449,14 +483,21 @@ function applyTheme() {
   for (let [token, value] of Object.entries(geometrySpacePrimitives('product'))) {
     document.documentElement.style.setProperty(token, (primitives && primitives[token]) || value);
   }
-  document.documentElement.dataset.geometryRegister = geometryRegister || 'default';
+  document.documentElement.dataset.geometryRegister = geometryRegister || DEFAULT_REGISTER;
+  // Drive native chrome (scrollbars, range tracks, default focus rings) from the active
+  // mode so light mode no longer leaks dark UA chrome. applyCascadeTheme already emits a
+  // color-scheme token, but we set it explicitly here (and resolve custom modes) so the
+  // demo owns the value and the removed hard-pinned :root rule cannot re-leak.
+  document.documentElement.style.colorScheme = resolveColorScheme(themeState.mode);
 }
 
 // Merge a partial theme update ({mode, hue, register, ...}) and re-apply live.
 function setTheme(partial = {}) {
   let next = partial || {};
   if (next.register !== undefined) {
-    geometryRegister = REGISTERS.includes(next.register) ? next.register : '';
+    // Keep exactly one register active: an unknown value falls back to the default rather
+    // than to '' (no register), so the toggle never returns to a dead, none-pressed state.
+    geometryRegister = REGISTERS.includes(next.register) ? next.register : DEFAULT_REGISTER;
   }
   for (let [key, value] of Object.entries(next)) {
     if (key === 'register') continue;
@@ -468,7 +509,7 @@ function setTheme(partial = {}) {
 }
 
 function getThemeState() {
-  return { ...themeState, register: geometryRegister || 'default' };
+  return { ...themeState, register: geometryRegister || DEFAULT_REGISTER };
 }
 
 function getThemeToken(name) {
@@ -1333,7 +1374,7 @@ function syncThemeControl() {
     button.setAttribute('aria-pressed', String(button.dataset.themeMode === themeState.mode));
   }
   for (let button of scope.querySelectorAll('[data-theme-register]')) {
-    let active = (geometryRegister || 'product') === button.dataset.themeRegister;
+    let active = (geometryRegister || DEFAULT_REGISTER) === button.dataset.themeRegister;
     button.setAttribute('aria-pressed', String(active));
   }
   for (let input of scope.querySelectorAll('[data-theme-control="hue"]')) {
@@ -1351,10 +1392,12 @@ async function renderScenario(scenario) {
   stageEl.replaceChildren();
   activeLayout = null;
 
-  // Apply the scenario's questionnaire-derived theme on mount.
+  // Apply the scenario's questionnaire-derived theme on mount. The geometry register is
+  // reset to the default ('product') rather than '' so its toggle stays one-active across
+  // scenario switches, matching the value applyTheme actually applies.
   let theme = themeOf(scenario);
   themeState = { ...CASCADE_THEME_DEFAULTS, mode: theme.mode, hue: theme.hue };
-  geometryRegister = '';
+  geometryRegister = DEFAULT_REGISTER;
   applyTheme();
 
   stageEl.appendChild(renderScenarioHead(scenario));

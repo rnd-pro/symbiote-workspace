@@ -1127,6 +1127,108 @@ async function run() {
         headlineReady.composerHonest,
       );
 
+      // POLISH (UX Slice 6 — a11y/theming edges). Prove the four polish fixes on the
+      // live, assembled scenario: (a) the product wordmark's COMPUTED color is the legible
+      // text color, not the dim token; (b) the active theme mode drives the document
+      // color-scheme (light mode -> 'light', dark -> 'dark'); (c) a focused control's
+      // outline color is DISTINCT from the selection accent (--sn-node-selected), so a
+      // focused-and-selected element still shows focus; (d) the geometry register has
+      // EXACTLY ONE pressed option on a fresh mount (no dead none-pressed control).
+      // Re-show the scenario first so the register check reads a clean on-mount state.
+      await page.evaluate((k) => window.__chatBuilder.show(k), key);
+      await waitAndSnapshot();
+      // (d) Exactly one geometry register pressed on mount, and it matches the applied
+      // register (data-geometry-register on <html>).
+      let registerOnMount = await page.evaluate(() => {
+        let buttons = [...document.querySelectorAll('.workspace-topbar [data-theme-register]')];
+        let pressed = buttons.filter((b) => b.getAttribute('aria-pressed') === 'true');
+        return {
+          total: buttons.length,
+          pressedCount: pressed.length,
+          pressedRegister: pressed[0]?.dataset.themeRegister || '',
+          appliedRegister: document.documentElement.dataset.geometryRegister || '',
+        };
+      });
+      // (b) Drive the mode both ways and read the document color-scheme each time.
+      await page.evaluate(() => window.__chatBuilder.setTheme({ mode: 'light' }));
+      let colorSchemeLight = await page.evaluate(() =>
+        (document.documentElement.style.colorScheme ||
+          getComputedStyle(document.documentElement).colorScheme || '').trim());
+      await page.evaluate(() => window.__chatBuilder.setTheme({ mode: 'dark' }));
+      let colorSchemeDark = await page.evaluate(() =>
+        (document.documentElement.style.colorScheme ||
+          getComputedStyle(document.documentElement).colorScheme || '').trim());
+      // (a) Wordmark computed color == --sn-text (legible), != --sn-text-dim (dim token).
+      // Resolve the token strings to computed rgb and read the wordmark's color.
+      let polishColors = await page.evaluate(() => {
+        let norm = (c) => (c || '').trim();
+        let cs = getComputedStyle(document.documentElement);
+        let probe = document.createElement('span');
+        probe.style.position = 'absolute';
+        probe.style.visibility = 'hidden';
+        document.body.appendChild(probe);
+        let resolve = (expr) => {
+          probe.style.color = '';
+          probe.style.color = expr;
+          return norm(getComputedStyle(probe).color);
+        };
+        let textColor = resolve('var(--sn-text)');
+        let dimColor = resolve('var(--sn-text-dim)');
+        let accentColor = resolve('var(--sn-node-selected)');
+        let focusRingColor = resolve('var(--cb-focus-ring)');
+        let title = document.querySelector('.workspace-shell .workspace-title') ||
+          document.querySelector('.workspace-title');
+        let titleColor = title ? norm(getComputedStyle(title).color) : '';
+        probe.remove();
+        return {
+          titleColor, textColor, dimColor, accentColor, focusRingColor,
+          colorSchemePinned: norm(cs.colorScheme),
+        };
+      });
+      // (c) Focused control's outline color != the selection accent. The :focus-visible
+      // outline only renders under keyboard modality, so flip the browser into keyboard
+      // modality with a REAL keypress (Tab) — mirroring the focusOutline check that already
+      // proves keyboard focus draws an outline — then focus the SELECTED variant chip and
+      // read its outline. A focused-AND-selected chip is exactly the case the distinct
+      // focus token must survive: its outline must differ from the selection accent.
+      await page.keyboard.press('Tab');
+      polishColors.outlineColor = await page.evaluate(() => {
+        let norm = (c) => (c || '').trim();
+        let target = document.querySelector('#stage .cb-variant[aria-selected="true"]') ||
+          document.querySelector('#stage .cb-variant') ||
+          document.getElementById('cb-menu')?.querySelector('.cb-class[aria-selected="true"]');
+        target?.focus();
+        let style = target ? getComputedStyle(target) : null;
+        return style && parseFloat(style.outlineWidth) > 0 && style.outlineStyle !== 'none'
+          ? norm(style.outlineColor)
+          : '';
+      });
+      let polishReady = {
+        registerOnMount,
+        registerExactlyOnePressed: registerOnMount.total >= 1 &&
+          registerOnMount.pressedCount === 1 &&
+          registerOnMount.pressedRegister === registerOnMount.appliedRegister,
+        colorSchemeLight,
+        colorSchemeDark,
+        colorSchemeTracksMode: colorSchemeLight === 'light' && colorSchemeDark === 'dark',
+        ...polishColors,
+        // (a) Wordmark is the legible text color, and demonstrably NOT the dim token.
+        wordmarkLegible: polishColors.titleColor.length > 0 &&
+          polishColors.titleColor === polishColors.textColor &&
+          polishColors.titleColor !== polishColors.dimColor,
+        // (c) The focus outline color differs from the selection accent (and matches the
+        // distinct focus token), so focus stays visible even on the selected element.
+        focusDistinctFromSelection: polishColors.outlineColor.length > 0 &&
+          polishColors.outlineColor !== polishColors.accentColor &&
+          polishColors.outlineColor === polishColors.focusRingColor,
+      };
+      polishReady.ok = Boolean(
+        polishReady.wordmarkLegible &&
+        polishReady.colorSchemeTracksMode &&
+        polishReady.focusDistinctFromSelection &&
+        polishReady.registerExactlyOnePressed,
+      );
+
       let assertions = {
         layoutMounted: snap.layoutWidth > 0,
         chatPresent: snap.chatWidth > 0,
@@ -1168,6 +1270,12 @@ async function run() {
         // stand-in module's title says 'stand-in', and the composer placeholder is honest
         // about the read-only scope (no 'Refine'/'describe').
         headlineReady: headlineReady.ok,
+        // POLISH (UX Slice 6): the a11y/theming edges are clean — the wordmark uses the
+        // legible text color (not the dim token), the document color-scheme tracks the
+        // active mode (light->'light', dark->'dark'), the keyboard focus outline is
+        // distinct from the selection accent, and the geometry register has exactly one
+        // option pressed on mount.
+        polishReady: polishReady.ok,
         noNavigation: snap.url === startUrl && variantSnap.url === startUrl,
       };
 
@@ -1198,6 +1306,7 @@ async function run() {
         customization,
         statesReady,
         headlineReady,
+        polishReady,
         screenshot,
       };
     }
