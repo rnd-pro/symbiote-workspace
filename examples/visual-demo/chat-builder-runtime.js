@@ -290,13 +290,6 @@ ${escapeScriptJson({ imports })}
       button.cb-class { gap: 0; padding-inline: 9px; }
       .cb-theme input[type="range"] { width: 72px; }
     }
-    /* symbiote-ui DataTable's loading overlay sets display:flex with no [hidden]
-       guard, so the UA [hidden]{display:none} is overridden and the "Loading..."
-       overlay stays painted over fully-loaded rows (loading is false). Force the
-       hidden (loaded) overlay to stay hidden so completed tables read as ready.
-       Upstream fix belongs in symbiote-ui DataTable.css.js. sn-data-table is light
-       DOM, so this global rule reaches the overlay. */
-    sn-data-table .sn-data-table-loading-overlay[hidden] { display: none !important; }
     /* Menu first-move: the in-chat class board IS the primary control (a delegated
        click on a card runs show(card-id)), so its cards must read as interactive —
        a pointer cursor and a hover/focus lift — not as the dead, decorative duplicate
