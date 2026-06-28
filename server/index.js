@@ -9,3 +9,9 @@
 
 export { createWorkspaceServer } from './serve.js';
 export { loadPluginsFromDir, loadPluginsFromPackages, activateAllPlugins } from './plugin-loader.js';
+export {
+  DATA_CHANGE_MESSAGE_TYPE,
+  buildDataChangeMessage,
+  isDataChangeMessage,
+  broadcastDataChange,
+} from '../runtime/data-change.js';

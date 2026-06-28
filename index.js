@@ -98,4 +98,11 @@ export {
   TOOLS,
   isMutating,
   createSession,
+  buildToolResultEnvelope,
+  parseToolResultEnvelope,
+  isToolResultEnvelope,
+  DATA_CHANGE_MESSAGE_TYPE,
+  buildDataChangeMessage,
+  isDataChangeMessage,
+  broadcastDataChange,
 } from './runtime/index.js';

@@ -92,6 +92,20 @@ export {
   listPluginWorkspaceTemplates,
 } from './plugins/index.js';
 
+export {
+  buildToolResultEnvelope,
+  parseToolResultEnvelope,
+  isToolResultEnvelope,
+} from './runtime/tool-result.js';
+
+export {
+  DATA_CHANGE_MESSAGE_TYPE,
+  buildDataChangeMessage,
+  isDataChangeMessage,
+} from './runtime/data-change.js';
+
+export { subscribeDataChange } from './runtime/data-change-client.js';
+
 import {
   extractThemeOverrides,
   extractThemeParams,

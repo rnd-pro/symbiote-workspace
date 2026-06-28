@@ -55,7 +55,13 @@ describe('browser entrypoint', () => {
     let onlyRoot = Object.keys(root).filter((key) => !(key in browser)).sort();
     let onlyBrowser = Object.keys(browser).filter((key) => !(key in root)).sort();
 
-    assert.deepEqual(onlyRoot, ['TOOLS', 'createSession', 'dispatch', 'isMutating']);
-    assert.deepEqual(onlyBrowser, ['applyWorkspaceTheme', 'mountWorkspace']);
+    assert.deepEqual(onlyRoot, [
+      'TOOLS',
+      'broadcastDataChange',
+      'createSession',
+      'dispatch',
+      'isMutating',
+    ]);
+    assert.deepEqual(onlyBrowser, ['applyWorkspaceTheme', 'mountWorkspace', 'subscribeDataChange']);
   });
 });
