@@ -186,9 +186,14 @@ const SCENARIOS = [
   },
 ];
 
-/** Behavior preset for the persistent chat: always present, full height, on the right. */
+/**
+ * Behavior preset for the docked chat: full height on the right, high importance
+ * so responsive compression never auto-collapses it, but `collapse: 'manual'` so
+ * the user can fold it away with the panel-layout's standard collapse control once
+ * the workspace is built.
+ */
 const CHAT_BEHAVIOR = {
-  collapse: 'never',
+  collapse: 'manual',
   importance: 100,
   minInlineSize: 360,
   minBlockSize: 320,
@@ -285,7 +290,7 @@ function digestConfig(config) {
     && root.direction === 'horizontal'
     && root.second?.type === 'panel'
     && root.second.panelType === CHAT_PANEL
-    && config.panelTypes?.[CHAT_PANEL]?.behavior?.collapse === 'never',
+    && config.panelTypes?.[CHAT_PANEL]?.behavior?.collapse === 'manual',
   );
   return {
     panels: layoutPanels(root),

@@ -368,9 +368,207 @@ const scenarios = ${escapeScriptJson(scenarios)};
 const CHAT_PANEL = ${JSON.stringify(CHAT_PANEL)};
 const CHAT_COMPONENT = ${JSON.stringify(chatComponent)};
 const definedModuleTags = new Set();
+
+// Programming IDE remap (demo layer only). The real construction places the editor
+// template's source panel as <source-editor> and its preview panel as a
+// <sn-canvas-viewport>; for the programming class the demo presents an agent-portal
+// "explorer" instead — a file tree, a real code VIEWER, a docs/context column, and the
+// docked agent chat. The remap rewrites only the rendered component tag of the
+// programming scenario's source/preview panels (source-editor -> source-viewer,
+// sn-canvas-viewport -> code-block); it never touches the construction tool sequence in
+// chat-builder-state.js. It is applied once to the embedded \`scenarios\` contract so the
+// rewrite is visible everywhere downstream reads the same config — the live mount, the
+// assembly's expected-component check, and the relaunch-from-export check — keeping all
+// of them consistent (the smoke reads the same panelTypes/exportJson tags this rewrites).
+const PROGRAMMING_KEY = 'programming';
+const PROGRAMMING_COMPONENT_REMAP = {
+  // source editing surface -> read-only code viewer (center, wide).
+  'source-editor': 'source-viewer',
+  // preview surface -> markdown code-block acting as the docs/context column.
+  'sn-canvas-viewport': 'code-block',
+};
+// Remap the programming source/preview panels to their explorer components, in place,
+// in a panelTypes map. Files (sn-tree-panel) and chat (chat-workspace) are already the
+// explorer's tree + docked chat, so only source/preview are rewritten.
+function remapProgrammingPanelTypes(panelTypes) {
+  if (!panelTypes) return;
+  for (let [type, panel] of Object.entries(panelTypes)) {
+    if (type === CHAT_PANEL || !panel || !panel.component) continue;
+    let next = PROGRAMMING_COMPONENT_REMAP[panel.component];
+    if (next) panel.component = next;
+  }
+}
+// Apply the explorer remap once to the embedded contract: each programming variant's
+// config AND its exported portable JSON get their source/preview component tags
+// rewritten, so the mount, the assembly's expected-component set, and the
+// relaunch-from-export reconstruction all agree on the rendered tag set.
+for (let scenario of scenarios) {
+  if (scenario.key !== PROGRAMMING_KEY) continue;
+  remapProgrammingPanelTypes(scenario.config?.panelTypes);
+  for (let variant of scenario.variants || []) {
+    remapProgrammingPanelTypes(variant.config?.panelTypes);
+    if (typeof variant.exportJson === 'string' && variant.exportJson) {
+      try {
+        let parsed = JSON.parse(variant.exportJson);
+        remapProgrammingPanelTypes(parsed.panelTypes);
+        variant.exportJson = JSON.stringify(parsed);
+      } catch { /* leave a non-JSON export untouched */ }
+    }
+  }
+}
 // Component tags a variant config places that seedPanel has no seeder for. Recorded
 // (not silently swallowed) so an unseeded panel is visible to diagnostics/smoke.
 const unseededComponents = [];
+
+// Programming "explorer" mock content. Static seed data for the IDE-style class:
+// a file tree (left), the active source file (center), a docs/context column, and a
+// rich agent conversation in the docked chat. All inert mock — no live reads/writes.
+
+// The file selected in the tree and shown in the source viewer; its ancestor folders
+// are expanded so the tree opens on the active file. ids are the unique path of each node.
+const PROGRAMMING_ACTIVE_PATH = 'test/integration/chat-flow.test.js';
+
+// Raw file tree. Folders carry \`children\`; every node gets a stable id/path so the tree
+// can select and expand by identity. Built from a compact spec so the path/id derivation
+// stays in one place rather than being repeated on every node.
+function buildProgrammingFileTree() {
+  let assignPaths = (nodes, parent) => nodes.map((node) => {
+    let path = parent ? parent + '/' + node.label : node.label;
+    let item = {
+      id: path,
+      path,
+      label: node.label,
+      kind: node.children ? 'folder' : 'file',
+      icon: node.icon || (node.children ? 'folder' : 'description'),
+    };
+    if (node.children) item.children = assignPaths(node.children, path);
+    return item;
+  });
+  return assignPaths([
+    { label: 'ARCHITECTURE.md', icon: 'description' },
+    { label: 'README.md', icon: 'description' },
+    { label: 'package.json', icon: 'data_object' },
+    { label: 'index.js', icon: 'javascript' },
+    { label: 'bin', children: [{ label: 'mcp-agent-portal.js', icon: 'javascript' }] },
+    { label: 'demo', children: [
+      { label: 'build.js', icon: 'javascript' },
+      { label: 'demo-adapter.js', icon: 'javascript' },
+      { label: 'mock-data.js', icon: 'javascript' },
+      { label: 'index.html', icon: 'html' },
+    ] },
+    { label: 'src', children: [
+      { label: 'node', children: [
+        { label: 'state-graph.js', icon: 'javascript' },
+        { label: 'proxy', children: [
+          { label: 'mcp-proxy.js', icon: 'javascript' },
+          { label: 'task-router.js', icon: 'javascript' },
+          { label: 'chat-ws-server.js', icon: 'javascript' },
+        ] },
+        { label: 'server', children: [
+          { label: 'web-server.js', icon: 'javascript' },
+          { label: 'api-routes.js', icon: 'javascript' },
+        ] },
+      ] },
+    ] },
+    { label: 'web', children: [
+      { label: 'app.js', icon: 'javascript' },
+      { label: 'router-registry.js', icon: 'javascript' },
+      { label: 'panels', children: [
+        { label: 'FileTree', children: [{ label: 'FileTree.js', icon: 'javascript' }] },
+        { label: 'CodeViewer', children: [{ label: 'CodeViewer.js', icon: 'javascript' }] },
+        { label: 'AgentChat', children: [{ label: 'AgentChat.js', icon: 'javascript' }] },
+        { label: 'CtxPanel', children: [{ label: 'CtxPanel.js', icon: 'javascript' }] },
+      ] },
+    ] },
+    { label: 'test', children: [
+      { label: 'integration', children: [
+        { label: 'chat-flow.test.js', icon: 'rule', badges: ['active'] },
+        { label: 'api.test.js', icon: 'rule' },
+      ] },
+    ] },
+  ], '');
+}
+const PROGRAMMING_FILE_TREE = buildProgrammingFileTree();
+// The ids of the folders that must be expanded so the active file is revealed: every
+// ancestor segment of the active path (test, test/integration).
+const PROGRAMMING_EXPANDED_IDS = (() => {
+  let parts = PROGRAMMING_ACTIVE_PATH.split('/');
+  let ids = [];
+  for (let i = 1; i < parts.length; i++) ids.push(parts.slice(0, i).join('/'));
+  return ids;
+})();
+
+// The active source file shown in <source-viewer>. The real first lines of the
+// integration test, kept as a multi-line string (no template interpolation inside).
+const PROGRAMMING_CODE_SOURCE = [
+  '/**',
+  ' * Integration test: Agent Chat Delegation Flow',
+  ' *',
+  ' * Verifies that the WebSockets handle the full chat flow, including error propagation',
+  ' * and streaming events from the agent pool.',
+  ' */',
+  "import assert from 'node:assert/strict';",
+  "import WebSocket from 'ws';",
+  "import path from 'node:path';",
+  "import fs from 'node:fs';",
+  "import os from 'node:os';",
+  '',
+  'let server;',
+  'let port;',
+  'let proxyManager;',
+  'let passed = 0;',
+  'let failed = 0;',
+  '',
+  'const TEST_ENV_KEYS = [',
+  "  'PORTAL_LOCAL_GATEWAY_DIR',",
+  "  'PORTAL_CONFIG_PATH',",
+  "  'PORTAL_CHATS_DIR',",
+  "  'PORTAL_STATE_DIR',",
+  '];',
+  '',
+  'async function setup() {',
+  "  stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-portal-chat-flow-'));",
+  '  process.env.PORTAL_STATE_DIR = stateDir;',
+  "  projectRoot = path.join(process.cwd(), 'tmp');",
+  '  fs.mkdirSync(projectRoot, { recursive: true });',
+  '}',
+].join('\\n');
+
+// Docs/context column markdown, rendered in the <code-block> (lang 'md').
+const PROGRAMMING_DOCS_MD = [
+  '# chat-flow.test.js',
+  '',
+  'Integration test — **Agent Chat Delegation Flow**.',
+  '',
+  '- [x] WebSocket chat round-trip',
+  '- [x] Error propagation',
+  '- [x] Streaming events from the agent pool',
+  '- [ ] Multi-account isolation',
+  '',
+  '### Exports',
+  '- \`setup()\` — provisions a tmpdir state graph',
+  '- \`connectClient(port)\` — opens a ws client',
+].join('\\n');
+
+// The settled programming chat: a rich agent conversation (user/agent/tool/board/
+// thinking/system) that replaces the questionnaire Q&A once the build completes. Board
+// uses cardItems (the chat board shape), and tool messages carry name/input/result.
+const PROGRAMMING_CHAT_MESSAGES = [
+  { id: 'pg-1', role: 'user', text: 'Give me a comprehensive overview of Agent Portal — architecture, features, and how everything fits together.' },
+  { id: 'pg-2', role: 'thinking', status: 'Analyzing project structure…', text: 'Reading the skeleton and dependency graph.', elapsed: 8, done: true, meta: { mode: 'yolo', tools: 3, tokens: 6200, cost: 0.0186 } },
+  { id: 'pg-3', role: 'tool', name: 'get_skeleton', input: { path: '/workspace/agent-portal' }, result: '{ "project":"mcp-agent-portal", "stats":{"files":87,"functions":234,"lines":12450} }' },
+  { id: 'pg-4', role: 'tool', name: 'analyze', input: { action: 'full_analysis' }, result: '{ "topModules":["web-server.js","mcp-proxy.js","AgentChat.js"], "frameworks":["Symbiote.js","Node.js","MCP SDK"] }' },
+  { id: 'pg-5', role: 'agent', text: '## mcp-agent-portal\\n\\nUnified MCP aggregator + AI agent runtime. A single MCP server exposes Agent Portal orchestration tools and selected child MCP tools, while the dashboard provides visual management, agent chat, and live monitoring.' },
+  { id: 'pg-6', role: 'user', text: 'Show me how the multi-agent delegation works.' },
+  { id: 'pg-7', role: 'tool', name: 'delegate_task', input: { prompt: 'Analyze the delegation architecture', agent: 'researcher' }, result: 'Task delegated → task-arch-analysis' },
+  { id: 'pg-8', role: 'tool', name: 'delegate_task', input: { prompt: 'Audit the Agent Chat UI', agent: 'reviewer' }, result: 'Task delegated → task-ui-audit' },
+  { id: 'pg-9', role: 'board', cardItems: [
+    { id: 'task-arch-analysis', title: 'Delegation architecture', status: 'done', statusText: 'Analyzed' },
+    { id: 'task-ui-audit', title: 'Agent Chat UI audit', status: 'done', statusText: 'Reviewed' },
+  ] },
+  { id: 'pg-10', role: 'agent', text: '## Multi-Agent Delegation Flow\\n\\nThe orchestrator delegates tasks to specialized sub-agents via \`delegate_task\`. Each sub-agent runs independently with its own CLI adapter, and the delegation board tracks every sub-task with live status.' },
+  { id: 'pg-11', role: 'system', text: 'Session completed in 42s · 2 sub-agents · 11 tool calls · $0.0738 total' },
+];
 
 // Mount the demo UI INTO the hydrated SSR shell. The shell is server-rendered and
 // present at first paint; here we only move the client-rendered demo chrome into it.
@@ -650,7 +848,54 @@ function scenarioByKey(key) {
 // Build a chat-workspace transcript that replays the answered questionnaire as a
 // board of decisions plus a short agent narration, so the chat shows the offered
 // questions and the chosen options for the scenario.
+// The chats list scaffold shared by every settled chat state: one entry per workspace
+// class, with the active scenario selected. Reused by the questionnaire replay and the
+// programming explorer's rich conversation so both dock the same chat shell.
+function chatScaffold(scenario) {
+  return {
+    sidebar: 'hidden',
+    chats: scenarios.map((entry) => ({
+      id: 'chat-' + entry.key,
+      title: entry.label || entry.key,
+      subtitle: entry.intent || 'workspace class',
+    })),
+    activeChatId: 'chat-' + scenario.key,
+  };
+}
+
+// The settled programming chat: the rich agent conversation (overview + delegation, with
+// thinking/tool/board/system messages and markdown), NOT the questionnaire Q&A. The live
+// build narration plays during construction (assembleLayout); once the build completes
+// this is what the docked chat settles to. Other classes keep chatWorkspaceState's replay.
+function programmingChatState(scenario, config = scenario.config) {
+  return {
+    ...chatScaffold(scenario),
+    messages: PROGRAMMING_CHAT_MESSAGES,
+    messagesOptions: { scrollToBottom: true },
+    composer: {
+      // Read-only demo: there is no send path. Keep the placeholder honest and point the
+      // user at the controls that DO mutate the workspace (the class tabs / Layout chips).
+      placeholder: 'Switch class or Layout above — this demo is read-only',
+      value: '',
+      attachedContext: [
+        { id: 'class', label: scenario.label || scenario.key },
+        { id: 'repo', label: 'mcp-agent-portal' },
+      ],
+      footerControls: [
+        { id: 'agents', kind: 'button', icon: 'groups', label: 'Sub-agents', value: '2' },
+        { id: 'tools', kind: 'button', icon: 'build', label: 'Tool calls', value: '11' },
+      ],
+    },
+    // Settled: no in-flight action, so no live-status spinner and the background idles.
+    liveStatus: null,
+    backgroundState: 'idle',
+  };
+}
+
 function chatWorkspaceState(scenario, config = scenario.config) {
+  // Programming settles to the rich agent conversation; every other class settles to the
+  // answered-questionnaire replay below.
+  if (scenario.key === PROGRAMMING_KEY) return programmingChatState(scenario, config);
   let questions = scenario.questions || [];
   let messages = [
     {
@@ -773,6 +1018,19 @@ function seedPanel(root, panelType, panel, scenario, config = scenario.config) {
         "  },",
         "});",
       ].join('\\n'),
+    });
+    return;
+  }
+  // Programming explorer: the source panel is the read-only code VIEWER (remapped from
+  // source-editor). It shows the active integration test with syntax highlighting; the
+  // stats line names the path so the panel reads as a real editor pane.
+  if (component === 'source-viewer') {
+    let viewer = findPanelElement(root, 'source-viewer');
+    viewer?.showFile?.({
+      path: PROGRAMMING_ACTIVE_PATH,
+      code: PROGRAMMING_CODE_SOURCE,
+      lang: 'js',
+      statsText: PROGRAMMING_ACTIVE_PATH + ' · ' + PROGRAMMING_CODE_SOURCE.split('\\n').length + ' lines · js',
     });
     return;
   }
@@ -907,6 +1165,18 @@ function seedPanel(root, panelType, panel, scenario, config = scenario.config) {
     let tree = findPanelElement(root, 'sn-tree-panel');
     if (tree) {
       tree.setAttribute('title', title);
+      // Programming explorer: the files panel is the IDE file tree. Seed the project
+      // file tree and open it on the active file (ancestor folders expanded, the file
+      // selected). setItems clears any prior expansion, so set selection/expansion after.
+      if (scenario.key === PROGRAMMING_KEY) {
+        tree.setAttribute('title-icon', panel.icon || 'folder');
+        tree.setItems?.(PROGRAMMING_FILE_TREE);
+        tree.expandedIds = PROGRAMMING_EXPANDED_IDS;
+        tree.selectedId = PROGRAMMING_ACTIVE_PATH;
+        tree.expandAncestors?.(PROGRAMMING_ACTIVE_PATH);
+        tree.showTree?.();
+        return;
+      }
       tree.setAttribute('title-icon', panel.icon || 'account_tree');
       tree.setItems?.((scenario.questions || []).map((question) => ({
         id: question.id,
@@ -932,7 +1202,14 @@ function seedPanel(root, panelType, panel, scenario, config = scenario.config) {
     return;
   }
   if (component === 'code-block') {
-    findPanelElement(root, 'code-block')?.setContent?.(
+    let block = findPanelElement(root, 'code-block');
+    // Programming explorer: the preview panel is the docs/context column. Render the
+    // active file's context as markdown instead of the exported JSON config.
+    if (scenario.key === PROGRAMMING_KEY) {
+      block?.setContent?.(PROGRAMMING_DOCS_MD, 'md');
+      return;
+    }
+    block?.setContent?.(
       (config?.exportJson || scenario.exportJson || JSON.stringify(config, null, 2)).slice(0, 2000),
       'json',
     );
@@ -1015,16 +1292,223 @@ function seedLayout(layout, config, scenario, variantId, onSeeded) {
   });
 }
 
+// Catalog tag for an empty layout-frame placeholder, mounted during the LAYOUT phase
+// before a panel's real component arrives.
+const EMPTY_FRAME_TAG = 'sn-empty-state';
+// Per-item stagger and a single-frame settle delay, tuned so a full class assembles in
+// roughly 2-3s with a one-by-one cadence.
+const ASSEMBLY_STEP_MS = 200;
+const ASSEMBLY_SETTLE_MS = 60;
+
+// Live assembly progress, mirrored to window.__chatBuilder.assembly and
+// document.body.dataset.assemblyPhase so a headless smoke can poll the staged build.
+// frames/mounted/hydrated are monotonic within one assembly run (they only ever grow).
+let assembly = { phase: 'idle', frames: 0, mounted: 0, hydrated: 0, total: 0 };
+
+function publishAssembly(next) {
+  assembly = { ...assembly, ...next };
+  window.__chatBuilder ? (window.__chatBuilder.assembly = assembly) : null;
+  document.body.dataset.assemblyPhase = assembly.phase;
+}
+
+// Collect the WORKSPACE panel types in layout order (the docked chat is excluded — it is
+// present from the first frame so the right side never animates; only the left builds).
+function workspacePanelOrder(tree) {
+  let order = [];
+  (function walk(node) {
+    if (!node || typeof node !== 'object') return;
+    if (node.type === 'panel') {
+      if (node.panelType && node.panelType !== CHAT_PANEL) order.push(node.panelType);
+      return;
+    }
+    walk(node.first);
+    walk(node.second);
+  })(tree);
+  return order;
+}
+
+// Prune a normalized layout tree down to a visible panel-type set, collapsing splits
+// whose child was pruned away, so a not-yet-revealed panel is absent from this frame's
+// tree, and panel-layout reconciles it in when the set grows.
+function pruneToVisible(node, visible) {
+  if (!node || typeof node !== 'object') return null;
+  if (node.type === 'panel') return visible.has(node.panelType) ? node : null;
+  if (node.type === 'split') {
+    let first = pruneToVisible(node.first, visible);
+    let second = pruneToVisible(node.second, visible);
+    if (first && second) return { ...node, first, second };
+    return first || second;
+  }
+  return node;
+}
+
+// Build the panel-type map for one assembly frame: the chat and every already-mounted
+// workspace panel keep their real component; a visible-but-not-yet-mounted workspace
+// panel is swapped to an sn-empty-state frame carrying the panel's title as placeholder
+// text, so the LAYOUT phase shows empty frames that MODULES later replaces in place.
+function framePanelTypes(config, visible, mounted) {
+  let panelTypes = {};
+  for (let panelType of visible) {
+    let panel = config.panelTypes[panelType];
+    if (!panel) continue;
+    if (panelType === CHAT_PANEL || mounted.has(panelType)) {
+      panelTypes[panelType] = panel;
+    } else {
+      panelTypes[panelType] = {
+        ...panel,
+        component: EMPTY_FRAME_TAG,
+        properties: { ...(panel.properties || {}), textContent: (panel.title || panelType) + ' — building…' },
+      };
+    }
+  }
+  return panelTypes;
+}
+
+function nextFrame() {
+  return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Re-apply one assembly frame to the live panel-layout: set the pruned tree + this
+// frame's panel-type map, then let one rAF pass so the node reconciles. Mirrors the
+// realtime builder's per-frame re-apply so the panel-layout diffs additively and nothing
+// already on screen tears down.
+async function applyFrame(layout, config, visible, mounted, fullTree) {
+  let panelTypes = framePanelTypes(config, visible, mounted);
+  layout.$.panelTypes = panelTypes;
+  layout.$.layoutTree = pruneToVisible(fullTree, visible) || fullTree;
+  await nextFrame();
+}
+
+// Live chat state shown WHILE the workspace constructs: a growing list of build events
+// plus a running status, so the docked chat narrates each step as it happens. Assembly
+// settles to the canonical chatWorkspaceState transcript once the build completes.
+function chatBuildState(scenario, messages, statusText) {
+  return {
+    sidebar: 'hidden',
+    chats: scenarios.map((entry) => ({
+      id: 'chat-' + entry.key,
+      title: entry.label || entry.key,
+      subtitle: entry.intent || 'workspace class',
+    })),
+    activeChatId: 'chat-' + scenario.key,
+    messages,
+    messagesOptions: { scrollToBottom: true },
+    composer: {
+      placeholder: 'Constructing the workspace...',
+      value: '',
+      attachedContext: [{ id: 'class', label: scenario.label || scenario.key }],
+    },
+    liveStatus: { phase: 'running', title: 'Constructing', text: statusText },
+    backgroundState: 'activity',
+  };
+}
+
+// Staged construction assembly for the first build of a class: the left workspace
+// constructs one panel at a time — empty frames appear (layout phase), each frame is
+// replaced by its real component (modules phase), each is hydrated with mock data (data
+// phase). The
+// docked chat stays in place throughout. Monotonic: frames/mounted/hydrated only ever
+// grow, and the panel-layout reconciles additively, so nothing flickers or moves
+// backward. Ends in the exact same settled state as seedLayout (body.dataset.seeded =
+// key:variantId).
+async function assembleLayout(layout, config, scenario, variantId) {
+  document.body.dataset.seeded = '';
+  let fullTree = normalizeLayoutNode(config.layout);
+  let nodeIdsByType = panelTypeNodeIds(fullTree);
+  let order = workspacePanelOrder(fullTree);
+  let visible = new Set(CHAT_PANEL in (config.panelTypes || {}) ? [CHAT_PANEL] : []);
+  let mounted = new Set();
+
+  // The docked chat narrates the build live: a growing event log plus a running status,
+  // re-seeded after every step. titleOf names the panel each event refers to.
+  let titleOf = (type) => (config.panelTypes[type] && config.panelTypes[type].title) || type;
+  let buildLog = [
+    { id: 'cb-user-intent', role: 'user', text: 'Build me a ' + (scenario.label || scenario.key) + ' workspace.' },
+    { id: 'cb-build-plan', role: 'agent', text: 'On it. Framing the layout and assembling your panels around this chat.' },
+  ];
+  let seedChatBuild = (statusText) => {
+    let chat = layout.querySelector(CHAT_COMPONENT);
+    chat?.setWorkspaceState?.(chatBuildState(scenario, buildLog.slice(), statusText));
+  };
+
+  publishAssembly({ phase: 'layout', frames: 0, mounted: 0, hydrated: 0, total: order.length });
+
+  // LAYOUT: reveal the chat + each empty workspace frame one by one.
+  await applyFrame(layout, config, visible, mounted, fullTree);
+  seedChatBuild('Framing the layout');
+  for (let panelType of order) {
+    visible.add(panelType);
+    await applyFrame(layout, config, visible, mounted, fullTree);
+    publishAssembly({ frames: assembly.frames + 1 });
+    seedChatBuild('Framing the ' + titleOf(panelType) + ' panel');
+    await delay(ASSEMBLY_STEP_MS);
+  }
+
+  // MODULES: replace each empty frame with its real component, one by one.
+  publishAssembly({ phase: 'modules' });
+  for (let panelType of order) {
+    mounted.add(panelType);
+    await applyFrame(layout, config, visible, mounted, fullTree);
+    publishAssembly({ mounted: assembly.mounted + 1 });
+    buildLog.push({ id: 'cb-build-mount-' + panelType, role: 'agent', text: 'Mounting the ' + titleOf(panelType) + '.' });
+    seedChatBuild('Mounting the ' + titleOf(panelType));
+    await delay(ASSEMBLY_STEP_MS);
+  }
+
+  // DATA: hydrate each real component with its mock content, one by one. Seeds BY
+  // IDENTITY (node id) so a panelType sharing a component tag is never overwritten.
+  publishAssembly({ phase: 'data' });
+  buildLog.push({ id: 'cb-build-data', role: 'agent', text: 'Loading content into the panels.' });
+  for (let panelType of order) {
+    let panel = config.panelTypes[panelType];
+    if (panel?.component) {
+      let nodeIds = nodeIdsByType.get(panelType);
+      for (let element of layout.querySelectorAll(panel.component)) {
+        if (nodeIds && nodeIds.size && !nodeIds.has(element.dataset.panelId)) continue;
+        seedPanel(element, panelType, panel, scenario, config);
+      }
+    }
+    publishAssembly({ hydrated: assembly.hydrated + 1 });
+    seedChatBuild('Loading the ' + titleOf(panelType));
+    await delay(ASSEMBLY_STEP_MS);
+  }
+
+  // Seed the docked chat last so its transcript lands on the fully-built workspace.
+  let chatPanel = config.panelTypes[CHAT_PANEL];
+  if (chatPanel?.component) {
+    for (let element of layout.querySelectorAll(chatPanel.component)) {
+      seedPanel(element, CHAT_PANEL, chatPanel, scenario, config);
+    }
+  }
+
+  document.body.dataset.seeded = scenario.key + ':' + variantId;
+  document.body.dataset.activeVariant = variantId;
+
+  // Let the final hydration settle, then mark the build complete.
+  await delay(ASSEMBLY_SETTLE_MS);
+  publishAssembly({ phase: 'done' });
+}
+
 // Mount (or re-mount) one variant's config into the scenario's single panel-layout
 // instance. Re-mounting swaps panelTypes + layoutTree in place — no page reload — so
 // selecting a different variant visibly produces a different left-panel set while the
-// chat stays docked on the right.
-async function mountVariant(scenario, variant) {
+// chat stays docked on the right. When animate is set (the FIRST build of a class via
+// show()), the left workspace constructs step by step; variant switches and relaunches
+// keep the instant seedLayout path.
+async function mountVariant(scenario, variant, animate = false) {
   if (!stageEl) throw new Error('chat-builder: stage host (#' + STAGE_HOST_ID + ') is missing; cannot mount a variant');
   let config = aliasConfig(variant.config || scenario.config);
   activeVariantId = variant.id;
   activeVariantExportJson = typeof variant.exportJson === 'string' ? variant.exportJson : '';
   await defineWorkspaceModules(config);
+  if (animate && !customElements.get(EMPTY_FRAME_TAG)) {
+    defineModule(EMPTY_FRAME_TAG, { includeInternal: true, includeExperimental: true });
+    definedModuleTags.add(EMPTY_FRAME_TAG);
+  }
 
   let layout = activeLayout;
   if (!layout || !layout.isConnected) {
@@ -1039,7 +1523,11 @@ async function mountVariant(scenario, variant) {
   layout.setAttribute('swipe-control', rootBehavior.swipeControl || 'edge');
   layout.dataset.variant = variant.id;
 
-  await seedLayout(layout, config, scenario, variant.id);
+  if (animate) {
+    await assembleLayout(layout, config, scenario, variant.id);
+  } else {
+    await seedLayout(layout, config, scenario, variant.id);
+  }
 }
 
 // PORTABILITY relaunch: rebuild the active variant in a genuinely fresh panel-layout
@@ -1386,11 +1874,15 @@ function syncThemeControl() {
   }
 }
 
-async function renderScenario(scenario) {
+async function renderScenario(scenario, animate = false) {
   if (!stageEl) throw new Error('chat-builder: stage host (#' + STAGE_HOST_ID + ') is missing; cannot render a scenario');
   stageEl.classList.remove('cb-menu-mode');
   stageEl.replaceChildren();
   activeLayout = null;
+  // The active scenario IS this one from the moment its render begins. Mark it up front,
+  // not after mount, so a staged (animated) build — whose mount resolves seconds later —
+  // never leaves dataset.seeded set while dataset.activeScenario still trails empty.
+  document.body.dataset.activeScenario = scenario.key;
 
   // Apply the scenario's questionnaire-derived theme on mount. The geometry register is
   // reset to the default ('product') rather than '' so its toggle stays one-active across
@@ -1404,10 +1896,8 @@ async function renderScenario(scenario) {
   syncThemeControl();
 
   let variant = variantById(scenario, activeVariantId) || variantsOf(scenario)[0];
-  await mountVariant(scenario, variant);
+  await mountVariant(scenario, variant, animate);
   syncVariantButtons();
-
-  document.body.dataset.activeScenario = scenario.key;
 }
 
 function syncVariantButtons() {
@@ -1421,7 +1911,7 @@ function syncVariantButtons() {
 async function selectVariant(key, variantId) {
   let scenario = scenarioByKey(key);
   if (!scenario) return false;
-  if (key !== activeKey) await show(key);
+  if (key !== activeKey) await show(key, false);
   let variant = variantById(scenario, variantId);
   await mountVariant(scenario, variant);
   syncVariantButtons();
@@ -1567,6 +2057,7 @@ function renderMenu() {
   });
   document.body.dataset.activeScenario = '';
   document.body.dataset.seeded = '';
+  publishAssembly({ phase: 'idle', frames: 0, mounted: 0, hydrated: 0, total: 0 });
   activeKey = null;
   activeVariantId = null;
   activeLayout = null;
@@ -1589,7 +2080,11 @@ function syncMenu() {
   backEl.hidden = activeKey == null;
 }
 
-function show(key) {
+// First build of a class. The left workspace constructs step by step (the staged
+// build animation) unless animate is false — selectVariant suppresses it because it
+// re-mounts the chosen variant instantly right after, and an animated build of the
+// wrong (default) variant first would be wasted motion.
+function show(key, animate = true) {
   let scenario = scenarioByKey(key);
   if (!scenario) return Promise.resolve(false);
   activeKey = key;
@@ -1598,7 +2093,7 @@ function show(key) {
   activeVariantId = (scenario.default && variantById(scenario, scenario.default))
     ? scenario.default
     : variantsOf(scenario)[0].id;
-  let done = renderScenario(scenario).then(() => true);
+  let done = renderScenario(scenario, animate).then(() => true);
   syncMenu();
   return done;
 }
@@ -1656,6 +2151,11 @@ window.__chatBuilder = {
   // Render alias for free-created custom modules (recipe tag -> sn-data-table stand-in),
   // so smoke can resolve an exported recipe tag to the element that actually paints.
   resolveModuleTag,
+  // Staged-assembly progress for the FIRST build of a class: phase advances
+  // layout -> modules -> data -> done while frames/mounted/hydrated grow monotonically
+  // toward total. Also mirrored to document.body.dataset.assemblyPhase so a headless
+  // smoke can poll the construction without reaching into module scope.
+  assembly,
 };
 `;
 }

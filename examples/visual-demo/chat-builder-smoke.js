@@ -149,7 +149,7 @@ function fixtureConfig(label, panels) {
     panelTypes[type] = { title: component, icon: index === 0 ? 'code' : 'preview', component, behavior: panelBehavior(index) };
   });
   panelTypes.chat = { title: 'Chat', icon: 'chat', component: 'chat-workspace',
-    behavior: { collapse: 'never', importance: 100, minInlineSize: 360, minBlockSize: 320, overflow: 'scroll-block', responsiveMode: 'stack', responsiveBreakpoint: 760 } };
+    behavior: { collapse: 'manual', importance: 100, minInlineSize: 360, minBlockSize: 320, overflow: 'scroll-block', responsiveMode: 'stack', responsiveBreakpoint: 760 } };
   let workspaceLayout = buildLayoutTree(entries.map(([type]) => type));
   return {
     version: '0.2.0', name: label, register: 'tool', groups: [], sections: [],
@@ -466,9 +466,160 @@ async function run() {
       return result;
     })();
 
+    // ASSEMBLY (staged build animation): the first build of a class must visibly
+    // construct step by step rather than appear fully formed. Trigger a fresh
+    // animated build from the menu and POLL window.__chatBuilder.assembly across the run,
+    // recording a sample stream. Assert: (i) the phase progresses layout -> modules ->
+    // data -> done (each seen, in order); (ii) frames/mounted/hydrated never decrease
+    // across ANY two consecutive samples (a single backward step fails the gate); (iii)
+    // the settled end state has every real workspace component for the class present and
+    // the body marked seeded. The docked chat stays in place; the menu is restored
+    // afterwards for the per-scenario loop. Screenshots of the LAYOUT,
+    // MODULES and DATA phases are captured mid-flight as visual proof.
+    let assemblyReady = await (async () => {
+      let assemblyKey = keys[0];
+      // Start from a clean menu so this is genuinely a first build of the class.
+      await page.evaluate(() => window.__chatBuilder.menu());
+      await page.waitForFunction(
+        () => document.getElementById('stage')?.classList.contains('cb-menu-mode') &&
+          !document.querySelector('panel-layout'),
+        undefined,
+        { timeout },
+      ).catch(() => {});
+
+      // Fire the animated build WITHOUT awaiting its promise inside the page, so the smoke
+      // can sample progress while the construction is still running.
+      await page.evaluate((k) => { window.__chatBuilder.show(k); }, assemblyKey);
+
+      let samples = [];
+      let phaseShots = {};
+      let deadline = Date.now() + timeout;
+      // Poll until the assembly reports 'done' (or we time out), capturing one screenshot
+      // the first time each of the layout/modules/data phases is observed.
+      while (Date.now() < deadline) {
+        let snapshot = await page.evaluate(() => {
+          let a = window.__chatBuilder.assembly || {};
+          return {
+            phase: a.phase, frames: a.frames || 0, mounted: a.mounted || 0,
+            hydrated: a.hydrated || 0, total: a.total || 0,
+            datasetPhase: document.body.dataset.assemblyPhase || '',
+            seeded: document.body.dataset.seeded || '',
+          };
+        });
+        samples.push(snapshot);
+        if (['layout', 'modules', 'data'].includes(snapshot.phase) && !phaseShots[snapshot.phase]) {
+          let shot = join(screenshotDir, `chat-builder-assembly-${snapshot.phase}.png`);
+          await page.screenshot({ path: shot, fullPage: true });
+          phaseShots[snapshot.phase] = shot;
+        }
+        if (snapshot.phase === 'done') break;
+        await new Promise((r) => setTimeout(r, 40));
+      }
+
+      // Phase progression: each phase appears, and the first occurrence of each is in the
+      // canonical layout -> modules -> data -> done order.
+      let phaseSeq = samples.map((s) => s.phase);
+      let firstIndex = (phase) => phaseSeq.indexOf(phase);
+      let order = ['layout', 'modules', 'data', 'done'];
+      let allPhasesSeen = order.every((phase) => firstIndex(phase) !== -1);
+      let phasesInOrder = allPhasesSeen && order.every((phase, i) =>
+        i === 0 || firstIndex(order[i - 1]) <= firstIndex(phase));
+
+      // Monotonic counts: frames/mounted/hydrated never step backward between consecutive
+      // samples. A single backward transition fails the gate.
+      let monotonic = true;
+      let backwardAt = null;
+      for (let i = 1; i < samples.length; i += 1) {
+        let prev = samples[i - 1];
+        let cur = samples[i];
+        if (cur.frames < prev.frames || cur.mounted < prev.mounted || cur.hydrated < prev.hydrated) {
+          monotonic = false;
+          backwardAt = i;
+          break;
+        }
+      }
+
+      // Settled end state: the body is seeded for this class and every real workspace
+      // component the class declares is present in the mounted layout (the empty-frame
+      // placeholders have all been replaced by their real components).
+      let final = await page.evaluate(({ k, tag }) => {
+        let scenario = window.__chatBuilder.scenarios.find((entry) => entry.key === k);
+        let variant = document.body.dataset.activeVariant || '';
+        let cfg = scenario?.variants?.find((v) => v.id === variant)?.config || scenario?.config || {};
+        let placed = [];
+        (function walk(node) {
+          if (!node) return;
+          if (node.type === 'panel' && node.panelType) placed.push(node.panelType);
+          walk(node.first); walk(node.second);
+        })(cfg.layout);
+        let expected = placed
+          .filter((p) => p !== window.__chatBuilder.chatPanel)
+          .map((p) => window.__chatBuilder.resolveModuleTag(cfg.panelTypes?.[p]?.component))
+          .filter(Boolean);
+        let rendered = [...document.querySelectorAll('panel-layout *')]
+          .map((el) => el.tagName.toLowerCase());
+        return {
+          seeded: document.body.dataset.seeded || '',
+          activeVariant: variant,
+          expectedComponents: [...new Set(expected)],
+          allRealPresent: expected.every((t) => rendered.includes(t)),
+          // The empty-frame placeholder must not be the only thing left in any slot — the
+          // real components are present (above), so the build completed, not stalled.
+          emptyFramesRemain: rendered.includes('sn-empty-state'),
+        };
+      }, { k: assemblyKey, tag: chatComponent });
+
+      let last = samples[samples.length - 1] || {};
+      let countsReachedTotal = last.total > 0 &&
+        last.frames === last.total && last.mounted === last.total && last.hydrated === last.total;
+      let seededForClass = final.seeded.startsWith(assemblyKey + ':');
+
+      // Restore the clean menu for the per-scenario loop that follows.
+      await page.evaluate(() => window.__chatBuilder.menu());
+      await page.waitForFunction(
+        () => document.getElementById('stage')?.classList.contains('cb-menu-mode') &&
+          !document.querySelector('panel-layout'),
+        undefined,
+        { timeout },
+      ).catch(() => {});
+
+      let res = {
+        key: assemblyKey,
+        sampleCount: samples.length,
+        phaseSeq: [...new Set(phaseSeq)],
+        allPhasesSeen,
+        phasesInOrder,
+        monotonic,
+        backwardAt,
+        countsReachedTotal,
+        finalPhase: last.phase || '',
+        total: last.total || 0,
+        expectedComponents: final.expectedComponents,
+        allRealPresent: final.allRealPresent,
+        seededForClass,
+        phaseShots,
+      };
+      res.ok = Boolean(
+        res.sampleCount > 0 &&
+        allPhasesSeen &&
+        phasesInOrder &&
+        monotonic &&
+        countsReachedTotal &&
+        last.phase === 'done' &&
+        final.allRealPresent &&
+        final.expectedComponents.length >= 1 &&
+        seededForClass,
+      );
+      return res;
+    })();
+
     let scenarioResults = {};
     for (let key of keys) {
-      await page.evaluate((k) => window.__chatBuilder.show(k), key);
+      // Instant build for the per-scenario geometry/theme/a11y gates: the staged
+      // "construction" animation is exercised separately by the assemblyReady gate; here
+      // show(k, false) takes the instant seedLayout path so these gates measure a settled,
+      // expanded workspace exactly as before.
+      await page.evaluate((k) => window.__chatBuilder.show(k, false), key);
       let snap = await waitAndSnapshot();
       let workspaceTags = Object.keys(snap.workspaceComponents);
 
@@ -579,10 +730,15 @@ async function run() {
           return box.width > 0 && box.height > 0;
         };
         // (a) ONE product title: the SSR topbar's .workspace-title, and no separate
-        // builder <h1> title bar survives anywhere in the chrome.
+        // builder <h1> title bar survives anywhere in the chrome. The h1 check targets a
+        // stray builder-title heading in the CHROME only; <h1>s rendered as markdown
+        // CONTENT inside a panel (e.g. the programming docs column's '# chat-flow.test.js'
+        // heading in a code-block) are legitimate panel content, so headings inside the
+        // mounted panel-layout are excluded.
         let titles = [...document.querySelectorAll('.workspace-title')];
         let builderTitleBars = document.querySelectorAll('.cb-bar').length;
-        let h1Count = document.querySelectorAll('.cb-shell h1, .workspace-topbar h1').length;
+        let h1Count = [...document.querySelectorAll('.cb-shell h1, .workspace-topbar h1')]
+          .filter((el) => !el.closest('panel-layout')).length;
         // (b) theme control in the topbar; orphan cascade-theme-widget gone or not visible.
         let themeInTopbar = Boolean(topbar && topbar.querySelector('.cb-theme'));
         let themeControls = document.querySelectorAll('.cb-theme').length;
@@ -941,7 +1097,9 @@ async function run() {
       // and no spinning icon — after assembly; (c) no settled chat message renders a
       // streaming/typing caret; (d) board cards show a resolved status, never the
       // in-flight 'Queued'/'Running...' sublabel fallback.
-      await page.evaluate((k) => window.__chatBuilder.show(k), key);
+      // Instant build (show(k, false)): the staged construction animation is covered by
+      // assemblyReady; this gate reads a settled, expanded assembled state.
+      await page.evaluate((k) => window.__chatBuilder.show(k, false), key);
       await waitAndSnapshot();
       let statesReady = await page.evaluate((tag) => {
         let layout = document.querySelector('panel-layout');
@@ -1135,7 +1293,8 @@ async function run() {
       // focused-and-selected element still shows focus; (d) the geometry register has
       // EXACTLY ONE pressed option on a fresh mount (no dead none-pressed control).
       // Re-show the scenario first so the register check reads a clean on-mount state.
-      await page.evaluate((k) => window.__chatBuilder.show(k), key);
+      // Instant build (show(k, false)); the staged animation is covered by assemblyReady.
+      await page.evaluate((k) => window.__chatBuilder.show(k, false), key);
       await waitAndSnapshot();
       // (d) Exactly one geometry register pressed on mount, and it matches the applied
       // register (data-geometry-register on <html>).
@@ -1320,7 +1479,9 @@ async function run() {
     // width, the side-by-side splits collapse). The viewport is restored to 1440 after.
     let responsiveReady = { applicable: keys.length >= 1 };
     if (keys.length >= 1) {
-      await page.evaluate((k) => window.__chatBuilder.show(k), keys[keys.length - 1]);
+      // Instant build (show(k, false)) so the reflow check reads a settled, expanded
+      // workspace; the staged animation is covered by assemblyReady.
+      await page.evaluate((k) => window.__chatBuilder.show(k, false), keys[keys.length - 1]);
       await waitAndSnapshot();
       await page.setViewportSize({ width: 720, height: 900 });
       // Let the layout's ResizeObserver + the CSS media queries settle before measuring.
@@ -1442,6 +1603,7 @@ async function run() {
       firstPaintSsr.ok &&
       singleHydratedShell.ok &&
       menuReady.ok &&
+      assemblyReady.ok &&
       responsiveReady.ok &&
       errors.length === 0 &&
       keys.length >= 1 &&
@@ -1456,6 +1618,7 @@ async function run() {
       firstPaintSsr,
       singleHydratedShell,
       menuReady,
+      assemblyReady,
       responsiveReady,
       scenarios: scenarioResults,
       noConsoleErrors: errors.length === 0,

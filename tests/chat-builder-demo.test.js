@@ -112,7 +112,7 @@ function assertChatDockedRight(config, label) {
   assert.equal(root.second.type, 'panel', `${label} root second child is not a panel`);
   assert.equal(root.second.panelType, CHAT_PANEL, `${label} chat is not the right child`);
   let chatBehavior = config.panelTypes[CHAT_PANEL].behavior;
-  assert.equal(chatBehavior.collapse, 'never', `${label} chat is collapsible`);
+  assert.equal(chatBehavior.collapse, 'manual', `${label} chat is not manually collapsible`);
   assert.equal(chatBehavior.importance, 100, `${label} chat importance changed`);
 }
 

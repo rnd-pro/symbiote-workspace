@@ -123,6 +123,7 @@ export function demoImportMap() {
     [BROWSER_ENGINE_CONTRACTS_IMPORT]: '/__symbiote_engine__/contracts/index.js',
     'symbiote-engine/': '/__symbiote_engine__/',
     '@symbiotejs/symbiote': '/__symbiote__/core/index.js',
+    '@symbiotejs/symbiote/utils': '/__symbiote__/utils/index.js',
     '@symbiotejs/symbiote/': '/__symbiote__/',
   };
 }

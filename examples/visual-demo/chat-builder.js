@@ -53,7 +53,7 @@ async function main() {
   let symbioteRoot = await symbioteJsRoot(workspaceRoot);
   await startStaticServer({ outputDir, workspaceRoot, uiRoot, engineRoot, symbioteRoot, port });
   console.log(`Symbiote chat-first builder demo: ${summary.url}`);
-  console.log(`Constructed ${summary.panels.length} panels around the chat across ${summary.stageCount} stages.`);
+  console.log(`Constructed ${summary.scenarioCount} workspace classes: ${summary.keys.join(', ')}.`);
   console.log(`Preview files: ${summary.outputDir}`);
 }
 

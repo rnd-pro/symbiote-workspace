@@ -107,7 +107,9 @@ session via `dispatch(...)`:
 `answer_construction_question` (the agent picks offered options) → `plan_workspace`
 → `construct_workspace` (the system materializes the layout from the canonical
 template). The chat is then docked as a global panel on the **right at full
-height** (`set_behavior` `collapse: never`, high importance), the workspace panels
+height** (`set_behavior` `collapse: manual`, high importance — it never
+auto-collapses on resize, but folds away via the panel-layout's standard collapse
+control once the workspace is built), the workspace panels
 sit on the left, and every panel carries full layout behavior — importance, min
 inline/block sizes, collapse policy, overflow, responsive mode/breakpoint — with
 relative `ratio` for sizing.
