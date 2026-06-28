@@ -22,8 +22,18 @@ import { fileURLToPath } from 'node:url';
 import { dispatch, TOOLS } from '../runtime/dispatch.js';
 import { createSession } from '../runtime/session.js';
 
-// One session per MCP server process
+// Default session for callers that don't scope one. A host MAY pass an optional
+// `session_id` in a tool call's arguments to get an isolated construction session,
+// so a multiplexing host can run concurrent constructions without sharing state;
+// omitting it preserves the single shared-session behavior.
 let session = createSession();
+let sessions = new Map();
+function sessionFor(id) {
+  if (id == null || id === '') return session;
+  let key = String(id);
+  if (!sessions.has(key)) sessions.set(key, createSession());
+  return sessions.get(key);
+}
 let PACKAGE_VERSION = JSON.parse(readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), '..', 'package.json'),
   'utf8',
@@ -130,10 +140,10 @@ async function handleMessage(body) {
 
   if (method === 'tools/call') {
     let toolName = params?.name;
-    let args = params?.arguments || {};
+    let { session_id: sessionId, ...args } = params?.arguments || {};
 
     try {
-      let result = await dispatch(toolName, args, session);
+      let result = await dispatch(toolName, args, sessionFor(sessionId));
       let isDispatchError = result?.status === 'error';
       sendResponse({
         jsonrpc: '2.0',

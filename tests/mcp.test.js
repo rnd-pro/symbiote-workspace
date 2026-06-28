@@ -383,6 +383,38 @@ describe('MCP Protocol', () => {
     assert.equal(content.groups[0].id, 'g1');
   });
 
+  it('isolates construction state per session_id', async () => {
+    let responses = await mcpSession([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      {
+        jsonrpc: '2.0', id: 2, method: 'tools/call',
+        params: { name: 'scaffold_from_scratch', arguments: { name: 'WS-A', session_id: 'A' } },
+      },
+      {
+        jsonrpc: '2.0', id: 3, method: 'tools/call',
+        params: { name: 'add_group', arguments: { id: 'ga', name: 'Group A', session_id: 'A' } },
+      },
+      {
+        jsonrpc: '2.0', id: 4, method: 'tools/call',
+        params: { name: 'scaffold_from_scratch', arguments: { name: 'WS-B', session_id: 'B' } },
+      },
+      {
+        jsonrpc: '2.0', id: 5, method: 'tools/call',
+        params: { name: 'list_groups', arguments: { session_id: 'B' } },
+      },
+      {
+        jsonrpc: '2.0', id: 6, method: 'tools/call',
+        params: { name: 'list_groups', arguments: { session_id: 'A' } },
+      },
+    ]);
+
+    let bGroups = JSON.parse(responses.find((r) => r.id === 5).result.content[0].text);
+    let aGroups = JSON.parse(responses.find((r) => r.id === 6).result.content[0].text);
+    assert.equal(bGroups.count, 0); // session B never saw A's group
+    assert.equal(aGroups.count, 1);
+    assert.equal(aGroups.groups[0].id, 'ga');
+  });
+
   it('registers workflow kanban board config through tools/call', async () => {
     let responses = await mcpSession([
       { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
