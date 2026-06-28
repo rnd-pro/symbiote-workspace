@@ -21,3 +21,15 @@ export {
   isDataChangeMessage,
   broadcastDataChange,
 } from './data-change.js';
+export {
+  validateStep,
+  assertStep,
+  buildCtx,
+  toolViews,
+} from './construction-agent.js';
+export { runConstructionLoop } from './agent-loop.js';
+export {
+  createScriptedAdapter,
+  createMemoryTrace,
+  buildConstructionPlan,
+} from './scripted-adapter.js';

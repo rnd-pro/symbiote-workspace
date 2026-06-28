@@ -61,6 +61,9 @@ describe('browser entrypoint', () => {
       'createSession',
       'dispatch',
       'isMutating',
+      'isMutatingTool',
+      'needsConfirm',
+      'toolConfirmPolicy',
     ]);
     assert.deepEqual(onlyBrowser, ['applyWorkspaceTheme', 'mountWorkspace', 'subscribeDataChange']);
   });
