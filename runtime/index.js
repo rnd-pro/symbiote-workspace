@@ -11,6 +11,11 @@ export {
   isToolResultEnvelope,
 } from './tool-result.js';
 export {
+  toolConfirmPolicy,
+  isMutatingTool,
+  needsConfirm,
+} from './tool-policy.js';
+export {
   DATA_CHANGE_MESSAGE_TYPE,
   buildDataChangeMessage,
   isDataChangeMessage,
