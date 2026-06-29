@@ -54,6 +54,7 @@
       "import": "./runtime/index.js",
       "default": "./runtime/index.js"
     },
+    "./runtime/*": "./runtime/*",
     "./ssr": {
       "import": "./ssr/index.js",
       "default": "./ssr/index.js"
