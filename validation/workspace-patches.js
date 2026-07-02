@@ -1,4 +1,5 @@
 import { validateWorkspaceConfig } from '../schema/validate.js';
+import { pathToPointer, prefixPointer } from '../schema/config-path.js';
 import { diffConfigs, mergeConfigs } from '../sharing/config-portability.js';
 
 function isObject(value) {
@@ -9,23 +10,6 @@ function deepClone(value) {
   if (value === undefined) return undefined;
   if (typeof structuredClone === 'function') return structuredClone(value);
   return JSON.parse(JSON.stringify(value));
-}
-
-function pathToPointer(path) {
-  if (!path) return '/';
-  if (path.startsWith('/')) return path;
-  return `/${path.replace(/\[(\d+)\]/g, '.$1').split('.').map(escapePointer).join('/')}`;
-}
-
-function escapePointer(value) {
-  return String(value).replaceAll('~', '~0').replaceAll('/', '~1');
-}
-
-function prefixPointer(prefix, pointer) {
-  let normalized = pathToPointer(pointer);
-  if (normalized === '/') return prefix;
-  if (normalized === prefix || normalized.startsWith(`${prefix}/`)) return normalized;
-  return `${prefix}${normalized}`;
 }
 
 function workspaceContext(config, context = {}) {
