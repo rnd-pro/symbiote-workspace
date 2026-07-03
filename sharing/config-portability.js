@@ -1,4 +1,5 @@
-import { validateWorkspaceConfig } from '../schema/index.js';
+import { validateWorkspaceConfig } from '../validation/core.js';
+import { isGrantObject, nonPortableStringReason } from '../schema/value-classes.js';
 import { createBrowserRuntimeContract } from './browser-contract.js';
 
 function isObject(value) {
@@ -65,37 +66,6 @@ const PERSISTENCE_TOOLS = Object.freeze([
   'import_config',
 ]);
 
-let NON_PORTABLE_VALUE_PATTERNS = [
-  /^file:\/\//i,
-  /^https?:\/\//i,
-  /^wss?:\/\//i,
-  /^\/Users\//,
-  /^\/home\//,
-  /^\/tmp\//,
-  /^\/var\/folders\//,
-  /^\/private\/var\/folders\//,
-  /^[a-z]:[\\/]/i,
-];
-
-function sanitizeForExport(value) {
-  if (Array.isArray(value)) {
-    return value.map((item) => sanitizeForExport(item));
-  }
-  if (!isObject(value)) return value;
-
-  let result = {};
-  for (let [key, child] of Object.entries(value)) {
-    if (isNonPortableFieldKey(key)) continue;
-    if (typeof child === 'string' && isNonPortableString(child)) continue;
-    result[key] = sanitizeForExport(child);
-  }
-  return result;
-}
-
-function isNonPortableString(value) {
-  return NON_PORTABLE_VALUE_PATTERNS.some((pattern) => pattern.test(value));
-}
-
 function normalizedKey(key) {
   return key.toLowerCase().replace(/[_-]/g, '');
 }
@@ -109,6 +79,53 @@ function isNonPortableFieldKey(key) {
   return isHostLocalFieldKey(key) || USER_IDENTITY_KEYS.has(normalizedKey(key));
 }
 
+function sanitizeForExport(value, path = '') {
+  if (Array.isArray(value)) {
+    let result = [];
+    for (let i = 0; i < value.length; i++) {
+      let item = value[i];
+      if (isGrantObject(item)) continue;
+      let itemPath = `${path}[${i}]`;
+      if (typeof item === 'string' && nonPortableStringReason({ path: itemPath, value: item })) continue;
+      result.push(sanitizeForExport(item, itemPath));
+    }
+    return result;
+  }
+  if (!isObject(value)) return value;
+
+  let result = {};
+  for (let [key, child] of Object.entries(value)) {
+    if (isNonPortableFieldKey(key)) continue;
+    if (isGrantObject(child)) continue;
+    let childPath = path ? `${path}.${key}` : key;
+    if (typeof child === 'string' && nonPortableStringReason({ path: childPath, value: child })) continue;
+    result[key] = sanitizeForExport(child, childPath);
+  }
+  return result;
+}
+
+function collectGrantErrors(value, path = '', result = []) {
+  if (Array.isArray(value)) {
+    for (let i = 0; i < value.length; i++) {
+      collectGrantErrors(value[i], `${path}[${i}]`, result);
+    }
+    return result;
+  }
+  if (!isObject(value)) return result;
+  if (isGrantObject(value)) {
+    result.push({
+      path: path || '(root)',
+      message: 'Grant objects are session/host state and cannot appear in portable config.',
+      severity: 'error',
+    });
+    return result;
+  }
+  for (let [key, child] of Object.entries(value)) {
+    collectGrantErrors(child, path ? `${path}.${key}` : key, result);
+  }
+  return result;
+}
+
 function collectNonPortableFields(value, path = '', result = []) {
   if (Array.isArray(value)) {
     for (let i = 0; i < value.length; i++) {
@@ -117,22 +134,26 @@ function collectNonPortableFields(value, path = '', result = []) {
     return result;
   }
   if (!isObject(value)) {
-    if (typeof value === 'string' && isNonPortableString(value)) {
-      result.push({
-        path: path || '(value)',
-        message: `Non-portable local or host-bound value: "${value.slice(0, 60)}".`,
-        severity: 'error',
-      });
+    if (typeof value === 'string') {
+      let reason = nonPortableStringReason({ path, value });
+      if (reason) {
+        result.push({
+          path: path || '(value)',
+          message: `Non-portable ${reason} value "${value.slice(0, 60)}" at "${path || '(value)'}".`,
+          severity: 'error',
+        });
+      }
     }
     return result;
   }
+  if (isGrantObject(value)) return result;
 
   for (let [key, child] of Object.entries(value)) {
     let childPath = path ? `${path}.${key}` : key;
     if (isNonPortableFieldKey(key)) {
       result.push({
         path: childPath,
-        message: `Non-portable host/local field "${childPath}" is not allowed in imported configs.`,
+        message: `Non-portable host/local field "${childPath}" is not allowed in portable config.`,
         severity: 'error',
       });
       continue;
@@ -140,21 +161,6 @@ function collectNonPortableFields(value, path = '', result = []) {
     collectNonPortableFields(child, childPath, result);
   }
   return result;
-}
-
-function isPortabilityWarning(warning) {
-  return /auth|secret|credential|cookie|token|password|apikey|api key|non-portable|server urls|endpoints/i
-    .test(warning.message);
-}
-
-function collectPortabilityWarnings(warnings) {
-  return warnings
-    .filter(isPortabilityWarning)
-    .map((warning) => ({ ...warning, severity: 'error' }));
-}
-
-function hasSensitiveWarning(warnings) {
-  return warnings.some(isPortabilityWarning);
 }
 
 function pushUnique(list, value) {
@@ -308,30 +314,24 @@ function collectEngineRequirements(config) {
 }
 
 /**
- * @param {import('../schema/workspace-schema.js').WorkspaceConfig} config
+ * @param {Object} config
  * @param {Object} [options]
- * @param {boolean} [options.strict] - Reject on validation warnings
- * @returns {{ json: string, config: import('../schema/workspace-schema.js').WorkspaceConfig, errors: Array }}
+ * @param {boolean} [options.strict] - Reject rather than silently strip non-portable source fields.
+ * @returns {{ json: string|null, config: Object, errors: Array }}
  */
 export function exportConfig(config, options = {}) {
-  let sourcePortabilityErrors = options.strict ? collectNonPortableFields(config) : [];
-  let clean = sanitizeForExport(deepClone(config));
-  let validation = validateWorkspaceConfig(clean, { strict: true });
+  let grantErrors = collectGrantErrors(config);
+  let sourceErrors = options.strict ? collectNonPortableFields(config) : [];
+  let blocking = [...grantErrors, ...sourceErrors];
+  let clean = sanitizeForExport(deepClone(config), '');
 
-  if (sourcePortabilityErrors.length > 0) {
-    return { json: null, config: clean, errors: sourcePortabilityErrors };
+  if (blocking.length > 0) {
+    return { json: null, config: clean, errors: blocking };
   }
 
-  if (!validation.valid) {
+  let validation = validateWorkspaceConfig(clean);
+  if (!validation.ok) {
     return { json: null, config: clean, errors: validation.errors };
-  }
-
-  if ((options.strict || hasSensitiveWarning(validation.warnings)) && validation.warnings.length > 0) {
-    return {
-      json: null,
-      config: clean,
-      errors: validation.warnings.map((w) => ({ ...w, severity: 'error' })),
-    };
   }
 
   let json = JSON.stringify(clean, null, 2);
@@ -339,7 +339,7 @@ export function exportConfig(config, options = {}) {
 }
 
 /**
- * @param {import('../schema/workspace-schema.js').WorkspaceConfig} config
+ * @param {Object} config
  * @returns {{ status: string, contract: Object|null, errors: Array }}
  */
 export function createHostIntegrationContract(config) {
@@ -402,7 +402,7 @@ export function createHostIntegrationContract(config) {
 
 /**
  * @param {string} json - JSON string of workspace config
- * @returns {{ config: import('../schema/workspace-schema.js').WorkspaceConfig | null, errors: Array }}
+ * @returns {{ config: Object | null, errors: Array }}
  */
 export function importConfig(json) {
   let parsed;
@@ -415,18 +415,14 @@ export function importConfig(json) {
     };
   }
 
-  let portabilityErrors = collectNonPortableFields(parsed);
+  let portabilityErrors = [...collectGrantErrors(parsed), ...collectNonPortableFields(parsed)];
   if (portabilityErrors.length > 0) {
     return { config: null, errors: portabilityErrors };
   }
 
-  let validation = validateWorkspaceConfig(parsed, { strict: true });
-  if (!validation.valid) {
+  let validation = validateWorkspaceConfig(parsed);
+  if (!validation.ok) {
     return { config: null, errors: validation.errors };
-  }
-  let portabilityWarnings = collectPortabilityWarnings(validation.warnings);
-  if (portabilityWarnings.length > 0) {
-    return { config: null, errors: portabilityWarnings };
   }
 
   return { config: parsed, errors: [] };
@@ -476,9 +472,9 @@ export function diffConfigs(a, b, path = '') {
 }
 
 /**
- * @param {import('../schema/workspace-schema.js').WorkspaceConfig} base
+ * @param {Object} base
  * @param {Object} overlay - Partial config to merge on top
- * @returns {import('../schema/workspace-schema.js').WorkspaceConfig}
+ * @returns {Object}
  */
 export function mergeConfigs(base, overlay) {
   let merged = deepClone(base);
