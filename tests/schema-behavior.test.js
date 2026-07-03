@@ -281,6 +281,83 @@ describe('behavior narration', () => {
     let ok = run({ narration: { timelines: [{ id: 't1', source: 'workspaceRef', revision: 5 }] } });
     assert.equal(ok.ok, true, JSON.stringify(ok.errors));
   });
+
+  it('accepts a semantic presentation timeline with WAS targets, actions, and data refs', () => {
+    let result = run({
+      provenance: { revision: 7 },
+      narration: {
+        timelines: [{
+          id: 'demo-tour',
+          source: 'local',
+          revision: 7,
+          freshness: 'fresh',
+          locale: 'en-US',
+          requiredHostServices: ['agent.webmcp', 'speech.tts'],
+          segments: [{
+            id: 'intro',
+            narration: 'Show the selected work order queue.',
+            target: 'panel:home:queue-node',
+            focusTarget: 'element:queue-row-wo-1',
+            timing: { startMs: 0, durationMs: 1200 },
+            cues: [{
+              kind: 'highlight',
+              target: 'panel:home:queue-node',
+              text: { default: 'Queue' },
+            }],
+            actions: [{
+              source: 'webmcp',
+              name: 'demo--queue_select-row',
+              target: 'element:queue-row-wo-1',
+              input: { id: 'WO-1' },
+            }],
+            dataRefs: [{
+              source: 'route',
+              path: 'state:route.data.workOrder',
+              target: 'panel:home:queue-node',
+            }],
+            requiredHostServices: ['agent.webmcp'],
+          }],
+        }],
+      },
+    });
+    assert.equal(result.ok, true, JSON.stringify(result.errors));
+  });
+
+  it('rejects DOM-selector timeline targets and unsupported action sources', () => {
+    let result = run({
+      narration: {
+        timelines: [{
+          id: 'demo-tour',
+          source: 'local',
+          revision: 1,
+          segments: [{
+            id: 'intro',
+            target: '#queue',
+            cues: [{ kind: 'highlight', target: '.queue-row' }],
+            actions: [{ source: 'dom-click', name: 'click', target: '[data-row="wo-1"]' }],
+          }],
+        }],
+      },
+    });
+    let resultCodes = codes(result);
+    assert.ok(resultCodes.includes('behavior.timeline.target'));
+    assert.ok(resultCodes.includes('behavior.timeline.action.source'));
+  });
+
+  it('requires stale timelines to declare freshness when provenance has advanced', () => {
+    let stale = run({
+      provenance: { revision: 10 },
+      narration: { timelines: [{ id: 'demo-tour', source: 'local', revision: 5, segments: [] }] },
+    });
+    assert.ok(codes(stale).includes('behavior.timeline.stale'));
+
+    clearRegisteredSections();
+    let classified = run({
+      provenance: { revision: 10 },
+      narration: { timelines: [{ id: 'demo-tour', source: 'local', revision: 5, freshness: 'stale', segments: [] }] },
+    });
+    assert.equal(classified.ok, true, JSON.stringify(classified.errors));
+  });
 });
 
 describe('behavior exports.shareKit', () => {

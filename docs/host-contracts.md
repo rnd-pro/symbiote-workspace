@@ -283,3 +283,37 @@ silently skipping the cascade.
 `cascade-theme-editor` write normalized params back into `config.theme.params`.
 Events with `detail.targetSelector` update the matching `theme.subtrees[]`
 entry so manual theme edits survive export/import as portable config.
+
+For agent-facing presentation or guidance, the browser entrypoint also exports
+`collectWorkspaceInterfaceContext(config, root, options)`. A mounted workspace
+exposes the same data through `mounted.getInterfaceContext()`. The returned map
+combines the active runtime view with the full portable config: all views, stack
+tabs, panels, current visibility, rendered status, declared module actions,
+declared WebMCP tools, and the `view.select` / `stack.select` reveal actions
+needed to show hidden interface areas before an agent authors a narration or
+tour timeline.
+
+Hosts can pass `targetCollector` (or `collectComponentTargets`) to merge live
+component targets discovered by `symbiote-ui/webmcp.js` or an equivalent host
+collector. DOM references are stripped from the returned context, duplicate
+target addresses are de-duplicated, and `targetEnrichment` can attach
+product/domain metadata as portable data. `dataContext` adds selected records,
+document presentation sidecars, retrieved context, mock/demo data, or other
+presentation-safe state; route params/query/data are read from the mounted
+router automatically.
+
+Generated presentation artifacts live in `narration.timelines[]`. A semantic
+timeline can carry `segments[]` with narration text, locale, stable WAS focus
+targets, highlight/annotation cues, safe `webmcp` / host / workspace actions,
+data references, timing hints, and required host services. Validation rejects
+DOM selectors as targets, unsupported action/data sources, and timelines built
+against an older `provenance.revision` unless they are explicitly marked
+`freshness: "stale"`.
+
+`playWorkspacePresentationTimeline(timeline, mounted, options)` executes that
+artifact against a mounted workspace. It reads `mounted.getInterfaceContext()`,
+runs declared reveal actions before focus/cue/action/narration callbacks, uses
+the mounted router for `view.select`, and requires the host to provide
+`executeAction` for timeline actions so WebMCP/host/workspace actions stay in
+the declared safe-action layer. Mounted workspaces expose the same helper as
+`mounted.playPresentationTimeline(...)`.

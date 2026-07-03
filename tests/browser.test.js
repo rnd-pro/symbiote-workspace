@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   applyWorkspaceTheme,
+  collectWorkspaceInterfaceContext,
   mountWorkspace,
 } from '../browser.js';
 
@@ -260,6 +261,275 @@ describe('mountWorkspace', () => {
     mounted.destroy();
     assert.equal(container.children.length, 0);
     assert.equal(mounted.router.events.some((event) => event.subject === 'route:destroy'), true);
+  });
+
+  it('collects full interface context with hidden views, stack panels, and reveal actions', async () => {
+    let config = workspace({
+      views: [
+        { id: 'home', title: 'Home', layout: { $layout: 'main' }, route: { pattern: '/', default: true } },
+        { id: 'detail', title: 'Detail', layout: { $layout: 'detail' }, route: { pattern: '/detail' } },
+      ],
+      layouts: {
+        main: {
+          kind: 'bsp',
+          root: {
+            type: 'stack',
+            id: 'workbench-stack',
+            active: 'queue-node',
+            children: [
+              { type: 'panel', id: 'queue-node', panel: 'queue' },
+              { type: 'panel', id: 'audit-node', panel: 'audit' },
+            ],
+          },
+        },
+        detail: {
+          kind: 'bsp',
+          root: { type: 'panel', id: 'detail-node', panel: 'detail' },
+        },
+      },
+      panels: {
+        queue: {
+          module: 'demo:queue',
+          title: 'Work queue',
+        },
+        audit: { module: 'sn-event-feed', title: 'Audit trail' },
+        detail: { module: 'sn-rich-text-editor', title: 'Detail brief' },
+      },
+      modules: [{
+        id: 'demo:queue',
+        source: { kind: 'package', package: 'symbiote-ui', export: 'DataTable' },
+        tagName: 'sn-data-table',
+        title: 'Work queue module',
+        capabilities: ['data.table'],
+        actions: [{ id: 'queue.select', label: 'Select row', does: { kind: 'emit', event: 'row-select' } }],
+        webmcp: { tools: [{ name: 'demo--queue_query' }] },
+        hostServices: { required: ['agent.webmcp'] },
+      }],
+    });
+    let mounted = mountWorkspace(config, createContainer());
+    await mounted.ready;
+
+    let context = mounted.getInterfaceContext();
+    assert.equal(context.activeViewId, 'home');
+    assert.deepEqual(context.summary, {
+      viewCount: 2,
+      stackCount: 1,
+      panelCount: 3,
+      visiblePanelCount: 1,
+      hiddenPanelCount: 2,
+      runtimeTargetCount: 0,
+    });
+
+    let queue = context.panels.find((panel) => panel.panelId === 'queue');
+    let audit = context.panels.find((panel) => panel.panelId === 'audit');
+    let detail = context.panels.find((panel) => panel.panelId === 'detail');
+    assert.equal(queue.address, 'panel:home:queue-node');
+    assert.equal(queue.visible, true);
+    assert.equal(queue.rendered, true);
+    assert.deepEqual(queue.safeActions, [{
+      id: 'queue.select',
+      label: 'Select row',
+      does: { kind: 'emit', event: 'row-select' },
+    }]);
+    assert.deepEqual(queue.webmcpTools, [{ name: 'demo--queue_query' }]);
+
+    assert.equal(audit.visible, false);
+    assert.deepEqual(audit.hiddenReasons, ['stack-inactive']);
+    assert.deepEqual(audit.revealActions, [{
+      type: 'stack.select',
+      target: 'stack:home:workbench-stack',
+      input: { viewId: 'home', stackId: 'workbench-stack', childId: 'audit-node' },
+    }]);
+
+    assert.equal(detail.visible, false);
+    assert.deepEqual(detail.hiddenReasons, ['view-inactive']);
+    assert.deepEqual(detail.revealActions, [{
+      type: 'view.select',
+      target: 'view:detail',
+      input: { viewId: 'detail' },
+    }]);
+    assert.ok(context.targets.some((target) => target.address === 'panel:detail:detail-node'));
+
+    let detailOnly = collectWorkspaceInterfaceContext(config, null, { viewId: 'detail' });
+    assert.equal(detailOnly.panels.find((panel) => panel.panelId === 'detail').visible, true);
+    assert.equal(detailOnly.panels.find((panel) => panel.panelId === 'queue').visible, false);
+    mounted.destroy();
+
+    let unrendered = mountWorkspace(config, createContainer(), { renderDefaultPreview: false });
+    await unrendered.ready;
+    let unrenderedContext = unrendered.getInterfaceContext();
+    let unrenderedQueue = unrenderedContext.panels.find((panel) => panel.panelId === 'queue');
+    assert.equal(unrenderedQueue.visibleByState, true);
+    assert.equal(unrenderedQueue.rendered, false);
+    assert.equal(unrenderedQueue.visible, false);
+    assert.deepEqual(unrenderedQueue.hiddenReasons, ['not-rendered']);
+    unrendered.destroy();
+  });
+
+  it('merges live WebMCP targets and data context without leaking DOM references', async () => {
+    let config = workspace({
+      views: [{
+        id: 'home',
+        title: 'Home',
+        layout: { $layout: 'main' },
+        route: {
+          pattern: '/',
+          default: true,
+          data: [{
+            id: 'workOrder',
+            source: { resource: 'work-orders', op: 'get', args: { id: 'WO-1' } },
+            bind: 'state:route.data.workOrder',
+          }],
+        },
+      }],
+      layouts: {
+        main: {
+          kind: 'bsp',
+          root: { type: 'panel', id: 'queue-node', panel: 'queue' },
+        },
+      },
+      panels: {
+        queue: { module: 'demo:queue', title: 'Work queue' },
+      },
+      modules: [{
+        id: 'demo:queue',
+        source: { kind: 'package', package: 'symbiote-ui', export: 'DataTable' },
+        tagName: 'sn-data-table',
+        title: 'Work queue module',
+        capabilities: ['data.table'],
+        actions: [{ id: 'queue.refresh', label: 'Refresh', does: { kind: 'emit', event: 'refresh' } }],
+      }],
+    });
+    let mounted = mountWorkspace(config, createContainer(), {
+      loaders: {
+        workOrder: () => ({ id: 'WO-1', status: 'APPR', priority: 1 }),
+      },
+    });
+    await mounted.ready;
+
+    let context = mounted.getInterfaceContext({
+      targetCollector(root, meta) {
+        let panelElement = root.querySelectorAll('.symbiote-workspace__panel')[0];
+        assert.equal(meta.activeViewId, 'home');
+        assert.equal(meta.panels.length, 1);
+        return {
+          targets: [
+            {
+              address: 'panel:home:queue-node',
+              kind: 'panel',
+              visible: true,
+              element: panelElement,
+              safeActions: [{ id: 'runtime.focus-panel', label: 'Focus panel' }],
+              enrichment: { runtimeRole: 'primary-queue' },
+            },
+            {
+              address: 'element:queue-row-WO-1',
+              kind: 'row',
+              panelAddress: 'panel:home:queue-node',
+              element: panelElement,
+              safeActions: [{ id: 'queue.select-row', input: { id: 'WO-1' } }],
+              enrichment: { entity: 'work-order' },
+            },
+            {
+              address: 'element:queue-row-WO-1',
+              kind: 'row',
+              element: panelElement,
+              enrichment: { currentStatus: 'APPR' },
+            },
+          ],
+        };
+      },
+      targetEnrichment: {
+        'element:queue-row-WO-1': { presentationHint: 'Open the selected work order row.' },
+      },
+      dataContext: {
+        selectedRecords: [{ type: 'work-order', id: 'WO-1' }],
+        retrievedContext: [{ source: 'sop', title: 'Approval checklist' }],
+        mockData: { scenario: 'demo' },
+        documentPresentation: { 'doc:notes:wo-1': { scope: 'viewport', zoom: 1.2 } },
+      },
+    });
+
+    assert.equal(context.summary.runtimeTargetCount, 3);
+    assert.equal(context.runtimeTargets.some((target) => 'element' in target), false);
+    let mergedPanel = context.targets.find((target) => target.address === 'panel:home:queue-node');
+    assert.deepEqual(mergedPanel.sources, ['config', 'runtime']);
+    assert.ok(mergedPanel.safeActions.some((action) => action.id === 'runtime.focus-panel'));
+    assert.equal(mergedPanel.enrichment.runtimeRole, 'primary-queue');
+
+    let rowTargets = context.targets.filter((target) => target.address === 'element:queue-row-WO-1');
+    assert.equal(rowTargets.length, 1);
+    assert.deepEqual(rowTargets[0].safeActions, [{ id: 'queue.select-row', input: { id: 'WO-1' } }]);
+    assert.deepEqual(rowTargets[0].enrichment, {
+      entity: 'work-order',
+      presentationHint: 'Open the selected work order row.',
+      currentStatus: 'APPR',
+    });
+
+    assert.deepEqual(context.dataContext.route.data.workOrder, { id: 'WO-1', status: 'APPR', priority: 1 });
+    assert.deepEqual(context.dataContext.selectedRecords, [{ type: 'work-order', id: 'WO-1' }]);
+    assert.deepEqual(context.dataContext.retrievedContext, [{ source: 'sop', title: 'Approval checklist' }]);
+    assert.deepEqual(context.dataContext.mockData, { scenario: 'demo' });
+    assert.deepEqual(context.dataContext.documentPresentation, { 'doc:notes:wo-1': { scope: 'viewport', zoom: 1.2 } });
+    mounted.destroy();
+  });
+
+  it('plays a presentation timeline by revealing hidden targets before narration', async () => {
+    let config = workspace({
+      views: [
+        { id: 'home', title: 'Home', layout: { $layout: 'home' }, route: { pattern: '/', default: true } },
+        { id: 'detail', title: 'Detail', layout: { $layout: 'detail' }, route: { pattern: '/detail' } },
+      ],
+      layouts: {
+        home: { kind: 'bsp', root: { type: 'panel', id: 'queue-node', panel: 'queue' } },
+        detail: { kind: 'bsp', root: { type: 'panel', id: 'detail-node', panel: 'detail' } },
+      },
+      panels: {
+        queue: { module: 'sn-data-table', title: 'Queue' },
+        detail: { module: 'sn-rich-text-editor', title: 'Detail' },
+      },
+    });
+    let mounted = mountWorkspace(config, createContainer());
+    await mounted.ready;
+    assert.equal(mounted.router.getState('state:route.view'), 'home');
+
+    let callbackOrder = [];
+    let events = await mounted.playPresentationTimeline({
+      id: 'detail-tour',
+      segments: [{
+        id: 'show-detail',
+        target: 'panel:detail:detail-node',
+        narration: 'This is the detail panel.',
+        cues: [{ kind: 'highlight', target: 'panel:detail:detail-node' }],
+        actions: [{ source: 'webmcp', name: 'demo--detail_focus', target: 'panel:detail:detail-node' }],
+      }],
+    }, {
+      onFocus: async () => {
+        callbackOrder.push('focus');
+        assert.equal(mounted.router.getState('state:route.view'), 'detail');
+      },
+      onCue: async () => callbackOrder.push('cue'),
+      executeAction: async (action) => {
+        callbackOrder.push(`action:${action.source}`);
+        assert.equal(action.name, 'demo--detail_focus');
+      },
+      onNarration: async () => {
+        callbackOrder.push('narration');
+        assert.equal(mounted.router.getState('state:route.view'), 'detail');
+      },
+    });
+
+    assert.deepEqual(events.map((event) => event.type), ['reveal', 'focus', 'cue', 'action', 'narration']);
+    assert.deepEqual(callbackOrder, ['focus', 'cue', 'action:webmcp', 'narration']);
+    assert.equal(mounted.router.getState('state:route.view'), 'detail');
+
+    await assert.rejects(
+      () => mounted.playPresentationTimeline({
+        segments: [{ id: 'bad-action', actions: [{ source: 'dom', name: 'click' }] }],
+      }, { executeAction: async () => {} }),
+      /Unsupported presentation action source/,
+    );
+    mounted.destroy();
   });
 
   it('routes updateConfig through WorkspaceState commit and broadcasts origin envelopes', () => {

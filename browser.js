@@ -131,6 +131,34 @@ function cloneJson(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function clonePortable(value) {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (typeof value === 'function') return undefined;
+  if (typeof value !== 'object') return value;
+  if (value.nodeType || value.ownerDocument || value.documentElement || value.defaultView) return undefined;
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => clonePortable(item))
+      .filter((item) => item !== undefined);
+  }
+  let result = {};
+  for (let [key, child] of Object.entries(value)) {
+    if (['element', 'el', 'node', 'dom', 'ref', 'refs', 'targetElement'].includes(key)) continue;
+    let next = clonePortable(child);
+    if (next !== undefined) result[key] = next;
+  }
+  return result;
+}
+
+function compactObject(value) {
+  let result = {};
+  for (let [key, child] of Object.entries(value || {})) {
+    if (child !== undefined) result[key] = child;
+  }
+  return result;
+}
+
 function hasKeys(value) {
   return isObject(value) && Object.keys(value).length > 0;
 }
@@ -296,6 +324,31 @@ function panelDefinition(config, node) {
 
 function panelComponent(panel) {
   return panel.module || '';
+}
+
+function listValue(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function moduleDefinition(config, moduleId) {
+  if (!isText(moduleId)) return {};
+  return (config.modules || []).find((module) => (
+    module?.id === moduleId || module?.tagName === moduleId
+  )) || {};
+}
+
+function panelSafeActions(panel, module) {
+  return [
+    ...listValue(module.actions),
+    ...listValue(panel.actions),
+  ];
+}
+
+function panelWebMcpTools(panel, module) {
+  return [
+    ...listValue(module.webmcp?.tools),
+    ...listValue(panel.webmcp?.tools),
+  ];
 }
 
 function renderPreviewPanel(config, node, document, viewId = 'workspace') {
@@ -464,6 +517,436 @@ function renderDefaultWorkspacePreview(config, wrapper, router) {
 function updateDefaultWorkspacePreview(config, wrapper, runtimeHandle, router) {
   if (typeof runtimeHandle?.destroy === 'function') runtimeHandle.destroy();
   return renderDefaultWorkspacePreview(config, wrapper, router);
+}
+
+function childElements(element) {
+  return Array.from(element?.children || []);
+}
+
+function findElementByCtx(root, ctx) {
+  if (!root || !ctx) return null;
+  let queue = [root];
+  while (queue.length > 0) {
+    let current = queue.shift();
+    if (current?.getAttribute?.('ctx') === ctx) return current;
+    queue.push(...childElements(current));
+  }
+  return null;
+}
+
+function collectLayoutPanelNodes(node, visit, context) {
+  if (!isObject(node)) return;
+  if (node.kind === 'bsp') {
+    collectLayoutPanelNodes(node.root, visit, context);
+    return;
+  }
+  if (node.type === 'split') {
+    collectLayoutPanelNodes(node.first, visit, context);
+    collectLayoutPanelNodes(node.second, visit, context);
+    return;
+  }
+  if (node.kind === 'stack' || node.type === 'stack') {
+    let stackId = node.id || 'root';
+    let children = Array.isArray(node.children) ? node.children : [];
+    let active = node.active || children[0]?.id || '';
+    let stackAddress = `stack:${context.viewId || 'workspace'}:${stackId}`;
+    context.stacks.push({
+      address: stackAddress,
+      viewId: context.viewId,
+      stackId,
+      active,
+      visible: context.visible,
+      children: children
+        .filter((child) => child?.type === 'panel')
+        .map((child) => ({
+          id: child.id || child.panel || 'panel',
+          panel: child.panel || '',
+          active: (child.id || child.panel) === active,
+          address: panelCtx(context.viewId, child),
+        })),
+    });
+    for (let child of children) {
+      let childId = child?.id || child?.panel || '';
+      let activeChild = !active || childId === active;
+      let revealActions = context.revealActions;
+      let hiddenReasons = context.hiddenReasons;
+      if (!activeChild) {
+        revealActions = [
+          ...revealActions,
+          {
+            type: 'stack.select',
+            target: stackAddress,
+            input: { viewId: context.viewId, stackId, childId },
+          },
+        ];
+        hiddenReasons = [...hiddenReasons, 'stack-inactive'];
+      }
+      collectLayoutPanelNodes(child, visit, {
+        ...context,
+        visible: context.visible && activeChild,
+        revealActions,
+        hiddenReasons,
+      });
+    }
+    return;
+  }
+  if (node.type === 'panel') visit(node, context);
+}
+
+function workspaceViews(config) {
+  if (Array.isArray(config?.views) && config.views.length > 0) return config.views;
+  return [{ id: 'workspace', title: config?.name || 'Workspace', layout: firstLayout(config) }];
+}
+
+function viewAddress(view) {
+  return `view:${view?.id || 'workspace'}`;
+}
+
+function normalizeRuntimeTarget(raw, enrichment = {}) {
+  if (!isObject(raw)) return null;
+  let portable = clonePortable(raw);
+  if (!isObject(portable)) return null;
+  let address = portable.address || portable.target || portable.targetRef || portable.id || '';
+  if (!isText(address)) return null;
+  let extra = enrichment[address] || enrichment[portable.id] || null;
+  return {
+    ...portable,
+    address,
+    kind: portable.kind || portable.type || 'component',
+    source: 'runtime',
+    enrichment: compactObject({
+      ...(isObject(portable.enrichment) ? portable.enrichment : {}),
+      ...(isObject(extra) ? extra : {}),
+    }),
+  };
+}
+
+function collectRuntimeTargets(root, options, baseContext) {
+  let collector = options.targetCollector || options.collectComponentTargets;
+  if (typeof collector !== 'function' || !root) return [];
+  let result = collector(root, {
+    config: baseContext.config,
+    activeViewId: baseContext.activeViewId,
+    views: baseContext.views,
+    panels: baseContext.panels,
+    stacks: baseContext.stacks,
+  });
+  let rawTargets = Array.isArray(result) ? result : result?.targets;
+  return listValue(rawTargets)
+    .map((target) => normalizeRuntimeTarget(target, options.targetEnrichment || options.enrichment || {}))
+    .filter(Boolean);
+}
+
+function targetKey(target) {
+  return target.address || `${target.kind || 'target'}:${target.id || target.target || ''}`;
+}
+
+function mergeTargets(configTargets, runtimeTargets) {
+  let merged = new Map();
+  for (let target of [...configTargets, ...runtimeTargets]) {
+    let key = targetKey(target);
+    if (!key) continue;
+    let existing = merged.get(key);
+    let source = target.source || 'config';
+    if (!existing) {
+      merged.set(key, {
+        source,
+        sources: [source],
+        ...target,
+      });
+      continue;
+    }
+    let sources = new Set([...(existing.sources || [existing.source || 'config']), source]);
+    merged.set(key, {
+      ...existing,
+      ...target,
+      visible: Boolean(existing.visible || target.visible),
+      revealActions: [
+        ...listValue(existing.revealActions),
+        ...listValue(target.revealActions),
+      ],
+      safeActions: [
+        ...listValue(existing.safeActions),
+        ...listValue(target.safeActions),
+      ],
+      webmcpTools: [
+        ...listValue(existing.webmcpTools),
+        ...listValue(target.webmcpTools),
+      ],
+      enrichment: compactObject({
+        ...(isObject(existing.enrichment) ? existing.enrichment : {}),
+        ...(isObject(target.enrichment) ? target.enrichment : {}),
+      }),
+      sources: [...sources],
+    });
+  }
+  return [...merged.values()];
+}
+
+function routePresentationContext(router) {
+  if (typeof router?.getState !== 'function') return undefined;
+  return compactObject({
+    view: router.getState('state:route.view'),
+    params: router.getState('state:route.params'),
+    query: router.getState('state:route.query'),
+    mount: router.getState('state:route.mount'),
+    data: router.getState('state:route.data'),
+    denied: router.getState('state:route.denied'),
+  });
+}
+
+function collectPresentationDataContext(options, router) {
+  let provided = clonePortable(options.dataContext || options.presentationData || {});
+  return compactObject({
+    route: routePresentationContext(router),
+    ...(isObject(provided) ? provided : {}),
+  });
+}
+
+function timelineSegments(timeline) {
+  if (Array.isArray(timeline?.segments)) return timeline.segments;
+  if (Array.isArray(timeline)) return timeline;
+  return [];
+}
+
+function segmentTarget(segment) {
+  return segment?.target || segment?.focusTarget || segment?.cues?.find?.((cue) => cue?.target)?.target || '';
+}
+
+function findContextTarget(context, address) {
+  if (!address) return null;
+  return context.targets.find((target) => target.address === address) || null;
+}
+
+async function executeRevealAction(action, mounted, options, event) {
+  if (action?.type === 'view.select' && action.input?.viewId && mounted.router?.navigate) {
+    return mounted.router.navigate({
+      to: { view: action.input.viewId },
+      history: 'replace',
+      source: 'presentation',
+    });
+  }
+  if (typeof options.executeRevealAction === 'function') {
+    return options.executeRevealAction(action, event);
+  }
+  throw new Error(`No presentation reveal executor for action type "${action?.type || 'unknown'}".`);
+}
+
+async function executeTimelineAction(action, mounted, options, event) {
+  if (!['webmcp', 'host', 'workspace'].includes(action?.source)) {
+    throw new Error(`Unsupported presentation action source "${action?.source || 'unknown'}".`);
+  }
+  let executor = options.executeAction || options.actionExecutor;
+  if (typeof executor !== 'function') {
+    throw new Error('playWorkspacePresentationTimeline requires executeAction for timeline actions.');
+  }
+  return executor(action, event);
+}
+
+/**
+ * Execute a generated presentation timeline against a mounted workspace.
+ *
+ * The player deliberately uses the same interface context as agents: if a segment
+ * targets a hidden view/panel, declared reveal actions run before narration or
+ * focus callbacks. Timeline actions are never executed directly; hosts must supply
+ * an action executor for declared `webmcp`, `host`, or `workspace` safe actions.
+ *
+ * @param {Object|Array} timeline
+ * @param {{getInterfaceContext: function(Object=): Object, router?: Object}} mounted
+ * @param {Object} [options]
+ * @returns {Promise<Array<Object>>}
+ */
+export async function playWorkspacePresentationTimeline(timeline, mounted, options = {}) {
+  if (!mounted || typeof mounted.getInterfaceContext !== 'function') {
+    throw new Error('playWorkspacePresentationTimeline requires a mounted workspace with getInterfaceContext().');
+  }
+  let events = [];
+  let contextOptions = {
+    targetCollector: options.targetCollector || options.collectComponentTargets,
+    collectComponentTargets: options.collectComponentTargets,
+    targetEnrichment: options.targetEnrichment,
+    dataContext: options.dataContext || options.presentationData,
+  };
+  let context = mounted.getInterfaceContext(contextOptions);
+
+  for (let segment of timelineSegments(timeline)) {
+    let targetAddress = segmentTarget(segment);
+    let target = findContextTarget(context, targetAddress);
+    for (let revealAction of target?.revealActions || []) {
+      let event = { type: 'reveal', segment, action: revealAction, target, context };
+      await executeRevealAction(revealAction, mounted, options, event);
+      events.push({ type: 'reveal', segmentId: segment.id || '', action: clonePortable(revealAction) });
+      context = mounted.getInterfaceContext(contextOptions);
+      target = findContextTarget(context, targetAddress);
+    }
+
+    if (targetAddress) {
+      let event = { type: 'focus', segment, target, context };
+      await options.onFocus?.(event);
+      events.push({ type: 'focus', segmentId: segment.id || '', target: targetAddress });
+    }
+    for (let cue of segment.cues || []) {
+      let event = { type: 'cue', segment, cue, context };
+      await options.onCue?.(event);
+      events.push({ type: 'cue', segmentId: segment.id || '', cue: clonePortable(cue) });
+    }
+    for (let action of segment.actions || []) {
+      let event = { type: 'action', segment, action, context };
+      await executeTimelineAction(action, mounted, options, event);
+      events.push({ type: 'action', segmentId: segment.id || '', action: clonePortable(action) });
+    }
+    if (segment.narration !== undefined) {
+      let event = { type: 'narration', segment, context };
+      await options.onNarration?.(event);
+      events.push({ type: 'narration', segmentId: segment.id || '', narration: clonePortable(segment.narration) });
+    }
+  }
+  return events;
+}
+
+/**
+ * Build an agent-readable picture of the mounted workspace interface.
+ *
+ * The result intentionally combines current runtime visibility with full config
+ * structure so an agent can explain what is visible, what is hidden, and which
+ * safe UI action should reveal a hidden view, stack tab, or panel before it
+ * authors a narration/tour timeline.
+ *
+ * @param {Object} config
+ * @param {HTMLElement|null} [root]
+ * @param {Object} [options]
+ * @param {Object} [options.router]
+ * @param {string} [options.viewId]
+ * @param {function(HTMLElement, Object): (Array|{targets: Array})} [options.targetCollector]
+ * @param {Object} [options.dataContext]
+ * @returns {{workspace: Object, activeViewId: string, views: Array, stacks: Array, panels: Array, runtimeTargets: Array, targets: Array, dataContext: Object, summary: Object}}
+ */
+export function collectWorkspaceInterfaceContext(config, root = null, options = {}) {
+  let views = workspaceViews(config);
+  let activeView = options.viewId
+    ? views.find((view) => view?.id === options.viewId)
+    : routedView(config, options.router);
+  if (!activeView) activeView = views[0] || { id: 'workspace' };
+  let activeViewId = activeView?.id || 'workspace';
+  let stacks = [];
+  let panels = [];
+
+  let viewRecords = views.map((view) => {
+    let id = view?.id || 'workspace';
+    let visible = id === activeViewId;
+    return {
+      id,
+      address: viewAddress(view),
+      title: localizeLabel(view?.title, id),
+      visible,
+      route: cloneJson(view?.route || null),
+      revealActions: visible ? [] : [{
+        type: 'view.select',
+        target: viewAddress(view),
+        input: { viewId: id },
+      }],
+    };
+  });
+
+  for (let view of views) {
+    let viewId = view?.id || 'workspace';
+    let visible = viewId === activeViewId;
+    let layout = viewLayout(config, view);
+    let viewRevealActions = visible ? [] : [{
+      type: 'view.select',
+      target: viewAddress(view),
+      input: { viewId },
+    }];
+    let viewHiddenReasons = visible ? [] : ['view-inactive'];
+    collectLayoutPanelNodes(layout, (node, context) => {
+      let address = panelCtx(context.viewId, node);
+      let element = findElementByCtx(root, address);
+      let rendered = root ? Boolean(element) : undefined;
+      let visibleByState = Boolean(context.visible);
+      let hiddenReasons = [...context.hiddenReasons];
+      if (root && visibleByState && !rendered) hiddenReasons.push('not-rendered');
+      let panel = panelDefinition(config, node);
+      let moduleId = panelComponent(panel);
+      let module = moduleDefinition(config, moduleId);
+      panels.push({
+        address,
+        viewId: context.viewId,
+        nodeId: node.id || node.panel || 'panel',
+        panelId: node.panel || '',
+        title: localizeLabel(node.title, localizeLabel(panel.title, node.panel || 'Panel')),
+        module: moduleId,
+        visible: visibleByState && (!root || rendered),
+        visibleByState,
+        rendered,
+        hiddenReasons,
+        revealActions: cloneJson(context.revealActions),
+        behavior: cloneJson(node.behavior || panel.behavior || null),
+        safeActions: cloneJson(panelSafeActions(panel, module)),
+        webmcpTools: cloneJson(panelWebMcpTools(panel, module)),
+      });
+    }, {
+      viewId,
+      visible,
+      stacks,
+      revealActions: viewRevealActions,
+      hiddenReasons: viewHiddenReasons,
+    });
+  }
+
+  let configTargets = [
+    ...viewRecords.map((view) => ({
+      address: view.address,
+      kind: 'view',
+      source: 'config',
+      visible: view.visible,
+      revealActions: view.revealActions,
+    })),
+    ...stacks.map((stack) => ({
+      address: stack.address,
+      kind: 'stack',
+      source: 'config',
+      visible: stack.visible,
+      active: stack.active,
+    })),
+    ...panels.map((panel) => ({
+      address: panel.address,
+      kind: 'panel',
+      source: 'config',
+      visible: panel.visible,
+      revealActions: panel.revealActions,
+    })),
+  ];
+  let runtimeTargets = collectRuntimeTargets(root, options, {
+    config,
+    activeViewId,
+    views: viewRecords,
+    stacks,
+    panels,
+  });
+  let targets = mergeTargets(configTargets, runtimeTargets);
+
+  let visiblePanels = panels.filter((panel) => panel.visible).length;
+  return {
+    workspace: {
+      name: config?.name || 'workspace',
+      version: config?.version || '',
+    },
+    activeViewId,
+    views: viewRecords,
+    stacks,
+    panels,
+    runtimeTargets,
+    targets,
+    dataContext: collectPresentationDataContext(options, options.router),
+    summary: {
+      viewCount: viewRecords.length,
+      stackCount: stacks.length,
+      panelCount: panels.length,
+      visiblePanelCount: visiblePanels,
+      hiddenPanelCount: panels.length - visiblePanels,
+      runtimeTargetCount: runtimeTargets.length,
+    },
+  };
 }
 
 function resolveRuntimeUpdate(runtimeController, runtimeHandle) {
@@ -884,6 +1367,15 @@ export function mountWorkspace(config, container, options = {}) {
         update: updateResult,
         mounted,
       };
+    },
+    getInterfaceContext(contextOptions = {}) {
+      return collectWorkspaceInterfaceContext(currentConfig, wrapper, {
+        router,
+        ...contextOptions,
+      });
+    },
+    playPresentationTimeline(timeline, timelineOptions = {}) {
+      return playWorkspacePresentationTimeline(timeline, mounted, timelineOptions);
     },
     destroy() {
       if (destroyed) return;

@@ -59,6 +59,10 @@ export const DECISION_STATUSES = Object.freeze(['active', 'superseded', 'orphane
 
 /** timelines[].source vocabulary (B2 staleness-repair on degraded hosts). */
 export const TIMELINE_SOURCES = Object.freeze(['local', 'workspaceRef']);
+export const TIMELINE_FRESHNESS = Object.freeze(['fresh', 'stale', 'unknown']);
+export const TIMELINE_CUE_KINDS = Object.freeze(['focus', 'highlight', 'annotation', 'cursor', 'transcript', 'pause']);
+export const TIMELINE_ACTION_SOURCES = Object.freeze(['webmcp', 'host', 'workspace']);
+export const TIMELINE_DATA_REF_SOURCES = Object.freeze(['route', 'document.presentation', 'selected', 'retrieved', 'mock', 'live']);
 
 /** provenance.lineage source ancestry kinds (L1 ruling 7). */
 export const LINEAGE_SOURCE_KINDS = Object.freeze([
@@ -132,6 +136,63 @@ function parseSubject(value) {
     return parseWorkspaceAddress(value);
   } catch {
     return null;
+  }
+}
+
+function isDomSelectorLike(value) {
+  return typeof value === 'string' && (
+    value.startsWith('#') ||
+    value.startsWith('.') ||
+    value.startsWith('[') ||
+    value.includes(' ') ||
+    value.includes('>')
+  );
+}
+
+function validateWasTarget(value, path, code, ctx) {
+  if (value === undefined) return;
+  if (!parseSubject(value)) {
+    let suffix = isDomSelectorLike(value) ? ' Targets must use stable WAS addresses, never DOM selectors.' : '';
+    ctx.error(path, code, `Timeline target must parse as a WAS address.${suffix}`);
+  }
+}
+
+function validateStringArray(value, path, code, ctx) {
+  if (value === undefined) return;
+  if (!Array.isArray(value)) {
+    ctx.error(path, code, `${path} must be an array.`);
+    return;
+  }
+  value.forEach((item, index) => {
+    if (typeof item !== 'string' || !item.trim()) {
+      ctx.error(`${path}[${index}]`, code, `${path} entries must be non-empty strings.`);
+    }
+  });
+}
+
+function validatePortableIdArray(value, path, code, ctx) {
+  if (value === undefined) return;
+  if (!Array.isArray(value)) {
+    ctx.error(path, code, `${path} must be an array.`);
+    return;
+  }
+  value.forEach((item, index) => {
+    if (!isPortableId(item)) {
+      ctx.error(`${path}[${index}]`, code, `${path} entries must be portable ids.`);
+    }
+  });
+}
+
+function validateTiming(value, path, ctx) {
+  if (value === undefined) return;
+  if (!isObject(value)) {
+    ctx.error(path, 'behavior.timeline.timing', 'timeline timing must be an object.');
+    return;
+  }
+  for (let key of ['startMs', 'durationMs', 'delayMs']) {
+    if (value[key] !== undefined && (typeof value[key] !== 'number' || value[key] < 0)) {
+      ctx.error(`${path}.${key}`, 'behavior.timeline.timing', `${key} must be a non-negative number.`);
+    }
   }
 }
 
@@ -519,11 +580,11 @@ function validateNarration(config, ctx) {
     // Deleted island (L1 ruling 6): locale variants ride top-level i18n.locales.
     ctx.error('narration.locales', 'behavior.narration.locales.deleted', 'narration.locales is deleted — locale variants ride i18n.locales.');
   }
-  validateNarrationRecords(narration.timelines, 'narration.timelines', ctx, true);
-  validateNarrationRecords(narration.enrichment, 'narration.enrichment', ctx, false);
+  validateNarrationRecords(narration.timelines, 'narration.timelines', config, ctx, true);
+  validateNarrationRecords(narration.enrichment, 'narration.enrichment', config, ctx, false);
 }
 
-function validateNarrationRecords(records, path, ctx, isTimeline) {
+function validateNarrationRecords(records, path, config, ctx, isTimeline) {
   if (records === undefined) return;
   if (!Array.isArray(records)) {
     ctx.error(path, 'behavior.narration.records.type', `${path} must be an array.`);
@@ -540,8 +601,124 @@ function validateNarrationRecords(records, path, ctx, isTimeline) {
     if (record.revision !== undefined && !isInteger(record.revision)) {
       ctx.error(`${recordPath}.revision`, 'behavior.narration.record.revision', 'Narration record.revision must be an integer.');
     }
+    if (isTimeline && !isPortableId(record.id)) {
+      ctx.error(`${recordPath}.id`, 'behavior.timeline.id', 'timeline.id must be a portable id.');
+    }
     if (isTimeline && !TIMELINE_SOURCES.includes(record.source)) {
       ctx.error(`${recordPath}.source`, 'behavior.timeline.source', `timelines[].source must be one of ${TIMELINE_SOURCES.join('|')}.`);
+    }
+    if (isTimeline) validateTimelineRecord(record, recordPath, config, ctx);
+  });
+}
+
+function validateTimelineRecord(record, path, config, ctx) {
+  if (record.freshness !== undefined && !TIMELINE_FRESHNESS.includes(record.freshness)) {
+    ctx.error(`${path}.freshness`, 'behavior.timeline.freshness', `timeline.freshness must be one of ${TIMELINE_FRESHNESS.join('|')}.`);
+  }
+  let currentRevision = config.provenance?.revision;
+  if (isInteger(currentRevision) && isInteger(record.revision) && record.revision < currentRevision && record.freshness !== 'stale') {
+    ctx.error(`${path}.freshness`, 'behavior.timeline.stale', 'timeline built against an older structural revision must declare freshness:"stale".');
+  }
+  validatePortableIdArray(record.requiredHostServices, `${path}.requiredHostServices`, 'behavior.timeline.hostServices', ctx);
+  validateStringArray(record.languages, `${path}.languages`, 'behavior.timeline.languages', ctx);
+  if (record.locale !== undefined && (typeof record.locale !== 'string' || !record.locale.trim())) {
+    ctx.error(`${path}.locale`, 'behavior.timeline.locale', 'timeline.locale must be a non-empty string.');
+  }
+  if (record.segments !== undefined) validateTimelineSegments(record.segments, `${path}.segments`, ctx);
+}
+
+function validateTimelineSegments(segments, path, ctx) {
+  if (!Array.isArray(segments)) {
+    ctx.error(path, 'behavior.timeline.segments', 'timeline.segments must be an array.');
+    return;
+  }
+  segments.forEach((segment, index) => {
+    let segmentPath = `${path}[${index}]`;
+    if (!isObject(segment)) {
+      ctx.error(segmentPath, 'behavior.timeline.segment', 'timeline segment must be an object.');
+      return;
+    }
+    if (!isPortableId(segment.id)) {
+      ctx.error(`${segmentPath}.id`, 'behavior.timeline.segment.id', 'timeline segment.id must be a portable id.');
+    }
+    if (segment.narration !== undefined && typeof segment.narration !== 'string' && !isLocalizableString(segment.narration)) {
+      ctx.error(`${segmentPath}.narration`, 'behavior.timeline.segment.narration', 'segment narration must be text or a localizable string.');
+    }
+    if (segment.locale !== undefined && (typeof segment.locale !== 'string' || !segment.locale.trim())) {
+      ctx.error(`${segmentPath}.locale`, 'behavior.timeline.locale', 'segment.locale must be a non-empty string.');
+    }
+    validateWasTarget(segment.target, `${segmentPath}.target`, 'behavior.timeline.target', ctx);
+    validateWasTarget(segment.focusTarget, `${segmentPath}.focusTarget`, 'behavior.timeline.target', ctx);
+    validateTiming(segment.timing, `${segmentPath}.timing`, ctx);
+    validateTimelineCues(segment.cues, `${segmentPath}.cues`, ctx);
+    validateTimelineActions(segment.actions, `${segmentPath}.actions`, ctx);
+    validateTimelineDataRefs(segment.dataRefs, `${segmentPath}.dataRefs`, ctx);
+    validatePortableIdArray(segment.requiredHostServices, `${segmentPath}.requiredHostServices`, 'behavior.timeline.hostServices', ctx);
+  });
+}
+
+function validateTimelineCues(cues, path, ctx) {
+  if (cues === undefined) return;
+  if (!Array.isArray(cues)) {
+    ctx.error(path, 'behavior.timeline.cues', 'segment.cues must be an array.');
+    return;
+  }
+  cues.forEach((cue, index) => {
+    let cuePath = `${path}[${index}]`;
+    if (!isObject(cue)) {
+      ctx.error(cuePath, 'behavior.timeline.cue', 'timeline cue must be an object.');
+      return;
+    }
+    if (!TIMELINE_CUE_KINDS.includes(cue.kind)) {
+      ctx.error(`${cuePath}.kind`, 'behavior.timeline.cue.kind', `cue.kind must be one of ${TIMELINE_CUE_KINDS.join('|')}.`);
+    }
+    validateWasTarget(cue.target, `${cuePath}.target`, 'behavior.timeline.target', ctx);
+    if (cue.text !== undefined && typeof cue.text !== 'string' && !isLocalizableString(cue.text)) {
+      ctx.error(`${cuePath}.text`, 'behavior.timeline.cue.text', 'cue.text must be text or a localizable string.');
+    }
+  });
+}
+
+function validateTimelineActions(actions, path, ctx) {
+  if (actions === undefined) return;
+  if (!Array.isArray(actions)) {
+    ctx.error(path, 'behavior.timeline.actions', 'segment.actions must be an array.');
+    return;
+  }
+  actions.forEach((action, index) => {
+    let actionPath = `${path}[${index}]`;
+    if (!isObject(action)) {
+      ctx.error(actionPath, 'behavior.timeline.action', 'timeline action must be an object.');
+      return;
+    }
+    if (!TIMELINE_ACTION_SOURCES.includes(action.source)) {
+      ctx.error(`${actionPath}.source`, 'behavior.timeline.action.source', `action.source must be one of ${TIMELINE_ACTION_SOURCES.join('|')}.`);
+    }
+    if (typeof action.name !== 'string' || !action.name.trim()) {
+      ctx.error(`${actionPath}.name`, 'behavior.timeline.action.name', 'action.name must be a non-empty string.');
+    }
+    validateWasTarget(action.target, `${actionPath}.target`, 'behavior.timeline.target', ctx);
+  });
+}
+
+function validateTimelineDataRefs(dataRefs, path, ctx) {
+  if (dataRefs === undefined) return;
+  if (!Array.isArray(dataRefs)) {
+    ctx.error(path, 'behavior.timeline.dataRefs', 'segment.dataRefs must be an array.');
+    return;
+  }
+  dataRefs.forEach((ref, index) => {
+    let refPath = `${path}[${index}]`;
+    if (!isObject(ref)) {
+      ctx.error(refPath, 'behavior.timeline.dataRef', 'timeline dataRef must be an object.');
+      return;
+    }
+    if (!TIMELINE_DATA_REF_SOURCES.includes(ref.source)) {
+      ctx.error(`${refPath}.source`, 'behavior.timeline.dataRef.source', `dataRef.source must be one of ${TIMELINE_DATA_REF_SOURCES.join('|')}.`);
+    }
+    if (ref.target !== undefined) validateWasTarget(ref.target, `${refPath}.target`, 'behavior.timeline.target', ctx);
+    if (ref.path !== undefined && (typeof ref.path !== 'string' || !ref.path.trim())) {
+      ctx.error(`${refPath}.path`, 'behavior.timeline.dataRef.path', 'dataRef.path must be a non-empty string.');
     }
   });
 }

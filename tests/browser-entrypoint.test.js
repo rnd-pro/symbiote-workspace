@@ -54,6 +54,8 @@ describe('browser entrypoint', () => {
     assert.equal(globalThis.document, before);
     assert.equal(typeof browser.mountWorkspace, 'function');
     assert.equal(typeof browser.applyWorkspaceTheme, 'function');
+    assert.equal(typeof browser.collectWorkspaceInterfaceContext, 'function');
+    assert.equal(typeof browser.playWorkspacePresentationTimeline, 'function');
   });
 
   it('differs from the root entrypoint only by intentional runtime and DOM APIs', async () => {
@@ -84,7 +86,13 @@ describe('browser entrypoint', () => {
       'toolConfirmPolicy',
       'validateCatalogProof',
     ]);
-    assert.deepEqual(onlyBrowser, ['applyWorkspaceTheme', 'mountWorkspace', 'subscribeDataChange']);
+    assert.deepEqual(onlyBrowser, [
+      'applyWorkspaceTheme',
+      'collectWorkspaceInterfaceContext',
+      'mountWorkspace',
+      'playWorkspacePresentationTimeline',
+      'subscribeDataChange',
+    ]);
   });
 
   it('keeps mountWorkspace as an explicit DOM contract', async () => {

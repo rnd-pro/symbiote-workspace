@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Added `collectWorkspaceInterfaceContext()` to the browser entrypoint and
+  `mounted.getInterfaceContext()` on mounted workspaces. Hosts and agents can now
+  read a full interface map before generating a presentation/tour timeline:
+  active view, hidden views, stack tabs, hidden panels, rendered status,
+  declared module actions, declared WebMCP tools, and reveal actions for showing
+  non-visible UI. The helper also accepts an injected WebMCP/component target
+  collector, strips DOM references, de-duplicates runtime targets, merges
+  portable target enrichment, and includes route/data context for data-grounded
+  presentations.
+- Extended `narration.timelines[]` into a validated semantic presentation
+  artifact: timeline segments can carry narration, locale, stable WAS targets,
+  highlight/annotation cues, safe WebMCP/host/workspace actions, data refs,
+  timing hints, and required host services. Validation rejects DOM-selector
+  targets, unsupported action/data sources, and stale timelines that do not
+  declare `freshness: "stale"` after `provenance.revision` advances.
+- Added `playWorkspacePresentationTimeline()` plus
+  `mounted.playPresentationTimeline()` so hosts can execute generated
+  presentation timelines against a mounted workspace. Playback reads the same
+  interface context exposed to agents, runs declared reveal actions before
+  narration/focus, uses the mounted router for `view.select`, and requires a host
+  `executeAction` callback for safe WebMCP/host/workspace timeline actions.
 - Synced product docs with the Phase 1 target-schema implementation: README,
   agent resource map, local agent instructions, and product docs now describe
   schema `1.0.0`, the 85-tool dispatch registry, catalog tools, server and SSR
