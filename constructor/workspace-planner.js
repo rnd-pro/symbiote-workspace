@@ -778,7 +778,7 @@ function normalizeExternalWorkspaceTemplate(template, index) {
   }
 
   let validation = validateWorkspaceConfig(template.config, { strict: true });
-  if (!validation.valid) {
+  if (!validation.ok) {
     throw new Error(`${path}.config is invalid: ${validationMessage(validation)}`);
   }
 
@@ -977,6 +977,7 @@ function panelTypeForComponent(config, tagName) {
 }
 
 function menuActionFromModuleAction(action, defaults = {}) {
+  let dispatch = isObject(action.does) ? action.does : null;
   return {
     id: action.id,
     label: action.label,
@@ -987,6 +988,10 @@ function menuActionFromModuleAction(action, defaults = {}) {
     ...(action.event ? { event: action.event } : {}),
     ...(action.method ? { method: action.method } : {}),
     ...(action.binding ? { binding: action.binding } : {}),
+    ...(dispatch?.kind === 'command' ? { command: dispatch.command } : {}),
+    ...(dispatch?.kind === 'emit' ? { event: dispatch.event } : {}),
+    ...(dispatch?.kind === 'method' ? { method: dispatch.method } : {}),
+    ...(dispatch?.kind === 'wire' ? { binding: dispatch.to } : {}),
   };
 }
 
@@ -1449,7 +1454,9 @@ function moduleDescriptorMap(config) {
 function applyDescriptorPlanFields(target, descriptor) {
   if (!descriptor) return target;
   target.capabilities = deepClone(descriptor.capabilities || []);
-  target.requiredHostServices = deepClone(descriptor.requiredHostServices || []);
+  target.requiredHostServices = deepClone(
+    descriptor.hostServices?.required || descriptor.requiredHostServices || [],
+  );
   for (let field of [
     'actions',
     'menus',
@@ -1461,6 +1468,7 @@ function applyDescriptorPlanFields(target, descriptor) {
     'engine',
     'slots',
     'runtimeSlots',
+    'hostServices',
     'placement',
   ]) {
     if (descriptor[field] !== undefined) target[field] = deepClone(descriptor[field]);

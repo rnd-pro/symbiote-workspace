@@ -1,7 +1,8 @@
-import { describe, it } from 'node:test';
+import { beforeEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { validateWorkspaceConfig } from '../validation/core.js';
+import { assembleWorkspaceSchema, WORKSPACE_SCHEMA_VERSION } from '../schema/index.js';
 import {
   applyWorkspacePatch,
   loadWorkspaceDesignPolicy,
@@ -14,7 +15,7 @@ import {
 
 function createBaseConfig() {
   return {
-    version: '0.2.0',
+    version: WORKSPACE_SCHEMA_VERSION,
     name: 'Builder',
     register: 'tool',
     theme: {
@@ -25,23 +26,40 @@ function createBaseConfig() {
         contrast: 72,
       },
     },
-    panelTypes: {
+    requires: {
+      packages: [{ id: 'symbiote-ui', version: '^1.0.0' }],
+    },
+    modules: [{
+      id: 'symbiote-ui:card',
+      source: { kind: 'package', package: 'symbiote-ui' },
+      tagName: 'sn-card',
+      capabilities: ['dashboard.card'],
+    }],
+    panels: {
       source: {
+        module: 'symbiote-ui:card',
         title: 'Source',
-        component: 'sn-card',
       },
     },
-    layout: {
-      type: 'panel',
-      panelType: 'source',
+    layouts: {
+      main: {
+        kind: 'bsp',
+        root: {
+          type: 'panel',
+          id: 'source-node',
+          panel: 'source',
+        },
+      },
     },
-    components: {
-      catalog: ['sn-card'],
-    },
+    views: [{ id: 'main', title: 'Main', layout: { $layout: 'main' } }],
   };
 }
 
 describe('workspace construction patch validation', () => {
+  beforeEach(() => {
+    assembleWorkspaceSchema();
+  });
+
   it('loads the Node-safe symbiote-ui design policy bridge', async () => {
     let policy = await loadWorkspaceDesignPolicy();
     assert.equal(typeof policy.deriveDesignConstraints, 'function');
@@ -139,12 +157,18 @@ describe('workspace construction patch validation', () => {
     let originalConfig = structuredClone(config);
 
     let report = await proposeWorkspacePatch(config, {
-      layout: {
-        type: 'split',
-        direction: 'horizontal',
-        ratio: 0.01,
-        first: { type: 'panel', panelType: 'source' },
-        second: { type: 'panel', panelType: 'preview' },
+      layouts: {
+        main: {
+          kind: 'bsp',
+          root: {
+            type: 'split',
+            id: 'root',
+            direction: 'horizontal',
+            ratio: 0.01,
+            first: { type: 'panel', id: 'source-node', panel: 'source' },
+            second: { type: 'panel', id: 'preview-node', panel: 'preview' },
+          },
+        },
       },
     });
 
@@ -153,41 +177,39 @@ describe('workspace construction patch validation', () => {
     assert.equal(report.nextConfig, null);
     assert.equal(report.diagnostics.some((item) =>
       item.surface === 'layout' &&
-      item.path === '/layout/ratio' &&
+      item.path === '/layouts/main/root/ratio' &&
       item.severity === 'hard'
     ), true);
-    assert.deepEqual(
-      report.suggestedPatches.find((item) => item.path === '/layout/ratio'),
-      {
-        op: 'replace',
-        path: '/layout/ratio',
-        value: 0.05,
-        reason: 'Use a legal split ratio within the workspace schema range.',
-      }
-    );
+    assert.equal(report.diagnostics.some((item) =>
+      item.path === '/layouts/main/root/second/panel' &&
+      item.severity === 'hard'
+    ), true);
     assert.deepEqual(config, originalConfig);
   });
 
-  it('warns on module patches that use invalid custom element names', async () => {
+  it('blocks module patches that use invalid custom element names', async () => {
     let config = createBaseConfig();
 
     let report = await validateWorkspacePatch(config, {
-      modules: {
-        panelTypes: {
-          preview: {
-            title: 'Preview',
-            component: 'PreviewPanel',
+      overlay: {
+        modules: [
+          ...config.modules,
+          {
+            id: 'symbiote-ui:preview',
+            source: { kind: 'package', package: 'symbiote-ui' },
+            tagName: 'PreviewPanel',
+            capabilities: ['dashboard.preview'],
           },
-        },
+        ],
       },
     });
 
-    assert.equal(report.status, 'warn');
-    assert.equal(report.accepted, true);
+    assert.equal(report.status, 'blocked');
+    assert.equal(report.accepted, false);
     assert.equal(report.diagnostics.some((item) =>
-      item.surface === 'modules' &&
-      item.path === '/modules/panelTypes/preview/component' &&
-      item.severity === 'soft'
+      item.surface === 'config' &&
+      item.path === '/modules/1/tagName' &&
+      item.severity === 'hard'
     ), true);
   });
 
@@ -219,7 +241,7 @@ describe('workspace construction patch validation', () => {
     assert.equal(result.config.validation.reports.length, 1);
     assert.equal(result.config.validation.reports[0].check, 'workspace-patch-validation');
     assert.equal(result.config.validation.reports[0].status, 'pass');
-    assert.equal(validateWorkspaceConfig(result.config, { strict: true }).valid, true);
+    assert.equal(validateWorkspaceConfig(result.config, { strict: true }).ok, true);
     assert.deepEqual(config, originalConfig);
   });
 

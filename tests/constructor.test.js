@@ -191,7 +191,7 @@ describe('canonical templates', () => {
       let template = getTemplate(name);
       assert.ok(template, `${name} template should exist`);
       let validation = validateWorkspaceConfig(template.config, { strict: true });
-      assert.equal(validation.valid, true, `${name} template should validate: ${JSON.stringify(validation.errors)}`);
+      assert.equal(validation.ok, true, `${name} template should validate: ${JSON.stringify(validation.errors)}`);
       assert.ok(template.config.components?.catalog?.length > 0, `${name} should declare a component catalog`);
       assert.ok(template.config.components?.modules?.length > 0, `${name} should declare module capabilities`);
       for (let descriptor of template.config.components.modules) {
@@ -225,7 +225,7 @@ describe('canonical templates', () => {
     assert.deepEqual(result.plan.capabilities.missing, []);
 
     let validation = validateWorkspaceConfig(result.config, { strict: true });
-    assert.equal(validation.valid, true, JSON.stringify(validation.errors));
+    assert.equal(validation.ok, true, JSON.stringify(validation.errors));
   });
 
   it('matches external templates from name, description, and config name', () => {

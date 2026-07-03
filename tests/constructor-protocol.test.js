@@ -8,7 +8,7 @@ import {
   normalizeConstructionIntent,
   planWorkspaceConstruction,
 } from '../constructor/index.js';
-import { validateWorkspaceConfig } from '../schema/index.js';
+import { validateWorkspaceConfig, WORKSPACE_SCHEMA_VERSION } from '../schema/index.js';
 
 function layoutReferencesPanel(node, panelType) {
   if (!node) return false;
@@ -159,7 +159,7 @@ describe('planWorkspaceConstruction', () => {
       workspaceTemplates: [{
         name: 'review-detail',
         config: {
-          version: '0.3.0',
+          version: WORKSPACE_SCHEMA_VERSION,
           name: 'Review Detail',
           panelTypes: {
             review: { title: 'Review', component: 'acme-review-panel' },
@@ -231,7 +231,7 @@ describe('planWorkspaceConstruction', () => {
     assert.equal(result.plan.verification.reports.find((report) => report.check === 'portability').status, 'pass');
     assert.equal(result.plan.verification.reports.find((report) => report.check === 'modules').status, 'pass');
     assert.equal(result.plan.verification.reports.find((report) => report.check === 'package-readiness').status, 'pass');
-    assert.equal(validateWorkspaceConfig(result.config, { strict: true }).valid, true);
+    assert.equal(validateWorkspaceConfig(result.config, { strict: true }).ok, true);
   });
 
   it('records execution model question answers on the plan and config', () => {
@@ -263,7 +263,7 @@ describe('planWorkspaceConstruction', () => {
       model: 'automation-bridge',
       hostServices: [],
     });
-    assert.equal(validateWorkspaceConfig(result.config, { strict: true }).valid, true);
+    assert.equal(validateWorkspaceConfig(result.config, { strict: true }).ok, true);
   });
 
   it('records host service question answers on the plan and config', () => {
@@ -294,7 +294,7 @@ describe('planWorkspaceConstruction', () => {
     assert.deepEqual(result.plan.execution.moduleHostServices, ['agent.runtime']);
     assert.deepEqual(result.config.intent.hostServices, ['storage.project', 'agent.runtime']);
     assert.deepEqual(result.config.execution.hostServices, ['storage.project', 'agent.runtime']);
-    assert.equal(validateWorkspaceConfig(result.config, { strict: true }).valid, true);
+    assert.equal(validateWorkspaceConfig(result.config, { strict: true }).ok, true);
 
     assert.throws(() => normalizeConstructionIntent({
       brief: 'Build a workspace with a non-portable host policy',
@@ -311,20 +311,20 @@ describe('planWorkspaceConstruction', () => {
       moduleCapabilities: [{
         tagName: 'acme-runtime-panel',
         capabilities: ['runtime.panel'],
-        requiredHostServices: ['agent.runtime', 'storage.project'],
+        hostServices: { required: ['agent.runtime', 'storage.project'] },
         runtimeSlots: [
           { id: 'agent-runtime', role: 'provider', required: true },
         ],
         actions: [{
           id: 'run',
           label: 'Run',
-          engine: { graphId: 'main', nodeId: 'run', pack: 'runtime-pack' },
+          does: { kind: 'command', command: 'runtime.run', scope: 'host' },
         }],
         placement: { panelType: 'runtime' },
       }, {
         tagName: 'acme-runtime-log',
         capabilities: ['runtime.log'],
-        requiredHostServices: ['agent.runtime'],
+        hostServices: { required: ['agent.runtime'] },
         runtimeSlots: [
           { id: 'agent-runtime', role: 'provider', required: true },
         ],
@@ -339,8 +339,8 @@ describe('planWorkspaceConstruction', () => {
     assert.deepEqual(result.plan.execution.requiredHostServices, ['agent.runtime', 'storage.project']);
     assert.deepEqual(result.config.execution.hostServices, ['agent.runtime', 'storage.project']);
     assert.deepEqual(result.plan.execution.runtimeSlots, ['agent-runtime']);
-    assert.deepEqual(result.plan.execution.enginePacks, ['runtime-pack']);
-    assert.equal(validateWorkspaceConfig(result.config, { strict: true }).valid, true);
+    assert.deepEqual(result.plan.execution.enginePacks, []);
+    assert.deepEqual(result.plan.execution.moduleHostServices, ['agent.runtime', 'storage.project']);
   });
 
   it('blocks portability verification reports for non-portable construction values', () => {
@@ -351,7 +351,7 @@ describe('planWorkspaceConstruction', () => {
       workspaceTemplates: [{
         name: 'nonportable-dashboard',
         config: {
-          version: '0.3.0',
+          version: WORKSPACE_SCHEMA_VERSION,
           name: 'Nonportable Dashboard',
           register: 'tool',
           data: {
@@ -410,7 +410,7 @@ describe('planWorkspaceConstruction', () => {
       workspaceTemplates: [{
         name: 'scoped-dashboard',
         config: {
-          version: '0.3.0',
+          version: WORKSPACE_SCHEMA_VERSION,
           name: 'Scoped Theme Dashboard',
           register: 'tool',
           theme: {
@@ -439,7 +439,7 @@ describe('planWorkspaceConstruction', () => {
       overrides: { '--sn-node-radius': '4px' },
     }]);
     assert.deepEqual(result.config.theme.subtrees, result.plan.theme.subtrees);
-    assert.equal(validateWorkspaceConfig(result.config, { strict: true }).valid, true);
+    assert.equal(validateWorkspaceConfig(result.config, { strict: true }).ok, true);
   });
 
   it('carries module capability descriptors into the construction plan', () => {
@@ -451,12 +451,12 @@ describe('planWorkspaceConstruction', () => {
         tagName: 'sn-card',
         provider: 'symbiote-ui',
         capabilities: ['admin.metric', 'dashboard.card'],
-        actions: [{ id: 'refresh', label: 'Refresh' }],
+        actions: [{ id: 'refresh', label: 'Refresh', does: { kind: 'command', command: 'card.refresh', scope: 'host' } }],
         settings: [{ id: 'density', label: 'Density', type: 'enum' }],
         events: { emits: [{ name: 'metric-select' }] },
         bindings: [{ id: 'metric', direction: 'input', path: 'data.metrics' }],
         runtimeSlots: [{ id: 'metric-provider', role: 'provider' }],
-        requiredHostServices: ['storage.project'],
+        hostServices: { required: ['storage.project'] },
         placement: { registers: ['admin'], regions: ['main'] },
       }],
       answers: {
@@ -470,7 +470,9 @@ describe('planWorkspaceConstruction', () => {
     assert.equal(result.plan.modules[0].component, 'sn-card');
     assert.deepEqual(result.plan.modules[0].capabilities, ['admin.metric', 'dashboard.card']);
     assert.deepEqual(result.plan.modules[0].requiredHostServices, ['storage.project']);
-    assert.deepEqual(result.plan.modules[0].actions, [{ id: 'refresh', label: 'Refresh' }]);
+    assert.deepEqual(result.plan.modules[0].actions, [
+      { id: 'refresh', label: 'Refresh', does: { kind: 'command', command: 'card.refresh', scope: 'host' } },
+    ]);
     assert.deepEqual(result.plan.modules[0].placement, { registers: ['admin'], regions: ['main'] });
     assert.deepEqual(result.plan.layout.regions, { main: ['panel-1'] });
   });
@@ -488,14 +490,21 @@ describe('planWorkspaceConstruction', () => {
         actions: [{
           id: 'refresh',
           label: 'Refresh',
-          command: 'sentiment.refresh',
-          engine: { graphId: 'main', nodeId: 'sentiment-refresh', input: 'items', pack: 'analysis-pack' },
+          does: { kind: 'command', command: 'sentiment.refresh', scope: 'host' },
         }],
-        toolbarItems: [{ id: 'filter', label: 'Filter', command: 'sentiment.filter' }],
+        toolbarItems: [{
+          id: 'filter',
+          label: 'Filter',
+          does: { kind: 'command', command: 'sentiment.filter', scope: 'host' },
+        }],
         menus: [{
           id: 'review',
           label: 'Review',
-          items: [{ id: 'assign', label: 'Assign', command: 'sentiment.assign' }],
+          items: [{
+            id: 'assign',
+            label: 'Assign',
+            does: { kind: 'command', command: 'sentiment.assign', scope: 'host' },
+          }],
         }],
         settings: [{ id: 'density', label: 'Density', type: 'enum', options: [{ value: 'compact', label: 'Compact' }] }],
         slots: [{ id: 'empty-state', role: 'fallback', accepts: ['sn-empty-state'], required: true }],
@@ -503,9 +512,8 @@ describe('planWorkspaceConstruction', () => {
           id: 'items',
           direction: 'input',
           path: 'data.sentiment',
-          engine: { graphId: 'main', nodeId: 'sentiment-source', output: 'items' },
         }],
-        requiredHostServices: ['storage.project'],
+        hostServices: { required: ['storage.project'] },
         placement: {
           panelType: 'sentiment',
           title: 'Sentiment',
@@ -538,35 +546,10 @@ describe('planWorkspaceConstruction', () => {
     assert.deepEqual(result.plan.modules[0].matchedCapabilities, ['analysis.sentiment']);
     assert.equal(result.plan.modules[0].selectionReason, 'required-capability');
     assert.deepEqual(result.plan.capabilities.missing, []);
-    assert.deepEqual(result.config.engine, {
-      packs: ['analysis-pack'],
-      bindings: [
-        {
-          id: 'sentiment-action-refresh',
-          panelType: 'sentiment',
-          component: 'acme-sentiment-panel',
-          surface: 'action',
-          sourceId: 'refresh',
-          graphId: 'main',
-          nodeId: 'sentiment-refresh',
-          input: 'items',
-          pack: 'analysis-pack',
-        },
-        {
-          id: 'sentiment-binding-items',
-          panelType: 'sentiment',
-          component: 'acme-sentiment-panel',
-          surface: 'binding',
-          sourceId: 'items',
-          graphId: 'main',
-          nodeId: 'sentiment-source',
-          output: 'items',
-        },
-      ],
-    });
+    assert.equal(result.config.engine, undefined);
 
     let validation = validateWorkspaceConfig(result.config, { strict: true });
-    assert.equal(validation.valid, true, JSON.stringify(validation.errors));
+    assert.deepEqual(validation.errors, []);
   });
 
   it('preserves existing panel menu actions when module descriptors add shell actions', () => {
@@ -577,7 +560,7 @@ describe('planWorkspaceConstruction', () => {
       workspaceTemplates: [{
         name: 'review-shell',
         config: {
-          version: '0.3.0',
+          version: WORKSPACE_SCHEMA_VERSION,
           name: 'Review Shell',
           register: 'tool',
           panelTypes: {
@@ -593,7 +576,7 @@ describe('planWorkspaceConstruction', () => {
       moduleCapabilities: [{
         tagName: 'acme-review-panel',
         capabilities: ['review.queue'],
-        actions: [{ id: 'refresh', label: 'Refresh', command: 'review.refresh' }],
+        actions: [{ id: 'refresh', label: 'Refresh', does: { kind: 'command', command: 'review.refresh', scope: 'host' } }],
       }],
     });
 
@@ -611,7 +594,7 @@ describe('planWorkspaceConstruction', () => {
       workspaceTemplates: [{
         name: 'review-shell',
         config: {
-          version: '0.3.0',
+          version: WORKSPACE_SCHEMA_VERSION,
           name: 'Review Shell',
           register: 'tool',
           panelTypes: {
@@ -636,12 +619,12 @@ describe('planWorkspaceConstruction', () => {
         {
           tagName: 'acme-review-panel',
           capabilities: ['review.queue'],
-          actions: [{ id: 'refresh', label: 'Refresh', command: 'review.refresh' }],
+          actions: [{ id: 'refresh', label: 'Refresh', does: { kind: 'command', command: 'review.refresh', scope: 'host' } }],
         },
         {
           tagName: 'acme-archive-panel',
           capabilities: ['archive.search'],
-          actions: [{ id: 'search', label: 'Search', command: 'archive.search' }],
+          actions: [{ id: 'search', label: 'Search', does: { kind: 'command', command: 'archive.search', scope: 'host' } }],
         },
       ],
     });
@@ -654,7 +637,7 @@ describe('planWorkspaceConstruction', () => {
     assert.equal(layoutReferencesPanel(result.config.layout, 'archive'), false);
   });
 
-  it('materializes descriptor events, settings, slots, bindings, and engine bindings only from selected modules', () => {
+  it('materializes descriptor events, settings, slots, and bindings only from selected modules', () => {
     let result = planWorkspaceConstruction({
       brief: 'Build a focused review shell',
       template: 'review-shell',
@@ -663,7 +646,7 @@ describe('planWorkspaceConstruction', () => {
       workspaceTemplates: [{
         name: 'review-shell',
         config: {
-          version: '0.3.0',
+          version: WORKSPACE_SCHEMA_VERSION,
           name: 'Review Shell',
           register: 'tool',
           panelTypes: {
@@ -717,29 +700,29 @@ describe('planWorkspaceConstruction', () => {
         {
           tagName: 'acme-review-panel',
           capabilities: ['review.queue'],
-          events: { emits: [{ name: 'row-select', engine: { graphId: 'review-flow', nodeId: 'select-row', output: 'row' } }, { name: 'existing-select' }] },
-          settings: [{ id: 'density', label: 'Density', type: 'enum', engine: { graphId: 'review-flow', nodeId: 'density', param: 'mode' } }],
+          events: { emits: [{ name: 'row-select' }, { name: 'existing-select' }] },
+          settings: [{ id: 'density', label: 'Density', type: 'enum' }],
           slots: [{ id: 'review-toolbar', role: 'toolbar', accepts: ['acme-review-tool'] }],
-          state: [{ id: 'selection', type: 'object', default: null, engine: { graphId: 'review-flow', nodeId: 'selection', input: 'value' } }],
-          bindings: [{ id: 'rows', direction: 'input', path: 'data.rows', engine: { graphId: 'review-flow', nodeId: 'normalize', input: 'rows', pack: 'review-pack' } }],
+          state: [{ id: 'selection', type: 'object', default: null }],
+          bindings: [{ id: 'rows', direction: 'input', path: 'data.rows' }],
         },
         {
           tagName: 'acme-detail-panel',
           capabilities: ['review.detail'],
-          events: { consumes: [{ name: 'row-select', targetProperty: 'selection' }, { name: 'existing-select' }] },
+          events: { consumes: [{ name: 'row-select' }, { name: 'existing-select' }] },
           settings: [{ id: 'selection-mode', label: 'Selection mode', type: 'string' }],
           slots: [{ id: 'detail-aside', role: 'aside', accepts: ['acme-detail-aside'], required: true }],
-          state: [{ id: 'expanded', type: 'boolean', default: true, path: 'state.detail.expanded', persistence: 'workspace' }],
-          bindings: [{ id: 'selection', direction: 'input', path: 'data.selection', engine: { graphId: 'review-flow', nodeId: 'summarize', input: 'selection', pack: 'detail-pack' } }],
+          state: [{ id: 'expanded', type: 'boolean', default: true, path: 'state.detail.expanded', persistence: 'runtime' }],
+          bindings: [{ id: 'selection', direction: 'input', path: 'data.selection' }],
         },
         {
           tagName: 'acme-archive-panel',
           capabilities: ['archive.search'],
-          events: { emits: [{ name: 'archive-select', engine: { graphId: 'archive-flow', nodeId: 'archive-select' } }], consumes: [{ name: 'row-select' }] },
+          events: { emits: [{ name: 'archive-select' }], consumes: [{ name: 'row-select' }] },
           settings: [{ id: 'archive-filter', label: 'Archive filter', type: 'string' }],
           slots: [{ id: 'archive-tools', role: 'toolbar', accepts: ['acme-archive-tool'] }],
-          state: [{ id: 'archive-selection', type: 'object', engine: { graphId: 'archive-flow', nodeId: 'archive-state' } }],
-          bindings: [{ id: 'archived-selection', direction: 'input', path: 'data.archiveSelection', engine: { graphId: 'archive-flow', nodeId: 'archive-selection', pack: 'archive-pack' } }],
+          state: [{ id: 'archive-selection', type: 'object' }],
+          bindings: [{ id: 'archived-selection', direction: 'input', path: 'data.archiveSelection' }],
         },
       ],
     });
@@ -763,7 +746,6 @@ describe('planWorkspaceConstruction', () => {
         sourcePanel: 'review',
         event: 'row-select',
         targetPanel: 'detail',
-        targetProperty: 'selection',
       },
       {
         id: 'review-existing-select',
@@ -803,7 +785,7 @@ describe('planWorkspaceConstruction', () => {
         type: 'boolean',
         path: 'state.detail.expanded',
         default: true,
-        persistence: 'workspace',
+        persistence: 'runtime',
       },
     ]);
     assert.deepEqual(result.config.panelTypes.review.settings, [
@@ -821,63 +803,7 @@ describe('planWorkspaceConstruction', () => {
     ]);
     assert.equal(result.config.panelTypes.archive.slots, undefined);
     assert.equal(layoutReferencesPanel(result.config.layout, 'archive'), false);
-    assert.deepEqual(result.config.engine, {
-      packs: ['detail-pack', 'review-pack'],
-      bindings: [
-        {
-          id: 'review-setting-density',
-          panelType: 'review',
-          component: 'acme-review-panel',
-          surface: 'setting',
-          sourceId: 'density',
-          graphId: 'review-flow',
-          nodeId: 'density',
-          param: 'mode',
-        },
-        {
-          id: 'review-state-selection',
-          panelType: 'review',
-          component: 'acme-review-panel',
-          surface: 'state',
-          sourceId: 'selection',
-          graphId: 'review-flow',
-          nodeId: 'selection',
-          input: 'value',
-        },
-        {
-          id: 'review-event-row-select',
-          panelType: 'review',
-          component: 'acme-review-panel',
-          surface: 'event',
-          sourceId: 'row-select',
-          graphId: 'review-flow',
-          nodeId: 'select-row',
-          output: 'row',
-        },
-        {
-          id: 'review-binding-rows',
-          panelType: 'review',
-          component: 'acme-review-panel',
-          surface: 'binding',
-          sourceId: 'rows',
-          graphId: 'review-flow',
-          nodeId: 'normalize',
-          input: 'rows',
-          pack: 'review-pack',
-        },
-        {
-          id: 'detail-binding-selection',
-          panelType: 'detail',
-          component: 'acme-detail-panel',
-          surface: 'binding',
-          sourceId: 'selection',
-          graphId: 'review-flow',
-          nodeId: 'summarize',
-          input: 'selection',
-          pack: 'detail-pack',
-        },
-      ],
-    });
+    assert.equal(result.config.engine, undefined);
 
     let validation = validateWorkspaceConfig(result.config, { strict: true });
     assert.deepEqual(validation.errors, []);
@@ -1045,7 +971,7 @@ describe('planWorkspaceConstruction', () => {
       workspaceTemplates: [{
         name: 'review-routing',
         config: {
-          version: '0.3.0',
+          version: WORKSPACE_SCHEMA_VERSION,
           name: 'Review Routing',
           register: 'tool',
           groups: [{ id: 'review', name: 'Review' }],
@@ -1177,13 +1103,13 @@ describe('construction schema validation', () => {
     let result = planWorkspaceConstruction('Build a video studio workspace');
     let validation = validateWorkspaceConfig(result.config, { strict: true });
 
-    assert.equal(validation.valid, true);
+    assert.equal(validation.ok, true);
     assert.equal(validation.errors.length, 0);
   });
 
-  it('rejects invalid construction question dependency metadata', () => {
+  it('leaves construction question dependency semantics to the constructor layer', () => {
     let validation = validateWorkspaceConfig({
-      version: '0.2.0',
+      version: WORKSPACE_SCHEMA_VERSION,
       name: 'Broken Workspace',
       intent: {
         brief: 'Broken workspace',
@@ -1212,9 +1138,7 @@ describe('construction schema validation', () => {
       },
     }, { strict: true });
 
-    assert.equal(validation.valid, false);
-    assert.ok(
-      validation.errors.some((error) => error.path === 'construction.questions[0].skippedReason'),
-    );
+    assert.equal(validation.ok, true);
+    assert.deepEqual(validation.errors, []);
   });
 });
