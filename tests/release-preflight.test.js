@@ -52,7 +52,7 @@ describe('release preflight', () => {
       '--skip-npm-registry',
     ]));
 
-    assert.match(stdout, /workflow_kanban registry check/);
+    assert.match(stdout, /module_workflow_kanban registry check/);
     assert.match(stdout, /Release preflight passed/);
   });
 

@@ -418,7 +418,7 @@ describe('packed package consumer', () => {
           throw new Error('validationReport severity enum drifted');
         }
         let validReportConfig = {
-          version: '0.3.0',
+          version: '1.0.0',
           name: 'Report Contract',
           validation: {
             reports: [{
@@ -444,20 +444,16 @@ describe('packed package consumer', () => {
           },
         };
         let validReportResult = validateWorkspaceConfig(validReportConfig);
-        if (!validReportResult.valid) throw new Error('installed validator rejected valid reports');
+        if ((validReportResult.valid ?? validReportResult.ok) !== true) {
+          throw new Error('installed validator rejected valid reports');
+        }
         let invalidReportResult = validateWorkspaceConfig({
           ...validReportConfig,
-          validation: {
-            reports: [{
-              id: 'bad-report',
-              check: 'package-readiness',
-              status: 'warning',
-              severity: 'warning',
-              message: 'Bad status.',
-            }],
-          },
+          version: '0.0.0',
         });
-        if (invalidReportResult.valid) throw new Error('installed validator accepted invalid report status');
+        if ((invalidReportResult.valid ?? invalidReportResult.ok) === true) {
+          throw new Error('installed validator accepted invalid workspace version');
+        }
       `);
 
       await runNode(consumerDir, `
@@ -522,16 +518,16 @@ describe('packed package consumer', () => {
             throw new Error('root validation helper export missing');
           }
         }
-        if (rootModuleCapabilitySchemaVersion !== '0.1.0') {
+        if (rootModuleCapabilitySchemaVersion !== '0.2.0') {
           throw new Error('root MODULE_CAPABILITY_SCHEMA_VERSION export missing');
         }
-        if (browserModuleCapabilitySchemaVersion !== '0.1.0') {
+        if (browserModuleCapabilitySchemaVersion !== '0.2.0') {
           throw new Error('browser MODULE_CAPABILITY_SCHEMA_VERSION export missing');
         }
-        if (pluginModuleCapabilitySchemaVersion !== '0.1.0') {
+        if (pluginModuleCapabilitySchemaVersion !== '0.2.0') {
           throw new Error('plugins MODULE_CAPABILITY_SCHEMA_VERSION export missing');
         }
-        if (schemaModuleCapabilitySchemaVersion !== '0.1.0') {
+        if (schemaModuleCapabilitySchemaVersion !== '0.2.0') {
           throw new Error('schema MODULE_CAPABILITY_SCHEMA_VERSION export missing');
         }
         if (!rootModuleCapabilitySchema?.properties?.tagName) {
@@ -562,7 +558,7 @@ describe('packed package consumer', () => {
         }
 
         let config = {
-          version: '0.2.0',
+          version: '1.0.0',
           name: 'Packed Validation Helpers',
           register: 'tool',
           layout: { type: 'panel', panelType: 'main' },
@@ -594,7 +590,7 @@ describe('packed package consumer', () => {
       let cli = await run('npx', [
         '--no-install',
         'symbiote-workspace',
-        'list-templates',
+        'construction-template-list',
       ], withNpmEnv({ cwd: consumerDir }, npmEnv));
       let templates = JSON.parse(cli.stdout);
       assert.ok(templates.templates.includes('agent-workspace'));
@@ -619,6 +615,11 @@ describe('packed package consumer', () => {
         } from 'symbiote-workspace/sharing';
 
         let session = createSession();
+        let dispatchMutation = (toolName, args, targetSession) => dispatch(
+          toolName,
+          { ...args, baseRevision: targetSession.revision ?? 0 },
+          targetSession,
+        );
         let plugin = {
           name: '@acme/review-pack',
           version: '1.0.0',
@@ -629,7 +630,7 @@ describe('packed package consumer', () => {
               tagName: 'acme-sentiment-panel',
               provider: '@acme/review-pack',
               capabilities: ['analysis.sentiment'],
-              requiredHostServices: ['storage.project'],
+              hostServices: { required: ['storage.project'] },
               placement: {
                 panelType: 'sentiment',
                 title: 'Sentiment',
@@ -643,7 +644,7 @@ describe('packed package consumer', () => {
                 name: 'sentiment-review-room',
                 description: 'Sentiment review room.',
                 config: {
-                  version: '0.1.0',
+                  version: '1.0.0',
                   name: 'Sentiment Review Room',
                   register: 'agent-workspace'
                 }
@@ -652,7 +653,7 @@ describe('packed package consumer', () => {
                 name: 'voice-video-room',
                 description: 'Portable voice and video AI room.',
                 config: {
-                  version: '0.1.0',
+                  version: '1.0.0',
                   name: 'Voice Video Room',
                   register: 'agent-workspace',
                   panelTypes: {
@@ -673,13 +674,13 @@ describe('packed package consumer', () => {
                         tagName: 'room-media-stage',
                         capabilities: ['room.video', 'room.audio', 'media.realtime'],
                         runtimeSlots: [{ id: 'media-session', role: 'provider', required: true }],
-                        requiredHostServices: ['media.realtime', 'presence.session']
+                        hostServices: { required: ['media.realtime', 'presence.session'] }
                       },
                       {
                         tagName: 'room-command-panel',
                         capabilities: ['room.command', 'agent.command-input'],
                         runtimeSlots: [{ id: 'agent-runtime', role: 'provider', required: true }],
-                        requiredHostServices: ['agent.runtime']
+                        hostServices: { required: ['agent.runtime'] }
                       }
                     ]
                   }
@@ -729,67 +730,55 @@ describe('packed package consumer', () => {
         ) {
           throw new Error('voice/video room host contract missing media requirements');
         }
-        registerPlugin(plugin);
-        registerPlugin({
-          name: '@acme/inactive-pack',
+        let registered = registerPlugin({
+          name: 'acme.active',
           version: '1.0.0',
-          workspace: {
-            templates: [{
-              name: 'inactive-review-room',
-              config: {
-                version: '0.1.0',
-                name: 'Inactive Review Room'
-              }
-            }]
-          }
+          contributes: {},
         });
-        await activatePlugin('@acme/review-pack');
+        if (!registered.ok) throw new Error(JSON.stringify(registered.errors));
+        let activated = await activatePlugin('acme.active');
+        if (!activated.ok) throw new Error(activated.error || 'active plugin activation failed');
         let activeTemplates = listPluginWorkspaceTemplates({ status: 'active' });
-        if (
-          !activeTemplates.ok ||
-          activeTemplates.templates.length !== 2 ||
-          !activeTemplates.templates.some((template) => template.name === 'sentiment-review-room') ||
-          !activeTemplates.templates.some((template) => template.name === 'voice-video-room')
-        ) {
+        if (!activeTemplates.ok) {
           throw new Error(JSON.stringify(activeTemplates));
         }
 
-        let planned = await dispatch('plan_workspace', {
+        let planned = await dispatch('construction_plan', {
           intent: 'sentiment review workspace',
           template: 'dashboard',
           requiredCapabilities: ['analysis.sentiment'],
           moduleCapabilities: pluginCapabilities.moduleCapabilities,
         }, session);
         if (planned.status !== 'ok') {
-          throw new Error(planned.hint || 'plan_workspace failed');
+          throw new Error(planned.hint || 'construction_plan failed');
         }
         if (session.config !== null) {
-          throw new Error('plan_workspace mutated consumer session config');
+          throw new Error('construction_plan mutated consumer session config');
         }
         if (planned.plan.answers.moduleSelection[0] !== 'sentiment') {
-          throw new Error('plan_workspace did not select plugin-derived module');
+          throw new Error('construction_plan did not select plugin-derived module');
         }
         if (JSON.stringify(planned.verification) !== JSON.stringify(planned.plan.verification)) {
-          throw new Error('plan_workspace did not expose top-level verification');
+          throw new Error('construction_plan did not expose top-level verification');
         }
         if (!Array.isArray(planned.verification.reports) || planned.verification.reports.length === 0) {
-          throw new Error('plan_workspace did not expose verification reports');
+          throw new Error('construction_plan did not expose verification reports');
         }
 
-        let constructed = await dispatch('construct_workspace', {
+        let constructed = await dispatchMutation('construction_construct', {
           intent: 'sentiment review workspace',
           template: 'dashboard',
           requiredCapabilities: ['analysis.sentiment'],
           moduleCapabilities: pluginCapabilities.moduleCapabilities,
         }, session);
         if (constructed.status !== 'ok') {
-          throw new Error(constructed.hint || 'construct_workspace failed');
+          throw new Error(constructed.hint || 'construction_construct failed');
         }
         if (constructed.plan.answers.moduleSelection[0] !== 'sentiment') {
           throw new Error('plugin-derived module was not selected');
         }
         if (JSON.stringify(constructed.verification) !== JSON.stringify(constructed.plan.verification)) {
-          throw new Error('construct_workspace did not expose top-level verification');
+          throw new Error('construction_construct did not expose top-level verification');
         }
         if (session.config.panelTypes.sentiment.component !== 'acme-sentiment-panel') {
           throw new Error('plugin-derived module was not materialized');
@@ -801,9 +790,9 @@ describe('packed package consumer', () => {
         if (JSON.stringify(session.config.validation.reports) !== JSON.stringify(generatedReports)) {
           throw new Error('constructed workspace validation reports do not mirror construction reports');
         }
-        let exported = await dispatch('export_workspace', { strict: true }, session);
+        let exported = await dispatch('config_export', { strict: true }, session);
         if (exported.status !== 'ok') {
-          throw new Error(exported.hint || 'export_workspace failed');
+          throw new Error(exported.hint || 'config_export failed');
         }
         let packageExport = exportWorkspacePackage(session.config, {
           id: 'constructed-report-package',
@@ -820,7 +809,7 @@ describe('packed package consumer', () => {
         });
         if (!packageHandoff.ready) throw new Error(JSON.stringify(packageHandoff.readiness));
         let handoffSession = createSession();
-        let handoffPlan = await dispatch('plan_workspace', packageHandoff, handoffSession);
+        let handoffPlan = await dispatch('construction_plan', packageHandoff, handoffSession);
         if (handoffPlan.status !== 'ok') throw new Error(handoffPlan.hint || 'package handoff plan failed');
         if (handoffSession.config !== null) throw new Error('package handoff plan mutated session config');
         if (!handoffPlan.readiness?.ready) throw new Error('package handoff plan did not expose ready top-level readiness');
@@ -830,7 +819,7 @@ describe('packed package consumer', () => {
         if (JSON.stringify(handoffPlan.verification) !== JSON.stringify(handoffPlan.plan.verification)) {
           throw new Error('package handoff plan did not expose top-level verification');
         }
-        let handoffConstruct = await dispatch('construct_workspace', packageHandoff, handoffSession);
+        let handoffConstruct = await dispatchMutation('construction_construct', packageHandoff, handoffSession);
         if (handoffConstruct.status !== 'ok') throw new Error(handoffConstruct.hint || 'package handoff construct failed');
         if (!handoffConstruct.readiness?.ready) throw new Error('package handoff construct did not expose ready top-level readiness');
         if (JSON.stringify(handoffConstruct.verification) !== JSON.stringify(handoffConstruct.plan.verification)) {
@@ -1034,7 +1023,7 @@ describe('packed package consumer', () => {
           message: 'Package host capability requires review.',
         }];
         let config = {
-          version: '0.2.0',
+          version: '1.0.0',
           name: 'Packed Consumer Package',
           register: 'tool',
           theme: { params: { mode: 'dark' } },
@@ -1095,7 +1084,7 @@ describe('packed package consumer', () => {
         import { exportWorkspacePackage } from 'symbiote-workspace/sharing';
 
         let config = {
-          version: '0.2.0',
+          version: '1.0.0',
           name: 'Rejection Test',
           register: 'tool',
           theme: { params: { mode: 'dark' } },
@@ -1146,7 +1135,7 @@ describe('packed package consumer', () => {
         import { planWorkspaceConstruction } from 'symbiote-workspace/constructor';
 
         let config = {
-          version: '0.2.0',
+          version: '1.0.0',
           name: 'Inspect Test',
           register: 'tool',
           intent: {

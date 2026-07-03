@@ -26,6 +26,7 @@ import {
   symbioteUiRoot,
   workspacePackageRoot,
 } from './server-utils.js';
+import { WORKSPACE_SCHEMA_VERSION } from '../../schema/index.js';
 import { exportConfig } from '../../sharing/index.js';
 import { writeChatBuilderDemo } from './chat-builder-runtime.js';
 
@@ -152,7 +153,7 @@ function fixtureConfig(label, panels) {
     behavior: { collapse: 'manual', importance: 100, minInlineSize: 360, minBlockSize: 320, overflow: 'scroll-block', responsiveMode: 'stack', responsiveBreakpoint: 760 } };
   let workspaceLayout = buildLayoutTree(entries.map(([type]) => type));
   return {
-    version: '0.2.0', name: label, register: 'tool', groups: [], sections: [],
+    version: WORKSPACE_SCHEMA_VERSION, name: label, register: 'tool', groups: [], sections: [],
     panelTypes, layouts: {},
     layout: {
       type: 'split', direction: 'horizontal', ratio: 0.64,

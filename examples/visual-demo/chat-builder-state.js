@@ -27,6 +27,7 @@
  * @module examples/visual-demo/chat-builder-state
  */
 
+import { WORKSPACE_SCHEMA_VERSION } from '../../schema/index.js';
 import { createSession, dispatch } from '../../runtime/index.js';
 import { symbioteUiRoot, workspacePackageRoot } from './server-utils.js';
 
@@ -38,7 +39,7 @@ export const CHAT_COMPONENT = 'chat-workspace';
 /**
  * Free-created module for the CUSTOMIZATION class. Its capability tokens
  * (`geospatial`, `map`, `layers`) deliberately do not overlap any canonical
- * module capability, so `construct_workspace` with `requiredCapabilities:
+ * module capability, so `construction_construct` with `requiredCapabilities:
  * ['geospatial.map']` genuinely rejects until this module is authored — the one
  * place the agent free-creates instead of selecting from the catalog. The tag
  * aliases to the real `sn-data-table` component for RENDERING; it is a clear
@@ -67,7 +68,7 @@ const CUSTOM_WORKSPACE_TEMPLATE = {
   name: CUSTOM_TEMPLATE_NAME,
   description: 'Free-created geospatial situational workspace with records and activity.',
   config: {
-    version: '0.1.0',
+    version: WORKSPACE_SCHEMA_VERSION,
     name: 'Geospatial Console',
     register: 'tool',
     groups: [{ id: 'ops', name: 'Operations', icon: 'public' }],
@@ -259,6 +260,10 @@ function layoutPanels(node, acc = []) {
   return acc;
 }
 
+function dispatchMutation(toolName, args, session) {
+  return dispatch(toolName, { ...args, baseRevision: session.revision ?? 0 }, session);
+}
+
 /**
  * Count the workspace-side panels of a constructed config: the panels under the
  * LEFT child of the chat-docking root split (the docked chat on the right is not
@@ -380,10 +385,10 @@ async function buildVariant(scenario, variant) {
 
   // 1. The system classifies the intent and names the (canonical or free-created)
   //    template.
-  let classified = requireOk(key, 'classify_workspace', await dispatch('classify_workspace', { intent, ...extras }, session));
+  let classified = requireOk(key, 'construction_classify', await dispatch('construction_classify', { intent, ...extras }, session));
 
   // 2. The system builds its questionnaire of offered options.
-  let built = requireOk(key, 'build_construction_questions', await dispatch('build_construction_questions', { intent, template, ...extras }, session));
+  let built = requireOk(key, 'construction_questions_build', await dispatch('construction_questions_build', { intent, template, ...extras }, session));
   let questionnaire = built.questions;
 
   // 3. The agent SELECTS from the offered options. This variant submits a
@@ -394,8 +399,8 @@ async function buildVariant(scenario, variant) {
     if (answer === undefined) continue;
     let answered = requireOk(
       key,
-      'answer_construction_question',
-      await dispatch('answer_construction_question', { questions: questionnaire, questionId, answer }, session),
+      'construction_question_answer',
+      await dispatch('construction_question_answer', { questions: questionnaire, questionId, answer }, session),
     );
     questionnaire = answered.questions;
     answeredIds.add(questionId);
@@ -410,14 +415,14 @@ async function buildVariant(scenario, variant) {
 
   // Replay seed: a chat-only workspace before the system places any panel.
   let seedSession = createSession();
-  requireOk(key, 'scaffold_from_scratch', await dispatch('scaffold_from_scratch', { name: `${label} Console`, register: 'tool' }, seedSession));
-  requireOk(key, 'register_panel_type', await dispatch('register_panel_type', {
+  requireOk(key, 'construction_scaffold_blank', await dispatchMutation('construction_scaffold_blank', { name: `${label} Console`, register: 'tool' }, seedSession));
+  requireOk(key, 'module_register', await dispatchMutation('module_register', {
     name: CHAT_PANEL, title: 'Chat', icon: 'chat', component: CHAT_COMPONENT,
   }, seedSession));
-  requireOk(key, 'set_layout', await dispatch('set_layout', {
+  requireOk(key, 'layout_set', await dispatchMutation('layout_set', {
     layoutTree: { type: 'panel', panelType: CHAT_PANEL, panelState: {} },
   }, seedSession));
-  requireOk(key, 'set_behavior', await dispatch('set_behavior', { target: CHAT_PANEL, behavior: CHAT_BEHAVIOR }, seedSession));
+  requireOk(key, 'layout_behavior_set', await dispatchMutation('layout_behavior_set', { target: CHAT_PANEL, behavior: CHAT_BEHAVIOR }, seedSession));
   stages.push({
     title: 'Chat-only seed',
     config: cloneConfig(seedSession.config),
@@ -427,8 +432,8 @@ async function buildVariant(scenario, variant) {
   // 4. The system plans, then constructs: it places modules from the canonical
   //    template into session.config. Planning is no-mutation; construction
   //    mutates the session.
-  requireOk(key, 'plan_workspace', await dispatch('plan_workspace', { intent, template, answers, ...extras }, session));
-  let constructed = requireOk(key, 'construct_workspace', await dispatch('construct_workspace', { intent, template, answers, ...extras }, session));
+  requireOk(key, 'construction_plan', await dispatch('construction_plan', { intent, template, answers, ...extras }, session));
+  let constructed = requireOk(key, 'construction_construct', await dispatchMutation('construction_construct', { intent, template, answers, ...extras }, session));
   if (constructed.templateName !== template) {
     throw new Error(`[${key}] expected template "${template}" but constructed "${constructed.templateName}"`);
   }
@@ -436,11 +441,11 @@ async function buildVariant(scenario, variant) {
 
   // 5. Dock the chat on the RIGHT at full height, wrapping the constructed
   //    layout as the LEFT child of a global horizontal split.
-  requireOk(key, 'register_panel_type', await dispatch('register_panel_type', {
+  requireOk(key, 'module_register', await dispatchMutation('module_register', {
     name: CHAT_PANEL, title: 'Chat', icon: 'chat', component: CHAT_COMPONENT,
   }, session));
   let constructedLayout = cloneConfig(session.config.layout);
-  requireOk(key, 'set_layout', await dispatch('set_layout', {
+  requireOk(key, 'layout_set', await dispatchMutation('layout_set', {
     layoutTree: {
       type: 'split',
       direction: 'horizontal',
@@ -449,14 +454,14 @@ async function buildVariant(scenario, variant) {
       second: { type: 'panel', panelType: CHAT_PANEL, panelState: {} },
     },
   }, session));
-  requireOk(key, 'set_behavior', await dispatch('set_behavior', { target: CHAT_PANEL, behavior: CHAT_BEHAVIOR }, session));
+  requireOk(key, 'layout_behavior_set', await dispatchMutation('layout_behavior_set', { target: CHAT_PANEL, behavior: CHAT_BEHAVIOR }, session));
 
   // Behavior for each constructed workspace panel: the highest-importance
   // editing/preview panel is primary, boards are board, side panels secondary.
   let primaryPanel = pickPrimaryPanel(session.config, workspacePanels);
   for (let panelType of workspacePanels) {
     let role = roleFor(panelType, panelType === primaryPanel);
-    requireOk(key, 'set_behavior', await dispatch('set_behavior', {
+    requireOk(key, 'layout_behavior_set', await dispatchMutation('layout_behavior_set', {
       target: panelType, behavior: ROLE_BEHAVIORS[role],
     }, session));
   }
@@ -465,16 +470,17 @@ async function buildVariant(scenario, variant) {
   // below their minInlineSize. Matched to CHAT_BEHAVIOR and the role presets so
   // the demo tells one coherent narrow-reflow story rather than two contradictory
   // ones (a 720px viewport clearly stacks).
-  requireOk(key, 'update_layout_behavior', await dispatch('update_layout_behavior', {
-    behavior: { responsiveMode: 'stack', responsiveBreakpoint: 760 },
+  requireOk(key, 'layout_behavior_update', await dispatchMutation('layout_behavior_update', {
+    target: 'root',
+    updates: { responsiveMode: 'stack', responsiveBreakpoint: 760 },
   }, session));
 
   // 6. Validate strict, then export a portable config.
-  let validation = await dispatch('validate_config', { strict: true }, session);
-  if (validation.valid !== true) {
-    throw new Error(`[${key}/${variant.id}] strict validation failed: ${JSON.stringify(validation.errors)}`);
+  let validation = await dispatch('config_validate', { strict: true }, session);
+  if ((validation.valid ?? validation.ok) !== true) {
+    throw new Error(`[${key}/${variant.id}] strict validation failed: ${JSON.stringify(validation.errors || validation.warnings || validation)}`);
   }
-  let exported = requireOk(key, 'export_config', await dispatch('export_config', { strict: true }, session));
+  let exported = requireOk(key, 'config_export', await dispatch('config_export', { strict: true }, session));
 
   stages.push({
     title: 'Constructed workspace with chat docked right',
@@ -665,7 +671,7 @@ async function readCatalogDigest() {
 }
 
 /**
- * Drive the genuine capability rejection: `construct_workspace` with a required
+ * Drive the genuine capability rejection: `construction_construct` with a required
  * capability the canonical catalog cannot cover. Returns the gap (capability,
  * recovery, alternatives) read straight from the rejection's readiness; throws
  * if the rejection does NOT fire, since a covered capability would contradict
@@ -674,7 +680,7 @@ async function readCatalogDigest() {
  */
 async function readConstructionGap() {
   let session = createSession();
-  let rejection = await dispatch('construct_workspace', {
+  let rejection = await dispatchMutation('construction_construct', {
     intent: CUSTOM_INTENT,
     template: 'admin',
     requiredCapabilities: [CUSTOM_REQUIRED_CAPABILITY],
@@ -695,8 +701,8 @@ async function readConstructionGap() {
 }
 
 /**
- * Run the organic-fit check: PREVIEW-only `validate_workspace_patch` +
- * `propose_workspace_patch` for adding the free-created module beside the panels
+ * Run the organic-fit check: PREVIEW-only `config_patch_validate` +
+ * `config_patch_propose` for adding the free-created module beside the panels
  * of a constructed base, on the `modules` patch surface. Never applies the patch
  * and never writes to disk.
  * @param {Object} baseConfig Constructed (pre-dock) workspace config.
@@ -718,8 +724,8 @@ async function readOrganicFit(baseConfig) {
       },
     },
   };
-  let validation = await dispatch('validate_workspace_patch', { patch }, session);
-  let proposal = await dispatch('propose_workspace_patch', { patch }, session);
+  let validation = await dispatch('config_patch_validate', { patch }, session);
+  let proposal = await dispatch('config_patch_propose', { patch }, session);
   let summary = validation.accepted
     ? `Free-created module fits the modules surface (${proposal.count} change${proposal.count === 1 ? '' : 's'}).`
     : 'Free-created module was rejected by the design policy.';
@@ -759,7 +765,7 @@ async function buildCustomScenario(scenario) {
   // ADDS the free-created module beside the catalog panels, proving it fits a
   // workspace it was never part of. Throwaway session; nothing writes to disk.
   let baseSession = createSession();
-  requireOk('custom', 'construct_workspace', await dispatch('construct_workspace', {
+  requireOk('custom', 'construction_construct', await dispatchMutation('construction_construct', {
     intent: 'admin records operations console',
     template: 'admin',
     answers: { 'theme-mode': 'dark' },

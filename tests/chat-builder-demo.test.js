@@ -171,7 +171,7 @@ test('every variant validates strict, docks the chat right, and keeps behavior m
     for (let variant of scenario.variants) {
       let label = `${scenario.key}/${variant.id}`;
       let validation = validateWorkspaceConfig(variant.config, { strict: true });
-      assert.equal(validation.valid, true, `${label}: ${JSON.stringify(validation.errors)}`);
+      assert.equal(validation.valid ?? validation.ok, true, `${label}: ${JSON.stringify(validation.errors || validation.warnings || validation)}`);
 
       assertChatDockedRight(variant.config, label);
       assert.equal(variant.digest.pinnedChatRight, true, `${label} digest disagrees on pinned chat`);
@@ -307,7 +307,7 @@ test('the final config validates strict', async () => {
   let { scenarios } = await build();
   for (let scenario of scenarios) {
     let validation = validateWorkspaceConfig(scenario.config, { strict: true });
-    assert.equal(validation.valid, true, `${scenario.key}: ${JSON.stringify(validation.errors)}`);
+    assert.equal(validation.valid ?? validation.ok, true, `${scenario.key}: ${JSON.stringify(validation.errors || validation.warnings || validation)}`);
   }
 });
 
@@ -342,7 +342,10 @@ test('exported config round-trips through export/import', async () => {
 
       // Import the portable JSON into a fresh session.
       let relaunch = createSession();
-      let imported = await dispatch('import_config', { json: variant.exportJson }, relaunch);
+      let imported = await dispatch('config_import', {
+        json: variant.exportJson,
+        baseRevision: relaunch.revision ?? 0,
+      }, relaunch);
       assert.equal(imported.status, 'ok', `${label} import failed: ${imported.hint}`);
 
       // The export must preserve the in-memory BUILD config, not merely import
@@ -533,14 +536,14 @@ test('the custom scenario constructs a strict, chat-right workspace', async () =
   for (let variant of custom.variants) {
     let label = `custom/${variant.id}`;
     let validation = validateWorkspaceConfig(variant.config, { strict: true });
-    assert.equal(validation.valid, true, `${label}: ${JSON.stringify(validation.errors)}`);
+    assert.equal(validation.valid ?? validation.ok, true, `${label}: ${JSON.stringify(validation.errors || validation.warnings || validation)}`);
     assertChatDockedRight(variant.config, label);
 
     // The constructed config also passes the strict dispatch validator.
     let session = createSession();
     session.config = variant.config;
-    let strict = await dispatch('validate_config', { strict: true }, session);
-    assert.equal(strict.valid, true, `${label} dispatch strict validation failed: ${JSON.stringify(strict.errors)}`);
+    let strict = await dispatch('config_validate', { strict: true }, session);
+    assert.equal(strict.valid ?? strict.ok, true, `${label} dispatch strict validation failed: ${JSON.stringify(strict.errors || strict.warnings || strict)}`);
 
     // The free-created module sits on the workspace side, beside the docked chat.
     let left = leftPanels(variant.config);

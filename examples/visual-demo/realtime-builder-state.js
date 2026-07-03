@@ -1,4 +1,4 @@
-import { validateWorkspaceConfig } from '../../schema/index.js';
+import { WORKSPACE_SCHEMA_VERSION, validateWorkspaceConfig } from '../../schema/index.js';
 import { planWorkspaceConstruction } from '../../constructor/index.js';
 import { exportConfig, importConfig } from '../../sharing/index.js';
 
@@ -303,7 +303,7 @@ function professionalPanelType(title, component, icon, options = {}) {
 function professionalBaseConfig(options) {
   let modules = options.modules || [];
   return {
-    version: '0.3.0',
+    version: WORKSPACE_SCHEMA_VERSION,
     name: options.name,
     register: options.register,
     intent: {
@@ -1211,7 +1211,7 @@ function basePanelTypes() {
 function baseConfig(name, overrides = {}) {
   let moduleDescriptors = demoModuleCapabilities();
   return {
-    version: '0.3.0',
+    version: WORKSPACE_SCHEMA_VERSION,
     name,
     register: 'agent-workspace',
     intent: {
@@ -2532,8 +2532,10 @@ function expandCurrentFunctionalityStages(stages) {
 
 function validateStage(stage) {
   let validation = validateWorkspaceConfig(stage.config, { strict: true });
-  if (!validation.valid) {
-    let messages = validation.errors.map((error) => `${error.path}: ${error.message}`).join('; ');
+  if ((validation.valid ?? validation.ok) !== true) {
+    let messages = (validation.errors || validation.warnings || [])
+      .map((error) => `${error.path}: ${error.message}`)
+      .join('; ');
     throw new Error(`Invalid realtime builder stage "${stage.id}": ${messages}`);
   }
   let exported = exportConfig(stage.config, { strict: true });
@@ -2553,7 +2555,7 @@ function demoModuleCapabilities() {
       ['agent.chat', 'questionnaire.flow'],
       'forum',
       {
-        actions: [{ id: 'send-answer', label: 'Send answer', event: 'questionnaire-answer' }],
+        actions: [{ id: 'send-answer', label: 'Send answer', does: { kind: 'emit', event: 'questionnaire-answer' } }],
         toolbarItems: [{ id: 'attach-context', label: 'Attach context', command: 'chat.attach-context' }],
         events: {
           emits: [{ name: 'questionnaire-answer' }, { name: 'message-submit' }],
@@ -2576,7 +2578,7 @@ function demoModuleCapabilities() {
       {
         events: {
           emits: [{ name: 'blueprint-change' }],
-          consumes: [{ name: 'questionnaire-answer', targetMethod: 'applyAnswer' }],
+          consumes: [{ name: 'questionnaire-answer' }],
         },
         bindings: [
           { id: 'service-entities', direction: 'two-way', path: 'state.service.entities' },
@@ -2592,12 +2594,12 @@ function demoModuleCapabilities() {
       ['workspace.layout-builder', 'layout.bsp'],
       'dashboard_customize',
       {
-        actions: [{ id: 'apply-layout', label: 'Apply layout', event: 'layout-change' }],
+        actions: [{ id: 'apply-layout', label: 'Apply layout', does: { kind: 'emit', event: 'layout-change' } }],
         toolbarItems: [{ id: 'fit-panels', label: 'Fit panels', command: 'layout.fit-panels' }],
         settings: basePanelTypes()['layout-builder'].settings,
         events: {
           emits: [{ name: 'layout-change' }],
-          consumes: [{ name: 'blueprint-change', targetMethod: 'syncBlueprint' }],
+          consumes: [{ name: 'blueprint-change' }],
         },
         bindings: [
           { id: 'layout-tree', direction: 'two-way', path: 'layout' },
@@ -2613,7 +2615,7 @@ function demoModuleCapabilities() {
       ['workspace.widget-registry', 'module.discovery'],
       'widgets',
       {
-        actions: [{ id: 'insert-widget', label: 'Insert widget', event: 'widget-select' }],
+        actions: [{ id: 'insert-widget', label: 'Insert widget', does: { kind: 'emit', event: 'widget-select' } }],
         events: { emits: [{ name: 'widget-select' }] },
         bindings: [
           { id: 'selected-widgets', direction: 'output', path: 'state.workspace.widgets' },
@@ -2645,7 +2647,7 @@ function demoModuleCapabilities() {
       'collapse_content',
       {
         events: {
-          consumes: [{ name: 'layout-change', targetMethod: 'rankCollapse' }],
+          consumes: [{ name: 'layout-change' }],
         },
         bindings: [
           { id: 'collapse-priorities', direction: 'input', path: 'construction.plan.adaptivePriorities' },

@@ -156,7 +156,8 @@ describe('realtime builder demo', () => {
       'constructor-control': 'template/manual/edit-existing',
     };
     for (let scenario of demo.professionalScenarios) {
-      assert.equal(validateWorkspaceConfig(scenario.config, { strict: true }).valid, true);
+      let validation = validateWorkspaceConfig(scenario.config, { strict: true });
+      assert.equal(validation.valid ?? validation.ok, true, JSON.stringify(validation.errors || validation.warnings || validation));
       assert.equal(scenario.config.construction.plan.scenarioId, scenario.id);
       assert.equal(scenario.config.construction.sourceTemplate, expectedScenarioConfigTemplates[scenario.id]);
       assert.ok(scenario.panelData);
@@ -239,7 +240,8 @@ describe('realtime builder demo', () => {
       demo.requiredWidgets.slice().sort()
     );
     for (let stage of demo.stages) {
-      assert.equal(validateWorkspaceConfig(stage.config, { strict: true }).valid, true);
+      let validation = validateWorkspaceConfig(stage.config, { strict: true });
+      assert.equal(validation.valid ?? validation.ok, true, JSON.stringify(validation.errors || validation.warnings || validation));
       assert.ok(stage.chat.length > 0);
       assert.ok(stage.config.construction.questions.length > 0);
       assert.equal(stage.chatState.activeQuestionId, stage.activeQuestionId);

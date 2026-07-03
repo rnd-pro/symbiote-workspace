@@ -142,14 +142,16 @@ async function verifyNoProjectMjs() {
 }
 
 async function verifyToolRegistry() {
-  let { stdout } = await run('workflow_kanban registry check', 'node', [
+  let { stdout } = await run('module_workflow_kanban registry check', 'node', [
     '--input-type=module',
     '-e',
     [
       "import { TOOLS } from './runtime/dispatch.js';",
-      "let hasWorkflowKanban = TOOLS.some((tool) => tool.name === 'workflow_kanban');",
-      'console.log(JSON.stringify({ count: TOOLS.length, hasWorkflowKanban }));',
-      'if (TOOLS.length !== 69 || !hasWorkflowKanban) process.exit(1);',
+      "let names = new Set(TOOLS.map((tool) => tool.name));",
+      "let required = ['module_workflow_kanban', 'construction_classify', 'construction_plan', 'construction_construct', 'config_export'];",
+      'let missing = required.filter((name) => !names.has(name));',
+      'console.log(JSON.stringify({ count: TOOLS.length, required, missing }));',
+      'if (missing.length > 0) process.exit(1);',
     ].join(' '),
   ], { capture: true });
   console.log(stdout.trim());

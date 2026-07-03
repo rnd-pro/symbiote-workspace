@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 import { startPreview } from '../handlers/preview.js';
+import { WORKSPACE_SCHEMA_VERSION } from '../schema/index.js';
 import {
   BROWSER_ENGINE_CONTRACTS_IMPORT,
   BROWSER_ENGINE_IMPORT,
@@ -12,7 +13,7 @@ import {
 } from '../sharing/browser-contract.js';
 
 let PREVIEW_CONFIG = {
-  version: '0.3.0',
+  version: WORKSPACE_SCHEMA_VERSION,
   name: 'Preview Contract',
   theme: {
     params: { hue: 220 },

@@ -119,6 +119,10 @@ function createThemeAdapter() {
   };
 }
 
+function dispatchMutation(toolName, args, session) {
+  return dispatch(toolName, { ...args, baseRevision: session.revision ?? 0 }, session);
+}
+
 function roomModule(tagName, capabilities, options = {}) {
   return {
     tagName,
@@ -390,28 +394,29 @@ describe('portable workspace relaunch', () => {
 
   it('relaunches a constructed workspace through a fresh dispatch session', async () => {
     let session = createSession();
-    await dispatch('construct_workspace', {
+    let constructed = await dispatchMutation('construction_construct', {
       intent: 'agent review workspace',
       template: 'agent-workspace',
       name: 'Portable Agent Review',
       requiredCapabilities: ['agent.review', 'workflow.node-editor'],
     }, session);
+    assert.equal(constructed.status, 'ok', constructed.hint);
     let reports = session.config.construction.plan.verification.reports;
     assert.ok(reports.length > 0);
     assert.deepEqual(session.config.validation.reports, reports);
 
-    let exported = await dispatch('export_workspace', { strict: true }, session);
+    let exported = await dispatch('config_export', { strict: true }, session);
     assert.equal(exported.status, 'ok');
 
     let relaunched = createSession();
-    let imported = await dispatch('import_config', { json: exported.json }, relaunched);
+    let imported = await dispatchMutation('config_import', { json: exported.json }, relaunched);
     assert.equal(imported.status, 'ok');
     assert.deepEqual(relaunched.config.construction.plan.verification.reports, reports);
     assert.deepEqual(relaunched.config.validation.reports, reports);
 
     assertRelaunchable(relaunched.config, 'dispatch relaunch');
 
-    let reexported = await dispatch('export_workspace', { strict: true }, relaunched);
+    let reexported = await dispatch('config_export', { strict: true }, relaunched);
     assert.equal(reexported.status, 'ok');
     assert.equal(reexported.json, exported.json);
   });
@@ -628,13 +633,13 @@ describe('host integration contract', () => {
     assert.equal(result.status, 'ok');
     assert.deepEqual(result.errors, []);
     assert.deepEqual(result.contract.chatConstruction.requiredTools, [
-      'classify_workspace',
-      'plan_workspace',
-      'construct_workspace',
-      'validate_workspace_patch',
-      'apply_workspace_patch',
-      'export_workspace',
-      'import_config',
+      'construction_classify',
+      'construction_plan',
+      'construction_construct',
+      'config_patch_validate',
+      'config_patch_apply',
+      'config_export',
+      'config_import',
     ]);
     assert.deepEqual(result.contract.browser.requiredImports, [
       'symbiote-workspace/browser',
@@ -649,8 +654,8 @@ describe('host integration contract', () => {
     assert.equal(result.contract.browser.themeAdapter, 'symbiote-ui/ui.applyCascadeTheme');
     assert.equal(result.contract.browser.themeAdapterModule, 'symbiote-ui/ui');
     assert.equal(result.contract.browser.themeAdapterExport, 'applyCascadeTheme');
-    assert.ok(result.contract.persistence.requiredTools.includes('export_config'));
-    assert.ok(result.contract.persistence.requiredTools.includes('import_config'));
+    assert.ok(result.contract.persistence.requiredTools.includes('config_export'));
+    assert.ok(result.contract.persistence.requiredTools.includes('config_import'));
     assert.deepEqual(result.contract.persistence.requiredEngineServices, ['storage.project']);
     assert.deepEqual(result.contract.persistence.optionalEngineServices, []);
     assert.equal(result.contract.persistence.optionalEngineService, undefined);
@@ -662,7 +667,7 @@ describe('host integration contract', () => {
 
   it('does not invent engine persistence services for storage-free configs', () => {
     let result = createHostIntegrationContract({
-      version: '0.3.0',
+      version: WORKSPACE_SCHEMA_VERSION,
       name: 'Storage Free',
       register: 'tool',
     });
@@ -676,7 +681,7 @@ describe('host integration contract', () => {
 
   it('derives persistence services from module host service declarations', () => {
     let result = createHostIntegrationContract({
-      version: '0.3.0',
+      version: WORKSPACE_SCHEMA_VERSION,
       name: 'Mixed Services',
       register: 'tool',
       components: {
@@ -726,7 +731,7 @@ describe('host integration contract', () => {
 
   it('does not fall back to catalog requirements for explicit empty module selections', () => {
     let result = createHostIntegrationContract({
-      version: '0.3.0',
+      version: WORKSPACE_SCHEMA_VERSION,
       name: 'Empty Selection',
       register: 'tool',
       components: {

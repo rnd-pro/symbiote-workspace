@@ -27,14 +27,76 @@ function hasArg(name) {
   return process.argv.includes(name);
 }
 
+function dispatchMutation(toolName, args, session) {
+  return dispatch(toolName, { ...args, baseRevision: session.revision ?? 0 }, session);
+}
+
+function normalizeAction(action) {
+  if (!action || typeof action !== 'object' || action.does) return action;
+  if (typeof action.command === 'string' && action.command.trim()) {
+    let { command, ...rest } = action;
+    return {
+      ...rest,
+      does: { kind: 'command', command, scope: 'host' },
+    };
+  }
+  if (typeof action.event === 'string' && action.event.trim()) {
+    let { event, ...rest } = action;
+    return {
+      ...rest,
+      does: { kind: 'emit', event },
+    };
+  }
+  return action;
+}
+
+function normalizeModuleCapability(descriptor) {
+  if (!descriptor || typeof descriptor !== 'object' || !Array.isArray(descriptor.actions)) {
+    return descriptor;
+  }
+  return {
+    ...descriptor,
+    actions: descriptor.actions.map(normalizeAction),
+  };
+}
+
+function normalizeConfigCapabilities(config) {
+  if (!config || typeof config !== 'object' || !Array.isArray(config.components?.modules)) {
+    return config;
+  }
+  return {
+    ...config,
+    components: {
+      ...config.components,
+      modules: config.components.modules.map(normalizeModuleCapability),
+    },
+  };
+}
+
+function normalizeWorkspaceTemplate(template) {
+  if (!template || typeof template !== 'object') return template;
+  return {
+    ...template,
+    config: normalizeConfigCapabilities(template.config),
+  };
+}
+
+function normalizePackageContext(context) {
+  return {
+    ...context,
+    moduleCapabilities: (context.moduleCapabilities || []).map(normalizeModuleCapability),
+    workspaceTemplates: (context.workspaceTemplates || []).map(normalizeWorkspaceTemplate),
+  };
+}
+
 async function buildDemoConfig() {
   let sourceSession = createSession();
-  let classification = await dispatch('classify_workspace', {
+  let classification = await dispatch('construction_classify', {
     intent: 'video editing studio for agentic media review',
   }, sourceSession);
   if (classification.status !== 'ok') throw new Error(classification.hint || 'Classification failed.');
 
-  let sourceConstruct = await dispatch('construct_workspace', {
+  let sourceConstruct = await dispatchMutation('construction_construct', {
     intent: {
       brief: 'video editing studio for agentic media review',
       template: classification.templateName,
@@ -43,7 +105,7 @@ async function buildDemoConfig() {
   }, sourceSession);
   if (sourceConstruct.status !== 'ok') throw new Error(sourceConstruct.hint || 'Source workspace construction failed.');
 
-  let sourcePackage = await dispatch('export_workspace_package', {
+  let sourcePackage = await dispatch('pack_export', {
     manifest: {
       id: 'com.symbiote.visual-demo.video-studio',
       name: 'Symbiote Visual Demo Video Studio',
@@ -54,14 +116,15 @@ async function buildDemoConfig() {
   if (sourcePackage.status !== 'ok') throw new Error(sourcePackage.hint || 'Source workspace package export failed.');
 
   let session = createSession();
-  let context = await dispatch('create_workspace_package_construction_context', {
+  let context = await dispatch('pack_context_create', {
     json: sourcePackage.json,
   }, session);
   if (context.status !== 'ok' || context.ready !== true) {
     throw new Error(context.hint || context.readiness?.message || 'Package construction context failed.');
   }
+  context = normalizePackageContext(context);
 
-  let handoff = await dispatch('create_workspace_construction_handoff', {
+  let handoff = await dispatch('pack_handoff_create', {
     context,
     intent: {
       brief: 'relaunch the packaged visual demo video studio',
@@ -70,15 +133,17 @@ async function buildDemoConfig() {
   }, session);
   if (handoff.status !== 'ok') throw new Error(handoff.hint || 'Construction handoff failed.');
 
-  let plan = await dispatch('plan_workspace', handoff, session);
+  let plan = await dispatch('construction_plan', handoff, session);
   if (plan.status !== 'ok') throw new Error(plan.hint || 'Workspace planning failed.');
 
-  let construct = await dispatch('construct_workspace', handoff, session);
+  let construct = await dispatchMutation('construction_construct', handoff, session);
   if (construct.status !== 'ok') throw new Error(construct.hint || 'Workspace construction failed.');
 
-  let validation = await dispatch('validate_config', { strict: true }, session);
-  if (validation.valid !== true) {
-    let messages = validation.errors?.map((error) => error.message).join('; ') || 'Validation failed.';
+  let validation = await dispatch('config_validate', { strict: true }, session);
+  if ((validation.valid ?? validation.ok) !== true) {
+    let messages = (validation.errors || validation.warnings || [])
+      .map((error) => error.message)
+      .join('; ') || 'Validation failed.';
     throw new Error(messages);
   }
 

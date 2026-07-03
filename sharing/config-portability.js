@@ -52,18 +52,18 @@ let NORMALIZED_EXPORT_STRIP_KEYS = new Set([...EXPORT_STRIP_KEYS].map(normalized
 const PORTABLE_ID_PATTERN = /^[a-z][a-z0-9]*(?:[./:_-][a-z0-9]+)*$/;
 
 const CHAT_CONSTRUCTION_TOOLS = Object.freeze([
-  'classify_workspace',
-  'plan_workspace',
-  'construct_workspace',
-  'validate_workspace_patch',
-  'apply_workspace_patch',
-  'export_workspace',
-  'import_config',
+  'construction_classify',
+  'construction_plan',
+  'construction_construct',
+  'config_patch_validate',
+  'config_patch_apply',
+  'config_export',
+  'config_import',
 ]);
 
 const PERSISTENCE_TOOLS = Object.freeze([
-  'export_config',
-  'import_config',
+  'config_export',
+  'config_import',
 ]);
 
 function normalizedKey(key) {
