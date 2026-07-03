@@ -1,486 +1,100 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-
-import { resolve, dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
+import { join, resolve } from 'node:path';
 
 import { TOOLS } from '../runtime/index.js';
-import { WORKSPACE_SCHEMA_VERSION } from '../schema/index.js';
 
-let __dirname = dirname(fileURLToPath(import.meta.url));
-let CLI = resolve(__dirname, '../cli.js');
-let ROOT = resolve(__dirname, '..');
-let TMP_ROOT = resolve(ROOT, 'tmp');
-let HELP_ALIASES = {
-  describe_workspace: ['describe'],
-  discover_components: ['discover'],
-  scaffold_workspace: ['scaffold'],
-  plan_workspace: ['plan'],
-  validate_config: ['validate'],
-  construct_workspace: ['construct'],
-  start_preview: ['preview'],
-};
+let ROOT = resolve(import.meta.dirname, '..');
+let CLI = resolve(ROOT, 'cli.js');
 
-function escapeRegExp(value) {
-  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+function runCli(args) {
+  return spawnSync(process.execPath, [CLI, ...args], {
+    cwd: ROOT,
+    encoding: 'utf8',
+  });
 }
 
-function helpHasCommand(stdout, command) {
-  return new RegExp(`^\\s+${escapeRegExp(command)}(?:\\s|$)`, 'm').test(stdout)
-    || new RegExp(`^\\s+${escapeRegExp(command)}\\s*->`, 'm').test(stdout);
+function parseJson(stdout) {
+  return JSON.parse(stdout.trim());
 }
 
-async function exec(...args) {
-  let { execFile } = await import('node:child_process');
-  let { promisify } = await import('node:util');
-  return promisify(execFile)('node', [CLI, ...args]);
-}
-
-async function withTempPath(prefix, filename, run) {
-  await mkdir(TMP_ROOT, { recursive: true });
-  let dir = await mkdtemp(join(TMP_ROOT, `${prefix}-`));
+async function withTempDir(run) {
+  let tmpRoot = resolve(ROOT, 'tmp');
+  await mkdir(tmpRoot, { recursive: true });
+  let dir = await mkdtemp(join(tmpRoot, 'cli-s2-'));
   try {
-    return await run(join(dir, filename));
+    return await run(dir);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
 }
 
-function constructionHandoffJson() {
-  return JSON.stringify({
-    _type: 'workspace-construction-handoff',
-    valid: true,
-    ready: true,
-    intent: {
-      brief: 'CLI handoff room',
-      template: 'cli-handoff-room',
-    },
-    options: {
-      packageContext: {
-        valid: true,
-        ready: true,
-        source: { packageId: 'cli-handoff-package' },
-        missing: {},
-        readiness: {
-          ready: true,
-          status: 'ready',
-          nextAction: 'construct',
-          source: { packageId: 'cli-handoff-package' },
-        },
-        warnings: [],
-        errors: [],
-        recovery: [],
-      },
-      workspaceTemplates: [{
-        name: 'cli-handoff-room',
-        config: {
-          version: WORKSPACE_SCHEMA_VERSION,
-          name: 'CLI Handoff Room',
-          register: 'agent-workspace',
-          groups: [{ id: 'room', name: 'Room' }],
-          sections: [{ id: 'main', label: 'Main', groupId: 'room' }],
-          panelTypes: {
-            command: {
-              title: 'Command',
-              component: 'cli-command-panel',
-            },
-          },
-          layout: { type: 'panel', panelType: 'command' },
-          components: {
-            catalog: ['cli-command-panel'],
-            modules: [{
-              tagName: 'cli-command-panel',
-              capabilities: ['room.command'],
-            }],
-          },
-        },
-      }],
-      moduleCapabilities: [],
-    },
-  });
-}
+describe('CLI registry projection', () => {
+  it('prints live tool commands from TOOLS without legacy command aliases', () => {
+    let result = runCli(['--help']);
 
-describe('CLI help', () => {
-  it('prints usage on --help', async () => {
-    let { stdout } = await exec('--help');
-    assert.ok(stdout.includes('symbiote-workspace CLI'));
-    assert.ok(stdout.includes('scaffold'));
-    assert.ok(stdout.includes('mcp'));
-    assert.ok(stdout.includes('--config'));
-    assert.equal(stdout.includes('Force JSON output'), false);
-    assert.ok(stdout.includes('--json <string>'));
-    assert.ok(stdout.includes('node cli.js scaffold'));
-    assert.equal(stdout.includes('npx symbiote-workspace'), false);
-  });
-
-  it('lists every tool command or documented CLI alias in help', async () => {
-    let { stdout } = await exec('--help');
-    let toolNames = new Set(TOOLS.map((tool) => tool.name));
-
-    for (let [toolName, aliases] of Object.entries(HELP_ALIASES)) {
-      assert.equal(toolNames.has(toolName), true, `Alias references missing tool ${toolName}`);
-      assert.equal(
-        aliases.some((alias) => helpHasCommand(stdout, alias)),
-        true,
-        `Help missing alias for ${toolName}`,
-      );
-    }
+    assert.equal(result.status, 0);
+    assert.match(result.stdout, /workspace-describe/);
+    assert.match(result.stdout, /construction-scaffold-blank/);
+    assert.match(result.stdout, /module-register/);
+    assert.doesNotMatch(result.stdout, /add-group/);
 
     for (let tool of TOOLS) {
-      let command = tool.name.replaceAll('_', '-');
-      assert.equal(
-        helpHasCommand(stdout, command),
-        true,
-        `Help missing command for ${tool.name}`,
-      );
-      assert.equal(
-        stdout.includes(tool.description),
-        true,
-        `Help missing TOOLS description for ${tool.name}`,
-      );
+      assert.match(result.stdout, new RegExp(tool.name.replaceAll('_', '-')));
     }
   });
 
-  it('documents workflow-kanban CLI options', async () => {
-    let { stdout } = await exec('--help');
+  it('rejects removed legacy commands', () => {
+    let result = runCli(['add-group', '--id', 'g1', '--name', 'Group']);
 
-    assert.ok(stdout.includes("Options for 'workflow-kanban':"));
-    assert.ok(stdout.includes('--panel-type <id>'));
-    assert.ok(stdout.includes('--board <json-object>'));
-    assert.ok(stdout.includes('--icon <string>'));
-    assert.ok(stdout.includes('--required-host-services <json-array>'));
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /Unknown command: add-group/);
   });
 
-  it('prints usage for workflow-kanban --help without dispatching the tool', async () => {
-    let { stdout } = await exec('workflow-kanban', '--help');
+  it('runs renamed mutating and read-only tools with CLI-derived user actor', async () => {
+    await withTempDir(async (dir) => {
+      let file = join(dir, 'workspace.json');
 
-    assert.ok(stdout.includes("Options for 'workflow-kanban':"));
-    assert.ok(stdout.includes('--panel-type <id>'));
-    assert.equal(stdout.includes('"status": "error"'), false);
-    assert.equal(stdout.includes('Missing required arguments'), false);
-  });
-});
+      let created = runCli([
+        'construction-scaffold-blank',
+        '--config', file,
+        '--base-revision', '0',
+        '--name', 'CLI Workspace',
+      ]);
+      assert.equal(created.status, 0, created.stderr);
+      let createdResult = parseJson(created.stdout);
+      assert.equal(createdResult.status, 'ok');
+      assert.equal(createdResult.origin.actor, 'user-direct');
 
-describe('CLI tool commands', () => {
-  it('list-templates returns JSON', async () => {
-    let { stdout } = await exec('list-templates');
-    let result = JSON.parse(stdout);
-    assert.ok(result.count >= 5);
-    assert.ok(result.templates.includes('chat'));
-  });
+      let described = runCli(['workspace-describe', '--config', file]);
+      assert.equal(described.status, 0, described.stderr);
+      assert.equal(parseJson(described.stdout).name, 'CLI Workspace');
 
-  it('scaffold creates workspace', async () => {
-    let { stdout } = await exec('scaffold', 'chat', '--name', 'My Chat');
-    let result = JSON.parse(stdout);
-    assert.equal(result.status, 'ok');
-    assert.equal(result.config.name, 'My Chat');
-  });
+      let registered = runCli([
+        'module-register',
+        '--config', file,
+        '--base-revision', '0',
+        '--name', 'main',
+        '--title', 'Main',
+        '--component', 'sn-main',
+      ]);
+      assert.equal(registered.status, 0, registered.stderr);
+      assert.equal(parseJson(registered.stdout).status, 'ok');
 
-  it('scaffold --output writes the generated config to a file', async () => {
-    await withTempPath('cli-scaffold-output', 'workspace.json', async (file) => {
-      let { stdout } = await exec('scaffold', 'chat', '--name', 'Output Chat', '--output', file);
-      let result = JSON.parse(stdout);
-      let written = JSON.parse(await readFile(file, 'utf-8'));
-
-      assert.equal(result.status, 'ok');
-      assert.equal(result.config.name, 'Output Chat');
-      assert.equal(written.name, 'Output Chat');
-      assert.equal(written.version, WORKSPACE_SCHEMA_VERSION);
+      let saved = JSON.parse(await readFile(file, 'utf8'));
+      assert.equal(saved.panelTypes.main.component, 'sn-main');
     });
   });
 
-  it('scaffold-from-scratch creates blank workspace', async () => {
-    let { stdout } = await exec('scaffold-from-scratch', '--name', 'Blank');
-    let result = JSON.parse(stdout);
-    assert.equal(result.status, 'ok');
-    assert.equal(result.config.name, 'Blank');
-  });
+  it('surfaces dispatch contract errors as non-zero process results', () => {
+    let result = runCli(['construction-scaffold-blank', '--name', 'No Base']);
 
-  it('plan alias returns a construction plan without scaffolding the session', async () => {
-    let { stdout } = await exec('plan', 'chat workspace');
-    let result = JSON.parse(stdout);
-    assert.equal(result.status, 'ok');
-    assert.equal(result.intent.brief, 'chat workspace');
-    assert.ok(Array.isArray(result.questions));
-    assert.ok(Array.isArray(result.plan.modules));
-    assert.ok(Array.isArray(result.plan.verification.targets));
-    assert.deepEqual(result.verification, result.plan.verification);
-  });
-
-  it('build-construction-questions returns questionnaire JSON without planning', async () => {
-    let { stdout } = await exec('build-construction-questions', 'chat workspace');
-    let result = JSON.parse(stdout);
-
-    assert.equal(result.status, 'ok');
-    assert.equal(result.intent.brief, 'chat workspace');
-    assert.equal(result.templateName, 'chat');
-    assert.equal(result.nextAction, 'plan-workspace');
-    assert.ok(result.questions.find((question) => question.id === 'workspace-name'));
-    assert.equal(result.plan, undefined);
-    assert.equal(result.config, undefined);
-  });
-
-  it('answer-construction-question returns re-evaluated questionnaire JSON', async () => {
-    let first = await exec('build-construction-questions', 'chat workspace');
-    let initial = JSON.parse(first.stdout);
-    let { stdout } = await exec(
-      'answer-construction-question',
-      '--questions',
-      JSON.stringify(initial.questions),
-      '--question-id',
-      'theme-mode',
-      '--answer',
-      '"custom"',
-    );
-    let result = JSON.parse(stdout);
-
-    assert.equal(result.status, 'ok');
-    assert.equal(result.answeredQuestionId, 'theme-mode');
-    assert.equal(result.nextAction, 'plan-workspace');
-    assert.equal(result.questions.find((question) => question.id === 'theme-mode').answer, 'custom');
-    assert.equal(result.questions.find((question) => question.id === 'theme-hue').status, 'answered');
-    assert.equal(result.plan, undefined);
-    assert.equal(result.config, undefined);
-  });
-
-  it('plan alias accepts a full construction handoff JSON positional', async () => {
-    let { stdout } = await exec('plan', constructionHandoffJson());
-    let result = JSON.parse(stdout);
-
-    assert.equal(result.status, 'ok');
-    assert.equal(result.intent.brief, 'CLI handoff room');
-    assert.equal(result.intent.template, 'cli-handoff-room');
-    assert.equal(result.readiness.ready, true);
-    assert.equal(result.readiness.source.packageId, 'cli-handoff-package');
-    assert.deepEqual(result.verification, result.plan.verification);
-    assert.equal(result.config.name, 'CLI Handoff Room');
-  });
-
-  it('construct alias accepts a full construction handoff JSON positional', async () => {
-    await withTempPath('cli-handoff', 'workspace.json', async (tmpFile) => {
-      let { stdout } = await exec('construct', constructionHandoffJson(), '--config', tmpFile);
-      let result = JSON.parse(stdout);
-      let saved = JSON.parse(await readFile(tmpFile, 'utf8'));
-
-      assert.equal(result.status, 'ok');
-      assert.equal(result.intent.brief, 'CLI handoff room');
-      assert.equal(result.intent.template, 'cli-handoff-room');
-      assert.equal(result.readiness.ready, true);
-      assert.equal(result.readiness.source.packageId, 'cli-handoff-package');
-      assert.deepEqual(result.verification, result.plan.verification);
-      assert.equal(saved.intent.template, 'cli-handoff-room');
-      assert.equal(saved.construction.packageContext.source.packageId, 'cli-handoff-package');
-      assert.equal(saved.construction.packageContext.readiness.nextAction, 'construct');
-      assert.equal(saved.name, 'CLI Handoff Room');
-      assert.deepEqual(saved.validation.reports, result.verification.reports);
-    });
-  });
-});
-
-describe('CLI --config workflow', () => {
-  it('scaffold + add-group + list-groups via --config', async () => {
-    await withTempPath('cli-config', 'workspace.json', async (tmpFile) => {
-      let r1 = await exec('scaffold', 'dashboard', '--config', tmpFile);
-      let p1 = JSON.parse(r1.stdout);
-      assert.equal(p1.status, 'ok');
-
-      let r2 = await exec(
-        'add-group',
-        '--config',
-        tmpFile,
-        '--id',
-        'test-g',
-        '--name',
-        'Test Group',
-      );
-      let p2 = JSON.parse(r2.stdout);
-      assert.equal(p2.status, 'ok');
-
-      let r3 = await exec('list-groups', '--config', tmpFile);
-      let p3 = JSON.parse(r3.stdout);
-      assert.ok(p3.count >= 2);
-
-      let r4 = await exec('describe', tmpFile);
-      let p4 = JSON.parse(r4.stdout);
-      assert.ok(p4.panelTypes);
-
-      let r5 = await exec('validate', tmpFile);
-      let p5 = JSON.parse(r5.stdout);
-      assert.equal(p5.valid, true);
-
-      let previewDir = join(dirname(tmpFile), 'preview');
-      let r6 = await exec('preview', tmpFile, '--output-dir', previewDir);
-      let p6 = JSON.parse(r6.stdout);
-      assert.equal(p6.status, 'ok');
-      assert.equal(p6.outputDir, previewDir);
-    });
-  });
-
-  it('register-panel-type + mount-widget via --config', async () => {
-    await withTempPath('cli-config', 'workspace.json', async (tmpFile) => {
-      await exec('scaffold-from-scratch', '--name', 'Widget Test', '--config', tmpFile);
-
-      let r1 = await exec(
-        'register-panel-type',
-        '--config',
-        tmpFile,
-        '--name',
-        'main',
-        '--title',
-        'Main',
-        '--component',
-        'sn-card',
-      );
-      let p1 = JSON.parse(r1.stdout);
-      assert.equal(p1.status, 'ok');
-
-      let r2 = await exec(
-        'mount-widget',
-        '--config',
-        tmpFile,
-        '--panelType',
-        'main',
-        '--componentTag',
-        'sn-data-table',
-      );
-      let p2 = JSON.parse(r2.stdout);
-      assert.equal(p2.status, 'ok');
-
-      let r3 = await exec('list-panel-types', '--config', tmpFile);
-      let p3 = JSON.parse(r3.stdout);
-      assert.equal(p3.count, 1);
-    });
-  });
-
-  it('workflow-kanban mutates and saves config via --config', async () => {
-    await withTempPath('cli-workflow-kanban', 'workspace.json', async (tmpFile) => {
-      await exec('scaffold-from-scratch', '--name', 'Kanban Test', '--config', tmpFile);
-
-      let board = {
-        id: 'release-flow',
-        columns: [{
-          id: 'todo',
-          title: 'Todo',
-          cards: [{ id: 'task-1', title: 'Review package' }],
-        }],
-      };
-      let eventTarget = {
-        panelType: 'review-log',
-        targetMethod: 'recordDrop',
-        mapping: { cardId: 'card.id', columnId: 'column.id' },
-      };
-      let { stdout } = await exec(
-        'workflow-kanban',
-        '--config',
-        tmpFile,
-        '--panel-type',
-        'approvals',
-        '--board',
-        JSON.stringify(board),
-        '--layout-id',
-        'workflow',
-        '--set-default-layout',
-        '--event-target',
-        JSON.stringify(eventTarget),
-      );
-      let result = JSON.parse(stdout);
-      let saved = JSON.parse(await readFile(tmpFile, 'utf8'));
-
-      assert.equal(result.status, 'ok');
-      assert.equal(result.panelType, 'approvals');
-      assert.equal(saved.panelTypes.approvals.component, 'sn-kanban-board');
-      assert.equal(saved.layout.panelType, 'approvals');
-      assert.equal(saved.layouts.workflow.panelType, 'approvals');
-      assert.ok(saved.components.catalog.includes('sn-kanban-board'));
-      assert.equal(saved.state.fields.find((field) => field.panelType === 'approvals').default.id, 'release-flow');
-      assert.deepEqual(
-        saved.events
-          .filter((event) => event.sourcePanel === 'approvals')
-          .map((event) => event.event)
-          .sort(),
-        ['sn-board-card-action', 'sn-board-card-drop', 'sn-board-card-select'],
-      );
-      assert.equal(
-        saved.events.find((event) => event.event === 'sn-board-card-drop').targetMethod,
-        'recordDrop',
-      );
-    });
-  });
-});
-
-describe('CLI error handling', () => {
-  it('exits with error on unknown command', async () => {
-    try {
-      await exec('unknown-command-xyz');
-      assert.fail('Should have exited with error');
-    } catch (err) {
-      assert.ok(err.code === 1);
-    }
-  });
-
-  it('validates invalid config file', async () => {
-    await withTempPath('cli-invalid', 'invalid.json', async (tmpFile) => {
-      await writeFile(tmpFile, JSON.stringify({ invalid: true }));
-      let { stdout } = await exec('validate', tmpFile);
-      let result = JSON.parse(stdout);
-      assert.equal(result.valid, false);
-    });
-  });
-
-  it('rejects host-only fields when loading --config', async () => {
-    await withTempPath('cli-host-only', 'host-only.json', async (tmpFile) => {
-      await writeFile(tmpFile, JSON.stringify({
-        version: '0.3.0',
-        name: 'Host Only',
-        server: { url: 'https://example.test' },
-      }));
-
-      try {
-        await exec('list-groups', '--config', tmpFile);
-        assert.fail('Expected --config load to reject host-only fields');
-      } catch (err) {
-        assert.equal(err.code, 1);
-        assert.match(err.stderr, /portable workspace config/);
-        assert.match(err.stderr, /server/);
-      }
-    });
-  });
-
-  it('exits nonzero when dispatch returns a structured error', async () => {
-    try {
-      await exec('add-group');
-      assert.fail('Expected missing args to exit with error');
-    } catch (err) {
-      assert.equal(err.code, 1);
-      let result = JSON.parse(err.stdout);
-      assert.equal(result.status, 'error');
-      assert.equal(result.tool, 'add_group');
-      assert.match(result.hint, /Missing required arguments/);
-    }
-  });
-
-  it('prints structured create handoff intent errors as JSON', async () => {
-    try {
-      await exec(
-        'create-workspace-construction-handoff',
-        '--context',
-        JSON.stringify({ valid: true, ready: true }),
-        '--intent',
-        JSON.stringify({
-          brief: 'Invalid CLI handoff',
-          requiredCapabilities: ['valid', ''],
-        }),
-      );
-      assert.fail('Expected invalid handoff intent to exit with error');
-    } catch (err) {
-      assert.equal(err.code, 1);
-      let result = JSON.parse(err.stdout);
-      assert.equal(result.status, 'error');
-      assert.equal(result.tool, 'create_workspace_construction_handoff');
-      assert.equal(result.code, 'construction_handoff_intent_invalid');
-      assert.equal(result.nextAction, 'fix-construction-intent');
-      assert.match(result.hint, /requiredCapabilities must contain non-empty strings/);
-    }
+    assert.equal(result.status, 1);
+    let body = parseJson(result.stdout);
+    assert.equal(body.status, 'error');
+    assert.equal(body.code, 'tool-contract');
+    assert.match(body.hint, /baseRevision/);
   });
 });

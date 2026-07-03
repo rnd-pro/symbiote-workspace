@@ -1,18 +1,10 @@
 #!/usr/bin/env node
 
 /**
- * symbiote-workspace CLI
+ * symbiote-workspace CLI.
  *
- * Thin proxy to the unified dispatch layer.
- * All tool commands map directly to dispatch(toolName, args).
- *
- * Special commands (not dispatch-based):
- *   serve   — Start workspace HTTP server
- *   mcp     — Start MCP server (stdio)
- *   --help  — Print usage
- *
- * Stateful mode:
- *   --config <file>  Load config before command, auto-save after mutations
+ * Thin proxy to the dispatch registry. Tool commands are the kebab-case form
+ * of the live dispatch tool names.
  *
  * @module symbiote-workspace/cli
  */
@@ -25,160 +17,52 @@ import { TOOLS } from './runtime/index.js';
 let argv = process.argv.slice(2);
 let command = argv[0];
 
-// ── Help ──
-
 function commandForTool(toolName) {
   return toolName.replaceAll('_', '-');
 }
 
 function formatHelpRows(rows) {
   let width = rows.reduce((max, [name]) => Math.max(max, name.length), 0) + 2;
-  return rows.map(([name, description]) => {
-    return `  ${name.padEnd(width)}${description}`;
-  }).join('\n');
+  return rows.map(([name, description]) => `  ${name.padEnd(width)}${description}`).join('\n');
 }
 
 function getToolCommandRows() {
   return TOOLS.map((tool) => [commandForTool(tool.name), tool.description]);
 }
 
-function getAliasRows() {
-  return Object.entries(COMMAND_ALIASES)
-    .filter(([alias, toolName]) => alias !== commandForTool(toolName))
-    .map(([alias, toolName]) => [alias, `-> ${commandForTool(toolName)}`]);
-}
-
 function printUsage() {
   console.log(`
-symbiote-workspace CLI — unified dispatch for CLI and MCP
+symbiote-workspace CLI
 
 Special Commands:
   serve               Start workspace HTTP server
   mcp                 Start MCP server (stdio transport)
 
-Tool Commands (all dispatch to unified API):
+Tool Commands:
 ${formatHelpRows(getToolCommandRows())}
 
-Common Aliases:
-${formatHelpRows(getAliasRows())}
-
 Global Options:
-  --config <file>     Load config before command, auto-save after mutations
-  --help, -h          Show this help
-
-Options for 'serve':
-  --port <n>          Server port (default: 3100)
-  --plugins-dir <p>   Directory containing .plugin.js files
-  --plugins <list>    Comma-separated npm package names
-  --handlers-dir <p>  Directory containing .handler.js files
-  --workflow <f>      Path to .workflow.json file
-  --verbose           Enable verbose logging
-
-Options for 'discover':
-  --ui-path <p>       Path to symbiote-ui root
-
-Options for 'scaffold':
-  --name <n>          Override workspace name
-  --register <r>      Override register (tool|admin|editor|agent-workspace|media-studio|brand|presentation)
-  --output <f>        Write config to file
-
-Options for 'build-construction-questions', 'plan-workspace', and 'construct-workspace':
-  --template <name>   Explicit template name
-  --name <n>          Override workspace name
-  --register <r>      Override target register
-  --required-capabilities <json-array>
-                      Required portable capability tags
-  --module-capabilities <json-array>
-                      External module capability descriptors
-  --workspace-templates <json-array>
-                      External workspace templates
-  --answers <json-object>
-                      Construction question answers keyed by question ID
-  --preferred-theme <json-object>
-                      Preferred theme recipe fields
-  --options <json-object>
-                      Constructor options, including construction handoff options
-
-Options for 'answer-construction-question':
-  --questions <json-array>   Existing construction questionnaire
-  --question-id <string>     Question ID to answer
-  --answer <json-value>      Answer value
-
-Options for 'export-workspace-package':
-  --manifest <json-object>  Package manifest with id, name, version, description, etc.
-  --strict                  Reject on validation warnings
-
-Options for 'import-workspace-package':
-  --json <string>            JSON string of the workspace package
-
-Options for 'validate-workspace-package':
-  --package <json-object>    Workspace package to validate
-  --json <string>            JSON string of the workspace package
-
-Options for 'inspect-workspace-package':
-  --package <json-object>    Workspace package object to inspect
-  --json <string>            JSON string of the workspace package
-  --available <json-object>  Host-neutral available capabilities map
-
-Options for 'create-workspace-package-construction-context':
-  --package <json-object>          Workspace package object
-  --json <string>                  JSON string of the workspace package
-  --available <json-object>        Host-neutral available capabilities map
-  --template-name <string>         Template name override
-
-Options for 'create-workspace-packages-construction-context':
-  --packages <json-array>          Package entries: [{ package, json, templateName }]
-  --available <json-object>        Host-neutral available capabilities map
-
-Options for 'create-workspace-construction-handoff':
-  --context <json-object>           Package construction context object
-  --intent <string-or-json-object>  Construction intent to enrich with package capabilities
-
-Options for 'collect-plugin-module-capabilities' and 'collect-plugin-workspace-templates':
-  --plugins <json-object-or-array>  Plugin definition object or array of plugin definitions
-
-Options for 'workflow-kanban':
-  --panel-type <id>            Portable panel type ID for the kanban board
-  --board <json-object>        Kanban board model with id, columns, and cards
-  --title <string>             Panel title override
-  --icon <string>              Material Symbols icon name
-  --layout-id <id>             Optional named layout to create or replace
-  --set-default-layout         Replace the root layout with this board panel
-  --group <json-object>        Optional project group to upsert
-  --section <json-object>      Optional sidebar section to upsert
-  --event-target <json-object> Optional drop-event target bridge fields
-  --required-host-services <json-array>
-                              Portable host service IDs required by this board
+  --config <file>        Load config before command, auto-save after mutating commands
+  --base-revision <n>    Required for mutating commands
+  --help, -h             Show this help
 
 Examples:
-  node cli.js scaffold "chat workspace" --config ws.json
-  node cli.js add-group --config ws.json --id g1 --name "Editor"
-  node cli.js add-section --config ws.json --groupId g1 --id s1 --label "Source"
-  node cli.js register-panel-type --config ws.json --name vp --title Viewport --component sn-canvas-viewport
-  node cli.js list-panel-types --config ws.json
-  node cli.js describe --config ws.json
-  node cli.js preview ws.json --output-dir .workspace-preview
+  node cli.js construction-scaffold-blank --base-revision 0 --name "Draft" --config ws.json
+  node cli.js module-register --config ws.json --base-revision 1 --name main --title Main --component sn-panel
+  node cli.js workspace-describe --config ws.json
   node cli.js mcp
   `);
 }
 
-// ── Flag Parsing ──
-
-/**
- * Parse CLI flags from argv.
- * Supports --key value and --flag (boolean).
- * @param {string[]} argv
- * @returns {{ flags: Object, positionals: string[] }}
- */
-function parseArgs(argv) {
+function parseArgs(items) {
   let flags = {};
   let positionals = [];
 
-  for (let i = 0; i < argv.length; i++) {
-    let arg = argv[i];
+  for (let i = 0; i < items.length; i++) {
+    let arg = items[i];
     if (arg.startsWith('--')) {
       let key = arg.slice(2);
-      let next = argv[i + 1];
+      let next = items[i + 1];
       if (next && !next.startsWith('--')) {
         if (key === 'json') {
           flags[key] = next;
@@ -201,20 +85,10 @@ function parseArgs(argv) {
   return { flags, positionals };
 }
 
-/**
- * Convert kebab-case to snake_case.
- * @param {string} str
- * @returns {string}
- */
-function kebabToSnake(str) {
-  return str.replace(/-/g, '_');
+function kebabToSnake(value) {
+  return value.replace(/-/g, '_');
 }
 
-/**
- * Convert kebab-case flag keys to camelCase for handler args.
- * @param {Object} flags
- * @returns {Object}
- */
 function flagsToCamelCase(flags) {
   let result = {};
   for (let [key, value] of Object.entries(flags)) {
@@ -224,21 +98,23 @@ function flagsToCamelCase(flags) {
   return result;
 }
 
-// ── Special Commands ──
-
 async function cmdServe() {
   let { flags } = parseArgs(argv.slice(1));
   let port = parseInt(flags.port, 10) || 3100;
   let pluginsDir = flags['plugins-dir'];
-  let plugins = flags.plugins ? String(flags.plugins).split(',').map((s) => s.trim()) : [];
+  let plugins = flags.plugins ? String(flags.plugins).split(',').map((item) => item.trim()) : [];
   let handlersDir = flags['handlers-dir'];
   let workflowFile = flags.workflow;
   let verbose = flags.verbose === true;
 
   let { createWorkspaceServer } = await import('./server/index.js');
-
   let handle = await createWorkspaceServer({
-    port, pluginsDir, plugins, handlersDir, workflowFile, verbose,
+    port,
+    pluginsDir,
+    plugins,
+    handlersDir,
+    workflowFile,
+    verbose,
   });
 
   console.log(`symbiote-workspace server running on http://localhost:${port}`);
@@ -259,37 +135,16 @@ async function cmdMcp() {
   await import('./mcp/index.js');
 }
 
-// ── Tool Dispatch ──
-
-/**
- * Map special CLI command names that don't match 1:1 with tool names.
- * @type {Object<string, string>}
- */
-const COMMAND_ALIASES = {
-  validate: 'validate_config',
-  scaffold: 'scaffold_workspace',
-  plan: 'plan_workspace',
-  construct: 'construct_workspace',
-  describe: 'describe_workspace',
-  discover: 'discover_components',
-  preview: 'start_preview',
-  'list-templates': 'list_templates',
-};
-
-/**
- * Commands that take a positional argument as a special field.
- * @type {Object<string, string>}
- */
 const POSITIONAL_MAP = {
-  scaffold_workspace: 'template',
-  classify_workspace: 'intent',
-  build_construction_questions: 'intent',
-  plan_workspace: 'intent',
-  construct_workspace: 'intent',
-  validate_config: '_filePath',
-  describe_workspace: '_filePath',
-  start_preview: '_filePath',
-  load_config: 'filePath',
+  construction_scaffold: 'template',
+  construction_classify: 'intent',
+  construction_questions_build: 'intent',
+  construction_plan: 'intent',
+  construction_construct: 'intent',
+  config_validate: '_filePath',
+  workspace_describe: '_filePath',
+  preview_start: '_filePath',
+  config_load: 'filePath',
 };
 
 function maybeParseJsonObject(value) {
@@ -305,7 +160,7 @@ function maybeParseJsonObject(value) {
 }
 
 function isConstructionHandoffPositional(toolName, value) {
-  return (toolName === 'plan_workspace' || toolName === 'construct_workspace') &&
+  return (toolName === 'construction_plan' || toolName === 'construction_construct') &&
     value &&
     typeof value === 'object' &&
     !Array.isArray(value) &&
@@ -318,18 +173,14 @@ async function runToolCommand() {
   let configFile = flags.config;
   delete flags.config;
 
-  // Resolve tool name
   let cliCommand = command;
-  let toolName = COMMAND_ALIASES[cliCommand] || kebabToSnake(cliCommand);
+  let toolName = kebabToSnake(cliCommand);
+  let { dispatch, isMutating, TOOLS: runtimeTools, createSession } = await import('./runtime/index.js');
 
-  // Import runtime
-  let { dispatch, isMutating, TOOLS, createSession } = await import('./runtime/index.js');
-
-  // Verify tool exists
-  let toolExists = TOOLS.some((t) => t.name === toolName);
+  let toolExists = runtimeTools.some((tool) => tool.name === toolName);
   if (!toolExists) {
     console.error(`Unknown command: ${cliCommand}`);
-    console.error(`Run 'symbiote-workspace --help' for usage.`);
+    console.error('Run `symbiote-workspace --help` for usage.');
     process.exit(1);
   }
 
@@ -338,18 +189,13 @@ async function runToolCommand() {
     return;
   }
 
-  // Build args from flags
   let toolArgs = flagsToCamelCase(flags);
-  let outputFile = toolName === 'scaffold_workspace' ? toolArgs.output : null;
-  if (toolName === 'scaffold_workspace') {
-    delete toolArgs.output;
-  }
+  let outputFile = toolName === 'construction_scaffold' ? toolArgs.output : null;
+  if (toolName === 'construction_scaffold') delete toolArgs.output;
 
-  // Handle positional args
   let positionalField = POSITIONAL_MAP[toolName];
   if (positionalField && positionals.length > 0) {
     if (positionalField === '_filePath') {
-      // Load config from positional file path
       configFile = configFile || positionals.join(' ');
     } else {
       let positionalValue = positionals.join(' ');
@@ -362,26 +208,24 @@ async function runToolCommand() {
     }
   }
 
-  // Auto-resolve --ui-path for discover commands
-  if ((toolName === 'discover_components' || toolName === 'find_component' ||
-       toolName === 'list_component_tags' || toolName === 'list_categories') && !toolArgs.uiPath) {
+  if ([
+    'component_discover',
+    'component_find',
+    'component_tags_list',
+    'component_categories_list',
+  ].includes(toolName) && !toolArgs.uiPath) {
     toolArgs.uiPath = await resolveUiPath();
   }
 
-  // Create session
-  let session = createSession();
-
-  // Load config if specified
+  let session = createSession({ actor: 'user-direct', principal: { kind: 'human', id: 'cli' } });
   if (configFile) {
     try {
       await session.load(configFile);
     } catch (err) {
-      // For validate/describe, load the file content directly
       if (positionalField === '_filePath') {
         let json = await readFile(resolve(configFile), 'utf-8');
         session.config = JSON.parse(json);
       } else if (err.code === 'ENOENT' && isMutating(toolName)) {
-        // File doesn't exist yet — scaffold will create it
         session.configFilePath = resolve(configFile);
       } else {
         console.error(`Cannot load config: ${err.message}`);
@@ -390,17 +234,15 @@ async function runToolCommand() {
     }
   }
 
-  // Dispatch
   let result;
   try {
-    result = await dispatch(toolName, toolArgs, session);
+    result = await dispatch(toolName, toolArgs, session, { actor: 'user-direct' });
   } catch (err) {
     console.error(`Error: ${err.message}`);
     process.exit(1);
   }
   let isDispatchError = result?.status === 'error';
 
-  // Auto-save on mutations
   if (!isDispatchError && configFile && isMutating(toolName) && session.configFilePath) {
     try {
       await session.save();
@@ -418,15 +260,10 @@ async function runToolCommand() {
     }
   }
 
-  // Output
   console.log(JSON.stringify(result, null, 2));
   if (isDispatchError) process.exitCode = 1;
 }
 
-/**
- * Try to auto-resolve symbiote-ui path.
- * @returns {Promise<string>}
- */
 async function resolveUiPath() {
   let { stat } = await import('node:fs/promises');
   let candidates = [
@@ -437,13 +274,13 @@ async function resolveUiPath() {
     try {
       await stat(candidate);
       return candidate;
-    } catch { /* try next */ }
+    } catch {
+      // Try the next candidate.
+    }
   }
   console.error('Cannot auto-resolve symbiote-ui path. Use --ui-path <path>');
   process.exit(1);
 }
-
-// ── Main Dispatch ──
 
 switch (command) {
   case 'serve':

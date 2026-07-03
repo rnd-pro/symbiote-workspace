@@ -3,14 +3,8 @@
 /**
  * MCP Server for symbiote-workspace builder.
  *
- * Pure JSON-RPC protocol layer over stdio.
- * All tool definitions and dispatch logic live in runtime/dispatch.js.
- *
- * Usage:
- *   node symbiote-workspace/mcp/index.js
- *
- * MCP config:
- *   { "command": "node", "args": ["path/to/symbiote-workspace/mcp/index.js"] }
+ * Pure JSON-RPC protocol layer over stdio. Tool definitions and dispatch logic
+ * live in the runtime registry.
  *
  * @module symbiote-workspace/mcp
  */
@@ -19,27 +13,28 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { dispatch, TOOLS } from '../runtime/dispatch.js';
-import { createSession } from '../runtime/session.js';
+import { createSession, dispatch, TOOLS } from '../runtime/index.js';
 
-// Default session for callers that don't scope one. A host MAY pass an optional
-// `session_id` in a tool call's arguments to get an isolated construction session,
-// so a multiplexing host can run concurrent constructions without sharing state;
-// omitting it preserves the single shared-session behavior.
-let session = createSession();
+let session = createSession({ actor: 'agent-gated', principal: { kind: 'agent', id: 'mcp' } });
 let sessions = new Map();
+
 function sessionFor(id) {
   if (id == null || id === '') return session;
   let key = String(id);
-  if (!sessions.has(key)) sessions.set(key, createSession());
+  if (!sessions.has(key)) {
+    sessions.set(key, createSession({
+      actor: 'agent-gated',
+      principal: { kind: 'agent', id: `mcp:${key}` },
+      sessionId: key,
+    }));
+  }
   return sessions.get(key);
 }
+
 let PACKAGE_VERSION = JSON.parse(readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), '..', 'package.json'),
   'utf8',
 )).version;
-
-// ── JSON-RPC Protocol (stdio, Content-Length framing) ──
 
 let buffer = Buffer.alloc(0);
 let messageQueue = Promise.resolve();
@@ -88,7 +83,14 @@ function sendResponse(response) {
 }
 
 function publicToolDefinition(tool) {
-  let { mutates, writesFiles, annotations, ...rest } = tool;
+  let {
+    family,
+    mutates,
+    requiresConfig,
+    writesFiles,
+    annotations,
+    ...rest
+  } = tool;
   return {
     ...rest,
     annotations: {
@@ -124,26 +126,23 @@ async function handleMessage(body) {
     return;
   }
 
-  if (method === 'notifications/initialized') {
-    return; // No response needed
-  }
+  if (method === 'notifications/initialized') return;
 
   if (method === 'tools/list') {
-    let tools = TOOLS.map(publicToolDefinition);
     sendResponse({
       jsonrpc: '2.0',
       id,
-      result: { tools },
+      result: { tools: TOOLS.map(publicToolDefinition) },
     });
     return;
   }
 
   if (method === 'tools/call') {
     let toolName = params?.name;
-    let { session_id: sessionId, ...args } = params?.arguments || {};
+    let { session_id: sessionId, actor: _ignoredActor, ...args } = params?.arguments || {};
 
     try {
-      let result = await dispatch(toolName, args, sessionFor(sessionId));
+      let result = await dispatch(toolName, args, sessionFor(sessionId), { actor: 'agent-gated' });
       let isDispatchError = result?.status === 'error';
       sendResponse({
         jsonrpc: '2.0',
@@ -166,7 +165,6 @@ async function handleMessage(body) {
     return;
   }
 
-  // Unknown method
   sendResponse({
     jsonrpc: '2.0',
     id,

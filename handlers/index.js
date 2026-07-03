@@ -27,29 +27,6 @@ export {
 } from './panels.js';
 
 export {
-  addSection,
-  removeSection,
-  updateSection,
-  reorderSections,
-  listSections,
-} from './sections.js';
-
-export {
-  addGroup,
-  removeGroup,
-  updateGroup,
-  reorderGroups,
-  listGroups,
-} from './groups.js';
-
-export {
-  addMenuAction,
-  removeMenuAction,
-  toggleMenuAction,
-  listMenuActions,
-} from './menu-actions.js';
-
-export {
   setBehavior,
   getBehavior,
   updateBehavior,
@@ -60,12 +37,6 @@ export {
   unmountWidget,
   swapWidget,
 } from './widgets.js';
-
-export {
-  bridgeEvent,
-  unbridgeEvent,
-  listBridges,
-} from './events.js';
 
 export { workflowKanban } from './workflow-kanban.js';
 export { startPreview } from './preview.js';
