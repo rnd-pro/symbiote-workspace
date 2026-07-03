@@ -3,727 +3,240 @@ import assert from 'node:assert/strict';
 
 import {
   PLUGIN_SCHEMA,
-  PLUGIN_CATEGORIES,
   validatePluginDefinition,
-  registerPlugin,
-  activatePlugin,
-  unregisterPlugin,
-  listPlugins,
-  getPlugin,
-  getPluginStatus,
-  clearPlugins,
-  validatePlugin,
-  collectPluginModuleCapabilities,
-  listPluginModuleCapabilities,
-  collectPluginWorkspaceTemplates,
-  listPluginWorkspaceTemplates,
-} from '../plugins/index.js';
-import {
-  validateModuleCapabilityDescriptor,
-  WORKSPACE_SCHEMA_VERSION,
-} from '../schema/index.js';
+  validatePluginWorkspaceTemplate,
+} from '../plugins/plugin-schema.js';
+import { clearRegisteredSections } from '../validation/core.js';
+import { WORKSPACE_SCHEMA_VERSION } from '../schema/value-classes.js';
 
-function fixtureFileUrl(path) {
-  return ['file:', '', '', 'tmp', path].join('/');
+function paths(result) {
+  return result.errors.map((error) => error.path);
 }
 
-function workspaceConfig(name) {
+function hasPath(result, path) {
+  return result.errors.some((error) => error.path === path);
+}
+
+function contributedModule(overrides = {}) {
   return {
-    version: WORKSPACE_SCHEMA_VERSION,
-    name,
-    register: 'agent-workspace',
+    id: 'acme.video:preview',
+    tagName: 'acme-video-preview',
+    title: 'Preview',
+    capabilities: ['media.preview'],
+    actions: [{ id: 'play', label: 'Play', does: { kind: 'emit', event: 'play' } }],
+    hostServices: { required: [], optional: [] },
+    ...overrides,
   };
 }
 
+function workspaceConfig(name) {
+  return { version: WORKSPACE_SCHEMA_VERSION, name };
+}
+
+beforeEach(() => {
+  clearRegisteredSections();
+});
+
 describe('PLUGIN_SCHEMA', () => {
-  it('exports a frozen schema object with required fields', () => {
+  it('exports a frozen manifest schema with required name/version', () => {
     assert.ok(PLUGIN_SCHEMA);
     assert.equal(PLUGIN_SCHEMA.type, 'object');
     assert.deepEqual(PLUGIN_SCHEMA.required, ['name', 'version']);
     assert.ok(Object.isFrozen(PLUGIN_SCHEMA));
+    assert.ok(PLUGIN_SCHEMA.properties.contributes);
   });
 });
 
-describe('PLUGIN_CATEGORIES', () => {
-  it('exports frozen categories array', () => {
-    assert.ok(Array.isArray(PLUGIN_CATEGORIES));
-    assert.ok(PLUGIN_CATEGORIES.includes('handler'));
-    assert.ok(PLUGIN_CATEGORIES.includes('provider'));
-    assert.ok(PLUGIN_CATEGORIES.includes('component'));
-    assert.ok(PLUGIN_CATEGORIES.includes('theme'));
-    assert.ok(PLUGIN_CATEGORIES.includes('integration'));
-    assert.ok(Object.isFrozen(PLUGIN_CATEGORIES));
+describe('manifest identity', () => {
+  it('accepts a minimal namespaced manifest', () => {
+    let result = validatePluginDefinition({ name: 'acme.video', version: '1.1.0' });
+    assert.equal(result.valid, true);
+    assert.deepEqual(result.errors, []);
+  });
+
+  it('rejects a null manifest', () => {
+    assert.equal(validatePluginDefinition(null).valid, false);
+  });
+
+  it('rejects a name that is not a valid namespace', () => {
+    let result = validatePluginDefinition({ name: 'Acme Video', version: '1.0.0' });
+    assert.equal(result.valid, false);
+    assert.ok(hasPath(result, 'name'));
+  });
+
+  it('rejects a non-semver version', () => {
+    let result = validatePluginDefinition({ name: 'acme.video', version: 'v-one' });
+    assert.equal(result.valid, false);
+    assert.ok(hasPath(result, 'version'));
+  });
+
+  it('rejects a namespace that does not equal name', () => {
+    let result = validatePluginDefinition({ name: 'acme.video', version: '1.0.0', namespace: 'acme.audio' });
+    assert.equal(result.valid, false);
+    assert.ok(hasPath(result, 'namespace'));
   });
 });
 
-describe('validatePluginDefinition', () => {
-  it('accepts a minimal valid plugin', () => {
-    let result = validatePluginDefinition({ name: 'test-plugin', version: '1.0.0' });
-    assert.equal(result.valid, true);
-    assert.equal(result.errors.length, 0);
-  });
-
-  it('rejects null', () => {
-    let result = validatePluginDefinition(null);
-    assert.equal(result.valid, false);
-  });
-
-  it('rejects missing name', () => {
-    let result = validatePluginDefinition({ version: '1.0.0' });
-    assert.equal(result.valid, false);
-    assert.ok(result.errors.some((e) => e.path === 'name'));
-  });
-
-  it('rejects missing version', () => {
-    let result = validatePluginDefinition({ name: 'test' });
-    assert.equal(result.valid, false);
-    assert.ok(result.errors.some((e) => e.path === 'version'));
-  });
-
-  it('rejects invalid category', () => {
-    let result = validatePluginDefinition({ name: 'test', version: '1.0.0', category: 'invalid' });
-    assert.equal(result.valid, false);
-    assert.ok(result.errors.some((e) => e.path === 'category'));
-  });
-
-  it('accepts valid category', () => {
-    let result = validatePluginDefinition({ name: 'test', version: '1.0.0', category: 'handler' });
-    assert.equal(result.valid, true);
-  });
-
-  it('validates handlers array', () => {
+describe('legacy flat vocabulary removed', () => {
+  it('reports removed top-level keys as errors', () => {
     let result = validatePluginDefinition({
-      name: 'test',
+      name: 'acme.video',
       version: '1.0.0',
-      handlers: [{ type: 'ai/tts' }],
-    });
-    assert.equal(result.valid, true);
-  });
-
-  it('rejects handler without type', () => {
-    let result = validatePluginDefinition({
-      name: 'test',
-      version: '1.0.0',
-      handlers: [{ category: 'ai' }],
-    });
-    assert.equal(result.valid, false);
-    assert.ok(result.errors.some((e) => e.path.includes('handlers')));
-  });
-
-  it('rejects non-array handlers', () => {
-    let result = validatePluginDefinition({
-      name: 'test',
-      version: '1.0.0',
-      handlers: 'invalid',
-    });
-    assert.equal(result.valid, false);
-  });
-
-  it('validates components array', () => {
-    let result = validatePluginDefinition({
-      name: 'test',
-      version: '1.0.0',
-      components: ['sn-my-widget'],
-    });
-    assert.equal(result.valid, true);
-  });
-
-  it('rejects non-string component entries', () => {
-    let result = validatePluginDefinition({
-      name: 'test',
-      version: '1.0.0',
-      components: [123],
-    });
-    assert.equal(result.valid, false);
-  });
-
-  it('accepts component capability descriptor entries', () => {
-    let result = validatePluginDefinition({
-      name: 'table-plugin',
-      version: '1.0.0',
-      category: 'component',
-      capabilities: ['admin.table'],
-      requiredHostServices: ['storage.project'],
-      components: [{
-        tagName: 'sn-data-table',
-        provider: 'symbiote-ui',
-        capabilities: ['data.table', 'admin.bulk-actions'],
-        actions: [{ id: 'refresh', label: 'Refresh' }],
-        toolbarItems: [{ id: 'filter', label: 'Filter' }],
-        settings: [{ id: 'density', label: 'Density', type: 'enum' }],
-        events: { emits: [{ name: 'row-select' }] },
-        bindings: [{ id: 'rows', direction: 'input' }],
-        runtimeSlots: [{ id: 'data-provider', role: 'provider' }],
-        requiredHostServices: ['storage.project'],
-      }],
-    });
-
-    assert.equal(result.valid, true);
-    assert.equal(result.errors.length, 0);
-  });
-
-  it('rejects invalid component capability descriptors', () => {
-    let result = validatePluginDefinition({
-      name: 'broken-plugin',
-      version: '1.0.0',
-      capabilities: ['admin table'],
-      requiredHostServices: ['https://api.example.com'],
-      components: [{
-        tagName: 'Broken Component',
-        actions: [{ id: 'open' }],
-      }],
-    });
-
-    assert.equal(result.valid, false);
-    assert.ok(result.errors.some((error) => error.path === 'capabilities[0]'));
-    assert.ok(result.errors.some((error) => error.path === 'requiredHostServices[0]'));
-    assert.ok(result.errors.some((error) => error.path === 'components[0].tagName'));
-    assert.ok(result.errors.some((error) => error.path === 'components[0].actions[0].label'));
-  });
-
-  it('rejects non-function activate', () => {
-    let result = validatePluginDefinition({
-      name: 'test',
-      version: '1.0.0',
-      activate: 'not-a-function',
-    });
-    assert.equal(result.valid, false);
-    assert.ok(result.errors.some((e) => e.path === 'activate'));
-  });
-
-  it('accepts function activate and deactivate', () => {
-    let result = validatePluginDefinition({
-      name: 'test',
-      version: '1.0.0',
-      activate: () => {},
-      deactivate: () => {},
-    });
-    assert.equal(result.valid, true);
-  });
-
-  it('validates a full plugin definition', () => {
-    let result = validatePluginDefinition({
-      name: '@symbiote/tunnel-cloudflare',
-      version: '0.1.0',
-      description: 'Cloudflare tunnel integration',
+      handlers: [{ type: 'x/y' }],
+      components: ['acme-video-preview'],
+      workspace: { templates: [] },
       category: 'provider',
-      handlers: [
-        { type: 'tunnel/start', driver: { inputs: [], outputs: [] } },
-        { type: 'tunnel/stop', driver: { inputs: [], outputs: [] } },
-      ],
-      components: ['sn-tunnel-settings'],
-      workspace: {
-        configSchema: { subdomain: { type: 'string' } },
-      },
-      activate: () => {},
-      deactivate: () => {},
     });
-    assert.equal(result.valid, true);
-    assert.equal(result.errors.length, 0);
+    assert.equal(result.valid, false);
+    for (let path of ['handlers', 'components', 'workspace', 'category']) {
+      assert.ok(hasPath(result, path), `expected error on ${path}`);
+    }
+  });
+});
+
+describe('contributes.modules', () => {
+  it('accepts namespaced module contracts', () => {
+    let result = validatePluginDefinition({
+      name: 'acme.video',
+      version: '1.1.0',
+      contributes: { modules: [contributedModule()] },
+    });
+    assert.equal(result.valid, true, JSON.stringify(result.errors));
   });
 
-  it('accepts workspace template entries', () => {
+  it('rejects a contribution id outside the plugin namespace', () => {
     let result = validatePluginDefinition({
-      name: '@acme/rooms',
-      version: '1.0.0',
-      workspace: {
-        templates: [{
-          name: 'team-ai-room',
-          description: 'Team AI room workspace.',
-          config: workspaceConfig('Team AI Room'),
+      name: 'acme.video',
+      version: '1.1.0',
+      contributes: { modules: [contributedModule({ id: 'other.ns:preview' })] },
+    });
+    assert.equal(result.valid, false);
+    assert.ok(hasPath(result, 'contributes.modules[0].id'));
+  });
+
+  it('rejects duplicate contribution ids across kinds', () => {
+    let result = validatePluginDefinition({
+      name: 'acme.video',
+      version: '1.1.0',
+      contributes: {
+        modules: [contributedModule({ id: 'acme.video:shared' })],
+        packs: [{ id: 'acme.video:shared', handlers: [{ type: 'video/encode' }] }],
+      },
+    });
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some((error) => /Duplicate contribution id/.test(error.message)));
+  });
+
+  it('prefixes descriptor validation errors from the shared descriptor validator', () => {
+    let result = validatePluginDefinition({
+      name: 'acme.video',
+      version: '1.1.0',
+      contributes: {
+        modules: [contributedModule({ tagName: 'Bad Tag', actions: [{ id: 'x', does: { kind: 'emit', event: 'e' } }] })],
+      },
+    });
+    assert.equal(result.valid, false);
+    assert.ok(hasPath(result, 'contributes.modules[0].tagName'));
+    assert.ok(hasPath(result, 'contributes.modules[0].actions[0].label'));
+  });
+});
+
+describe('contributes.packs handler manifests', () => {
+  it('accepts ingress and schedule trigger kinds plus ui/credentialType/hostServices', () => {
+    let result = validatePluginDefinition({
+      name: 'acme.video',
+      version: '1.1.0',
+      contributes: {
+        packs: [{
+          id: 'acme.video:media',
+          handlers: [
+            { type: 'video/webhook', trigger: { kind: 'ingress' }, ui: { autoForm: true }, credentialType: 'api-key', hostServices: { required: ['graph-execution'] } },
+            { type: 'video/nightly', trigger: { kind: 'schedule' } },
+          ],
         }],
       },
     });
-
-    assert.equal(result.valid, true);
-    assert.equal(result.errors.length, 0);
+    assert.equal(result.valid, true, JSON.stringify(result.errors));
   });
 
-  it('rejects invalid workspace template entries', () => {
+  it('rejects a handler trigger kind outside ingress|schedule', () => {
     let result = validatePluginDefinition({
-      name: '@acme/broken-rooms',
-      version: '1.0.0',
-      workspace: {
-        templates: [
-          { name: 'Broken Room', config: workspaceConfig('Broken Room') },
-          { name: 'missing-version', config: { name: 'Missing Version' } },
-        ],
+      name: 'acme.video',
+      version: '1.1.0',
+      contributes: {
+        packs: [{ id: 'acme.video:media', handlers: [{ type: 'video/x', trigger: { kind: 'manual' } }] }],
       },
     });
-
     assert.equal(result.valid, false);
-    assert.ok(result.errors.some((error) => error.path === 'workspace.templates[0].name'));
-    assert.ok(result.errors.some((error) => error.path === 'workspace.templates[1].config.version'));
+    assert.ok(hasPath(result, 'contributes.packs[0].handlers[0].trigger'));
   });
 });
 
-describe('Plugin Registry', () => {
-  beforeEach(() => {
-    clearPlugins();
-  });
-
-  it('registers a valid plugin', () => {
-    let result = registerPlugin({ name: 'test-plugin', version: '1.0.0' });
-    assert.equal(result.ok, true);
-  });
-
-  it('rejects an invalid plugin', () => {
-    let result = registerPlugin({ name: '', version: '' });
-    assert.equal(result.ok, false);
-    assert.ok(result.errors.length > 0);
-  });
-
-  it('lists registered plugins', () => {
-    registerPlugin({ name: 'a', version: '1.0.0', category: 'handler' });
-    registerPlugin({ name: 'b', version: '2.0.0', category: 'provider' });
-    let list = listPlugins();
-    assert.equal(list.length, 2);
-    assert.equal(list[0].name, 'a');
-    assert.equal(list[0].status, 'pending');
-    assert.equal(list[1].name, 'b');
-  });
-
-  it('gets a registered plugin by name', () => {
-    registerPlugin({ name: 'my-plugin', version: '3.0.0' });
-    let plugin = getPlugin('my-plugin');
-    assert.ok(plugin);
-    assert.equal(plugin.name, 'my-plugin');
-    assert.equal(plugin.version, '3.0.0');
-  });
-
-  it('returns null for non-existent plugin', () => {
-    assert.equal(getPlugin('nonexistent'), null);
-  });
-
-  it('returns status for registered plugin', () => {
-    registerPlugin({ name: 'test', version: '1.0.0' });
-    assert.equal(getPluginStatus('test'), 'pending');
-  });
-
-  it('returns null status for non-existent plugin', () => {
-    assert.equal(getPluginStatus('nonexistent'), null);
-  });
-
-  it('clears all plugins', () => {
-    registerPlugin({ name: 'a', version: '1.0.0' });
-    registerPlugin({ name: 'b', version: '1.0.0' });
-    clearPlugins();
-    assert.equal(listPlugins().length, 0);
-  });
-
-  it('replaces plugin with same name', () => {
-    registerPlugin({ name: 'test', version: '1.0.0' });
-    registerPlugin({ name: 'test', version: '2.0.0' });
-    let list = listPlugins();
-    assert.equal(list.length, 1);
-    assert.equal(getPlugin('test').version, '2.0.0');
-  });
-});
-
-describe('plugin module capability collection', () => {
-  beforeEach(() => {
-    clearPlugins();
-  });
-
-  it('collects component descriptors without inventing capabilities for string tags', () => {
-    let plugin = {
-      name: '@acme/sentiment',
-      version: '1.0.0',
-      capabilities: ['plugin.analytics'],
-      components: [
-        'sn-legacy-widget',
-        {
-          tagName: 'acme-sentiment-panel',
-          provider: '@acme/sentiment',
-          capabilities: ['analysis.sentiment'],
-          toolbarItems: [{ id: 'refresh', label: 'Refresh' }],
-          requiredHostServices: ['storage.project'],
-        },
-      ],
-    };
-
-    let result = collectPluginModuleCapabilities([plugin]);
-
-    assert.equal(result.ok, true);
-    assert.deepEqual(result.errors, []);
-    assert.deepEqual(result.moduleCapabilities.map((item) => item.tagName), ['acme-sentiment-panel']);
-    assert.deepEqual(result.moduleCapabilities[0].capabilities, ['analysis.sentiment']);
-    assert.equal(result.moduleCapabilities[0].capabilities.includes('plugin.analytics'), false);
-
-    let descriptorErrors = [];
-    validateModuleCapabilityDescriptor(result.moduleCapabilities[0], 'moduleCapabilities[0]', descriptorErrors);
-    assert.deepEqual(descriptorErrors, []);
-
-    result.moduleCapabilities[0].capabilities.push('mutated.external-state');
-    assert.deepEqual(plugin.components[1].capabilities, ['analysis.sentiment']);
-  });
-
-  it('accepts a single plugin definition without components', () => {
-    let result = collectPluginModuleCapabilities({
-      name: '@acme/empty',
-      version: '1.0.0',
-    });
-
-    assert.equal(result.ok, true);
-    assert.deepEqual(result.errors, []);
-    assert.deepEqual(result.moduleCapabilities, []);
-  });
-
-  it('returns prefixed validation errors for invalid plugin descriptors', () => {
-    let result = collectPluginModuleCapabilities([{
-      name: 'broken-plugin',
-      version: '1.0.0',
-      components: [{
-        tagName: 'Broken Component',
-        actions: [{ id: 'open' }],
-      }],
-    }]);
-
-    assert.equal(result.ok, false);
-    assert.deepEqual(result.moduleCapabilities, []);
-    assert.ok(result.errors.some((error) => error.path === 'plugins[0].components[0].tagName'));
-    assert.ok(result.errors.some((error) => error.path === 'plugins[0].components[0].actions[0].label'));
-  });
-
-  it('rejects non-portable provider references in plugin module descriptors', () => {
-    let result = collectPluginModuleCapabilities([{
-      name: '@acme/nonportable-provider',
-      version: '1.0.0',
-      components: [{
-        tagName: 'acme-nonportable-panel',
-        provider: 'https://provider.example.com/package',
-        descriptor: {
-          package: fixtureFileUrl('provider-descriptor.js'),
-          export: 'descriptor',
-          component: 'acme-nonportable-panel',
-        },
-      }],
-    }]);
-
-    assert.equal(result.ok, false);
-    assert.deepEqual(result.moduleCapabilities, []);
-    assert.ok(result.errors.some((error) => error.path === 'plugins[0].components[0].provider'));
-    assert.ok(result.errors.some((error) => error.path === 'plugins[0].components[0].descriptor.package'));
-  });
-
-  it('rejects duplicate descriptor tag names across plugin inputs', () => {
-    let result = collectPluginModuleCapabilities([
-      {
-        name: '@acme/table-a',
-        version: '1.0.0',
-        components: [{ tagName: 'acme-data-table', capabilities: ['data.table'] }],
+describe('contributes.templates', () => {
+  it('accepts whole-config templates validated by the config validator', () => {
+    let result = validatePluginDefinition({
+      name: 'acme.video',
+      version: '1.1.0',
+      contributes: {
+        templates: [{ name: 'studio-room', description: 'Studio.', config: workspaceConfig('Studio Room') }],
       },
-      {
-        name: '@acme/table-b',
-        version: '1.0.0',
-        components: [{ tagName: 'acme-data-table', capabilities: ['admin.records'] }],
-      },
-    ]);
-
-    assert.equal(result.ok, false);
-    assert.deepEqual(result.moduleCapabilities, []);
-    assert.ok(result.errors.some((error) => error.path === 'plugins[1].components[0].tagName'));
-  });
-
-  it('collects module descriptors when unrelated workspace templates are invalid', () => {
-    let result = collectPluginModuleCapabilities([{
-      name: '@acme/section-isolated-components',
-      version: '1.0.0',
-      components: [{
-        tagName: 'acme-valid-panel',
-        capabilities: ['valid.panel'],
-      }],
-      workspace: {
-        templates: [{ name: 'Broken Template', config: workspaceConfig('Broken Template') }],
-      },
-    }]);
-
-    assert.equal(result.ok, true);
-    assert.deepEqual(result.errors, []);
-    assert.deepEqual(result.moduleCapabilities.map((item) => item.tagName), ['acme-valid-panel']);
-  });
-
-  it('lists module capabilities from the plugin registry', async () => {
-    registerPlugin({
-      name: '@acme/inactive',
-      version: '1.0.0',
-      components: [{ tagName: 'acme-inactive-panel', capabilities: ['inactive.panel'] }],
     });
-    registerPlugin({
-      name: '@acme/active',
-      version: '1.0.0',
-      components: [{ tagName: 'acme-active-panel', capabilities: ['active.panel'] }],
-    });
-
-    await activatePlugin('@acme/active');
-
-    let all = listPluginModuleCapabilities();
-    let active = listPluginModuleCapabilities({ status: 'active' });
-
-    assert.equal(all.ok, true);
-    assert.deepEqual(
-      all.moduleCapabilities.map((item) => item.tagName),
-      ['acme-active-panel', 'acme-inactive-panel'],
-    );
-    assert.deepEqual(active.moduleCapabilities.map((item) => item.tagName), ['acme-active-panel']);
-  });
-});
-
-describe('plugin workspace template collection', () => {
-  beforeEach(() => {
-    clearPlugins();
+    assert.equal(result.valid, true, JSON.stringify(result.errors));
   });
 
-  it('collects portable workspace templates from plugin definitions', () => {
-    let plugin = {
-      name: '@acme/rooms',
-      version: '1.0.0',
-      workspace: {
+  it('prefixes config validator errors and rejects non-portable template names', () => {
+    let result = validatePluginDefinition({
+      name: 'acme.video',
+      version: '1.1.0',
+      contributes: {
         templates: [
-          {
-            name: 'team-ai-room',
-            description: 'Team AI room workspace.',
-            config: workspaceConfig('Team AI Room'),
-          },
+          { name: 'Bad Room', config: workspaceConfig('Bad Room') },
+          { name: 'missing-version', config: { name: 'No Version' } },
         ],
       },
-    };
-
-    let result = collectPluginWorkspaceTemplates([plugin]);
-
-    assert.equal(result.ok, true);
-    assert.deepEqual(result.errors, []);
-    assert.deepEqual(result.templates.map((template) => template.name), ['team-ai-room']);
-    assert.equal(result.templates[0].description, 'Team AI room workspace.');
-    assert.deepEqual(result.templates[0].source, {
-      plugin: '@acme/rooms',
-      version: '1.0.0',
     });
-    assert.equal(result.templates[0].config.name, 'Team AI Room');
-
-    result.templates[0].config.name = 'Mutated';
-    assert.equal(plugin.workspace.templates[0].config.name, 'Team AI Room');
+    assert.equal(result.valid, false);
+    assert.ok(hasPath(result, 'contributes.templates[0].name'));
+    assert.ok(hasPath(result, 'contributes.templates[1].config.version'));
   });
 
-  it('returns prefixed validation errors for invalid workspace templates', () => {
-    let result = collectPluginWorkspaceTemplates([{
-      name: '@acme/broken-rooms',
-      version: '1.0.0',
-      workspace: {
-        templates: [
-          { name: 'broken-room', config: { name: 'Missing Version' } },
-          { description: 'Missing template name.', config: workspaceConfig('No Name') },
-        ],
-      },
-    }]);
-
-    assert.equal(result.ok, false);
-    assert.deepEqual(result.templates, []);
-    assert.ok(result.errors.some((error) => (
-      error.path === 'plugins[0].workspace.templates[0].config.version'
-    )));
-    assert.ok(result.errors.some((error) => (
-      error.path === 'plugins[0].workspace.templates[1].name'
-    )));
-  });
-
-  it('returns prefixed validation errors for invalid workspace sections', () => {
-    let result = collectPluginWorkspaceTemplates([{
-      name: '@acme/broken-workspace-section',
-      version: '1.0.0',
-      workspace: 'invalid',
-    }]);
-
-    assert.equal(result.ok, false);
-    assert.deepEqual(result.templates, []);
-    assert.ok(result.errors.some((error) => error.path === 'plugins[0].workspace'));
-  });
-
-  it('rejects duplicate workspace template names across plugin inputs', () => {
-    let result = collectPluginWorkspaceTemplates([
-      {
-        name: '@acme/rooms-a',
-        version: '1.0.0',
-        workspace: {
-          templates: [{ name: 'team-ai-room', config: workspaceConfig('Room A') }],
-        },
-      },
-      {
-        name: '@acme/rooms-b',
-        version: '1.0.0',
-        workspace: {
-          templates: [{ name: 'team-ai-room', config: workspaceConfig('Room B') }],
-        },
-      },
-    ]);
-
-    assert.equal(result.ok, false);
-    assert.deepEqual(result.templates, []);
-    assert.ok(result.errors.some((error) => (
-      error.path === 'plugins[1].workspace.templates[0].name'
-    )));
-  });
-
-  it('collects workspace templates when unrelated component descriptors are invalid', () => {
-    let result = collectPluginWorkspaceTemplates([{
-      name: '@acme/section-isolated-templates',
-      version: '1.0.0',
-      components: [{ tagName: 'Broken Component', actions: [{ id: 'open' }] }],
-      workspace: {
-        templates: [{ name: 'valid-room', config: workspaceConfig('Valid Room') }],
-      },
-    }]);
-
-    assert.equal(result.ok, true);
-    assert.deepEqual(result.errors, []);
-    assert.deepEqual(result.templates.map((template) => template.name), ['valid-room']);
-  });
-
-  it('lists workspace templates from the plugin registry', async () => {
-    registerPlugin({
-      name: '@acme/inactive-rooms',
-      version: '1.0.0',
-      workspace: {
-        templates: [{ name: 'inactive-room', config: workspaceConfig('Inactive Room') }],
-      },
-    });
-    registerPlugin({
-      name: '@acme/active-rooms',
-      version: '1.0.0',
-      workspace: {
-        templates: [{ name: 'active-room', config: workspaceConfig('Active Room') }],
-      },
-    });
-
-    await activatePlugin('@acme/active-rooms');
-
-    let all = listPluginWorkspaceTemplates();
-    let active = listPluginWorkspaceTemplates({ status: 'active' });
-
-    assert.equal(all.ok, true);
-    assert.deepEqual(
-      all.templates.map((template) => template.name),
-      ['active-room', 'inactive-room'],
-    );
-    assert.deepEqual(active.templates.map((template) => template.name), ['active-room']);
+  it('validatePluginWorkspaceTemplate stays available for the capabilities layer', () => {
+    let errors = [];
+    validatePluginWorkspaceTemplate({ name: 'room', config: workspaceConfig('Room') }, 'templates[0]', errors);
+    assert.deepEqual(errors, []);
   });
 });
 
-describe('Plugin Lifecycle', () => {
-  beforeEach(() => {
-    clearPlugins();
-  });
-
-  it('activates a plugin successfully', async () => {
-    let activated = false;
-    registerPlugin({
-      name: 'lifecycle-test',
-      version: '1.0.0',
-      activate: () => { activated = true; },
+describe('idLifecycle rules', () => {
+  it('accepts a rename that points an absent old id to a present contribution', () => {
+    let result = validatePluginDefinition({
+      name: 'acme.video',
+      version: '1.1.0',
+      contributes: { modules: [contributedModule({ id: 'acme.video:editor' })] },
+      idLifecycle: { renames: { 'acme.video:timeline': 'acme.video:editor' } },
     });
-
-    let result = await activatePlugin('lifecycle-test');
-    assert.equal(result.ok, true);
-    assert.equal(activated, true);
-    assert.equal(getPluginStatus('lifecycle-test'), 'active');
+    assert.equal(result.valid, true, JSON.stringify(result.errors));
   });
 
-  it('passes context to activate', async () => {
-    let receivedContext;
-    registerPlugin({
-      name: 'ctx-test',
-      version: '1.0.0',
-      activate: (ctx) => { receivedContext = ctx; },
+  it('rejects a rename whose target is not a current contribution', () => {
+    let result = validatePluginDefinition({
+      name: 'acme.video',
+      version: '1.1.0',
+      contributes: { modules: [contributedModule({ id: 'acme.video:editor' })] },
+      idLifecycle: { renames: { 'acme.video:timeline': 'acme.video:missing' } },
     });
-
-    let ctx = { server: 'mock', graph: 'mock' };
-    await activatePlugin('ctx-test', ctx);
-    assert.deepEqual(receivedContext, ctx);
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some((error) => error.path === 'idLifecycle.renames.acme.video:timeline'));
   });
 
-  it('handles activate error gracefully', async () => {
-    registerPlugin({
-      name: 'error-test',
-      version: '1.0.0',
-      activate: () => { throw new Error('activate failed'); },
+  it('rejects a rename whose key still exists in current contributes', () => {
+    let result = validatePluginDefinition({
+      name: 'acme.video',
+      version: '1.1.0',
+      contributes: { modules: [contributedModule({ id: 'acme.video:editor' })] },
+      idLifecycle: { renames: { 'acme.video:editor': 'acme.video:editor' } },
     });
-
-    let result = await activatePlugin('error-test');
-    assert.equal(result.ok, false);
-    assert.equal(result.error, 'activate failed');
-    assert.equal(getPluginStatus('error-test'), 'error');
-  });
-
-  it('does not re-activate already active plugin', async () => {
-    let count = 0;
-    registerPlugin({
-      name: 'double-test',
-      version: '1.0.0',
-      activate: () => { count++; },
-    });
-
-    await activatePlugin('double-test');
-    await activatePlugin('double-test');
-    assert.equal(count, 1);
-  });
-
-  it('returns error for non-registered plugin activation', async () => {
-    let result = await activatePlugin('nonexistent');
-    assert.equal(result.ok, false);
-  });
-
-  it('unregisters a plugin and calls deactivate', async () => {
-    let deactivated = false;
-    registerPlugin({
-      name: 'unreg-test',
-      version: '1.0.0',
-      activate: () => {},
-      deactivate: () => { deactivated = true; },
-    });
-
-    await activatePlugin('unreg-test');
-    let result = await unregisterPlugin('unreg-test');
-    assert.equal(result.ok, true);
-    assert.equal(deactivated, true);
-    assert.equal(getPlugin('unreg-test'), null);
-  });
-
-  it('unregisters a pending plugin without calling deactivate', async () => {
-    let deactivated = false;
-    registerPlugin({
-      name: 'pending-unreg',
-      version: '1.0.0',
-      deactivate: () => { deactivated = true; },
-    });
-
-    await unregisterPlugin('pending-unreg');
-    assert.equal(deactivated, false);
-  });
-
-  it('returns error when unregistering non-existent plugin', async () => {
-    let result = await unregisterPlugin('ghost');
-    assert.equal(result.ok, false);
-  });
-
-  it('handles async activate', async () => {
-    let order = [];
-    registerPlugin({
-      name: 'async-test',
-      version: '1.0.0',
-      activate: async () => {
-        await new Promise((r) => setTimeout(r, 10));
-        order.push('activated');
-      },
-    });
-
-    await activatePlugin('async-test');
-    order.push('done');
-    assert.deepEqual(order, ['activated', 'done']);
-  });
-});
-
-describe('validatePlugin (re-export)', () => {
-  it('is the same function as validatePluginDefinition', () => {
-    assert.equal(validatePlugin, validatePluginDefinition);
+    assert.equal(result.valid, false);
+    assert.ok(result.errors.some((error) => /must not still exist/.test(error.message)));
   });
 });
