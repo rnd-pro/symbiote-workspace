@@ -508,7 +508,7 @@ export function importWorkspacePackage(json) {
   };
 }
 
-function normalizeForComparison(value) {
+export function normalizeForComparison(value) {
   if (Array.isArray(value)) {
     return value.map((item) => normalizeForComparison(item)).sort((a, b) => {
       let aStr = typeof a === 'string' ? a : JSON.stringify(a);
