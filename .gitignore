@@ -5,3 +5,4 @@ tmp/
 *.tgz
 .DS_Store
 .agent-portal
+.agent-portal-worktrees/
