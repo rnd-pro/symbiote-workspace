@@ -5,6 +5,7 @@
  */
 
 import {
+  validatePluginDefinition,
   validatePluginWorkspaceTemplate,
 } from './plugin-schema.js';
 import { getPlugin, listPlugins } from './plugin-registry.js';
@@ -29,59 +30,22 @@ function normalizePluginInput(plugins, errors) {
   return [];
 }
 
-function validatePluginIdentity(plugin, path, errors) {
-  if (!plugin || typeof plugin !== 'object' || Array.isArray(plugin)) {
-    errors.push({ path, message: 'Plugin must be a non-null object.' });
-    return false;
-  }
-
-  let before = errors.length;
-  if (typeof plugin.name !== 'string' || !plugin.name.trim()) {
-    errors.push({
-      path: `${path}.name`,
-      message: 'Plugin name is required and must be a non-empty string.',
-    });
-  }
-
-  if (typeof plugin.version !== 'string' || !plugin.version.trim()) {
-    errors.push({
-      path: `${path}.version`,
-      message: 'Plugin version is required and must be a non-empty string.',
-    });
-  }
-
-  return errors.length === before;
+function prefixPluginPath(pluginPath, errorPath) {
+  return errorPath ? `${pluginPath}.${errorPath}` : pluginPath;
 }
 
-function validatePluginComponents(plugin, index, errors) {
-  let components = plugin.components || [];
-  if (plugin.components !== undefined && !Array.isArray(plugin.components)) {
+function validatePluginManifest(plugin, pluginPath, errors) {
+  let result = validatePluginDefinition(plugin);
+  if (result.valid) return true;
+
+  for (let error of result.errors) {
     errors.push({
-      path: `plugins[${index}].components`,
-      message: 'components must be an array of strings or module descriptors.',
+      path: prefixPluginPath(pluginPath, error.path),
+      message: error.message,
     });
-    return [];
   }
 
-  for (let j = 0; j < components.length; j++) {
-    let component = components[j];
-    if (typeof component === 'string') continue;
-    if (component && typeof component === 'object' && !Array.isArray(component)) {
-      validateModuleCapabilityDescriptor(
-        component,
-        `plugins[${index}].components[${j}]`,
-        errors,
-        { severity: false },
-      );
-    } else {
-      errors.push({
-        path: `plugins[${index}].components[${j}]`,
-        message: 'Component entry must be a string or module descriptor.',
-      });
-    }
-  }
-
-  return components;
+  return false;
 }
 
 function matchesStatus(entry, status) {
@@ -98,33 +62,49 @@ export function collectPluginModuleCapabilities(plugins) {
   let errors = [];
   let pluginList = normalizePluginInput(plugins, errors);
   let moduleCapabilities = [];
+  let moduleIds = new Map();
   let tagNames = new Map();
 
   for (let i = 0; i < pluginList.length; i++) {
     let plugin = pluginList[i];
     let pluginPath = `plugins[${i}]`;
-    if (!validatePluginIdentity(plugin, pluginPath, errors)) continue;
+    if (!validatePluginManifest(plugin, pluginPath, errors)) continue;
 
-    let before = errors.length;
-    let components = validatePluginComponents(plugin, i, errors);
-    if (errors.length !== before) {
-      continue;
-    }
+    let modules = plugin.contributes?.modules || [];
+    for (let j = 0; j < modules.length; j++) {
+      let component = modules[j];
+      let modulePath = `${pluginPath}.contributes.modules[${j}]`;
 
-    for (let j = 0; j < components.length; j++) {
-      let component = components[j];
-      if (typeof component === 'string') continue;
+      let descriptorErrors = [];
+      validateModuleCapabilityDescriptor(
+        component,
+        modulePath,
+        descriptorErrors,
+        { severity: false, moduleId: component.id },
+      );
+      for (let error of descriptorErrors) errors.push(error);
+      if (descriptorErrors.length) continue;
 
-      let path = `plugins[${i}].components[${j}].tagName`;
+      let idPath = `${modulePath}.id`;
+      if (moduleIds.has(component.id)) {
+        errors.push({
+          path: idPath,
+          message: `Duplicate module contribution "${component.id}" also declared at ${moduleIds.get(component.id)}.`,
+        });
+        continue;
+      }
+
+      let tagPath = `${modulePath}.tagName`;
       if (tagNames.has(component.tagName)) {
         errors.push({
-          path,
+          path: tagPath,
           message: `Duplicate component tag "${component.tagName}" also declared at ${tagNames.get(component.tagName)}.`,
         });
         continue;
       }
 
-      tagNames.set(component.tagName, path);
+      moduleIds.set(component.id, idPath);
+      tagNames.set(component.tagName, tagPath);
       moduleCapabilities.push(deepClone(component));
     }
   }
@@ -133,7 +113,7 @@ export function collectPluginModuleCapabilities(plugins) {
     return { ok: false, moduleCapabilities: [], errors };
   }
 
-  moduleCapabilities.sort((a, b) => a.tagName.localeCompare(b.tagName));
+  moduleCapabilities.sort((a, b) => a.id.localeCompare(b.id));
   return { ok: true, moduleCapabilities, errors };
 }
 
@@ -173,27 +153,11 @@ export function collectPluginWorkspaceTemplates(plugins) {
   for (let i = 0; i < pluginList.length; i++) {
     let plugin = pluginList[i];
     let pluginPath = `plugins[${i}]`;
-    if (!validatePluginIdentity(plugin, pluginPath, errors)) continue;
+    if (!validatePluginManifest(plugin, pluginPath, errors)) continue;
 
-    if (plugin.workspace !== undefined && !isObject(plugin.workspace)) {
-      errors.push({
-        path: `${pluginPath}.workspace`,
-        message: 'workspace must be an object.',
-      });
-      continue;
-    }
-
-    let entries = plugin.workspace?.templates || [];
-    if (!Array.isArray(entries)) {
-      errors.push({
-        path: `plugins[${i}].workspace.templates`,
-        message: 'workspace.templates must be an array when provided.',
-      });
-      continue;
-    }
-
+    let entries = plugin.contributes?.templates || [];
     for (let j = 0; j < entries.length; j++) {
-      let path = `plugins[${i}].workspace.templates[${j}]`;
+      let path = `${pluginPath}.contributes.templates[${j}]`;
       let before = errors.length;
       let template = entries[j];
       validatePluginWorkspaceTemplate(template, path, errors);

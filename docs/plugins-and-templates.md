@@ -2,68 +2,87 @@
 
 ## Plugin System
 
-Everything beyond core libraries is a plugin: provider bridges, handler packs,
-UI components, themes, and integrations.
+Plugins are namespaced manifests that contribute modules, panel/view fragments,
+hooks, theme profiles, engine packs, narration metadata, and whole-config
+templates. Current manifests use the `contributes.*` surface. Flat top-level
+manifest keys (`handlers`, `components`, `workspace`, and `category`) are
+rejected by `validatePluginDefinition()`.
 
 ### Plugin Format
 
 ```javascript
-// my-plugin.plugin.js
+// acme-video.plugin.js
 export default {
-  name: '@symbiote/my-plugin',
+  name: 'acme.video',
   version: '1.0.0',
-  category: 'handler',            // handler | provider | component | theme | integration
+  description: 'Video review workspace contributions.',
 
-  // Engine handlers (registered in symbiote-engine Registry)
-  handlers: [
-    {
-      type: 'my/action',
-      driver: {
-        inputs: [{ name: 'data', type: 'any' }],
-        outputs: [{ name: 'result', type: 'any' }],
-      },
-      lifecycle: {
-        execute: async (inputs, params) => { /* ... */ },
-      },
-    },
-  ],
+  contributes: {
+    modules: [
+      {
+        id: 'acme.video:preview',
+        tagName: 'acme-video-preview',
+        title: 'Preview',
+        provider: 'acme.video',
+        capabilities: ['media.preview'],
+        actions: [
+          {
+            id: 'play',
+            label: 'Play',
+            does: { kind: 'emit', event: 'play' }
+          }
+        ],
+        hostServices: {
+          required: ['storage.project'],
+          optional: []
+        },
+        lifecycle: { readiness: 'auto' }
+      }
+    ],
 
-  // UI components as tag names or module capability descriptors
-  components: [
-    'sn-my-widget',
-    {
-      tagName: 'sn-data-table',
-      provider: 'symbiote-ui',
-      capabilities: ['data.table'],
-      toolbarItems: [{
-        id: 'filter',
-        label: 'Filter',
-        engine: { graphId: 'table-flow', nodeId: 'filter', input: 'rows' },
-      }],
-      bindings: [{
-        id: 'rows',
-        direction: 'input',
-        path: 'data.rows',
-        engine: { graphId: 'table-flow', nodeId: 'rows', output: 'rows', pack: 'table-pack' },
-      }],
-      requiredHostServices: ['storage.project'],
-    },
-  ],
+    packs: [
+      {
+        id: 'acme.video:media',
+        handlers: [
+          {
+            type: 'video/webhook',
+            trigger: { kind: 'ingress' },
+            ui: { autoForm: true },
+            credentialType: 'api-key',
+            hostServices: { required: ['network.fetch'], optional: [] }
+          }
+        ]
+      }
+    ],
 
-  // Plugin-level portable requirements
-  capabilities: ['admin.table'],
-  requiredHostServices: ['storage.project'],
-
-  // Workspace integration
-  workspace: {
-    configSchema: { myParam: { type: 'string' } },
+    templates: [
+      {
+        name: 'video-review',
+        description: 'Video review desk.',
+        config: {
+          version: '1.0.0',
+          name: 'Video Review'
+        }
+      }
+    ]
   },
 
-  // Lifecycle hooks
-  activate: (ctx) => { /* ctx.server, ctx.graph, ctx.wss, ctx.broadcast */ },
-  deactivate: () => { /* cleanup */ },
+  hostServices: {
+    required: ['storage.project'],
+    optional: []
+  },
+
+  idLifecycle: {
+    renames: {
+      'acme.video:timeline': 'acme.video:preview'
+    }
+  }
 };
 ```
+
+Contribution ids are namespaced under the manifest `name`, for example
+`acme.video:preview`. Rename targets in `idLifecycle.renames` must point to
+current contribution ids; renamed-away ids must not still exist.
 
 ### Plugin API
 
@@ -71,135 +90,104 @@ export default {
 import {
   MODULE_CAPABILITY_DESCRIPTOR_SCHEMA,
   MODULE_CAPABILITY_SCHEMA_VERSION,
+  PLUGIN_SCHEMA,
+  validatePluginDefinition,
+  validatePluginWorkspaceTemplate,
+  validateModuleCapabilityDescriptor,
+  validatePortableStringArray,
   registerPlugin,
   activatePlugin,
   unregisterPlugin,
   listPlugins,
   validatePlugin,
-  validateModuleCapabilityDescriptor,
-  validatePortableStringArray,
-  collectPluginModuleCapabilities,
-  collectPluginWorkspaceTemplates,
 } from 'symbiote-workspace/plugins';
 
-let result = registerPlugin(myPlugin);
-console.log(result.ok); // true
-
-await activatePlugin('@symbiote/my-plugin', { server, graph });
-
-console.log(listPlugins());
-// [{ name: '@symbiote/my-plugin', version: '1.0.0', category: 'handler', status: 'active' }]
-
-let capabilities = collectPluginModuleCapabilities([myPlugin]);
-if (!capabilities.ok) {
-  throw new Error(JSON.stringify(capabilities.errors));
+let validation = validatePluginDefinition(plugin);
+if (!validation.valid) {
+  throw new Error(JSON.stringify(validation.errors));
 }
 
-// Pass plugin-provided module descriptors into constructor or dispatch APIs.
-console.log(capabilities.moduleCapabilities);
-console.log(MODULE_CAPABILITY_SCHEMA_VERSION);
-validateModuleCapabilityDescriptor(
-  capabilities.moduleCapabilities[0],
-  'moduleCapabilities[0]',
-  []
-);
+let module = plugin.contributes.modules[0];
+let descriptorErrors = [];
+validateModuleCapabilityDescriptor(module, 'contributes.modules[0]', descriptorErrors, {
+  moduleId: module.id
+});
+
 validatePortableStringArray(['analysis.sentiment'], 'capabilities', []);
+validatePluginWorkspaceTemplate(plugin.contributes.templates[0], 'contributes.templates[0]', []);
 
-let templates = collectPluginWorkspaceTemplates([myPlugin]);
-if (!templates.ok) {
-  throw new Error(JSON.stringify(templates.errors));
-}
+registerPlugin(plugin);
+await activatePlugin('acme.video', { server, graph });
+console.log(listPlugins());
+console.log(MODULE_CAPABILITY_SCHEMA_VERSION);
+console.log(PLUGIN_SCHEMA.properties.contributes);
+console.log(MODULE_CAPABILITY_DESCRIPTOR_SCHEMA.required);
 
-console.log(templates.templates);
+unregisterPlugin('acme.video');
 ```
 
-`collectPluginModuleCapabilities()` returns only object entries from
-`plugin.components`. String component tags remain valid registry/catalog
-entries, but they are not converted into module capability descriptors.
-Plugin-level `capabilities` and `requiredHostServices` describe the plugin
-itself and are not copied onto individual components.
-Descriptor provider references are validated with the same portability rules as
-workspace module descriptors, so plugin packs cannot introduce URL, file, or
-local path provider metadata through component declarations.
 The same module capability schema helpers are exported from
 `symbiote-workspace/schema`, the root entrypoint, the browser entrypoint, and
-`symbiote-workspace/plugins` for consumers that validate descriptors at package
-boundaries, including `validatePortableStringArray()` for portable capability
-and service ID lists.
-
-`collectPluginWorkspaceTemplates()` returns validated entries from
-`plugin.workspace.templates`. Each entry uses `{ name, description?, config }`,
-where `name` is a portable template identifier and `config` is a strict
-workspace config. Pass `templates.templates` to constructor or dispatch APIs as
-`workspaceTemplates`; the constructor stays plugin-neutral and only consumes the
-plain portable entries.
-
-The same metadata collectors are exposed through dispatch/MCP as
-`collect_plugin_module_capabilities` and `collect_plugin_workspace_templates`,
-and through the CLI as `collect-plugin-module-capabilities` and
-`collect-plugin-workspace-templates`. These tools validate and collect metadata
-only; they do not activate plugins or initialize workspace session state.
+`symbiote-workspace/plugins`.
 
 ## Portability Rules
 
-Workspace configs are **portable JSON** — shareable like ComfyUI projects:
+Workspace configs are portable JSON:
 
-- ❌ No auth tokens, API keys, secrets
-- ❌ No server URLs or endpoints
-- ❌ No user identity or session data
-- ✅ Theme params, layout trees, component references
-- ✅ Host-agnostic: any compliant host assembles from config
+- No auth tokens, API keys, or secrets
+- No server URLs or endpoints
+- No user identity or session data
+- Theme params, layout trees, module references, and wires are portable
+- Any compliant host assembles from config plus explicit host contracts
+
+Provider references must be portable package or registry identifiers such as
+`symbiote-ui` or `@acme/workspace-pack`; URLs, file references, home-directory
+paths, and temporary paths are rejected before descriptor data reaches
+construction or package handoff surfaces.
 
 ## Templates
 
-Built-in workspace templates for quick start:
+Built-in workspace templates are available through constructor APIs and
+dispatch:
 
 ```bash
-node cli.js list-templates
-# chat, editor, graph, dashboard, admin, agent-workspace, social-automation, video-studio
+node cli.js construction-template-list
 ```
 
 ```javascript
 import { listTemplates, getTemplate } from 'symbiote-workspace/constructor';
 
 listTemplates();
-// ['chat', 'editor', 'graph', 'dashboard', 'admin', 'agent-workspace', 'social-automation', 'video-studio']
 
 let template = getTemplate('chat');
-console.log(template.config); // Full workspace config
+console.log(template.config);
 ```
 
-Canonical templates include module capability descriptors in
-`config.components.modules`, so construction plans can map selected panels to
-portable capabilities, actions, state fields, bindings, runtime slots, placement
-hints, and required host services.
-
-Constructor and dispatch APIs also accept external templates as plain data:
+External templates are plain data. A plugin template is a `{ name,
+description?, config }` entry under `contributes.templates`, and the config is
+validated by the same workspace config validator.
 
 ```javascript
 import { planWorkspaceConstruction } from 'symbiote-workspace/constructor';
-import { collectPluginWorkspaceTemplates } from 'symbiote-workspace/plugins';
 
-let templates = collectPluginWorkspaceTemplates([myPlugin]);
 let { config } = planWorkspaceConstruction({
   brief: 'build a team room',
-  template: 'team-ai-room',
+  template: 'team-ai-room'
 }, {
-  workspaceTemplates: templates.templates,
+  workspaceTemplates: [
+    {
+      name: 'team-ai-room',
+      description: 'Team command room.',
+      config: { version: '1.0.0', name: 'Team AI Room' }
+    }
+  ]
 });
 ```
 
 CLI construction commands accept the same input with
 `--workspace-templates <json-array>`.
 
-External templates can model collaboration products such as command chats, team
-rooms, and voice/video rooms with neutral capability tags, for example
-`room.command`, `room.transcript`, `room.video`, `call.controls`, and
-`presence.roster`. Required services and runtime providers stay declarative in
-`requiredHostServices` and `runtimeSlots`; the host supplies actual realtime
-media, agent runtime, presence, and storage implementations.
-
-### Workspace Package
+## Workspace Package
 
 The workspace package format wraps a portable workspace config with manifest
 metadata, a host integration contract, dependency lists, and asset references
@@ -222,120 +210,49 @@ import {
 
 `exportWorkspacePackage(config, manifest)` exports the workspace config in
 strict mode, collects host contract requirements, normalizes the manifest
-(id, version, tags, permissions, dependencies, assets), and returns a
-validated package object with JSON output. A successful package requires a
-portable manifest `id`; name, version, compatibility, tags, permissions,
-dependencies, and asset lists are normalized from the manifest and config.
+(id, version, tags, permissions, dependencies, assets), and returns a validated
+package object with JSON output.
 
 `importWorkspacePackage(json)` parses a workspace package JSON string,
 validates it against the package schema, and returns both the parsed package
-and its workspace config as separate objects.
+and its workspace config.
 
 `validateWorkspacePackage(packageObject)` validates a workspace package object
-in isolation, checking the package kind and schema version, workspace config
-validity, manifest portability, and host contract integrity, without requiring
-JSON serialization. Dispatch/MCP `validate_workspace_package` returns
-`status: "ok"` for valid packages and accepts either a `package` object or a
-`json` package string; the CLI exposes those forms as `--package` and `--json`.
-Invalid packages keep `valid: false` and `errors`, and also return
-`status: "error"`, `code: "workspace_package_invalid"`, and
-`nextAction: "fix-workspace-package"` so transports can signal failure.
+in isolation, checking package kind, schema version, workspace config validity,
+manifest portability, and host contract integrity.
 
-`inspectWorkspacePackage(input, options)` inspects a workspace package
-object or JSON string without requiring a full host. Returns `valid` (no
-structural errors), `ready` (`valid` and no missing-dependency warnings),
-`package`, `config`, `summary`, `compatibility`, `requirements`, and
-`missing`. Pass an optional `options.available` host-neutral inventory
-(`components`, `plugins`, `packages`, `hostServices`, `runtimeSlots`) to
-detect missing capabilities; missing items lower `ready` to `false` through
-warnings. Dispatch/MCP `inspect_workspace_package` returns the transport-safe
-inspection summary, readiness, `nextAction`, warnings, and errors without
-echoing the full package or config. No marketplace or product-install semantics
-are applied.
+`inspectWorkspacePackage(input, options)` inspects a workspace package object
+or JSON string without requiring a full host. Pass an optional
+`options.available` host-neutral inventory (`components`, `plugins`,
+`packages`, `hostServices`, `runtimeSlots`) to detect missing capabilities.
 
 `createWorkspacePackageConstructionContext(input, options)` projects a valid
 workspace package into constructor-ready data without installing or activating
-anything. It reuses package inspection and returns external `workspaceTemplates`,
-package `moduleCapabilities`, explicit `requiredCapabilities`, package
-requirements, readiness gaps, and source metadata. Pass the returned
-`workspaceTemplates`, `moduleCapabilities`, and `requiredCapabilities` to
-`planWorkspaceConstruction()` or the construction dispatch tools.
-Dispatch and MCP handoff flows preserve those package-provided templates and
-module descriptors through `plan_workspace`, `construct_workspace`, and exported
-workspace config output.
+anything. It returns external `workspaceTemplates`, package
+`moduleCapabilities`, explicit `requiredCapabilities`, package requirements,
+readiness gaps, and source metadata.
 
-`createWorkspacePackagesConstructionContext({ packages, available })` aggregates
-multiple package entries (`{ package, templateName }` or `{ json, templateName }`)
-into one constructor-ready context. Duplicate workspace template names or module
-`tagName` descriptors are blocking conflicts; host availability gaps remain
-warnings and keep the context structurally valid but not ready. Package
-inspection and construction-context helpers expose a compact `readiness` summary
-with `status`, counts, and `nextAction` so agents can choose construct, review,
-or fix flows before creating a handoff. The same helper is exposed through
-dispatch/MCP as `create_workspace_packages_construction_context` and through the
-CLI as `create-workspace-packages-construction-context`.
+`createWorkspacePackagesConstructionContext({ packages, available })`
+aggregates multiple package entries (`{ package, templateName }` or
+`{ json, templateName }`) into one constructor-ready context.
 
 `prepareConstructionIntentWithPackageContext(intent, context)` returns a cloned
 constructor intent with package-required capabilities merged and sorted into
-`requiredCapabilities`. Use it when a host wants to inspect or route the prepared
-intent before creating a handoff.
+`requiredCapabilities`.
 
-`createWorkspaceConstructionHandoff(context, intent)` converts a single-package
-or package-collection construction context into a handoff envelope with
-`_type: "workspace-construction-handoff"` plus the exact `{ intent, options }`
-shape consumed by `planWorkspaceConstruction(handoff.intent, handoff.options)`.
-It uses `prepareConstructionIntentWithPackageContext()` to merge package
-`requiredCapabilities` into the supplied construction intent and passes only
-valid package templates and module descriptors through. The
-handoff also carries `options.packageContext`, which construction plans copy to
-`plan.packageContext` and `config.construction.packageContext` so agents can see
-package source, requirements, missing capability gaps, warnings, and readiness
-without re-inspecting the package.
-Dispatch/MCP/CLI handoff responses mirror the same package decision data as
-top-level `readiness` and `nextAction`, so agents can route immediately after
-creating a handoff without parsing nested `options.packageContext`.
-Plans also include `plan.readiness.package`, a compact summary with package
-validity, readiness status, source count, missing/warning/error counts, and the
-next action (`construct`, `review-package-readiness`, or
-`fix-package-context`). Dispatch/MCP responses expose the highest-priority
-recovery summary as top-level `readiness`: package readiness when package
-context is invalid or not ready, and required-module-capability readiness when a
-ready package context still leaves unmatched required capabilities.
-Not-ready package readiness includes missing capability groups, recovery steps,
-diagnostics, and package source metadata at that top level so orchestrators can
-route follow-up work without parsing nested plan internals.
-Package readiness is only `ready` when the package context is valid, explicitly
-ready, and has no missing requirements, warnings, or errors. `plan_workspace`
-exposes top-level blocked readiness for missing required module capabilities so
-agents can recover before calling `construct_workspace`.
-`plan_workspace` accepts not-ready handoffs for diagnostics, but
-`construct_workspace` rejects `ready: false` handoffs so agents cannot
-materialize a degraded package workspace without resolving readiness gaps first.
-The construct gate also rejects stale handoffs that omit `ready` while still
-carrying missing capabilities or warning diagnostics, and rejects contradictory
-`ready: true` handoffs that still carry missing capabilities or warnings.
-Invalid handoff errors include `code: "construction_handoff_invalid"` and
-`nextAction: "fix-package-context"`; not-ready errors include
-`code: "construction_handoff_not_ready"` and
-`nextAction: "review-package-readiness"`. Both error paths return a structured
-`readiness` payload with missing capabilities, diagnostics, counts, status, and
-package source metadata. Missing capability entries also include `recovery`
-steps such as `register-component`, `install-plugin`, or `provide-host-service`
-so agents can route the next action without parsing prose.
-Invalid helper intent inputs in `create_workspace_construction_handoff` return
-`code: "construction_handoff_intent_invalid"` and
-`nextAction: "fix-construction-intent"` across dispatch, CLI, and MCP.
-It is exposed through dispatch/MCP as `create_workspace_construction_handoff`
-and through the CLI as `create-workspace-construction-handoff`.
+`createWorkspaceConstructionHandoff(context, intent)` converts a package
+construction context into a handoff envelope with
+`_type: "workspace-construction-handoff"` plus the `{ intent, options }` shape
+consumed by `planWorkspaceConstruction(handoff.intent, handoff.options)`.
 
 ```javascript
 let context = createWorkspacePackageConstructionContext(packageJson, {
-  templateName: 'review-package',
+  templateName: 'review-package'
 });
 
 let handoff = createWorkspaceConstructionHandoff(context, {
   brief: 'Build a review queue workspace',
-  template: 'dashboard',
+  template: 'dashboard'
 });
 
 let { config, plan } = planWorkspaceConstruction(handoff.intent, handoff.options);
@@ -344,8 +261,11 @@ let { config, plan } = planWorkspaceConstruction(handoff.intent, handoff.options
 The dispatch/MCP tools accept the same handoff object directly:
 
 ```javascript
-await dispatch('plan_workspace', handoff, session);
-await dispatch('construct_workspace', handoff, session);
+let planned = await dispatch('construction_plan', handoff, session);
+let constructed = await dispatch('construction_construct', {
+  ...handoff,
+  baseRevision: session.revision
+}, session);
 ```
 
 The CLI accepts the same handoff object as a single positional JSON argument,
@@ -353,15 +273,42 @@ or constructor options with `--options <json-object>` when agents pass only the
 handoff options through shell arguments:
 
 ```bash
-node cli.js plan-workspace '{"_type":"workspace-construction-handoff","valid":true,"ready":true,"intent":{"brief":"Build a review queue workspace","template":"dashboard"},"options":{"workspaceTemplates":[],"moduleCapabilities":[]}}'
+node cli.js construction-plan '{"_type":"workspace-construction-handoff","valid":true,"ready":true,"intent":{"brief":"Build a review queue workspace","template":"dashboard"},"options":{"workspaceTemplates":[],"moduleCapabilities":[]}}'
 ```
 
-The manifest rejects host, identity, and marketplace state:
+Package dispatch tools use the `pack_*` family:
 
-- **host/identity keys**: `token`, `secret`, `session`, `user`, `credential`,
+- `pack_export`
+- `pack_import`
+- `pack_validate`
+- `pack_inspect`
+- `pack_context_create`
+- `pack_contexts_create`
+- `pack_handoff_create`
+- `pack_plugin_modules_collect`
+- `pack_plugin_templates_collect`
+
+## Catalog And Inline Creation
+
+Catalog entries are module-id references with deterministic ranking and
+fingerprinting. `catalog_search` and `catalog_describe` inspect installed,
+registry, engine, and scratch sources. `catalog_proof` creates a proof for a
+performed gap search before inline free creation.
+
+The manifest and package surfaces keep catalog data host-neutral. Registry
+listings can expose summaries for search, contracts for placement review, and
+full records for inspection. Placement of an `installed:false` entry routes to
+installation first.
+
+## Manifest Rejections
+
+The manifest and package validators reject host, identity, marketplace, and
+non-portable state:
+
+- host/identity keys: `token`, `secret`, `session`, `user`, `credential`,
   `endpoint`, `password`, `profile`, `organization`, `tenant`, `billing`,
   `subscription`
-- **marketplace keys**: `price`, `seller`, `marketplace`, `licenseKey`,
+- marketplace keys: `price`, `seller`, `marketplace`, `licenseKey`,
   `licenseServer`, `purchase`, `rating`, `payout`, `listing`
-- **non-portable values**: local file URIs, home-directory or temporary
-  absolute paths, HTTP/WS URLs in dependency and asset fields
+- non-portable values: local file URIs, home-directory or temporary absolute
+  paths, HTTP/WS URLs in dependency and asset fields

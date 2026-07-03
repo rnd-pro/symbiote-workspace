@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Synced product docs with the Phase 1 target-schema implementation: README,
+  agent resource map, local agent instructions, and product docs now describe
+  schema `1.0.0`, the 85-tool dispatch registry, catalog tools, server and SSR
+  entrypoints, package tools, `contributes.*` plugin manifests, and
+  `requires.hostServices`.
 - Polished the chat-builder demo UX (following a UX audit of the live demo).
   Responsive chrome: the demo header, class tabs, and theme control now reflow
   below `@media` breakpoints (900px wrap, 600px icon-only tabs) instead of
@@ -45,11 +50,11 @@ All notable changes to this project will be documented in this file.
 - Added the customization / free-creation path to the chat-builder demo as a
   fourth `Customization` class — the one place the agent free-creates, when the
   canonical catalog cannot satisfy a requested capability. The class runs the real
-  flow on throwaway sessions: `discover_components` surfaces the catalog, a
-  `construct_workspace` with an uncovered `requiredCapabilities` is genuinely
+  flow on throwaway sessions: `component_discover` surfaces the catalog, a
+  `construction_construct` with an uncovered `requiredCapabilities` is genuinely
   rejected (`construction_capabilities_missing`), a new module descriptor is
-  hand-authored, `validate_workspace_patch` checks its organic fit on the modules
-  surface, and `propose_workspace_patch` previews the overlay — preview only, never
+  hand-authored, `config_patch_validate` checks its organic fit on the modules
+  surface, and `config_patch_propose` previews the overlay — preview only, never
   applied, no live writes. The demo header surfaces the gap → recipe → organic-fit
   → proposed-preview trace, and the free-created module renders beside the docked
   chat (aliased to `sn-data-table` as a visible demo stand-in). Covered by new
@@ -94,9 +99,9 @@ All notable changes to this project will be documented in this file.
 - Added a chat-first, questionnaire-driven construction demo
   (`npm run demo:chat-builder`). It starts with a single chat that offers a
   workspace-class menu (Programming / Video / Automation); selecting a class
-  drives the real construction protocol on one session — `classify_workspace` →
-  `build_construction_questions` → `answer_construction_question` →
-  `plan_workspace` → `construct_workspace` — so the system places panels from the
+  drives the real construction protocol on one session — `construction_classify` →
+  `construction_questions_build` → `construction_question_answer` →
+  `construction_plan` → `construction_construct` — so the system places panels from the
   canonical template (the agent answers offered options, it does not decide
   placement). The chat is docked as a global right-hand panel at full height with
   full layout behavior (importance, min sizes, collapse, overflow, responsive
@@ -136,16 +141,16 @@ All notable changes to this project will be documented in this file.
   first-publication `E404`, and keep local/offline skips available through
   `--skip-npm-auth` and `--skip-npm-registry`.
 - Added `npm run release:preflight` as a non-publishing stable-release gate. It
-  verifies package metadata, dated changelog release headings, the 69-tool
-  registry with `workflow_kanban`, project-owned `.mjs` absence, install/test
+  verifies package metadata, dated changelog release headings, the live dispatch
+  registry with `module_workflow_kanban`, project-owned `.mjs` absence, install/test
   gates, package-consumer proof, npm pack hygiene, realtime-builder browser
   proof, and clean git state before a stable tag or publish attempt.
-- Added `workflow_kanban` as the 69th unified CLI/MCP dispatch tool. It
+- Added `module_workflow_kanban` as the workflow-board CLI/MCP dispatch tool. It
   registers a portable workflow board panel backed by provider-owned
-  `symbiote-ui` `sn-kanban-board`, with board state, data bindings,
-  select/action/drop event bridges, optional layout/group/section upserts, and
+  `symbiote-ui` `sn-kanban-board`, with board state, wires,
+  select/action/drop event routes, optional layout upserts, and
   host-service portability validation.
-- Hardened `workflow_kanban` and config validation so canonical provider module
+- Hardened `module_workflow_kanban` and config validation so canonical provider module
   metadata cannot be overridden by stale descriptors, event mappings must be
   plain objects, and responsive behavior numeric fields respect the published
   layout contract.
@@ -179,10 +184,10 @@ All notable changes to this project will be documented in this file.
   stage updates without replacing the workspace runtime.
 - Extended the realtime builder handoff with portable `symbiote-ui` module
   capability descriptors and `construction.plan` metadata for layout topology,
-  regions, actions, toolbar items, settings, events, bindings, slots, adaptive
+  regions, actions, toolbar items, settings, events, wires, slots, adaptive
   priorities, and dark Cascade theme handoff.
 - Added a realtime chat-state visual demo that plays mock questionnaire state
-  into service-builder workspace layouts, required widgets, bindings, adaptive
+  into service-builder workspace layouts, required widgets, wires, adaptive
   metadata, validation reports, and the required theme editor widget.
 - Added an inspectable realtime demo contract with a chat-state timeline and
   acceptance matrix covering the required builder panels, adaptive behavior,
@@ -229,17 +234,16 @@ All notable changes to this project will be documented in this file.
   `plan.execution.model`, `config.intent.executionModel`, and
   `config.execution.model`. Constructor questions also include
   `required-host-services`, preserving portable host service IDs in
-  `plan.answers.requiredHostServices`, `plan.execution.requiredHostServices`,
-  `config.intent.hostServices`, and `config.execution.hostServices`, while
-  keeping selected-module host service requirements visible as
-  `plan.execution.moduleHostServices`.
+  `plan.answers.hostServices`, `plan.execution.hostServices`, and
+  `requires.hostServices`, while keeping selected-module host service
+  requirements visible in construction diagnostics.
 - **Pre-publication package status** — README package instructions now describe
   the current pack-based consumer verification path and local `node cli.js`
   commands instead of presenting npm registry install or `npx` commands before
   the package is published.
-- **Construction questionnaire tools** — `classify_workspace` now returns the
+- **Construction questionnaire tools** — `construction_classify` now returns the
   normalized intent, initial questionnaire, readiness, and next action, while
-  `build_construction_questions` and `answer_construction_question` expose the
+  `construction_questions_build` and `construction_question_answer` expose the
   questionnaire step directly through dispatch, CLI, and MCP without planning
   or mutating session state.
 - **Workspace package format** — `exportWorkspacePackage(config, manifest)`,
@@ -274,10 +278,10 @@ All notable changes to this project will be documented in this file.
   module alternatives for unmet required capabilities. Plans also include
   `capabilities.selectedModules` so explicit selected modules that do not cover
   a required capability remain visible to orchestration diagnostics.
-- **Construction readiness alternatives** — `plan_workspace` and
-  `construct_workspace` now include ranked module alternatives in top-level
+- **Construction readiness alternatives** — `construction_plan` and
+  `construction_construct` now include ranked module alternatives in top-level
   `readiness.recovery[]` entries when required module capabilities are missing.
-  Failed `construct_workspace` responses also include the rejected construction
+  Failed construction responses also include the rejected construction
   `plan` for selected-module diagnostics.
 - **Module capability schema exports** — module capability schema constants and
   validator helpers are now available from the schema, root, browser, and
@@ -287,35 +291,34 @@ All notable changes to this project will be documented in this file.
   `descriptor.package` references now reject URL, file, and local path values
   before plugin-provided descriptors reach construction or package handoff
   surfaces.
-- **Module action shell materialization** — generated constructor panel types
+- **Module action shell materialization** — generated constructor panel modules
   now expose descriptor actions, toolbar items, and menu items through
-  `panelTypes.*.menuActions`, preserving authored menu actions on existing
-  panel types while carrying command/event metadata for host shells.
+  module shell actions, preserving authored menu actions on existing panels
+  while carrying command/event metadata for host shells.
 - **Layout topology materialization** — constructor `layout-topology` answers
   now shape the executable BSP `config.layout` for selected module panels
   instead of living only in construction plan metadata.
 - **Named layout cross-reference validation** — `validateWorkspaceConfig()`
-  now applies panel type cross-reference warnings to every `layouts.*` BSP tree,
+  now applies panel cross-reference warnings to every `layouts.*` BSP tree,
   matching the root `layout` validation contract.
 - **Module slot shell materialization** — workspace configs now define and
-  validate `panelTypes.*.slots`; selected constructor module descriptors
-  materialize portable `slots[]` onto generated and selected existing panel
-  types while preserving authored panel slots.
-- **Module event and binding materialization** — selected constructor module
-  descriptors now expose emitted events as top-level broadcast bridges and
-  matching selected event consumers as targeted bridges, and copy selected
-  binding declarations into `data.bindings` for portable host/runtime handoff.
+  validate panel slots; selected constructor module descriptors materialize
+  portable `slots[]` onto generated and selected existing panels while
+  preserving authored panel slots.
+- **Module event and wire materialization** — selected constructor module
+  descriptors now expose emitted events and selected event consumers as
+  `wires[]` records for portable host/runtime handoff.
 - **Module engine handoff metadata** — workspace configs now define and
   validate portable `engine.packs[]`, `engine.graphs[]`, and
-  `engine.bindings[]`; selected descriptor actions, settings, events, and
-  bindings can materialize engine binding metadata without importing or
-  executing `symbiote-engine`. Validation now checks binding node IDs when
+  `wires[]`; selected descriptor actions, settings, events, and wire contracts
+  can materialize engine handoff metadata without importing or
+  executing `symbiote-engine`. Validation now checks referenced node IDs when
   they target authored graph JSON, while preserving external host-provided
   graph references.
 - **Module state field contract** — workspace configs now define and validate
   portable top-level `state.fields[]` records. Selected descriptor `state[]`
   declarations materialize into executable config state fields, and optional
-  state engine metadata materializes into `engine.bindings[]` with
+  state engine metadata materializes into `wires[]` with
   `surface: "state"`.
 - **Scoped theme construction contract** — `validateWorkspaceConfig()` now
   validates cascade theme `params`, `relations`, token `overrides`, and scoped
@@ -325,30 +328,30 @@ All notable changes to this project will be documented in this file.
   records verification reports under `plan.verification.reports` and mirrors
   them to `config.validation.reports`, composing existing portability, design
   guardrail, module capability, and package/host readiness checks.
-- **Module setting materialization** — generated constructor panel types and
-  selected existing panel types now expose descriptor settings through
-  `panelTypes.*.settings` while preserving authored panel settings.
-- **Data binding contract validation** — workspace schema and
+- **Module setting materialization** — generated constructor panel modules and
+  selected existing panels now expose descriptor settings while preserving
+  authored panel settings.
+- **Data wire contract validation** — workspace schema and
   `validateWorkspaceConfig()` now define and validate portable
-  `data.bindings[]` records with panel, component, binding ID, direction, path,
-  and value schema metadata.
+  wire records with panel, component, direction, path, and value schema
+  metadata.
 - **Package readiness propagation** — package construction handoffs now carry
   `options.packageContext`, and construction plans preserve it as
   `plan.packageContext` plus `config.construction.packageContext` so agents can
   see source, readiness, missing capabilities, and warnings after planning.
 - **Construction handoff readiness contract** —
-  `create_workspace_construction_handoff` now mirrors package `readiness` and
+  `pack_handoff_create` now mirrors package `readiness` and
   `nextAction` at the top level across dispatch, CLI, and MCP responses.
 - **Package-derived handoff construction parity** — dispatch and MCP tests now
   cover real exported packages flowing through construction context, handoff,
-  `plan_workspace`, `construct_workspace`, and exported config output while
+  `construction_plan`, `construction_construct`, and exported config output while
   preserving package-provided templates and module descriptors.
 - **Package readiness summary** — construction plans now include
   `plan.readiness.package` with validity, readiness, source count,
   missing/warning/error counts, and a next-action hint for package-driven
   workspace assembly.
-- **CLI construction handoff ingestion** — `plan-workspace` and
-  `construct-workspace` now accept a full `{ intent, options }` construction
+- **CLI construction handoff ingestion** — `construction-plan` and
+  `construction-construct` now accept a full `{ intent, options }` construction
   handoff object as a single positional JSON argument, matching dispatch and
   MCP behavior.
 - **MCP UTF-8 framing** — the stdio MCP server now parses incoming
@@ -357,11 +360,11 @@ All notable changes to this project will be documented in this file.
 - **Unknown tool session hygiene** — `dispatch()` now returns unknown-tool
   errors before any session initialization, so invalid tool calls cannot seed a
   blank workspace state.
-- **Construction classifier error parity** — `classify_workspace` now returns
+- **Construction classifier error parity** — `construction_classify` now returns
   the same structured construction error envelope as adjacent construction
   tools for malformed intent objects instead of throwing before dispatch can
   respond.
-- **Config load file error parity** — `load_config` now reports file-read
+- **Config load file error parity** — `config_load` now reports file-read
   failures as structured dispatch/MCP tool errors without initializing session
   state, keeping CLI/MCP recovery behavior aligned with normal tool failures.
 - **Visual demo process** — packaged `examples/visual-demo/preview.js` builds
@@ -371,16 +374,16 @@ All notable changes to this project will be documented in this file.
   default when no host runtime controller is supplied, with styled split and
   panel fallback surfaces for the generated visual preview.
 - **Construction handoff sentinel and ready gate** —
-  `create_workspace_construction_handoff` now returns
-  `_type: "workspace-construction-handoff"` and `construct_workspace` rejects
-  `ready: false` handoffs while `plan_workspace` still returns diagnostics.
+  `pack_handoff_create` now returns `_type: "workspace-construction-handoff"`
+  and `construction_construct` rejects `ready: false` handoffs while
+  `construction_plan` still returns diagnostics.
 - **Ready-gate diagnostics** — not-ready construction handoff errors now include
   `code`, `nextAction`, and a structured `readiness` payload for agent recovery.
-- **Stale handoff ready gate** — `construct_workspace` now rejects older
+- **Stale handoff ready gate** — `construction_construct` now rejects older
   handoff payloads that omit `ready` but still carry missing capabilities or
   warning diagnostics.
 - **Package validation transport errors** — invalid
-  `validate_workspace_package` results now include `status: "error"`, `code`,
+  `pack_validate` results now include `status: "error"`, `code`,
   and `nextAction` while preserving `valid: false` and validation `errors`, so
   CLI and MCP transports can signal failure consistently. The validation tool
   now also accepts package JSON strings through the same `json` input used by
@@ -389,27 +392,27 @@ All notable changes to this project will be documented in this file.
   include `code`, `nextAction`, and a blocked `readiness` payload so agents can
   route recovery to package-context fixes instead of readiness review.
 - **Invalid helper intent diagnostics** —
-  `create_workspace_construction_handoff` now returns
+  `pack_handoff_create` now returns
   `code: "construction_handoff_intent_invalid"` and
   `nextAction: "fix-construction-intent"` across dispatch, CLI, and MCP when
   helper intent inputs are malformed.
-- **Top-level construction readiness** — successful `plan_workspace` and
-  `construct_workspace` responses expose the highest-priority recovery summary
+- **Top-level construction readiness** — successful `construction_plan` and
+  `construction_construct` responses expose the highest-priority recovery summary
   as top-level `readiness`: package readiness for package gaps, or required
   module capability readiness when a ready package still leaves unmatched
   capabilities. Not-ready package readiness now carries missing capability
   groups, recovery steps, diagnostics, and source metadata at the top level.
 - **Construction readiness hardening** — package readiness is no longer marked
   ready when missing requirements, warnings, or errors are still present, and
-  `plan_workspace` now exposes blocked top-level readiness for missing required
+  `construction_plan` now exposes blocked top-level readiness for missing required
   module capabilities when no package context owns the recovery route.
 - **Selected-module materialization cleanup** — construction now removes
-  unselected generated external panel types from executable `config.panelTypes`
-  and normalizes section layout references after module selection prunes named
-  layouts. It also prunes existing event bridges, data bindings, state fields,
-  and engine bindings that reference unselected panels.
-- **Top-level construction verification** — successful `plan_workspace` and
-  `construct_workspace` dispatch, CLI, and MCP responses now expose
+  unselected generated external modules from the executable panel surface and
+  normalizes layout references after module selection prunes named layouts. It
+  also prunes existing wires, state fields, and engine handoff records that
+  reference unselected panels.
+- **Top-level construction verification** — successful `construction_plan` and
+  `construction_construct` dispatch, CLI, and MCP responses now expose
   `verification` as a top-level mirror of `plan.verification`.
 - **Validation report shape** — `validation.reports` and
   `construction.plan.verification.reports` now reject malformed report entries,
@@ -422,26 +425,24 @@ All notable changes to this project will be documented in this file.
   `createWorkspacePackagesConstructionContext({ packages, available })`
   aggregates package objects and JSON entries into one constructor-ready context
   with duplicate template/module conflict detection. Exposed as
-  `create_workspace_packages_construction_context` in dispatch/MCP and
-  `create-workspace-packages-construction-context` in the CLI.
+  `pack_contexts_create` in dispatch/MCP and `pack-contexts-create` in the CLI.
 - **Package construction handoff helper** —
   `createWorkspaceConstructionHandoff(context, intent)` converts package
   construction contexts into the `{ intent, options }` pair consumed by
   `planWorkspaceConstruction()`, including required capability handoff.
-  Exposed as `create_workspace_construction_handoff` in dispatch/MCP and
-  `create-workspace-construction-handoff` in the CLI.
+  Exposed as `pack_handoff_create` in dispatch/MCP and `pack-handoff-create`
+  in the CLI.
 - **Plugin metadata dispatch tools** —
-  `collect_plugin_module_capabilities` and
-  `collect_plugin_workspace_templates` expose existing plugin metadata
+  `pack_plugin_modules_collect` and
+  `pack_plugin_templates_collect` expose existing plugin metadata
   collectors through dispatch, CLI, and MCP without activating plugins or
   initializing workspace session state.
 - **Construction protocol** — `intent`, `construction.questions`,
   `construction.plan`, `patches`, `validation.reports`, `runtime`, `exports`,
   and `design` are now accepted workspace config fields.
-- **7 construction workflow tools** — unified CLI/MCP dispatch now exposes
-  `classify_workspace`, `plan_workspace`, `propose_workspace_patch`,
-  `validate_workspace_patch`, `apply_workspace_patch`, `construct_workspace`,
-  and `export_workspace` for agent-guided construction and mutation.
+- **Construction workflow tools** — unified CLI/MCP dispatch now exposes
+  construction and config-patch tools for agent-guided construction and
+  mutation.
 - **Patch validation bridge** — workspace patch validation can use the
   Node-safe `symbiote-ui/rules/design-policy.js` bridge for theme/design
   diagnostics, hard blocks, soft warnings, and suggested patches.
@@ -452,7 +453,7 @@ All notable changes to this project will be documented in this file.
   a workspace wrapper, applies root and subtree theme layers, and writes
   `cascade-theme-change` params, relations, and overrides back into workspace
   config.
-- **Segmented browser preview** — `start_preview` now validates import maps,
+- **Segmented browser preview** — `preview_start` now validates import maps,
   writes `preview.contract.json`, checks browser import-map support, passes
   `symbiote-ui/ui.applyCascadeTheme` into `mountWorkspace()`,
   renders loader warnings, writes sanitized portable config into preview
@@ -465,7 +466,7 @@ All notable changes to this project will be documented in this file.
 - **Package-derived relaunch preservation** — constructing from package-derived
   templates now preserves source validation reports alongside newly generated
   construction verification reports.
-- **Theme relations** — workspace config now carries future-compatible
+- **Theme relations** — workspace config now carries portable
   `theme.relations` and subtree relations alongside params and token overrides.
 - **Package consumer verification** — `npm run test:package-consumer` now packs
   `symbiote-workspace` and the installed `symbiote-ui` substitute into a
@@ -481,12 +482,12 @@ All notable changes to this project will be documented in this file.
   entrypoints.
 - **Plugin workspace template collection** —
   `collectPluginWorkspaceTemplates()` and `listPluginWorkspaceTemplates()`
-  expose validated `plugin.workspace.templates` entries for plugin-provided
+  expose validated plugin template entries for plugin-provided
   workspace template catalogs.
 - **External workspace template construction** — constructor APIs and unified
   dispatch can accept plugin-neutral `workspaceTemplates` inputs, validate them
   as strict portable workspace configs, classify by template metadata, and
-  construct configs through `plan_workspace`, `construct_workspace`, and CLI
+  construct configs through `construction_plan`, `construction_construct`, and CLI
   `--workspace-templates` without importing plugin registry code.
 - **Collaboration room template verification** — tests now cover portable
   command chat, team room, and voice/video room plugin templates through
@@ -495,18 +496,18 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
-- **Unified dispatch surface** — CLI and MCP now expose 69 tools from the same
-  `runtime/dispatch.js` registry.
+- **Unified dispatch surface** — CLI and MCP expose one shared tool registry
+  from `runtime/dispatch.js`.
 - **CLI help source** — CLI tool-command help is now generated from the
-  unified `TOOLS` registry descriptions, with CLI-only aliases documented from
-  the command alias map.
+  unified `TOOLS` registry descriptions, with CLI command names documented from
+  the command map.
 - **Package consumer verification** — packed-consumer tests now assert the
   actual npm pack file list before install, including exported entrypoints and
-  exclusion of tests, team memory, cache, temp, and tarball artifacts.
-- **Construction handoff dispatch** — `plan_workspace` and
-  `construct_workspace` now accept the full `{ intent, options }` handoff
-  object returned by `create_workspace_construction_handoff`; CLI
-  `plan-workspace` and `construct-workspace` also accept constructor
+  exclusion of tests, private coordination files, cache, temp, and tarball artifacts.
+- **Construction handoff dispatch** — `construction_plan` and
+  `construction_construct` now accept the full `{ intent, options }` handoff
+  object returned by `pack_handoff_create`; CLI
+  `construction-plan` and `construction-construct` also accept constructor
   `--options`.
 - **Browser entrypoint boundary** — `symbiote-workspace/browser` now exports
   browser-safe APIs without statically pulling Node-only runtime dispatch code.
@@ -517,7 +518,7 @@ All notable changes to this project will be documented in this file.
   user identity. Imports and file loads reject host/local-only payloads,
   generic server URLs, and user identity fields.
 - **CLI config loading** — stateful `--config` file loads now use the same
-  strict portable import path as `load_config` before CLI tools run.
+  strict portable import path as `config_load` before CLI tools run.
 
 ### Fixed
 
@@ -528,12 +529,12 @@ All notable changes to this project will be documented in this file.
 - **Export/import portability aliases** — strict export/import checks now
   reject normalized host/local field aliases such as `server_url`,
   `workspace_root`, `file_path`, and `apiEndpoint`, while preserving portable
-  module binding `path` fields.
+  module `path` fields.
 - **Test artifact hygiene** — package-consumer tests now isolate npm cache
   inside ignored per-test `tmp` directories, and CLI/dispatch file I/O tests
   no longer write scratch JSON files at the repository root.
-- **Construction handoff validation** — `plan_workspace` and
-  `construct_workspace` now reject invalid diagnostic handoff envelopes before
+- **Construction handoff validation** — `construction_plan` and
+  `construction_construct` now reject invalid diagnostic handoff envelopes before
   planning, preserving session state and returning structured dispatch errors
   through both direct dispatch and MCP.
 - **Package public surface metadata** — package metadata now marks executable
@@ -548,7 +549,7 @@ All notable changes to this project will be documented in this file.
   while keeping internal `mutates` and file-writing flags private.
 - **CLI help** — removed the misleading global `--json` output flag from help;
   package commands keep their command-specific `--json <string>` input option.
-- **Planning error surface** — `plan_workspace` now returns structured
+- **Planning error surface** — `construction_plan` now returns structured
   dispatch errors for invalid constructor input instead of leaking planner
   exceptions to CLI/MCP callers.
 - **Construction module validation** — direct `moduleCapabilities` constructor
@@ -561,20 +562,20 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- **Unified Dispatch Layer** (`runtime/dispatch.js`) — single source of truth for all 50 tool definitions and dispatch logic. Both CLI and MCP call the same `dispatch(toolName, args, session)` function.
+- **Unified Dispatch Layer** (`runtime/dispatch.js`) — single source of truth for the tool definitions and dispatch logic. Both CLI and MCP call the same `dispatch(toolName, args, session)` function.
 - **Stateful Session** (`runtime/session.js`) — in-memory config session with `load()`, `save()`, `ensure()` lifecycle.
 - **Input Validation** — dispatch validates required arguments before calling handlers. Returns `{ status: 'error', hint: 'Missing required arguments: ...' }` for invalid calls.
 - **CLI `--config` flag** — stateful CLI mode. Loads config from file, dispatches tool, auto-saves on mutations.
-- **22 new MCP/CLI tools** — full handler coverage (28 → 50 tools):
+- **Expanded MCP/CLI tools** — full handler coverage:
   - `reorder_groups`, `reorder_sections`
   - `update_panel_type`, `toggle_menu_action`
   - `get_behavior`, `update_behavior`
   - `mount_widget`, `unmount_widget`, `swap_widget`
   - `bridge_event`, `unbridge_event`, `list_bridges`
-  - `update_layout_behavior`
-  - `validate_config`, `save_config`, `load_config`
-  - `scaffold_from_scratch`
-  - `export_config`, `import_config`, `diff_configs`, `merge_configs`
+  - layout behavior update
+  - config validation, save, and load
+  - scaffold from scratch
+  - config export, import, diff, and merge
   - `check_guardrails`
 - **MCP Protocol Tests** (`tests/mcp.test.js`) — 6 tests covering JSON-RPC handshake, tools/list, tools/call, session persistence, error handling.
 - **Discovery Caching** — 30s TTL cache for `findComponent`, `listComponentTags`, `listCategories` to avoid redundant FS scans.
@@ -583,9 +584,9 @@ All notable changes to this project will be documented in this file.
 ### Changed
 
 - **MCP Server** — reduced from 671 to 136 lines (−80%). Now a pure JSON-RPC transport layer delegating to `runtime/dispatch.js`.
-- **CLI** — rewritten as thin proxy to dispatch. All 50 tools available via kebab-case commands.
+- **CLI** — rewritten as thin proxy to dispatch. All registered tools are available via kebab-case commands.
 - **Layout readers** — use the current BSP format (`panel`/`split` with `first`/`second`) without `children[]` compatibility traversal.
-- **`listUsedComponents()`** — now collects from layout tree + `panelTypes` + `components.catalog`. Returns `{ components, count }`.
+- **`listUsedComponents()`** — now collects from layout and module surfaces. Returns `{ components, count }`.
 - **`bridgeEvent()`** — config-derived ID generation instead of global counter (works across stateless CLI invocations).
 - **`findComponent()`** — returns `{ status: 'not_found' }` for unknown tags instead of bare `null`.
 - **`listCategories()`** — returns `{ categories, count }` wrapper for consistency.

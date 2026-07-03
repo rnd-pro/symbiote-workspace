@@ -15,34 +15,33 @@ import {
   checkDesignGuardrails,
 } from 'symbiote-workspace';
 
-// 1. Plan from intent through the construction protocol
 let construction = planWorkspaceConstruction('build me a chat workspace', {
   name: 'My Chat',
   register: 'tool',
 });
-let { config, questions, plan } = construction;
+let { config } = construction;
 
-// 2. Validate the generated config and design density guardrails
 let validation = validateWorkspaceConfig(config);
-console.log(validation.valid); // true
+if (!validation.valid) {
+  throw new Error(validation.errors.map((error) => error.message).join('; '));
+}
 
 let guardrails = checkDesignGuardrails(config);
-console.log(guardrails.pass); // true
+if (!guardrails.pass) {
+  throw new Error(guardrails.issues.map((issue) => issue.message).join('; '));
+}
 
-// 3. Preview and apply accepted workspace patches
 let proposal = await proposeWorkspacePatch(config, {
-  theme: { params: { mode: 'dark', hue: 220 } },
+  overlay: { theme: { params: { mode: 'dark', hue: 220 } } },
 });
 if (proposal.accepted) {
   config = (await applyWorkspacePatch(config, proposal.overlay)).config;
 }
 
-// 4. Export for sharing after validation
 let { json } = exportConfig(config, { strict: true });
-console.log(json); // portable JSON, no auth/server data
-
-// 5. Ask the host what it must provide to relaunch the workspace
 let contract = createHostIntegrationContract(config);
+
+console.log(json);
 console.log(contract.contract.browser.requiredImports);
 ```
 
@@ -53,95 +52,93 @@ import { dispatch, createSession, TOOLS } from 'symbiote-workspace/runtime';
 
 let session = createSession();
 
-// Plan without mutating session state
-let planned = await dispatch('plan_workspace', {
+let planned = await dispatch('construction_plan', {
   intent: 'chat workspace',
   name: 'My Chat',
 }, session);
 
-// Create session config from the planned workspace
-await dispatch('import_config', { json: JSON.stringify(planned.config) }, session);
-
-// Mutate
-await dispatch('add_group', { id: 'main', name: 'Main' }, session);
-await dispatch('register_panel_type', {
-  name: 'viewport', title: 'Viewport', component: 'sn-canvas-viewport',
+let imported = await dispatch('config_import', {
+  json: JSON.stringify(planned.config),
+  baseRevision: session.revision,
 }, session);
 
-// Validate and apply patch proposals before mutation
-await dispatch('apply_workspace_patch', {
+let patched = await dispatch('config_patch_apply', {
   overlay: { theme: { params: { mode: 'dark', hue: 220 } } },
+  baseRevision: imported.revision,
 }, session);
 
-// Query
-let groups = await dispatch('list_groups', {}, session);
-let desc = await dispatch('describe_workspace', {}, session);
-
-// Validate
-let result = await dispatch('validate_config', {}, session);
-console.log(result.valid); // true
-
-// Save
-await dispatch('save_config', { filePath: './workspace.json' }, session);
+let result = await dispatch('config_validate', {}, session);
+console.log(result.valid);
+console.log(patched.revision);
+console.log(TOOLS.length);
 ```
+
+Mutating dispatch tools require `baseRevision`. Use the revision returned by
+the previous mutating result, or `session.revision` before the first mutation.
 
 ## CLI
 
-From a checked-out repository, all registered tools are available as CLI
-commands through the local entrypoint:
+From a checked-out repository, registry tools are available as kebab-case CLI
+commands. For example, the `construction_plan` tool is
+`construction-plan`, and `config_patch_apply` is `config-patch-apply`.
 
 ```bash
-# Scaffold
-node cli.js scaffold chat --name "My Chat"
-node cli.js scaffold-from-scratch --name "Blank WS"
-node cli.js list-templates
+# Construction
+node cli.js construction-template-list
+node cli.js construction-classify "agent review workspace"
+node cli.js construction-plan "agent review workspace" --name "Review Desk"
+node cli.js construction-scaffold-blank --config ws.json --base-revision 0 --name "Blank Workspace"
 
-# Stateful mode (--config auto-saves on mutations)
-node cli.js scaffold dashboard --config ws.json
-node cli.js classify-workspace "agent review workspace"
-node cli.js plan-workspace "agent review workspace" --name "Review Desk"
-node cli.js propose-workspace-patch --config ws.json --overlay '{"theme":{"params":{"mode":"dark","hue":220}}}'
-node cli.js validate-workspace-patch --config ws.json --overlay '{"register":"editor"}'
-node cli.js apply-workspace-patch --config ws.json --overlay '{"name":"Review Desk"}'
-node cli.js export-workspace --config ws.json
-node cli.js add-group --config ws.json --id analytics --name Analytics
-node cli.js add-section --config ws.json --groupId analytics --id overview --label Overview
-node cli.js register-panel-type --config ws.json --name chart --title Chart --component sn-chart
-node cli.js set-layout --config ws.json --layoutTree '{"type":"split","direction":"horizontal","ratio":0.3,"first":{"type":"panel","panelType":"sidebar"},"second":{"type":"panel","panelType":"chart"}}'
+# Stateful config flow
+node cli.js config-validate ws.json
+node cli.js config-export --config ws.json --strict
+node cli.js config-patch-propose --config ws.json --overlay '{"theme":{"params":{"mode":"dark","hue":220}}}'
+node cli.js config-patch-validate --config ws.json --overlay '{"name":"Review Desk"}'
+node cli.js config-patch-apply --config ws.json --base-revision 1 --overlay '{"name":"Review Desk"}'
 
-# Discovery (auto-detects symbiote-ui)
-node cli.js discover
-node cli.js find-component --tagName sn-data-table
-node cli.js list-component-tags
-node cli.js list-categories
+# Structure helpers
+node cli.js module-register --config ws.json --base-revision 2 --name records --title Records --component sn-data-table
+node cli.js layout-behavior-update --config ws.json --base-revision 3 --target root --updates '{"responsiveMode":"drawer"}'
+node cli.js module-workflow-kanban --config ws.json --base-revision 4 --panel-type approvals --board '{"id":"release-flow","columns":[{"id":"todo","title":"Todo","cards":[]}]}'
 
-# Validation
-node cli.js validate workspace.json
-node cli.js describe workspace.json
-node cli.js preview workspace.json --output-dir .workspace-preview
+# Discovery and catalog
+node cli.js component-discover
+node cli.js component-find --tag-name sn-data-table
+node cli.js component-tags-list
+node cli.js catalog-search --query table
+node cli.js catalog-describe --ids '["symbiote-ui:data-table"]' --depth summary
 
-# Server
+# Preview, server, and MCP mode
+node cli.js preview-start ws.json --output-dir .workspace-preview
 node cli.js serve --port 3100 --plugins-dir ./plugins
-
-# MCP mode
 node cli.js mcp
 ```
 
-### CLI Aliases
+`serve` and `mcp` are special commands. All other tool commands are generated
+from the live registry.
 
-| Alias | Tool |
-|-------|------|
-| `scaffold` | `scaffold_workspace` |
-| `plan` | `plan_workspace` |
-| `construct` | `construct_workspace` |
-| `describe` | `describe_workspace` |
-| `discover` | `discover_components` |
-| `validate` | `validate_config` |
-| `preview` | `start_preview` |
+## Tool Families
+
+The runtime registry currently exposes 85 tools through CLI and MCP:
+
+| Family | Tools |
+|--------|-------|
+| Discovery | `workspace_describe`, `component_discover`, `component_find`, `component_tags_list`, `component_categories_list`, `component_usage_list` |
+| Construction | `construction_template_list`, `construction_scaffold`, `construction_scaffold_blank`, `construction_classify`, `construction_questions_build`, `construction_question_answer`, `construction_plan`, `construction_construct` |
+| Structure | `layout_set`, `panel_add`, `panel_remove`, `panel_resize`, `module_register`, `module_update`, `module_unregister`, `module_list`, `layout_behavior_set`, `layout_behavior_get`, `layout_behavior_update`, `panel_component_mount`, `panel_component_unmount`, `panel_component_swap`, `module_workflow_kanban` |
+| Config | `config_patch_propose`, `config_patch_validate`, `config_patch_apply`, `preview_start`, `config_validate`, `config_save`, `config_load`, `config_export`, `config_import`, `config_diff`, `config_merge`, `config_guardrails_check` |
+| Package | `pack_export`, `pack_import`, `pack_validate`, `pack_inspect`, `pack_context_create`, `pack_contexts_create`, `pack_handoff_create`, `pack_plugin_modules_collect`, `pack_plugin_templates_collect` |
+| Route | `navigate`, `resolve_route` |
+| Document | `collection.list`, `collection.query`, `collection.create`, `collection.delete`, `document.load`, `document.commit`, `document.patches`, `document.delete`, `document.snapshot`, `document.presentation.save`, `document.presentation.load` |
+| Session | `workspace.session.load`, `workspace.session.commit`, `workspace.session.snapshot.save`, `workspace.session.snapshot.load`, `workspace.session.snapshot.list`, `layout_promote_geometry`, `session.layout.undo` |
+| Hook | `hook_add`, `hook_update`, `hook_remove`, `hook_list`, `preview_hook_matches` |
+| Grant | `grant_list`, `grant_revoke` |
+| Execution | `execution_submit`, `execution_cancel`, `execution_reorder`, `execution_attach`, `execution_list` |
+| Catalog | `catalog_search`, `catalog_describe`, `catalog_proof` |
 
 ## Browser Preview
 
-`start_preview` writes `index.html`, `app.js`, `workspace.config.json`, and
+`preview_start` writes `index.html`, `app.js`, `workspace.config.json`, and
 `preview.contract.json`. The generated HTML declares an import map before
 loading `app.js`, so browser bare imports resolve through an explicit host
 contract:
@@ -164,19 +161,16 @@ The generated `app.js` and `workspace.config.json` use the same portable config
 sanitizer as export/import flows, so host/session fields and local paths are not
 copied into preview runtime state.
 
-When `imports` is omitted, preview defaults to local workspace paths and the
-returned `hint` serves the repository root so `symbiote-workspace/browser`,
-`symbiote-ui/ui`, `symbiote-engine`, and `symbiote-engine/contracts` can
-resolve from the generated import map.
+When `imports` is omitted, preview defaults to local package specifiers and the
+returned `hint` identifies the serve root for `symbiote-workspace/browser`,
+`symbiote-ui/ui`, `symbiote-engine`, and `symbiote-engine/contracts`.
 
-The generated runtime imports `applyCascadeTheme` from
-`symbiote-ui/ui`, passes it as `themeAdapter` to
-`mountWorkspace()`, verifies import-map support before loading bare modules,
-renders loader warnings with `data-preview-warning`, and reports import-map,
-module-load, and mount failures separately. Runtime errors include the original
-error message instead of a broad fallback.
+The generated runtime imports `applyCascadeTheme` from `symbiote-ui/ui`, passes
+it as `themeAdapter` to `mountWorkspace()`, verifies import-map support before
+loading bare modules, renders loader warnings with `data-preview-warning`, and
+reports import-map, module-load, and mount failures separately.
 
-### Visual Demo Process
+## Visual Demo Process
 
 The packaged visual demo runs the same portable construction path that agents
 use: classify intent, create a construction handoff, plan and construct the
@@ -210,9 +204,9 @@ npm run test:visual-demo-browser
 
 It launches the visual demo server and a Chrome-compatible browser, then checks
 that the preview mounts without `[data-preview-error]` and renders the expected
-workspace and panel DOM. The default driver uses Chrome DevTools Protocol.
-For environments where local Chrome/CDP is unavailable, use the Playwright
-driver after installing a Playwright browser:
+workspace and panel DOM. The default driver uses Chrome DevTools Protocol. For
+environments where local Chrome/CDP is unavailable, use the Playwright driver
+after installing a Playwright browser:
 
 ```bash
 npx playwright install webkit

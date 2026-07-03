@@ -102,6 +102,67 @@ describe('dispatch registry composition', () => {
       assert.equal(result.code, 'unknown-tool');
     }
   });
+
+  it('routes plugin contribution collectors through the package tool family', async () => {
+    let session = createSession();
+    let plugin = {
+      name: 'acme.review',
+      version: '1.0.0',
+      contributes: {
+        modules: [{
+          id: 'acme.review:sentiment',
+          tagName: 'acme-sentiment-panel',
+          capabilities: ['analysis.sentiment'],
+        }],
+        templates: [{
+          name: 'sentiment-room',
+          config: {
+            version: WORKSPACE_SCHEMA_VERSION,
+            name: 'Sentiment Room',
+          },
+        }],
+      },
+    };
+
+    let modules = await dispatch('pack_plugin_modules_collect', { plugins: [plugin] }, session, {
+      actor: 'agent-gated',
+    });
+    assert.equal(modules.status, 'ok');
+    assert.deepEqual(modules.moduleCapabilities.map((entry) => entry.id), ['acme.review:sentiment']);
+
+    let templates = await dispatch('pack_plugin_templates_collect', { plugins: [plugin] }, session, {
+      actor: 'agent-gated',
+    });
+    assert.equal(templates.status, 'ok');
+    assert.deepEqual(templates.templates.map((entry) => entry.name), ['sentiment-room']);
+  });
+
+  it('rejects legacy flat plugin contribution keys through dispatch', async () => {
+    let session = createSession();
+    let legacy = {
+      name: 'acme.review',
+      version: '1.0.0',
+      components: ['acme-sentiment-panel'],
+      workspace: {
+        templates: [{
+          name: 'sentiment-room',
+          config: { version: WORKSPACE_SCHEMA_VERSION, name: 'Sentiment Room' },
+        }],
+      },
+    };
+
+    let modules = await dispatch('pack_plugin_modules_collect', { plugins: [legacy] }, session, {
+      actor: 'agent-gated',
+    });
+    assert.equal(modules.status, 'error');
+    assert.ok(modules.errors.some((error) => error.path === 'plugins[0].components'));
+
+    let templates = await dispatch('pack_plugin_templates_collect', { plugins: [legacy] }, session, {
+      actor: 'agent-gated',
+    });
+    assert.equal(templates.status, 'error');
+    assert.ok(templates.errors.some((error) => error.path === 'plugins[0].workspace'));
+  });
 });
 
 describe('session and mutation contract', () => {

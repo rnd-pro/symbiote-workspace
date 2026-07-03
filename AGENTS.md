@@ -5,25 +5,23 @@
 - **Layer**: orchestration (between symbiote-ui primitives and host products)
 - **Dependency direction**: workspace → ui + engine. Never reverse.
 - **Independence**: usable standalone by any open-source consumer
-- **Version**: 0.3.0-alpha.2
+- **Version**: 1.0.0
 
 ## Architecture
 
 Unified dispatch layer: `runtime/dispatch.js` is the single entry point for all
-69 tools. Both CLI (`cli.js`) and MCP (`mcp/index.js`) are thin proxies —
+85 tools. Both CLI (`cli.js`) and MCP (`mcp/index.js`) are thin proxies:
 they parse input and call `dispatch(toolName, args, session)`.
+Tool metadata and handlers live in `runtime/tools/*` families.
 
 ## Code Quality
 
-This project follows the team-wide code quality rules from `.agent-portal`:
+Follow the repository's existing style:
 
-- `skills/code/code-style.md` — let-by-default, arrow functions, 2-space indent
-- `skills/code/error-handling.md` — throw on invalid input, no silent failures
-- `skills/architecture/jsda-principles.md` — ESM, no build step, platform-native
-- `skills/architecture/ecosystem-boundaries.md` — layer separation
-
-Project-specific rules documented in:
-- `.agent-portal/workspace/symbiote-workspace/code-quality-rules.md`
+- ESM, no build step, platform-native APIs
+- let-by-default local declarations and 2-space indent
+- throw or return structured errors on invalid input; do not silently ignore it
+- keep layers separated and public surfaces host-agnostic
 
 ## Testing
 
@@ -44,7 +42,8 @@ Use Node.js built-in test runner (`node:test`).
 - REQUIRE: workspace config = portable JSON, host-agnostic
 - REQUIRE: each module testable without browser or server
 - REQUIRE: schema versioned and backward-compatible
-- REQUIRE: every handler has a TOOLS entry and dispatch case
+- REQUIRE: every dispatch handler has a tool definition in its `runtime/tools/*`
+  family and a focused test
 
 ## Tier Separation
 
@@ -54,15 +53,17 @@ Use Node.js built-in test runner (`node:test`).
 - `mcp/index.js` — MCP JSON-RPC transport. No business logic.
 - All `/schema`, `/loader`, `/constructor`, `/sharing`, `/validation` — Node-safe.
 - `/runtime` — Node-safe. Dispatch, session, tool registry.
-- `/handlers` — Node-safe. Pure config mutation functions.
+- `/runtime/tools` — Node-safe dispatch tool families and handler adapters.
+- `/handlers` — Node-safe config mutation functions used by the tool families.
+- `/catalog` — Node-safe catalog entries, sources, ranking, fingerprints, and proof.
 - `/plugins`, `/server` — Node-safe. Optional server mode.
+- `/ssr` — Optional build-time shell rendering.
 
 ## Adding a New Tool
 
 1. Create handler function in appropriate `handlers/*.js` file
 2. Export from `handlers/index.js` barrel
-3. Add tool definition to `TOOLS` array in `runtime/dispatch.js`
-4. Add dispatch case in `dispatch()` function
-5. Ensure the `TOOLS` description is suitable for generated CLI/MCP help
-6. Add test in `tests/dispatch.test.js`
-7. Update CHANGELOG.md
+3. Add or update the corresponding `runtime/tools/*-tools.js` family
+4. Ensure the tool description is suitable for generated CLI/MCP help
+5. Add focused dispatch and handler coverage in the standard `tests/*.test.js`
+6. Update CHANGELOG.md

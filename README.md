@@ -5,9 +5,9 @@
 **symbiote-workspace turns chat intent into portable, executable Symbiote
 workspaces. Fast.**
 
-Build professional agent workspaces from plain JSON configs: layout shells,
-panels, modules, actions, events, data bindings, Cascade themes, plugin
-metadata, runtime slots, host requirements, and browser assembly. The package
+Build professional agent workspaces from plain JSON configs: views, layouts,
+panels, modules, actions, wires, Cascade themes, plugin metadata, runtime
+slots, host requirements, and browser assembly. The package
 gives agents a direct path from user intent to a relaunchable workspace without
 forking a product app, hardcoding a host, or generating one-off UI code first.
 
@@ -15,7 +15,7 @@ forking a product app, hardcoding a host, or generating one-off UI code first.
 
 ## Why symbiote-workspace?
 
-- **One artifact for the whole workspace** — layout, modules, theme, bindings,
+- **One artifact for the whole workspace** — layouts, modules, theme, wires,
   host requirements, and validation reports live in portable JSON.
 - **Agent construction without free-form app forks** — classify intent, ask the
   construction questions, select modules, validate the result, and assemble it
@@ -46,8 +46,8 @@ mode.
   topology planning, module selection, execution model, host services, and
   package readiness.
 - **Capability-driven modules** — module descriptors materialize panel types,
-  actions, menus, toolbars, settings, events, slots, engine bindings, and data
-  bindings into executable workspace surfaces.
+  actions, menus, toolbars, settings, events, slots, state fields, and wires
+  into executable workspace surfaces.
 - **Template and plugin inputs** — canonical templates and plugin-provided
   workspace templates feed the same planner instead of creating product forks.
 
@@ -63,9 +63,9 @@ mode.
 
 ### Unified Agent Tooling
 
-- **69 tools over CLI/MCP** — one `runtime/dispatch.js` registry drives CLI commands,
+- **85 tools over CLI/MCP** — one `runtime/dispatch.js` registry drives CLI commands,
   MCP JSON-RPC, tests, and package-consumer verification.
-- **Workflow kanban tool** — `workflow_kanban` registers portable workflow-board
+- **Workflow kanban tool** — `module_workflow_kanban` registers portable workflow-board
   panels backed by provider-owned `symbiote-ui` board components.
 - **Release proof harness** — package preflight verifies metadata, tests,
   package contents, browser demo proof, npm registry state, and clean git state
@@ -105,30 +105,31 @@ CLI, preview generation, and browser smoke workflows.
 import { createSession, dispatch } from 'symbiote-workspace/runtime';
 
 let session = createSession();
-let planned = await dispatch('plan_workspace', {
+let planned = await dispatch('construction_plan', {
   intent: 'video editing studio for agentic media review',
   name: 'Launch Cut',
 }, session);
 
-await dispatch('import_config', {
+await dispatch('config_import', {
   json: JSON.stringify(planned.config),
+  baseRevision: session.revision,
 }, session);
 
-let result = await dispatch('validate_config', {}, session);
+let result = await dispatch('config_validate', {}, session);
 console.log(result.valid);
 ```
 
 ## CLI
 
 ```sh
-node cli.js classify-workspace "agent review workspace"
-node cli.js plan-workspace "agent review workspace" --name "Review Desk"
-node cli.js validate workspace.json
+node cli.js construction-classify "agent review workspace"
+node cli.js construction-plan "agent review workspace" --name "Review Desk"
+node cli.js config-validate workspace.json
 node cli.js mcp
 ```
 
 All CLI and MCP tools route through the same dispatch registry. The full tool
-list and aliases live in [Getting Started and Preview](./docs/getting-started.md)
+list and CLI command naming rule live in [Getting Started and Preview](./docs/getting-started.md)
 and [Host Contracts and Construction Protocol](./docs/host-contracts.md).
 
 ## Visual Demo
@@ -148,7 +149,7 @@ smoke options and CI-friendly write-only mode.
 - [Architecture and Entry Points](./docs/architecture.md) — package layers,
   dispatch architecture, and import boundaries.
 - [Getting Started and Preview](./docs/getting-started.md) — programmatic setup,
-  CLI aliases, generated browser previews, and visual demo commands.
+  CLI commands, generated browser previews, and visual demo commands.
 - [Host Contracts and Construction Protocol](./docs/host-contracts.md) — strict
   export/import, MCP tools, workspace config, construction planning, and theme
   mounting.

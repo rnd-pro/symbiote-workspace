@@ -6,6 +6,7 @@ import {
   WORKSPACE_SECTION_MODULES,
   assembleWorkspaceSchema,
   getWorkspaceSchema,
+  WORKSPACE_CONFIG_SCHEMA,
   validateWorkspaceConfig,
   isCompatibleVersion,
 } from '../schema/workspace-schema.js';
@@ -45,6 +46,27 @@ describe('schema assembler', () => {
       sections: WORKSPACE_SECTION_MODULES.map((section) => section.id),
     });
     assert.deepEqual(getWorkspaceSchema(), descriptor);
+  });
+
+  it('keeps the exported config schema descriptor aligned with target top-level sections', () => {
+    assert.ok(Object.isFrozen(WORKSPACE_CONFIG_SCHEMA.properties));
+    for (let key of [
+      'views',
+      'register',
+      'layouts',
+      'panels',
+      'modules',
+      'requires',
+      'wires',
+      'data',
+      'state',
+      'routes',
+      'redirects',
+      'behavior',
+      'server',
+    ]) {
+      assert.ok(WORKSPACE_CONFIG_SCHEMA.properties[key], `missing descriptor property ${key}`);
+    }
   });
 
   it('validates a minimal target-schema config end-to-end after assembly', () => {

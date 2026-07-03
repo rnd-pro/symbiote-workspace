@@ -6,6 +6,10 @@ import {
   validatePluginDefinition,
   validatePluginWorkspaceTemplate,
 } from '../plugins/plugin-schema.js';
+import {
+  collectPluginModuleCapabilities,
+  collectPluginWorkspaceTemplates,
+} from '../plugins/plugin-capabilities.js';
 import { clearRegisteredSections } from '../validation/core.js';
 import { WORKSPACE_SCHEMA_VERSION } from '../schema/value-classes.js';
 
@@ -204,6 +208,45 @@ describe('contributes.templates', () => {
     let errors = [];
     validatePluginWorkspaceTemplate({ name: 'room', config: workspaceConfig('Room') }, 'templates[0]', errors);
     assert.deepEqual(errors, []);
+  });
+});
+
+describe('plugin capability collectors', () => {
+  it('collects module capabilities and templates from contributes.* manifests', () => {
+    let plugin = {
+      name: 'acme.video',
+      version: '1.1.0',
+      contributes: {
+        modules: [contributedModule()],
+        templates: [{ name: 'studio-room', description: 'Studio.', config: workspaceConfig('Studio Room') }],
+      },
+    };
+
+    let modules = collectPluginModuleCapabilities([plugin]);
+    assert.equal(modules.ok, true, JSON.stringify(modules.errors));
+    assert.deepEqual(modules.moduleCapabilities.map((entry) => entry.id), ['acme.video:preview']);
+
+    let templates = collectPluginWorkspaceTemplates([plugin]);
+    assert.equal(templates.ok, true, JSON.stringify(templates.errors));
+    assert.deepEqual(templates.templates.map((entry) => entry.name), ['studio-room']);
+    assert.equal(templates.templates[0].source.plugin, 'acme.video');
+  });
+
+  it('rejects removed flat manifest contribution keys', () => {
+    let legacy = {
+      name: 'acme.video',
+      version: '1.1.0',
+      components: [contributedModule()],
+      workspace: { templates: [{ name: 'studio-room', config: workspaceConfig('Studio Room') }] },
+    };
+
+    let modules = collectPluginModuleCapabilities([legacy]);
+    assert.equal(modules.ok, false);
+    assert.ok(modules.errors.some((error) => error.path === 'plugins[0].components'));
+
+    let templates = collectPluginWorkspaceTemplates([legacy]);
+    assert.equal(templates.ok, false);
+    assert.ok(templates.errors.some((error) => error.path === 'plugins[0].workspace'));
   });
 });
 

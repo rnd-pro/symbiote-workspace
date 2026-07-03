@@ -620,25 +620,170 @@ describe('packed package consumer', () => {
           { ...args, baseRevision: targetSession.revision ?? 0 },
           targetSession,
         );
-        let plugin = {
-          name: '@acme/review-pack',
-          version: '1.0.0',
-          capabilities: ['provider.analytics'],
-          components: [
-            'acme-legacy-widget',
-            {
-              tagName: 'acme-sentiment-panel',
-              provider: '@acme/review-pack',
-              capabilities: ['analysis.sentiment'],
-              hostServices: { required: ['storage.project'] },
-              placement: {
-                panelType: 'sentiment',
-                title: 'Sentiment',
-                icon: 'sentiment_satisfied'
-              }
+        let modulePackage = 'acme-review-pack';
+        let cloneJson = (value) => JSON.parse(JSON.stringify(value));
+        let targetModuleId = (tagName) => modulePackage + ':' + tagName;
+        let hostCommandAction = (id, label, command) => ({
+          id,
+          label,
+          does: { kind: 'command', scope: 'host', command }
+        });
+        let panelLeaf = (panel) => ({ type: 'panel', id: panel + '-node', panel });
+        let splitNode = (id, direction, ratio, first, second) => ({ type: 'split', id, direction, ratio, first, second });
+        let targetPanel = (tagName, title, icon) => ({ module: targetModuleId(tagName), title, icon });
+        function targetModule(tagName, capabilities, options = {}) {
+          return {
+            id: targetModuleId(tagName),
+            source: { kind: 'package', package: modulePackage },
+            tagName,
+            provider: modulePackage,
+            capabilities,
+            hostServices: { required: [], optional: [] },
+            ...options
+          };
+        }
+        function requiredHostServicesFor(modules) {
+          let services = [];
+          for (let module of modules) {
+            for (let service of module.hostServices?.required || []) services.push(service);
+          }
+          return [...new Set(services)].sort((a, b) => a.localeCompare(b));
+        }
+        function targetTemplateConfig({ name, panels, layout, modules }) {
+          return {
+            version: '1.0.0',
+            name,
+            register: 'agent-workspace',
+            views: [{ id: 'live', title: 'Live', icon: 'video_call', layout: { $layout: 'main' } }],
+            panels,
+            layouts: { main: { kind: 'bsp', root: layout } },
+            modules,
+            requires: {
+              packages: [{ id: modulePackage, version: '^1.0.0' }],
+              hostServices: { required: requiredHostServicesFor(modules), optional: [] }
             }
-          ],
-          workspace: {
+          };
+        }
+        function labelText(value, fallback = '') {
+          if (typeof value === 'string') return value;
+          if (value?.default) return value.default;
+          if (value?.$t) return value.$t;
+          return fallback;
+        }
+        function legacyLayoutNode(node) {
+          if (!node) return null;
+          if (node.type === 'panel') return { type: 'panel', panelType: node.panel };
+          if (node.type === 'split') {
+            return {
+              type: 'split',
+              direction: node.direction,
+              ratio: node.ratio,
+              first: legacyLayoutNode(node.first),
+              second: legacyLayoutNode(node.second)
+            };
+          }
+          return cloneJson(node);
+        }
+        function constructorTemplateConfig(config) {
+          let modules = config.modules || [];
+          let modulesById = new Map(modules.map((module) => [module.id, module]));
+          let layouts = Object.fromEntries(
+            Object.entries(config.layouts || {})
+              .map(([id, layout]) => [id, legacyLayoutNode(layout.root || layout)])
+              .filter(([, layout]) => layout)
+          );
+          let firstView = config.views?.[0];
+          let defaultLayoutId = firstView?.layout?.$layout || Object.keys(layouts)[0];
+          return {
+            version: config.version,
+            name: config.name,
+            register: config.register,
+            groups: (config.nav?.groups || []).map((group) => ({
+              id: group.id,
+              name: labelText(group.title, group.id),
+              icon: group.icon,
+              ...(group.order !== undefined ? { order: group.order } : {})
+            })),
+            sections: (config.views || []).map((view) => ({
+              id: view.id,
+              label: labelText(view.title, view.id),
+              icon: view.icon,
+              order: view.nav?.order ?? 0,
+              groupId: view.nav?.group,
+              layoutId: view.layout?.$layout || defaultLayoutId
+            })),
+            panelTypes: Object.fromEntries(
+              Object.entries(config.panels || {}).map(([panelType, panel]) => {
+                let module = modulesById.get(panel.module) || {};
+                return [panelType, {
+                  title: labelText(panel.title, panelType),
+                  icon: panel.icon,
+                  component: module.tagName || panel.module
+                }];
+              })
+            ),
+            ...(defaultLayoutId && layouts[defaultLayoutId] ? { layout: cloneJson(layouts[defaultLayoutId]) } : {}),
+            ...(Object.keys(layouts).length ? { layouts } : {}),
+            components: {
+              catalog: modules.map((module) => module.tagName).filter(Boolean),
+              modules: cloneJson(modules)
+            }
+          };
+        }
+        function constructorWorkspaceTemplates(templates) {
+          return templates.map((template) => ({
+            ...template,
+            config: constructorTemplateConfig(template.config)
+          }));
+        }
+        function collectDeletedTemplateConfigKeyPaths(config) {
+          let paths = [];
+          for (let key of ['groups', 'sections', 'panelTypes', 'layout']) {
+            if (Object.hasOwn(config, key)) paths.push(key);
+          }
+          if (Object.hasOwn(config.components || {}, 'catalog')) paths.push('components.catalog');
+          if (Object.hasOwn(config.components || {}, 'modules')) paths.push('components.modules');
+          function visit(value, path = '') {
+            if (Array.isArray(value)) {
+              value.forEach((item, index) => visit(item, path + '[' + index + ']'));
+              return;
+            }
+            if (!value || typeof value !== 'object') return;
+            for (let [key, child] of Object.entries(value)) {
+              let childPath = path ? path + '.' + key : key;
+              if (key === 'requiredHostServices') paths.push(childPath);
+              visit(child, childPath);
+            }
+          }
+          visit(config);
+          return paths;
+        }
+        function assertNoDeletedTemplateConfigKeys(templates) {
+          for (let template of templates) {
+            let paths = collectDeletedTemplateConfigKeyPaths(template.config);
+            if (paths.length) {
+              throw new Error(template.name + ' uses deleted config keys: ' + paths.join(', '));
+            }
+          }
+        }
+        let plugin = {
+          name: 'acme.review',
+          version: '1.0.0',
+          contributes: {
+            modules: [
+              {
+                id: 'acme.review:sentiment',
+                tagName: 'acme-sentiment-panel',
+                provider: 'acme-review-pack',
+                capabilities: ['analysis.sentiment'],
+                hostServices: { required: ['storage.project'] },
+                placement: {
+                  panelType: 'sentiment',
+                  title: 'Sentiment',
+                  icon: 'sentiment_satisfied'
+                }
+              }
+            ],
             templates: [
               {
                 name: 'sentiment-review-room',
@@ -652,39 +797,25 @@ describe('packed package consumer', () => {
               {
                 name: 'voice-video-room',
                 description: 'Portable voice and video AI room.',
-                config: {
-                  version: '1.0.0',
+                config: targetTemplateConfig({
                   name: 'Voice Video Room',
-                  register: 'agent-workspace',
-                  panelTypes: {
-                    stage: { title: 'Stage', icon: 'video_call', component: 'room-media-stage' },
-                    command: { title: 'Command', icon: 'terminal', component: 'room-command-panel' }
+                  panels: {
+                    stage: targetPanel('room-media-stage', 'Stage', 'video_call'),
+                    command: targetPanel('room-command-panel', 'Command', 'terminal')
                   },
-                  layout: {
-                    type: 'split',
-                    direction: 'horizontal',
-                    ratio: 0.7,
-                    first: { type: 'panel', panelType: 'stage' },
-                    second: { type: 'panel', panelType: 'command' }
-                  },
-                  components: {
-                    catalog: ['room-media-stage', 'room-command-panel'],
-                    modules: [
-                      {
-                        tagName: 'room-media-stage',
-                        capabilities: ['room.video', 'room.audio', 'media.realtime'],
-                        runtimeSlots: [{ id: 'media-session', role: 'provider', required: true }],
-                        hostServices: { required: ['media.realtime', 'presence.session'] }
-                      },
-                      {
-                        tagName: 'room-command-panel',
-                        capabilities: ['room.command', 'agent.command-input'],
-                        runtimeSlots: [{ id: 'agent-runtime', role: 'provider', required: true }],
-                        hostServices: { required: ['agent.runtime'] }
-                      }
-                    ]
-                  }
-                }
+                  layout: splitNode('live-root', 'horizontal', 0.7, panelLeaf('stage'), panelLeaf('command')),
+                  modules: [
+                    targetModule('room-media-stage', ['room.video', 'room.audio', 'media.realtime'], {
+                      runtimeSlots: [{ id: 'media-session', role: 'provider', required: true }],
+                      hostServices: { required: ['media.realtime', 'presence.session'], optional: [] }
+                    }),
+                    targetModule('room-command-panel', ['room.command', 'agent.command-input'], {
+                      actions: [hostCommandAction('send-command', 'Send', 'agent.command.send')],
+                      runtimeSlots: [{ id: 'agent-runtime', role: 'provider', required: true }],
+                      hostServices: { required: ['agent.runtime'], optional: [] }
+                    })
+                  ]
+                })
               }
             ]
           }
@@ -697,14 +828,16 @@ describe('packed package consumer', () => {
         if (!pluginTemplates.ok || pluginTemplates.templates[0].name !== 'sentiment-review-room') {
           throw new Error(JSON.stringify(pluginTemplates.errors));
         }
-        if (pluginTemplates.templates[0].source.plugin !== '@acme/review-pack') {
+        if (pluginTemplates.templates[0].source.plugin !== 'acme.review') {
           throw new Error('workspace template source metadata missing');
         }
+        assertNoDeletedTemplateConfigKeys(pluginTemplates.templates);
+        let constructorTemplates = constructorWorkspaceTemplates(pluginTemplates.templates);
         let roomPlan = planWorkspaceConstruction({
           brief: 'sentiment review room',
           template: 'sentiment-review-room'
         }, {
-          workspaceTemplates: pluginTemplates.templates
+          workspaceTemplates: constructorTemplates
         });
         if (roomPlan.intent.template !== 'sentiment-review-room') {
           throw new Error('plugin workspace template was not accepted by constructor');
@@ -717,7 +850,7 @@ describe('packed package consumer', () => {
           template: 'voice-video-room',
           requiredCapabilities: ['room.video', 'room.command']
         }, {
-          workspaceTemplates: pluginTemplates.templates
+          workspaceTemplates: constructorTemplates
         });
         if (callPlan.plan.capabilities.missing.length !== 0) {
           throw new Error('voice/video room capabilities were not covered');

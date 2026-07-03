@@ -2,7 +2,7 @@
 
 > Toolkit for turning chat intent into portable, executable Symbiote workspaces. Node-safe core, browser mounting, CLI, and MCP share one dispatch layer.
 
-symbiote-workspace is the construction and orchestration package between Symbiote UI primitives and host products. It plans workspace layouts from user intent, selects modules by capability metadata, validates portable JSON configs, applies Cascade themes, exports strict host-neutral packages, and exposes the same tools through JavaScript imports, CLI commands, and MCP JSON-RPC.
+symbiote-workspace is the construction and orchestration package between Symbiote UI primitives and host products. It plans target-schema workspaces from user intent, selects modules by capability metadata, validates portable JSON configs, applies Cascade themes, exports strict host-neutral packages, and exposes the same tools through JavaScript imports, CLI commands, and MCP JSON-RPC.
 
 ## Key resources
 
@@ -13,16 +13,19 @@ symbiote-workspace is the construction and orchestration package between Symbiot
 ## Core docs
 
 - [Architecture and Entry Points](https://github.com/rnd-pro/symbiote-workspace/blob/main/docs/architecture.md): package layers, dispatch architecture, import boundaries, and root entry points
-- [Getting Started and Preview](https://github.com/rnd-pro/symbiote-workspace/blob/main/docs/getting-started.md): programmatic setup, CLI aliases, generated browser previews, and visual demo commands
+- [Getting Started and Preview](https://github.com/rnd-pro/symbiote-workspace/blob/main/docs/getting-started.md): programmatic setup, CLI commands, generated browser previews, and visual demo commands
 - [Host Contracts and Construction Protocol](https://github.com/rnd-pro/symbiote-workspace/blob/main/docs/host-contracts.md): strict export/import, MCP tools, workspace config, construction planning, and theme mounting
 - [Plugins, Portability, and Templates](https://github.com/rnd-pro/symbiote-workspace/blob/main/docs/plugins-and-templates.md): plugin format, module capabilities, portability rules, templates, and workspace packages
 - [Visual demo guide](https://github.com/rnd-pro/symbiote-workspace/blob/main/examples/visual-demo/README.md): browser smoke options and CI-friendly write-only mode
 
 ## Runtime surfaces
 
-- [`symbiote-workspace`](https://github.com/rnd-pro/symbiote-workspace/blob/main/index.js): Node-safe schema, loader, constructor, sharing, validation, plugins, runtime, and handlers
+- [`symbiote-workspace`](https://github.com/rnd-pro/symbiote-workspace/blob/main/index.js): Node-safe schema, loader, constructor, catalog, sharing, validation, plugins, runtime, and handlers
 - [`symbiote-workspace/browser`](https://github.com/rnd-pro/symbiote-workspace/blob/main/browser.js): browser mounting, theme application, mounted updates, and browser-safe isomorphic APIs
 - [`symbiote-workspace/runtime`](https://github.com/rnd-pro/symbiote-workspace/tree/main/runtime): unified dispatch registry, session state, and tool metadata
+- [`symbiote-workspace/catalog`](https://github.com/rnd-pro/symbiote-workspace/tree/main/catalog): module-id catalog search, summary/contract/full describe, deterministic fingerprinting, registry sources, and inline creation proof
+- [`symbiote-workspace/server`](https://github.com/rnd-pro/symbiote-workspace/tree/main/server): workspace HTTP server, plugin loader, ingress, triggers, jobs, and data-change broadcast helpers
+- [`symbiote-workspace/ssr`](https://github.com/rnd-pro/symbiote-workspace/tree/main/ssr): optional build-time workspace shell rendering
 - [`symbiote-workspace/mcp`](https://github.com/rnd-pro/symbiote-workspace/tree/main/mcp): MCP JSON-RPC stdio transport; thin proxy to dispatch
 - [`symbiote-workspace/cli`](https://github.com/rnd-pro/symbiote-workspace/blob/main/cli.js): command-line entrypoint for construction, validation, preview, workflow kanban, and MCP mode
 
@@ -30,18 +33,19 @@ symbiote-workspace is the construction and orchestration package between Symbiot
 
 - [Constructor](https://github.com/rnd-pro/symbiote-workspace/tree/main/constructor): intent normalization, template matching, construction questions, topology planning, module capability selection, and package context handoff
 - [Schema](https://github.com/rnd-pro/symbiote-workspace/tree/main/schema): workspace config schema, module capability schema, and validation helpers
-- [Handlers](https://github.com/rnd-pro/symbiote-workspace/tree/main/handlers): config mutation tools for layouts, panels, groups, sections, widgets, events, behaviors, preview, workflow kanban, and scaffolding
+- [Handlers](https://github.com/rnd-pro/symbiote-workspace/tree/main/handlers): config mutation helpers for layouts, panels, modules, components, behaviors, preview, workflow kanban, and scaffolding
 - [Sharing](https://github.com/rnd-pro/symbiote-workspace/tree/main/sharing): strict export/import portability, browser import-map contract, workspace packages, package inspection, and construction context projection
 - [Validation](https://github.com/rnd-pro/symbiote-workspace/tree/main/validation): design guardrails and workspace patch validation
-- [Plugins](https://github.com/rnd-pro/symbiote-workspace/tree/main/plugins): plugin schema, registry, module capability collection, and workspace template inputs
+- [Plugins](https://github.com/rnd-pro/symbiote-workspace/tree/main/plugins): plugin `contributes.*` schema, registry, module capability collection, and workspace template inputs
 
 ## Agent and host guidance
 
-- Use `planWorkspaceConstruction()` or the `plan_workspace` dispatch tool to turn intent into a portable construction plan.
+- Use `planWorkspaceConstruction()` or the `construction_plan` dispatch tool to turn intent into a portable construction plan.
 - Use plugin/module capability descriptors before creating new custom modules.
 - Use `exportConfig(..., { strict: true })` and `importConfig()` for share/relaunch flows; strict mode rejects auth, user identity, server URLs, local paths, and host-only runtime state.
 - Use `mountWorkspace().updateConfig()` or `mountWorkspace().applyPatch()` for no-reload browser updates instead of replacing the app shell.
-- Use `workflow_kanban` for portable workflow-board panels backed by provider-owned Symbiote UI board components.
+- Use `catalog_search`, `catalog_describe`, and `catalog_proof` before inline free creation.
+- Use `module_workflow_kanban` for portable workflow-board panels backed by provider-owned Symbiote UI board components.
 
 ## Release and package proof
 
