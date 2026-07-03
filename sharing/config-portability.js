@@ -1,4 +1,4 @@
-import { validateWorkspaceConfig } from '../schema/validate.js';
+import { validateWorkspaceConfig } from '../schema/index.js';
 import { createBrowserRuntimeContract } from './browser-contract.js';
 
 function isObject(value) {
