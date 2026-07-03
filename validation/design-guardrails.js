@@ -1,13 +1,26 @@
 /**
- * @typedef {Object} GuardrailResult
- * @property {boolean} pass
- * @property {Array<{ check: string, message: string, severity: string }>} issues
+ * @typedef {Object} GuardrailIssue
+ * @property {string} check
+ * @property {string} message
+ * @property {string} severity
+ * @property {string} [view]
  */
 
 /**
- * @param {import('../schema/workspace-schema.js').WorkspaceConfig} config
+ * @typedef {Object} GuardrailResult
+ * @property {boolean} pass
+ * @property {Array<GuardrailIssue>} issues
+ */
+
+/**
+ * Design-quality guardrails over the target-schema structural plane. Unlike the
+ * strict validator (validation/core.js), these emit register-aware WARNINGS and
+ * INFO on the resolved `views[] → layouts{}` geometry: theme completeness,
+ * register density (max panels + minimum split ratios), and layout nesting depth.
+ *
+ * @param {Object} config - Workspace config (target schema).
  * @param {Object} [options]
- * @param {string} [options.register] - Override register for density checks
+ * @param {string} [options.register] - Override register for density checks.
  * @returns {GuardrailResult}
  */
 export function checkDesignGuardrails(config, options = {}) {
@@ -15,13 +28,50 @@ export function checkDesignGuardrails(config, options = {}) {
   let register = options.register || config?.register || 'tool';
 
   checkThemeCompleteness(config, issues);
-  checkRegisterDensity(config, register, issues);
-  checkLayoutDepth(config?.layout, issues);
+
+  for (let { viewId, layout } of resolveBspLayouts(config)) {
+    checkRegisterDensity(layout, register, viewId, issues);
+    checkLayoutDepth(layout, viewId, issues);
+  }
 
   return {
     pass: issues.filter((i) => i.severity === 'error').length === 0,
     issues,
   };
+}
+
+function isObject(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+/**
+ * Resolves every view's layout to its bsp root node. `$layout` references are
+ * resolved against `layouts{}`; non-bsp layouts (stack) carry no geometry the
+ * density/depth heuristics understand and are skipped.
+ *
+ * @returns {Array<{ viewId: string, layout: Object }>}
+ */
+function resolveBspLayouts(config) {
+  let views = Array.isArray(config?.views) ? config.views : [];
+  let resolved = [];
+  for (let view of views) {
+    if (!isObject(view)) continue;
+    let value = resolveLayoutValue(config, view.layout);
+    if (isObject(value) && value.kind === 'bsp' && isObject(value.root)) {
+      resolved.push({ viewId: typeof view.id === 'string' ? view.id : '', layout: value.root });
+    }
+  }
+  return resolved;
+}
+
+function resolveLayoutValue(config, layout) {
+  if (!isObject(layout)) return null;
+  if (typeof layout.$layout === 'string') {
+    let defs = config?.layouts;
+    return isObject(defs) && isObject(defs[layout.$layout]) ? defs[layout.$layout] : null;
+  }
+  if (typeof layout.kind === 'string') return layout;
+  return null;
 }
 
 let REQUIRED_THEME_PARAMS = ['mode', 'hue'];
@@ -59,74 +109,73 @@ let REGISTER_CONSTRAINTS = {
   presentation: { maxPanels: 4, minRatio: 0.25 },
 };
 
-function countLeafPanels(layout) {
-  if (!layout) return 0;
-  if (layout.type === 'panel') return 1;
-  if (layout.type === 'split') {
-    return countLeafPanels(layout.first) + countLeafPanels(layout.second);
+function countLeafPanels(node) {
+  if (!isObject(node)) return 0;
+  if (node.type === 'split') {
+    return countLeafPanels(node.first) + countLeafPanels(node.second);
   }
-  return 1;
+  return node.type === 'panel' ? 1 : 0;
 }
 
-function checkRegisterDensity(config, register, issues) {
+function checkRegisterDensity(node, register, viewId, issues) {
   let constraints = REGISTER_CONSTRAINTS[register];
   if (!constraints) return;
 
-  let panelCount = countLeafPanels(config?.layout);
+  let panelCount = countLeafPanels(node);
   if (panelCount > constraints.maxPanels) {
     issues.push({
       check: 'register-density',
-      message: `Register "${register}" allows max ${constraints.maxPanels} panels, layout has ${panelCount}.`,
+      message: `Register "${register}" allows max ${constraints.maxPanels} panels, view "${viewId}" layout has ${panelCount}.`,
       severity: 'warning',
+      view: viewId,
     });
   }
 
-  checkMinRatios(config?.layout, constraints.minRatio, register, issues);
+  checkMinRatios(node, constraints.minRatio, register, viewId, issues);
 }
 
-function checkMinRatios(layout, minRatio, register, issues) {
-  if (!layout) return;
-  if (layout.type === 'split' && typeof layout.ratio === 'number') {
-    if (layout.ratio < minRatio) {
+function checkMinRatios(node, minRatio, register, viewId, issues) {
+  if (!isObject(node) || node.type !== 'split') return;
+  if (typeof node.ratio === 'number') {
+    if (node.ratio < minRatio) {
       issues.push({
         check: 'register-density',
-        message: `Register "${register}" requires minimum ratio ${minRatio}, found ${layout.ratio}.`,
+        message: `Register "${register}" requires minimum ratio ${minRatio}, view "${viewId}" found ${node.ratio}.`,
         severity: 'warning',
+        view: viewId,
       });
     }
-    let complementRatio = 1 - layout.ratio;
+    let complementRatio = 1 - node.ratio;
     if (complementRatio < minRatio) {
       issues.push({
         check: 'register-density',
-        message: `Register "${register}" requires minimum ratio ${minRatio}, found ${complementRatio.toFixed(2)} (complement).`,
+        message: `Register "${register}" requires minimum ratio ${minRatio}, view "${viewId}" found ${complementRatio.toFixed(2)} (complement).`,
         severity: 'warning',
+        view: viewId,
       });
     }
-    checkMinRatios(layout.first, minRatio, register, issues);
-    checkMinRatios(layout.second, minRatio, register, issues);
   }
+  checkMinRatios(node.first, minRatio, register, viewId, issues);
+  checkMinRatios(node.second, minRatio, register, viewId, issues);
 }
 
 let MAX_LAYOUT_DEPTH = 6;
 
-function getLayoutDepth(layout, depth = 1) {
-  if (!layout) return depth;
-  if (layout.type === 'split') {
-    let firstDepth = layout.first ? getLayoutDepth(layout.first, depth + 1) : depth;
-    let secondDepth = layout.second ? getLayoutDepth(layout.second, depth + 1) : depth;
-    return Math.max(firstDepth, secondDepth);
-  }
-  return depth;
+function getLayoutDepth(node, depth = 1) {
+  if (!isObject(node) || node.type !== 'split') return depth;
+  let firstDepth = getLayoutDepth(node.first, depth + 1);
+  let secondDepth = getLayoutDepth(node.second, depth + 1);
+  return Math.max(firstDepth, secondDepth);
 }
 
-function checkLayoutDepth(layout, issues) {
-  if (!layout) return;
-  let depth = getLayoutDepth(layout);
+function checkLayoutDepth(node, viewId, issues) {
+  let depth = getLayoutDepth(node);
   if (depth > MAX_LAYOUT_DEPTH) {
     issues.push({
       check: 'layout-depth',
-      message: `Layout nesting depth ${depth} exceeds maximum ${MAX_LAYOUT_DEPTH}.`,
+      message: `Layout nesting depth ${depth} in view "${viewId}" exceeds maximum ${MAX_LAYOUT_DEPTH}.`,
       severity: 'warning',
+      view: viewId,
     });
   }
 }
