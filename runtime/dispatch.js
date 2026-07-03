@@ -9,6 +9,7 @@
  */
 
 import { ORIGIN_ACTORS } from '../schema/sections/wiring.js';
+import { createCatalog, createCatalogToolFamily } from '../catalog/index.js';
 import { configToolFamily } from './tools/config-tools.js';
 import { constructionToolFamily } from './tools/construction-tools.js';
 import { discoveryToolFamily } from './tools/discovery-tools.js';
@@ -34,6 +35,7 @@ export const TOOL_FAMILIES = Object.freeze([
   hookToolFamily,
   grantToolFamily,
   executionToolFamily,
+  createCatalogToolFamily((context) => context.catalog || createCatalog({ config: context.config })),
 ]);
 
 export const TOOL_REGISTRY = createToolRegistry(TOOL_FAMILIES);
@@ -266,6 +268,7 @@ export async function dispatch(toolName, args = {}, session, options = {}) {
     actor,
     baseRevision: args.baseRevision,
     confirmPolicy,
+    catalog: options.catalog,
     origin: buildOrigin(session, actor, toolName),
   };
 

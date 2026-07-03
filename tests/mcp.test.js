@@ -124,6 +124,7 @@ describe('MCP registry projection', () => {
       assert.equal(names.has('document.commit'), true);
       assert.equal(names.has('workspace.session.snapshot.list'), true);
       assert.equal(names.has('execution_submit'), true);
+      assert.equal(names.has('catalog_search'), true);
       assert.equal(names.has('register_panel_type'), false);
       assert.equal(listed.result.tools.every((tool) => tool.annotations), true);
       assert.equal(listed.result.tools.some((tool) => tool.revisionScope), false);
@@ -201,6 +202,20 @@ describe('MCP registry projection', () => {
       assert.equal(response.result.isError, undefined);
       assert.equal(body.status, 'ok');
       assert.deepEqual(body.snapshots, []);
+    });
+  });
+
+  it('calls S4 catalog tools through the public MCP registry', async () => {
+    await withMcp(async (client) => {
+      let response = await client.request('tools/call', {
+        name: 'catalog_search',
+        arguments: { capabilities: ['missing.capability'] },
+      });
+      let body = parseToolResult(response);
+
+      assert.equal(response.result.isError, undefined);
+      assert.equal(body.status, 'ok');
+      assert.deepEqual(body.hits, []);
     });
   });
 });

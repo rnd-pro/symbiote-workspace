@@ -12,6 +12,7 @@ import {
   isMutating,
   TOOLS,
 } from '../runtime/index.js';
+import { createCatalog } from '../catalog/index.js';
 import { createToolRegistry, defineToolFamily } from '../runtime/tools/registry.js';
 import { WORKSPACE_SCHEMA_VERSION } from '../schema/value-classes.js';
 
@@ -40,6 +41,20 @@ function documentConfig() {
   };
 }
 
+function catalogConfig() {
+  return {
+    version: WORKSPACE_SCHEMA_VERSION,
+    name: 'Dispatch Catalog',
+    modules: [{
+      id: 'acme:data-table',
+      source: { kind: 'package', package: 'acme' },
+      tagName: 'acme-data-table',
+      title: 'Data Table',
+      capabilities: ['data.table'],
+    }],
+  };
+}
+
 describe('dispatch registry composition', () => {
   it('merges family registries into one unique source of truth', () => {
     let names = TOOLS.map((tool) => tool.name);
@@ -55,6 +70,7 @@ describe('dispatch registry composition', () => {
     assert.ok(names.includes('hook_add'));
     assert.ok(names.includes('grant_revoke'));
     assert.ok(names.includes('execution_submit'));
+    assert.ok(names.includes('catalog_search'));
   });
 
   it('fails loudly on duplicate tool names across families', () => {
@@ -105,6 +121,7 @@ describe('session and mutation contract', () => {
     assert.equal(isMutating('workspace.session.commit'), true);
     assert.equal(isMutating('grant_revoke'), true);
     assert.equal(isMutating('config_import'), true);
+    assert.equal(isMutating('catalog_search'), false);
     assert.equal(isMutating('workspace_describe'), false);
     assert.equal(isMutating('navigate'), false);
     assert.equal(isMutating('component_discover'), false);
@@ -262,6 +279,46 @@ describe('W2 dispatch integration', () => {
     assert.equal(undo.status, 'ok');
     assert.deepEqual(undo.restoreOverlayResult.restored, promoted.restoreOverlay);
     assert.equal(JSON.parse(JSON.stringify(undo)).restoreOverlayResult.restored.main.left.ratio, 0.35);
+  });
+});
+
+describe('S4 catalog dispatch integration', () => {
+  it('searches the session config catalog through the composed registry', async () => {
+    let session = createSession({ config: catalogConfig() });
+
+    let result = await dispatch('catalog_search', {
+      capabilities: ['data.table'],
+    }, session, { actor: 'agent-gated' });
+
+    assert.equal(result.status, 'ok');
+    assert.equal(result.hits[0].id, 'acme:data-table');
+    assert.equal(result.hits[0].contributes.summary.tagName, undefined);
+  });
+
+  it('accepts an injected catalog for registry prior-art proof checks', async () => {
+    let session = createSession();
+    let catalog = createCatalog({
+      registry: 'market',
+      registryListings: [{
+        id: 'timeline',
+        version: '1.0.0',
+        contributes: {
+          modules: [{
+            id: 'market:timeline',
+            tagName: 'market-timeline',
+            title: 'Timeline',
+            capabilities: ['video.timeline'],
+          }],
+        },
+      }],
+    });
+
+    let proof = await dispatch('catalog_proof', {
+      capabilities: ['video.timeline'],
+    }, session, { actor: 'agent-gated', catalog });
+
+    assert.equal(proof.kind, 'catalogProof');
+    assert.equal(proof.hits[0].id, 'market:timeline');
   });
 });
 

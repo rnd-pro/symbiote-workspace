@@ -92,6 +92,10 @@ export {
   tools as executionToolDefinitions,
 } from './tools/execution-tools.js';
 export {
+  createCatalogToolFamily,
+  catalogTools,
+} from '../catalog/tools.js';
+export {
   buildToolResultEnvelope,
   parseToolResultEnvelope,
   isToolResultEnvelope,

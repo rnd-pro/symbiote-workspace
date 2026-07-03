@@ -26,6 +26,10 @@
       "import": "./constructor/index.js",
       "default": "./constructor/index.js"
     },
+    "./catalog": {
+      "import": "./catalog/index.js",
+      "default": "./catalog/index.js"
+    },
     "./sharing": {
       "import": "./sharing/index.js",
       "default": "./sharing/index.js"
@@ -68,6 +72,7 @@
     "schema/",
     "loader/",
     "constructor/",
+    "catalog/",
     "sharing/",
     "validation/",
     "plugins/",

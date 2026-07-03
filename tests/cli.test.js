@@ -41,6 +41,7 @@ describe('CLI registry projection', () => {
     assert.match(result.stdout, /module-register/);
     assert.match(result.stdout, /workspace\.session\.snapshot\.list/);
     assert.match(result.stdout, /execution-submit/);
+    assert.match(result.stdout, /catalog-search/);
     assert.doesNotMatch(result.stdout, /add-group/);
 
     for (let tool of TOOLS) {
@@ -107,5 +108,14 @@ describe('CLI registry projection', () => {
     let body = parseJson(result.stdout);
     assert.equal(body.status, 'ok');
     assert.deepEqual(body.snapshots, []);
+  });
+
+  it('runs an S4 catalog search command from the live registry', () => {
+    let result = runCli(['catalog-search', '--capabilities', '["missing.capability"]']);
+
+    assert.equal(result.status, 0, result.stderr);
+    let body = parseJson(result.stdout);
+    assert.equal(body.status, 'ok');
+    assert.deepEqual(body.hits, []);
   });
 });

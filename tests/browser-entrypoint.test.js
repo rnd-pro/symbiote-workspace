@@ -64,13 +64,25 @@ describe('browser entrypoint', () => {
 
     assert.deepEqual(onlyRoot, [
       'TOOLS',
+      'assertCurrentCatalogProof',
       'broadcastDataChange',
+      'catalogProof',
+      'catalogSuggestions',
+      'catalogTools',
+      'createCatalog',
+      'createCatalogToolFamily',
+      'createConfigCatalogSource',
+      'createDevCatalogSource',
+      'createEngineCatalogSource',
+      'createRegistryCatalogSource',
       'createSession',
+      'createStaticCatalogSource',
       'dispatch',
       'isMutating',
       'isMutatingTool',
       'needsConfirm',
       'toolConfirmPolicy',
+      'validateCatalogProof',
     ]);
     assert.deepEqual(onlyBrowser, ['applyWorkspaceTheme', 'mountWorkspace', 'subscribeDataChange']);
   });

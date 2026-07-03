@@ -76,6 +76,21 @@ export {
 } from './validation/index.js';
 
 export {
+  assertCurrentCatalogProof,
+  catalogProof,
+  catalogSuggestions,
+  catalogTools,
+  createCatalog,
+  createCatalogToolFamily,
+  createConfigCatalogSource,
+  createDevCatalogSource,
+  createEngineCatalogSource,
+  createRegistryCatalogSource,
+  createStaticCatalogSource,
+  validateCatalogProof,
+} from './catalog/index.js';
+
+export {
   PLUGIN_SCHEMA,
   validatePluginDefinition,
   validatePluginWorkspaceTemplate,
