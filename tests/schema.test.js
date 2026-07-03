@@ -13,6 +13,20 @@ import {
   validateWorkspaceConfig,
   isCompatibleVersion,
 } from '../schema/index.js';
+import {
+  COLLAPSE_POLICIES,
+  OVERFLOW_POLICIES,
+  RESPONSIVE_MODES,
+  MOBILE_DOCKS,
+  SWIPE_CONTROLS,
+  PANEL_SETTING_TYPES,
+  STATE_FIELD_TYPES,
+  STATE_FIELD_PERSISTENCE,
+  ENGINE_BINDING_SURFACES,
+  ENGINE_NODE_CACHE_MODES,
+  VALIDATION_REPORT_STATUSES,
+  VALIDATION_REPORT_SEVERITIES,
+} from '../schema/value-classes.js';
 
 function fixtureFileUrl(path) {
   return ['file:', '', '', 'tmp', path].join('/');
@@ -46,6 +60,21 @@ describe('schema', () => {
 
   it('exports data binding directions', () => {
     assert.deepEqual(DATA_BINDING_DIRECTIONS, ['input', 'output', 'two-way']);
+  });
+
+  it('exports shared value classes used by schema and validator core', () => {
+    assert.deepEqual(COLLAPSE_POLICIES, ['auto', 'manual', 'never']);
+    assert.ok(OVERFLOW_POLICIES.includes('scroll-inline'));
+    assert.ok(RESPONSIVE_MODES.includes('drawer'));
+    assert.ok(MOBILE_DOCKS.includes('primary'));
+    assert.ok(SWIPE_CONTROLS.includes('edge'));
+    assert.ok(PANEL_SETTING_TYPES.includes('token'));
+    assert.ok(STATE_FIELD_TYPES.includes('json'));
+    assert.deepEqual(STATE_FIELD_PERSISTENCE, ['session', 'workspace', 'ephemeral']);
+    assert.ok(ENGINE_BINDING_SURFACES.includes('action'));
+    assert.ok(ENGINE_NODE_CACHE_MODES.includes('freeze'));
+    assert.deepEqual(VALIDATION_REPORT_STATUSES, ['pass', 'warn', 'blocked']);
+    assert.deepEqual(VALIDATION_REPORT_SEVERITIES, ['info', 'warning', 'error']);
   });
 
   it('exports frozen schema object', () => {

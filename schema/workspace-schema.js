@@ -1,78 +1,43 @@
 import { MODULE_CAPABILITY_DESCRIPTOR_SCHEMA } from './module-capability.js';
+import {
+  WORKSPACE_SCHEMA_VERSION,
+  WORKSPACE_REGISTER_VALUES,
+  EXECUTION_MODELS,
+  HOST_SERVICE_CATEGORIES,
+  COLLAPSE_POLICIES,
+  OVERFLOW_POLICIES,
+  RESPONSIVE_MODES,
+  MOBILE_DOCKS,
+  SWIPE_CONTROLS,
+  DATA_BINDING_DIRECTIONS,
+  PANEL_SETTING_TYPES,
+  STATE_FIELD_TYPES,
+  STATE_FIELD_PERSISTENCE,
+  ENGINE_BINDING_SURFACES,
+  ENGINE_NODE_CACHE_MODES,
+  VALIDATION_REPORT_STATUSES,
+  VALIDATION_REPORT_SEVERITIES,
+} from './value-classes.js';
 
-export const WORKSPACE_SCHEMA_VERSION = '0.2.0';
-
-export const WORKSPACE_REGISTER_VALUES = Object.freeze([
-  'tool',
-  'admin',
-  'editor',
-  'agent-workspace',
-  'media-studio',
-  'brand',
-  'presentation',
-]);
-
-export const EXECUTION_MODELS = Object.freeze([
-  'ui-only',
-  'graph-execution',
-  'server-session',
-  'remote-provider',
-  'mobile-executor',
-  'automation-bridge',
-]);
-
-export const HOST_SERVICE_CATEGORIES = Object.freeze([
-  'agent.runtime',
-  'ai.provider',
-  'clipboard',
-  'file.system',
-  'media.realtime',
-  'network.fetch',
-  'notifications',
-  'presence.session',
-  'selection',
-  'storage.archive',
-  'storage.project',
-]);
-
-/**
- * Collapse policy for panels.
- * - 'auto': system collapses/restores based on available space
- * - 'manual': user toggles, no auto-collapse
- * - 'never': panel cannot be collapsed
- */
-export const COLLAPSE_POLICIES = Object.freeze(['auto', 'manual', 'never']);
-
-/**
- * Overflow policy when collapse is disabled.
- * - 'collapse': fall back to auto-collapse (default)
- * - 'scroll-inline': horizontal scroll
- * - 'scroll-block': vertical scroll
- * - 'scroll': both axes
- */
-export const OVERFLOW_POLICIES = Object.freeze(['collapse', 'scroll-inline', 'scroll-block', 'scroll']);
-
-/**
- * Responsive mode for root layout.
- * - 'preserve': keep BSP layout at all sizes
- * - 'stack': stack panels vertically below breakpoint
- * - 'scroll-inline': horizontal scroll below breakpoint
- * - 'drawer': mobile drawer navigation
- * - 'swipe': swipe between panels
- */
-export const RESPONSIVE_MODES = Object.freeze(['preserve', 'stack', 'scroll-inline', 'drawer', 'swipe']);
-
-/**
- * Mobile drawer dock preference.
- */
-export const MOBILE_DOCKS = Object.freeze(['auto', 'primary', 'start', 'end']);
-
-/**
- * Mobile swipe handle placement.
- */
-export const SWIPE_CONTROLS = Object.freeze(['edge', 'island', 'none']);
-
-export const DATA_BINDING_DIRECTIONS = Object.freeze(['input', 'output', 'two-way']);
+export {
+  WORKSPACE_SCHEMA_VERSION,
+  WORKSPACE_REGISTER_VALUES,
+  EXECUTION_MODELS,
+  HOST_SERVICE_CATEGORIES,
+  COLLAPSE_POLICIES,
+  OVERFLOW_POLICIES,
+  RESPONSIVE_MODES,
+  MOBILE_DOCKS,
+  SWIPE_CONTROLS,
+  DATA_BINDING_DIRECTIONS,
+  PANEL_SETTING_TYPES,
+  STATE_FIELD_TYPES,
+  STATE_FIELD_PERSISTENCE,
+  ENGINE_BINDING_SURFACES,
+  ENGINE_NODE_CACHE_MODES,
+  VALIDATION_REPORT_STATUSES,
+  VALIDATION_REPORT_SEVERITIES,
+};
 
 /** LayoutBehavior sub-schema (matches LayoutTree.js LayoutBehavior typedef) */
 const LAYOUT_BEHAVIOR_SCHEMA = Object.freeze({
@@ -164,7 +129,7 @@ const PANEL_SETTING_SCHEMA = Object.freeze({
     label: { type: 'string', description: 'Displayed setting label.' },
     type: {
       type: 'string',
-      enum: ['string', 'number', 'boolean', 'enum', 'object', 'array', 'color', 'token', 'json'],
+      enum: PANEL_SETTING_TYPES,
       description: 'Portable setting value type.',
     },
     default: { description: 'Default setting value.' },
@@ -278,12 +243,12 @@ const STATE_FIELD_SCHEMA = Object.freeze({
     id: { type: 'string', description: 'Portable state field identifier from the module descriptor.' },
     type: {
       type: 'string',
-      enum: ['string', 'number', 'boolean', 'enum', 'object', 'array', 'color', 'token', 'json'],
+      enum: STATE_FIELD_TYPES,
     },
     default: { description: 'Portable JSON-serializable default state value.' },
     path: { type: 'string', description: 'Portable workspace state path.' },
     schema: { type: 'object', description: 'Optional value schema for the state field.' },
-    persistence: { type: 'string', enum: ['session', 'workspace', 'ephemeral'] },
+    persistence: { type: 'string', enum: STATE_FIELD_PERSISTENCE },
   },
 });
 
@@ -306,7 +271,7 @@ const ENGINE_GRAPH_NODE_SCHEMA = Object.freeze({
     type: { type: 'string', description: 'Portable symbiote-engine node type identifier.' },
     name: { type: 'string', description: 'Optional display name.' },
     params: { type: 'object', description: 'Serializable node parameter defaults.' },
-    cacheMode: { type: 'string', enum: ['auto', 'freeze', 'force'] },
+    cacheMode: { type: 'string', enum: ENGINE_NODE_CACHE_MODES },
   },
 });
 
@@ -343,7 +308,7 @@ const ENGINE_BINDING_SCHEMA = Object.freeze({
     id: { type: 'string', description: 'Portable workspace engine binding identifier.' },
     panelType: { type: 'string', description: 'Panel type that owns the source surface.' },
     component: { type: 'string', description: 'Custom element tag name that declares the source surface.' },
-    surface: { type: 'string', enum: ['action', 'setting', 'state', 'event', 'binding'] },
+    surface: { type: 'string', enum: ENGINE_BINDING_SURFACES },
     sourceId: { type: 'string', description: 'Source action, setting, state field, event, or data binding identifier.' },
     graphId: { type: 'string', description: 'Target engine graph identifier.' },
     nodeId: { type: 'string', description: 'Target engine node identifier.' },
@@ -445,8 +410,8 @@ const VALIDATION_REPORT_SCHEMA = Object.freeze({
     id: { type: 'string' },
     check: { type: 'string' },
     version: { type: 'string' },
-    status: { type: 'string', enum: ['pass', 'warn', 'blocked'] },
-    severity: { type: 'string', enum: ['info', 'warning', 'error'] },
+    status: { type: 'string', enum: VALIDATION_REPORT_STATUSES },
+    severity: { type: 'string', enum: VALIDATION_REPORT_SEVERITIES },
     message: { type: 'string' },
     diagnostics: { type: 'array', items: { type: 'object' } },
     suggestedPatches: { type: 'array', items: { type: 'object' } },
