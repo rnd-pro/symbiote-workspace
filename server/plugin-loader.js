@@ -36,30 +36,33 @@ async function tryLoadEngineRegistry() {
 }
 
 /**
- * Register a plugin's handlers in the engine Registry.
+ * Register a plugin's contributed pack handlers in the engine Registry.
  *
  * @param {import('../plugins/plugin-schema.js').PluginDefinition} plugin
  * @param {{ registerNodeType: function }} registry
  */
 function registerHandlers(plugin, registry) {
-  if (!plugin.handlers?.length) return;
+  let packs = plugin.contributes?.packs;
+  if (!Array.isArray(packs)) return;
 
-  for (let handler of plugin.handlers) {
-    let nodeDef = {
-      type: handler.type,
-      category: handler.category || handler.type.split('/')[0],
-      icon: handler.icon,
-      driver: handler.driver || {},
-    };
+  for (let pack of packs) {
+    for (let handler of pack.handlers || []) {
+      let nodeDef = {
+        type: handler.type,
+        category: handler.category || handler.type.split('/')[0],
+        icon: handler.icon,
+        driver: handler.driver || {},
+      };
 
-    if (handler.lifecycle) {
-      nodeDef.lifecycle = handler.lifecycle;
+      if (handler.lifecycle) {
+        nodeDef.lifecycle = handler.lifecycle;
+      }
+      if (handler.process) {
+        nodeDef.process = handler.process;
+      }
+
+      registry.registerNodeType(nodeDef);
     }
-    if (handler.process) {
-      nodeDef.process = handler.process;
-    }
-
-    registry.registerNodeType(nodeDef);
   }
 }
 
