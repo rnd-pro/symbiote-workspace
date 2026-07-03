@@ -116,13 +116,41 @@ import {
 import {
   applyWorkspacePatch as applyValidatedWorkspacePatch,
 } from './validation/index.js';
+import { WORKSPACE_CONFIG_CHANNEL } from './schema/constants.js';
+import { broadcastDataChange } from './runtime/data-change.js';
+import { createRouter } from './runtime/router-lane.js';
+import { createWorkspaceState } from './runtime/workspace-state.js';
 
 function isObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
+function cloneJson(value) {
+  if (value === undefined) return undefined;
+  if (typeof structuredClone === 'function') return structuredClone(value);
+  return JSON.parse(JSON.stringify(value));
+}
+
 function hasKeys(value) {
   return isObject(value) && Object.keys(value).length > 0;
+}
+
+function isText(value) {
+  return typeof value === 'string' && value.length > 0;
+}
+
+function localizeLabel(value, fallback = '') {
+  if (typeof value === 'string') return value;
+  if (isObject(value)) {
+    if (typeof value.default === 'string') return value.default;
+    if (typeof value.$t === 'string') return value.$t;
+  }
+  return fallback;
+}
+
+function panelCtx(viewId, node) {
+  let id = node?.id || node?.panel || 'panel';
+  return `panel:${viewId || 'workspace'}:${id}`;
 }
 
 function ensureStyleTarget(element, label) {
@@ -238,12 +266,47 @@ function firstLayout(config) {
   return firstNamedLayout || null;
 }
 
-function renderPreviewPanel(config, node, document) {
-  let panel = config.panelTypes?.[node.panelType] || {};
+function routedView(config, router) {
+  let active = router?.getState?.('state:route.view');
+  if (isText(active)) {
+    let matched = (config.views || []).find((view) => view?.id === active);
+    if (matched) return matched;
+  }
+  return (
+    (config.views || []).find((view) => view?.route?.default === true) ||
+    (config.views || []).find((view) => view?.route) ||
+    (config.views || [])[0] ||
+    null
+  );
+}
+
+function viewLayout(config, view) {
+  if (!view) return firstLayout(config);
+  if (isObject(view.layout) && isText(view.layout.$layout)) {
+    return config.layouts?.[view.layout.$layout] || null;
+  }
+  if (isObject(view.layout) && isText(view.layout.kind)) return view.layout;
+  return firstLayout(config);
+}
+
+function panelDefinition(config, node) {
+  if (node.panel && config.panels?.[node.panel]) return config.panels[node.panel];
+  return {};
+}
+
+function panelComponent(panel) {
+  return panel.module || '';
+}
+
+function renderPreviewPanel(config, node, document, viewId = 'workspace') {
+  let panel = panelDefinition(config, node);
   let element = document.createElement('section');
   element.className = 'symbiote-workspace__panel';
-  element.dataset.panelType = node.panelType || 'unknown';
-  if (panel.component) element.dataset.component = panel.component;
+  element.dataset.panel = node.panel || 'unknown';
+  element.dataset.panelId = node.id || node.panel || 'panel';
+  element.setAttribute?.('ctx', panelCtx(viewId, node));
+  let component = panelComponent(panel);
+  if (component) element.dataset.component = component;
   setStyles(element, {
     display: 'flex',
     'flex-direction': 'column',
@@ -258,7 +321,7 @@ function renderPreviewPanel(config, node, document) {
   });
 
   let title = appendTextElement(document, element, 'h2', 'symbiote-workspace__panel-title', (
-    panel.title || node.panelType || 'Panel'
+    localizeLabel(node.title, localizeLabel(panel.title, node.panel || 'Panel'))
   ));
   setStyles(title, {
     margin: '0',
@@ -266,9 +329,9 @@ function renderPreviewPanel(config, node, document) {
     'font-weight': '650',
     'line-height': '1.25',
   });
-  if (panel.component) {
-    let component = appendTextElement(document, element, 'p', 'symbiote-workspace__panel-component', panel.component);
-    setStyles(component, {
+  if (component) {
+    let componentElement = appendTextElement(document, element, 'p', 'symbiote-workspace__panel-component', component);
+    setStyles(componentElement, {
       margin: '0',
       'font-size': '0.8125rem',
       color: 'color-mix(in srgb, currentColor 62%, transparent)',
@@ -309,9 +372,11 @@ function renderPreviewPanel(config, node, document) {
   return element;
 }
 
-function renderPreviewLayout(config, node, document) {
+function renderPreviewLayout(config, node, document, viewId = 'workspace') {
   if (!isObject(node)) return null;
-  if (node.type === 'panel') return renderPreviewPanel(config, node, document);
+  if (node.kind === 'bsp') return renderPreviewLayout(config, node.root, document, viewId);
+  if (node.kind === 'stack' || node.type === 'stack') return renderPreviewStack(config, node, document, viewId);
+  if (node.type === 'panel') return renderPreviewPanel(config, node, document, viewId);
   if (node.type !== 'split') return null;
 
   let element = document.createElement('div');
@@ -331,8 +396,8 @@ function renderPreviewLayout(config, node, document) {
     element.style.setProperty('--symbiote-workspace-preview-ratio', String(node.ratio));
   }
 
-  let first = renderPreviewLayout(config, node.first, document);
-  let second = renderPreviewLayout(config, node.second, document);
+  let first = renderPreviewLayout(config, node.first, document, viewId);
+  let second = renderPreviewLayout(config, node.second, document, viewId);
   if (first) first.style.setProperty('flex', `${Number(node.ratio) || 0.5} 1 0`);
   if (second) second.style.setProperty('flex', `${1 - (Number(node.ratio) || 0.5)} 1 0`);
   if (first) element.appendChild(first);
@@ -340,8 +405,32 @@ function renderPreviewLayout(config, node, document) {
   return element;
 }
 
-function renderDefaultWorkspacePreview(config, wrapper) {
-  let layout = firstLayout(config);
+function renderPreviewStack(config, node, document, viewId) {
+  let element = document.createElement('div');
+  element.className = 'symbiote-workspace__stack';
+  element.dataset.stackId = node.id || 'stack';
+  element.setAttribute?.('ctx', `stack:${viewId || 'workspace'}:${node.id || 'root'}`);
+  setStyles(element, {
+    display: 'flex',
+    width: '100%',
+    height: '100%',
+    'min-width': '0',
+    'min-height': '0',
+  });
+
+  let children = Array.isArray(node.children) ? node.children : [];
+  let active = node.active || children[0]?.id;
+  for (let child of children) {
+    if (active && child.id !== active) continue;
+    let rendered = renderPreviewLayout(config, child, document, viewId);
+    if (rendered) element.appendChild(rendered);
+  }
+  return element;
+}
+
+function renderDefaultWorkspacePreview(config, wrapper, router) {
+  let view = routedView(config, router);
+  let layout = viewLayout(config, view);
   if (!layout) return null;
 
   let document = wrapper.ownerDocument;
@@ -362,7 +451,7 @@ function renderDefaultWorkspacePreview(config, wrapper) {
     'min-height': '24rem',
     'box-sizing': 'border-box',
   });
-  let renderedLayout = renderPreviewLayout(config, layout, document);
+  let renderedLayout = renderPreviewLayout(config, layout, document, view?.id || 'workspace');
   if (renderedLayout) preview.appendChild(renderedLayout);
   wrapper.appendChild(preview);
   return {
@@ -372,9 +461,9 @@ function renderDefaultWorkspacePreview(config, wrapper) {
   };
 }
 
-function updateDefaultWorkspacePreview(config, wrapper, runtimeHandle) {
+function updateDefaultWorkspacePreview(config, wrapper, runtimeHandle, router) {
   if (typeof runtimeHandle?.destroy === 'function') runtimeHandle.destroy();
-  return renderDefaultWorkspacePreview(config, wrapper);
+  return renderDefaultWorkspacePreview(config, wrapper, router);
 }
 
 function resolveRuntimeUpdate(runtimeController, runtimeHandle) {
@@ -393,6 +482,135 @@ function assignMountedState(target, state) {
   target.config = state.config;
   target.loaderResult = state.loaderResult;
   target.theme = state.theme;
+  if (state.router) target.router = state.router;
+  if (state.workspaceState) target.workspaceState = state.workspaceState;
+  if (Number.isInteger(state.revision)) target.revision = state.revision;
+  if (state.lastCommit) target.lastCommit = state.lastCommit;
+}
+
+function normalizeOriginActor(value) {
+  if (value === 'agent-gated' || value === 'system' || value === 'user-direct') return value;
+  if (value === 'agent') return 'agent-gated';
+  if (value === 'daemon') return 'system';
+  return 'user-direct';
+}
+
+function normalizePrincipal(value) {
+  if (isObject(value) && isText(value.kind) && isText(value.id)) return cloneJson(value);
+  return { kind: 'human', id: 'browser-user' };
+}
+
+function originFromOptions(options = {}, reason = 'config-edit') {
+  let principal = normalizePrincipal(options.principal || options.user || options.actorPrincipal);
+  return {
+    principal,
+    actor: normalizeOriginActor(options.originActor || options.actor),
+    reason: isText(options.reason) ? options.reason : reason,
+    sessionId: isText(options.sessionId) ? options.sessionId : 'browser-mount',
+    baseRevision: options.baseRevision,
+  };
+}
+
+function commitOptions(updateOptions = {}, reason) {
+  let origin = originFromOptions(updateOptions, reason);
+  return {
+    principal: origin.principal,
+    actor: origin.actor,
+    baseRevision: updateOptions.baseRevision,
+    reason: origin.reason,
+    confirmId: updateOptions.confirmId,
+  };
+}
+
+function broadcastCommit(updateOptions, result, origin) {
+  if (result.status !== 'ok' || typeof updateOptions.broadcast !== 'function') return null;
+  return broadcastDataChange(updateOptions.broadcast, WORKSPACE_CONFIG_CHANNEL, {
+    revision: result.revision,
+    baseRevision: result.baseRevision,
+    changedPaths: (result.changedPaths || []).map((path) => path || '/'),
+    origin,
+  });
+}
+
+function routerSignature(routerOptions = {}) {
+  return JSON.stringify({
+    mode: routerOptions.mode || 'memory',
+    basePath: routerOptions.basePath || '',
+    mount: routerOptions.mount || routerOptions.mountParams || {},
+  });
+}
+
+function normalizeRouterOptions(raw = {}) {
+  return {
+    mode: raw.mode || 'memory',
+    basePath: raw.basePath || '',
+    mount: raw.mount || raw.mountParams || {},
+    url: raw.url || raw.initialUrl,
+    initial: raw.initial,
+  };
+}
+
+function createWorkspaceRouter(config, options = {}) {
+  let routerOptions = normalizeRouterOptions(options.router || {});
+  let router = createRouter(config, {
+    mode: routerOptions.mode,
+    basePath: routerOptions.basePath,
+    mount: routerOptions.mount,
+    capabilitySnapshot: options.capabilitySnapshot,
+    getGateVerdict: options.getGateVerdict,
+    gateVerdicts: options.gateVerdicts,
+    guardHooks: options.guardHooks,
+    runGuard: options.runGuard,
+    loaders: options.loaders,
+    runLoader: options.runLoader,
+  });
+  let destroyed = false;
+  router.destroy = () => {
+    if (destroyed) return;
+    destroyed = true;
+    router.emit?.('route:destroy', {});
+  };
+  return { router, signature: routerSignature(routerOptions), options: routerOptions };
+}
+
+function initialRouteRequest(config, routerOptions, container) {
+  if (routerOptions.initial === false) return null;
+  if (isText(routerOptions.url)) return { to: { url: routerOptions.url }, history: 'replace', source: 'user' };
+  if (routerOptions.mode !== 'memory' && container?.ownerDocument?.defaultView?.location) {
+    let location = container.ownerDocument.defaultView.location;
+    let url = `${location.pathname || '/'}${location.search || ''}${location.hash || ''}`;
+    return { to: { url }, history: 'replace', source: 'user' };
+  }
+  let view = (config.views || []).find((item) => item?.route?.default === true);
+  if (view?.id) return { to: { view: view.id }, history: 'replace', source: 'user' };
+  return null;
+}
+
+function publishContext(registry, name, value) {
+  if (!registry || value === undefined) return;
+  if (typeof registry.registerCtx === 'function') {
+    registry.registerCtx(name, value);
+  } else if (typeof registry.set === 'function') {
+    registry.set(name, value);
+  } else if (typeof registry.add === 'function') {
+    registry.add(name, value, true);
+  } else if (isObject(registry)) {
+    registry[name] = value;
+  }
+}
+
+function publishMountContexts(config, loaderResult, options = {}) {
+  let registry = options.contextRegistry || options.namedContexts || options.contexts;
+  let payload = { config, loaderResult };
+  publishContext(registry, 'workspace', payload);
+  publishContext(registry, 'narration', config.narration);
+  publishContext(registry, 'enrichment', config.narration?.enrichment || config.enrichment);
+  if (typeof options.publishContext === 'function') {
+    options.publishContext('workspace', payload);
+    if (config.narration !== undefined) options.publishContext('narration', config.narration);
+    let enrichment = config.narration?.enrichment || config.enrichment;
+    if (enrichment !== undefined) options.publishContext('enrichment', enrichment);
+  }
 }
 
 /**
@@ -467,8 +685,7 @@ export function mountWorkspace(config, container, options = {}) {
   }
 
   let loader = options.loader || loadWorkspaceConfig;
-  let currentConfig = config;
-  let loaderResult = loader(currentConfig, {
+  let loaderResult = loader(config, {
     catalog: options.catalog,
     strict: options.strictComponents,
   });
@@ -478,12 +695,20 @@ export function mountWorkspace(config, container, options = {}) {
       .join('; ');
     throw new Error(`mountWorkspace received invalid config: ${message || 'unknown validation error'}`);
   }
+  let currentConfig = loaderResult.config;
+  let workspaceState = options.workspaceState || createWorkspaceState(currentConfig, {
+    revision: Number.isInteger(options.revision) ? options.revision : 0,
+  });
+  let routerBundle = createWorkspaceRouter(currentConfig, options);
+  let router = routerBundle.router;
+  let currentRouterSignature = routerBundle.signature;
 
   let fragment = container.ownerDocument.createDocumentFragment();
   let wrapper = container.ownerDocument.createElement('div');
   wrapper.className = 'symbiote-workspace';
   wrapper.dataset.workspaceName = currentConfig.name || 'workspace';
   wrapper.dataset.workspaceVersion = currentConfig.version || '0.1.0';
+  wrapper.dataset.routerMode = router.mode;
   fragment.appendChild(wrapper);
   container.appendChild(fragment);
 
@@ -492,63 +717,152 @@ export function mountWorkspace(config, container, options = {}) {
     config: currentConfig,
     element: wrapper,
     loaderResult,
+    router,
+    workspaceState,
+    revision: workspaceState.revision,
   });
   if (!runtimeMount && options.renderDefaultPreview !== false) {
-    runtimeHandle = renderDefaultWorkspacePreview(currentConfig, wrapper);
+    runtimeHandle = renderDefaultWorkspacePreview(currentConfig, wrapper, router);
   }
 
   let theme = applyWorkspaceTheme(currentConfig, wrapper, options);
   let writeThemeChanges = options.writeThemeChanges !== false;
   let destroyed = false;
+  let ready = Promise.resolve();
+  let routeUnsubscribe = router.on?.('*', ({ subject }) => {
+    if (destroyed || runtimeMount || options.renderDefaultPreview === false) return;
+    if (subject.startsWith('route:enter:') || subject === 'route:reset') {
+      runtimeHandle = updateDefaultWorkspacePreview(currentConfig, wrapper, runtimeHandle, router);
+    }
+  });
+
+  function validateNextConfig(nextConfig, updateOptions) {
+    let nextLoaderResult = loader(nextConfig, {
+      catalog: updateOptions.catalog || options.catalog,
+      strict: updateOptions.strictComponents ?? options.strictComponents,
+      fragments: updateOptions.fragments || options.fragments,
+      fragmentMap: updateOptions.fragmentMap || options.fragmentMap,
+      fragmentResolver: updateOptions.fragmentResolver || options.fragmentResolver,
+      resolveFragment: updateOptions.resolveFragment || options.resolveFragment,
+      packs: updateOptions.packs || options.packs,
+    });
+    if (!nextLoaderResult?.valid) {
+      let message = (nextLoaderResult?.errors || [])
+        .map((error) => `${error.path}: ${error.message}`)
+        .join('; ');
+      throw new Error(`mountWorkspace updateConfig received invalid config: ${message || 'unknown validation error'}`);
+    }
+    return nextLoaderResult;
+  }
+
+  function maybeResetRouter(nextConfig, updateOptions = {}) {
+    if (!updateOptions.router) return;
+    let nextSignature = routerSignature(normalizeRouterOptions(updateOptions.router));
+    if (nextSignature === currentRouterSignature) return;
+    router.destroy?.();
+    if (typeof routeUnsubscribe === 'function') routeUnsubscribe();
+    let nextBundle = createWorkspaceRouter(nextConfig, { ...options, ...updateOptions });
+    router = nextBundle.router;
+    currentRouterSignature = nextBundle.signature;
+    wrapper.dataset.routerMode = router.mode;
+    routeUnsubscribe = router.on?.('*', ({ subject }) => {
+      if (destroyed || runtimeMount || options.renderDefaultPreview === false) return;
+      if (subject.startsWith('route:enter:') || subject === 'route:reset') {
+        runtimeHandle = updateDefaultWorkspacePreview(currentConfig, wrapper, runtimeHandle, router);
+      }
+    });
+    assignMountedState(mounted, { router });
+  }
+
+  function applyCommittedConfig(nextConfig, nextLoaderResult, updateOptions, commitResult, origin) {
+    maybeResetRouter(nextConfig, updateOptions);
+    let runtimeUpdate = resolveRuntimeUpdate(options.runtimeController, runtimeHandle);
+    if (runtimeUpdate) {
+      runtimeUpdate.fn.call(runtimeUpdate.target, {
+        ...updateOptions,
+        config: nextConfig,
+        previousConfig: currentConfig,
+        element: wrapper,
+        loaderResult: nextLoaderResult,
+        previousLoaderResult: loaderResult,
+        reason: updateOptions.reason || 'updateConfig',
+        router,
+        workspaceState,
+        revision: commitResult.revision,
+        commit: commitResult,
+        origin,
+      });
+    } else if (!runtimeMount && options.renderDefaultPreview !== false) {
+      runtimeHandle = updateDefaultWorkspacePreview(nextConfig, wrapper, runtimeHandle, router);
+    } else if (runtimeMount) {
+      if (typeof runtimeHandle?.destroy === 'function') runtimeHandle.destroy();
+      runtimeHandle = runtimeMount.call(options.runtimeController, {
+        config: nextConfig,
+        element: wrapper,
+        loaderResult: nextLoaderResult,
+        router,
+        workspaceState,
+        revision: commitResult.revision,
+      });
+    }
+
+    currentConfig = nextConfig;
+    loaderResult = nextLoaderResult;
+    wrapper.dataset.workspaceName = currentConfig.name || 'workspace';
+    wrapper.dataset.workspaceVersion = currentConfig.version || '0.1.0';
+    theme = applyWorkspaceTheme(currentConfig, wrapper, options);
+    publishMountContexts(currentConfig, loaderResult, options);
+    assignMountedState(mounted, {
+      config: currentConfig,
+      loaderResult,
+      theme,
+      router,
+      workspaceState,
+      revision: workspaceState.revision,
+      lastCommit: commitResult,
+    });
+    return mounted;
+  }
+
+  function commitNextConfig(nextConfig, updateOptions, reason) {
+    let mergedOptions = {
+      ...options,
+      ...updateOptions,
+      broadcast: updateOptions.broadcast || options.broadcast,
+      reason,
+    };
+    let origin = originFromOptions(mergedOptions, reason);
+    let result = workspaceState.commit([
+      { op: 'replace', path: '/', value: nextConfig },
+    ], commitOptions(mergedOptions, reason));
+    let commitResult = isObject(result) ? { ...result, reason: origin.reason, origin } : result;
+    if (result.status !== 'ok') {
+      assignMountedState(mounted, { lastCommit: commitResult, revision: workspaceState.revision });
+      return { result: commitResult, origin, accepted: false };
+    }
+    let committedConfig = workspaceState.config;
+    origin.baseRevision = result.baseRevision;
+    broadcastCommit(mergedOptions, commitResult, origin);
+    return { result: commitResult, origin, config: committedConfig, accepted: true };
+  }
+
   let mounted = {
     element: wrapper,
     config: currentConfig,
     loaderResult,
     theme,
+    router,
+    workspaceState,
+    revision: workspaceState.revision,
+    ready,
     updateConfig(nextConfig, updateOptions = {}) {
       if (destroyed) {
         throw new Error('mountWorkspace updateConfig() called after destroy().');
       }
-      let nextLoaderResult = loader(nextConfig, {
-        catalog: updateOptions.catalog || options.catalog,
-        strict: updateOptions.strictComponents ?? options.strictComponents,
-      });
-      if (!nextLoaderResult?.valid) {
-        let message = (nextLoaderResult?.errors || [])
-          .map((error) => `${error.path}: ${error.message}`)
-          .join('; ');
-        throw new Error(`mountWorkspace updateConfig received invalid config: ${message || 'unknown validation error'}`);
-      }
-
-      let runtimeUpdate = resolveRuntimeUpdate(options.runtimeController, runtimeHandle);
-      if (runtimeUpdate) {
-        runtimeUpdate.fn.call(runtimeUpdate.target, {
-          ...updateOptions,
-          config: nextConfig,
-          previousConfig: currentConfig,
-          element: wrapper,
-          loaderResult: nextLoaderResult,
-          previousLoaderResult: loaderResult,
-          reason: updateOptions.reason || 'updateConfig',
-        });
-      } else if (!runtimeMount && options.renderDefaultPreview !== false) {
-        runtimeHandle = updateDefaultWorkspacePreview(nextConfig, wrapper, runtimeHandle);
-      } else if (runtimeMount) {
-        if (typeof runtimeHandle?.destroy === 'function') runtimeHandle.destroy();
-        runtimeHandle = runtimeMount.call(options.runtimeController, {
-          config: nextConfig,
-          element: wrapper,
-          loaderResult: nextLoaderResult,
-        });
-      }
-
-      currentConfig = nextConfig;
-      loaderResult = nextLoaderResult;
-      wrapper.dataset.workspaceName = currentConfig.name || 'workspace';
-      wrapper.dataset.workspaceVersion = currentConfig.version || '0.1.0';
-      theme = applyWorkspaceTheme(currentConfig, wrapper, options);
-      assignMountedState(mounted, { config: currentConfig, loaderResult, theme });
-      return mounted;
+      let nextLoaderResult = validateNextConfig(nextConfig, updateOptions);
+      let committed = commitNextConfig(nextLoaderResult.config, updateOptions, updateOptions.reason || 'updateConfig');
+      if (!committed.accepted) return { ...committed.result, mounted };
+      return applyCommittedConfig(committed.config, nextLoaderResult, updateOptions, committed.result, committed.origin);
     },
     async applyPatch(patch, patchOptions = {}) {
       if (destroyed) {
@@ -560,12 +874,14 @@ export function mountWorkspace(config, container, options = {}) {
         error.report = result;
         throw error;
       }
-      mounted.updateConfig(result.config, {
+      let updateResult = mounted.updateConfig(result.config, {
         ...patchOptions,
         reason: patchOptions.reason || 'applyPatch',
       });
       return {
         ...result,
+        commit: mounted.lastCommit,
+        update: updateResult,
         mounted,
       };
     },
@@ -573,6 +889,8 @@ export function mountWorkspace(config, container, options = {}) {
       if (destroyed) return;
       destroyed = true;
       wrapper.removeEventListener('cascade-theme-change', onThemeChange);
+      if (typeof routeUnsubscribe === 'function') routeUnsubscribe();
+      router.destroy?.();
       if (typeof runtimeHandle?.destroy === 'function') runtimeHandle.destroy();
       wrapper.remove();
     },
@@ -580,9 +898,18 @@ export function mountWorkspace(config, container, options = {}) {
   let onThemeChange = (event) => {
     let detail = event.detail || {};
     if (writeThemeChanges) {
-      updateThemeParams(currentConfig, detail.state, detail.targetSelector);
-      theme = applyWorkspaceTheme(currentConfig, wrapper, options);
-      assignMountedState(mounted, { config: currentConfig, loaderResult, theme });
+      let nextConfig = cloneJson(currentConfig);
+      updateThemeParams(nextConfig, detail.state, detail.targetSelector);
+      let nextLoaderResult = validateNextConfig(nextConfig, {
+        baseRevision: workspaceState.revision,
+      });
+      let committed = commitNextConfig(nextLoaderResult.config, {
+        baseRevision: workspaceState.revision,
+        reason: 'themeChange',
+      }, 'themeChange');
+      if (committed.accepted) {
+        applyCommittedConfig(committed.config, nextLoaderResult, {}, committed.result, committed.origin);
+      }
     }
     options.onThemeChange?.({
       config: currentConfig,
@@ -593,6 +920,19 @@ export function mountWorkspace(config, container, options = {}) {
     });
   };
   wrapper.addEventListener('cascade-theme-change', onThemeChange);
+  publishMountContexts(currentConfig, loaderResult, options);
+
+  let initial = initialRouteRequest(currentConfig, routerBundle.options, container);
+  if (initial) {
+    ready = router.navigate(initial)
+      .then((result) => {
+        if (!destroyed && !runtimeMount && options.renderDefaultPreview !== false) {
+          runtimeHandle = updateDefaultWorkspacePreview(currentConfig, wrapper, runtimeHandle, router);
+        }
+        return result;
+      });
+    mounted.ready = ready;
+  }
 
   return mounted;
 }

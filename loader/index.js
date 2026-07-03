@@ -1,5 +1,7 @@
 export {
+  computeFragmentIntegrity,
   loadWorkspaceConfig,
+  resolveWorkspaceFragments,
   extractThemeParams,
   extractThemeRelations,
   extractThemeOverrides,

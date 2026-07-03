@@ -12,9 +12,7 @@ function collectStaticSpecifiers(source) {
     /^\s*export\s+(?:\*|\{[^}]*\})\s+from\s+['"]([^'"]+)['"]/gm,
   ];
   for (let pattern of patterns) {
-    for (let match of source.matchAll(pattern)) {
-      specifiers.push(match[1]);
-    }
+    for (let match of source.matchAll(pattern)) specifiers.push(match[1]);
   }
   return specifiers;
 }
@@ -49,6 +47,15 @@ describe('browser entrypoint', () => {
     assert.deepEqual(nodeImports, []);
   });
 
+  it('imports in Node without requiring DOM globals at module load', async () => {
+    let before = globalThis.document;
+    let browser = await import('../browser.js');
+
+    assert.equal(globalThis.document, before);
+    assert.equal(typeof browser.mountWorkspace, 'function');
+    assert.equal(typeof browser.applyWorkspaceTheme, 'function');
+  });
+
   it('differs from the root entrypoint only by intentional runtime and DOM APIs', async () => {
     let root = await import('../index.js');
     let browser = await import('../browser.js');
@@ -66,5 +73,10 @@ describe('browser entrypoint', () => {
       'toolConfirmPolicy',
     ]);
     assert.deepEqual(onlyBrowser, ['applyWorkspaceTheme', 'mountWorkspace', 'subscribeDataChange']);
+  });
+
+  it('keeps mountWorkspace as an explicit DOM contract', async () => {
+    let { mountWorkspace } = await import('../browser.js');
+    assert.throws(() => mountWorkspace({ version: '1.0.0', name: 'X' }, null), /DOM container/);
   });
 });

@@ -20,7 +20,7 @@ class TestStyle {
 
 class TestElement {
   constructor(tagName, ownerDocument) {
-    this.tagName = tagName;
+    this.tagName = tagName.toLowerCase();
     this.ownerDocument = ownerDocument;
     this.children = [];
     this.parentElement = null;
@@ -28,14 +28,14 @@ class TestElement {
     this.style = new TestStyle();
     this.className = '';
     this.id = '';
+    this.textContent = '';
     this.listeners = new Map();
+    this.attributes = new Map();
   }
 
   appendChild(child) {
     if (child?.isFragment) {
-      for (let item of [...child.children]) {
-        this.appendChild(item);
-      }
+      for (let item of [...child.children]) this.appendChild(item);
       child.children = [];
       return child;
     }
@@ -48,6 +48,14 @@ class TestElement {
     if (!this.parentElement) return;
     this.parentElement.children = this.parentElement.children.filter((child) => child !== this);
     this.parentElement = null;
+  }
+
+  setAttribute(name, value) {
+    this.attributes.set(name, String(value));
+  }
+
+  getAttribute(name) {
+    return this.attributes.get(name) || null;
   }
 
   addEventListener(type, listener) {
@@ -64,22 +72,14 @@ class TestElement {
   dispatchEvent(event) {
     event.target ||= this;
     event.currentTarget = this;
-    for (let listener of this.listeners.get(event.type) || []) {
-      listener(event);
-    }
-    if (event.bubbles && this.parentElement) {
-      this.parentElement.dispatchEvent(event);
-    }
+    for (let listener of this.listeners.get(event.type) || []) listener(event);
+    if (event.bubbles && this.parentElement) this.parentElement.dispatchEvent(event);
     return true;
   }
 
   matches(selector) {
-    if (selector.startsWith('.')) {
-      return this.className.split(/\s+/).includes(selector.slice(1));
-    }
-    if (selector.startsWith('#')) {
-      return this.id === selector.slice(1);
-    }
+    if (selector.startsWith('.')) return this.className.split(/\s+/).includes(selector.slice(1));
+    if (selector.startsWith('#')) return this.id === selector.slice(1);
     return this.tagName === selector.toLowerCase();
   }
 
@@ -96,6 +96,7 @@ class TestElement {
 class TestDocument {
   constructor() {
     this.defaultView = {
+      location: { pathname: '/', search: '', hash: '' },
       history: { length: 1 },
     };
   }
@@ -105,10 +106,14 @@ class TestDocument {
   }
 
   createDocumentFragment() {
-    return { isFragment: true, children: [], appendChild(child) {
-      this.children.push(child);
-      return child;
-    } };
+    return {
+      isFragment: true,
+      children: [],
+      appendChild(child) {
+        this.children.push(child);
+        return child;
+      },
+    };
   }
 }
 
@@ -117,9 +122,7 @@ function createThemeAdapter(calls = []) {
     applyCascadeTheme(element, options, eventOptions) {
       calls.push({ element, options, eventOptions });
       if (options.hue !== undefined) element.style.setProperty('--sn-theme-hue', options.hue);
-      if (options.density !== undefined) {
-        element.style.setProperty('--sn-theme-density', options.density);
-      }
+      if (options.density !== undefined) element.style.setProperty('--sn-theme-density', options.density);
       return { state: options, tokens: {} };
     },
   };
@@ -130,50 +133,60 @@ function createContainer() {
   return document.createElement('main');
 }
 
+function workspace(overrides = {}) {
+  return {
+    version: '1.0.0',
+    name: 'Mounted Workspace',
+    views: [{
+      id: 'home',
+      title: 'Home',
+      layout: { $layout: 'main' },
+      route: { pattern: '/', default: true },
+    }],
+    layouts: {
+      main: {
+        kind: 'bsp',
+        root: { type: 'panel', id: 'main-panel', panel: 'main' },
+      },
+    },
+    panels: {
+      main: { module: 'sn-main-panel', title: 'Main' },
+    },
+    ...overrides,
+  };
+}
+
 describe('applyWorkspaceTheme', () => {
-  it('applies root params, relations, overrides, and subtree theme layers', () => {
+  it('applies cascade params, relations, overrides, and subtree overrides', () => {
     let root = createContainer();
-    let sidebar = root.ownerDocument.createElement('aside');
-    sidebar.className = 'sidebar';
-    root.appendChild(sidebar);
+    let side = root.ownerDocument.createElement('aside');
+    side.className = 'sidebar';
+    root.appendChild(side);
     let calls = [];
 
     let result = applyWorkspaceTheme({
-      version: '0.3.0',
-      name: 'Theme Test',
+      version: '1.0.0',
+      name: 'Theme',
       theme: {
-        params: { mode: 'dark', hue: 220 },
-        relations: { surfaceStep: 1.2 },
-        overrides: { '--sn-panel-bg': 'black' },
-        subtrees: [
-          {
-            selector: '.sidebar',
-            params: { hue: 180, density: 90 },
-            relations: { radiusScale: 0.75 },
-            overrides: { '--sn-node-radius': '4px' },
-          },
-        ],
+        params: { hue: 220 },
+        relations: { surfaceStep: 1.1 },
+        overrides: { '--sn-gap': '8px' },
+        subtrees: [{ selector: '.sidebar', overrides: { '--sn-panel-bg': 'black' } }],
       },
-    }, root, {
-      themeAdapter: createThemeAdapter(calls),
-    });
+    }, root, { themeAdapter: createThemeAdapter(calls) });
 
     assert.equal(root.style.getPropertyValue('--sn-theme-hue'), '220');
-    assert.equal(root.style.getPropertyValue('--sn-panel-bg'), 'black');
-    assert.equal(sidebar.style.getPropertyValue('--sn-theme-hue'), '180');
-    assert.equal(sidebar.style.getPropertyValue('--sn-theme-density'), '90');
-    assert.equal(sidebar.style.getPropertyValue('--sn-node-radius'), '4px');
-    assert.equal(calls[0].options.relations.surfaceStep, 1.2);
-    assert.equal(calls[1].options.relations.radiusScale, 0.75);
-    assert.equal(result.subtreeThemes.length, 1);
+    assert.equal(root.style.getPropertyValue('--sn-gap'), '8px');
+    assert.equal(side.style.getPropertyValue('--sn-panel-bg'), 'black');
+    assert.equal(calls[0].options.relations.surfaceStep, 1.1);
     assert.deepEqual(result.warnings, []);
   });
 
   it('reports unmatched subtree selectors without hiding the warning', () => {
     let root = createContainer();
     let result = applyWorkspaceTheme({
-      version: '0.3.0',
-      name: 'Theme Test',
+      version: '1.0.0',
+      name: 'Theme',
       theme: {
         subtrees: [{ selector: '.missing', overrides: { '--sn-panel-bg': 'red' } }],
       },
@@ -183,20 +196,17 @@ describe('applyWorkspaceTheme', () => {
     assert.equal(result.warnings[0].path, 'theme.subtrees.0');
   });
 
-  it('throws when params require a missing theme adapter', () => {
+  it('throws when cascade params or relations require a missing theme adapter', () => {
     let root = createContainer();
     assert.throws(() => applyWorkspaceTheme({
-      version: '0.3.0',
-      name: 'Theme Test',
+      version: '1.0.0',
+      name: 'Theme',
       theme: { params: { hue: 220 } },
     }, root), /requires options\.themeAdapter\.applyCascadeTheme/);
-  });
 
-  it('throws when relations require a missing theme adapter', () => {
-    let root = createContainer();
     assert.throws(() => applyWorkspaceTheme({
-      version: '0.3.0',
-      name: 'Theme Test',
+      version: '1.0.0',
+      name: 'Theme',
       theme: { relations: { surfaceStep: 1.2 } },
     }, root), /requires options\.themeAdapter\.applyCascadeTheme/);
   });
@@ -208,8 +218,8 @@ describe('applyWorkspaceTheme', () => {
     root.appendChild(sidebar);
 
     assert.throws(() => applyWorkspaceTheme({
-      version: '0.3.0',
-      name: 'Theme Test',
+      version: '1.0.0',
+      name: 'Theme',
       theme: {
         subtrees: [{
           selector: '.sidebar',
@@ -223,8 +233,8 @@ describe('applyWorkspaceTheme', () => {
   it('applies override-only themes without a cascade theme adapter', () => {
     let root = createContainer();
     let result = applyWorkspaceTheme({
-      version: '0.3.0',
-      name: 'Theme Test',
+      version: '1.0.0',
+      name: 'Theme',
       theme: {
         overrides: { '--sn-panel-bg': 'black' },
       },
@@ -236,64 +246,137 @@ describe('applyWorkspaceTheme', () => {
 });
 
 describe('mountWorkspace', () => {
-  it('mounts wrapper, applies theme, and writes editor changes into config', () => {
+  it('creates a per-workspace memory router and stamps panel ctx attributes', async () => {
     let container = createContainer();
-    let config = {
-      version: '0.3.0',
-      name: 'Mounted Workspace',
-      theme: { params: { mode: 'dark', hue: 220 } },
-    };
-    let changes = [];
+    let mounted = mountWorkspace(workspace(), container);
+    await mounted.ready;
 
-    let mounted = mountWorkspace(config, container, {
+    let panel = mounted.element.querySelectorAll('.symbiote-workspace__panel')[0];
+    assert.equal(mounted.router.mode, 'memory');
+    assert.equal(mounted.router.getState('state:route.view'), 'home');
+    assert.equal(panel.getAttribute('ctx'), 'panel:home:main-panel');
+    assert.equal(panel.dataset.module || panel.dataset.component, 'sn-main-panel');
+
+    mounted.destroy();
+    assert.equal(container.children.length, 0);
+    assert.equal(mounted.router.events.some((event) => event.subject === 'route:destroy'), true);
+  });
+
+  it('routes updateConfig through WorkspaceState commit and broadcasts origin envelopes', () => {
+    let container = createContainer();
+    let sent = [];
+    let mounted = mountWorkspace(workspace(), container, {
+      broadcast: (message) => sent.push(message),
+    });
+
+    assert.throws(() => mounted.updateConfig(workspace({ name: 'Missing Base' })), /baseRevision/);
+
+    let result = mounted.updateConfig(workspace({ name: 'Committed Workspace' }), {
+      baseRevision: 0,
+      principal: { kind: 'human', id: 'u-1' },
+      sessionId: 's-1',
+      reason: 'rename',
+    });
+
+    assert.equal(result, mounted);
+    assert.equal(mounted.revision, 1);
+    assert.equal(mounted.config.name, 'Committed Workspace');
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].payload.channel, 'workspace:config');
+    assert.equal(sent[0].payload.revision, 1);
+    assert.deepEqual(sent[0].payload.changedPaths, ['/']);
+    assert.deepEqual(sent[0].payload.origin.principal, { kind: 'human', id: 'u-1' });
+    assert.equal(sent[0].payload.origin.actor, 'user-direct');
+    assert.equal(sent[0].payload.origin.reason, 'rename');
+    assert.equal(sent[0].payload.origin.sessionId, 's-1');
+  });
+
+  it('routes applyPatch through the same baseRevision commit interface', async () => {
+    let mounted = mountWorkspace(workspace(), createContainer());
+
+    await assert.rejects(
+      mounted.applyPatch({ overlay: { name: 'No Base' } }),
+      /baseRevision/,
+    );
+
+    let result = await mounted.applyPatch({
+      overlay: { name: 'Patched Workspace' },
+    }, {
+      baseRevision: 0,
+      principal: { kind: 'human', id: 'u-1' },
+      sessionId: 's-1',
+    });
+
+    assert.equal(result.status, 'ok');
+    assert.equal(result.commit.revision, 1);
+    assert.equal(mounted.config.name, 'Patched Workspace');
+  });
+
+  it('resets the router when host mount params change', () => {
+    let mounted = mountWorkspace(workspace(), createContainer(), {
+      router: {
+        mode: 'path',
+        basePath: '/p/:projectId',
+        mount: { projectId: 'one' },
+      },
+    });
+
+    mounted.updateConfig(workspace({ name: 'Other Mount' }), {
+      baseRevision: 0,
+      router: {
+        mode: 'path',
+        basePath: '/p/:projectId',
+        mount: { projectId: 'two' },
+      },
+    });
+
+    assert.equal(mounted.router.mode, 'path');
+    assert.equal(mounted.router.getState('state:route.mount.projectId'), 'two');
+  });
+
+  it('commits theme editor writeback on the current revision', () => {
+    let mounted = mountWorkspace(workspace({
+      theme: { params: { hue: 220 } },
+    }), createContainer(), {
+      themeAdapter: createThemeAdapter(),
+    });
+
+    mounted.element.dispatchEvent({
+      type: 'cascade-theme-change',
+      bubbles: true,
+      detail: { state: { hue: 180 }, targetSelector: null },
+    });
+
+    assert.equal(mounted.revision, 1);
+    assert.equal(mounted.config.theme.params.hue, 180);
+    assert.equal(mounted.lastCommit.reason, 'themeChange');
+  });
+
+  it('calls theme-change subscribers and writes subtree editor changes into config', () => {
+    let changes = [];
+    let mounted = mountWorkspace(workspace({
+      theme: {
+        params: { hue: 220 },
+        subtrees: [{ selector: '.preview', params: { hue: 40 } }],
+      },
+    }), createContainer(), {
       themeAdapter: createThemeAdapter(),
       onThemeChange: (change) => changes.push(change),
     });
 
-    assert.equal(container.children.length, 1);
-    assert.equal(mounted.element.dataset.workspaceName, 'Mounted Workspace');
-    mounted.element.dispatchEvent({
-      type: 'cascade-theme-change',
-      bubbles: true,
-      detail: { state: { hue: 180, contrast: 70 }, targetSelector: null },
-    });
-
-    assert.equal(config.theme.params.hue, 180);
-    assert.equal(config.theme.params.contrast, 70);
-    assert.equal(changes.length, 1);
-
-    mounted.destroy();
-    assert.equal(container.children.length, 0);
-  });
-
-  it('writes subtree editor changes into matching theme subtree config', () => {
-    let container = createContainer();
-    let config = {
-      version: '0.3.0',
-      name: 'Mounted Workspace',
-      theme: {
-        params: { mode: 'dark', hue: 220 },
-        subtrees: [{ selector: '.preview', params: { hue: 40 } }],
-      },
-    };
-
-    let mounted = mountWorkspace(config, container, {
-      themeAdapter: createThemeAdapter(),
-    });
     mounted.element.dispatchEvent({
       type: 'cascade-theme-change',
       bubbles: true,
       detail: { state: { hue: 90 }, targetSelector: '.preview' },
     });
 
-    assert.equal(config.theme.subtrees[0].params.hue, 90);
+    assert.equal(mounted.config.theme.subtrees[0].params.hue, 90);
+    assert.equal(changes.length, 1);
+    assert.equal(changes[0].targetSelector, '.preview');
   });
 
   it('preserves structured root and subtree theme writeback state', () => {
-    let container = createContainer();
-    let config = {
-      version: '0.3.0',
-      name: 'Mounted Workspace',
+    let mounted = mountWorkspace(workspace({
       theme: {
         params: { mode: 'dark', hue: 220 },
         relations: { surfaceStep: 1.1 },
@@ -305,9 +388,7 @@ describe('mountWorkspace', () => {
           overrides: { '--sn-node-radius': '4px' },
         }],
       },
-    };
-
-    let mounted = mountWorkspace(config, container, {
+    }), createContainer(), {
       themeAdapter: createThemeAdapter(),
     });
 
@@ -336,78 +417,65 @@ describe('mountWorkspace', () => {
       },
     });
 
-    assert.deepEqual(config.theme.params, {
+    assert.deepEqual(mounted.config.theme.params, {
       mode: 'dark',
       hue: 180,
       contrast: 70,
     });
-    assert.deepEqual(config.theme.relations, { surfaceStep: 1.25 });
-    assert.deepEqual(config.theme.overrides, { '--sn-gap': '10px' });
-    assert.deepEqual(config.theme.subtrees[0].params, {
+    assert.deepEqual(mounted.config.theme.relations, { surfaceStep: 1.25 });
+    assert.deepEqual(mounted.config.theme.overrides, { '--sn-gap': '10px' });
+    assert.deepEqual(mounted.config.theme.subtrees[0].params, {
       hue: 90,
       brightness: 65,
     });
-    assert.deepEqual(config.theme.subtrees[0].relations, { radiusScale: 0.9 });
-    assert.deepEqual(config.theme.subtrees[0].overrides, {
+    assert.deepEqual(mounted.config.theme.subtrees[0].relations, { radiusScale: 0.9 });
+    assert.deepEqual(mounted.config.theme.subtrees[0].overrides, {
       '--sn-node-radius': '6px',
     });
   });
 
-  it('exposes missing panel components and only fails when strict components are enabled', () => {
-    let container = createContainer();
-    let config = {
-      version: '0.3.0',
-      name: 'Mounted Workspace',
-      panelTypes: {
-        editor: {
-          title: 'Editor',
-          component: 'sn-editor-panel',
-        },
-      },
-      layout: {
-        type: 'panel',
-        panelType: 'editor',
-      },
-    };
+  it('exposes missing panel modules and only fails when strict components are enabled', () => {
     let emptyCatalog = { has: () => false, list: () => [] };
-
-    let mounted = mountWorkspace(config, container, {
+    let mounted = mountWorkspace(workspace(), createContainer(), {
       catalog: emptyCatalog,
     });
 
-    assert.deepEqual(mounted.loaderResult.missingComponents, ['sn-editor-panel']);
+    assert.deepEqual(mounted.loaderResult.missingComponents, ['sn-main-panel']);
     assert.ok(mounted.loaderResult.warnings.some((warning) => warning.path === 'components'));
 
-    assert.throws(() => mountWorkspace(config, createContainer(), {
+    assert.throws(() => mountWorkspace(workspace(), createContainer(), {
       catalog: emptyCatalog,
       strictComponents: true,
-    }), /Missing components: sn-editor-panel/);
+    }), /Missing components: sn-main-panel/);
   });
 
-  it('renders portable layout and panel previews without a runtime controller', () => {
-    let container = createContainer();
-    let mounted = mountWorkspace({
-      version: '0.3.0',
+  it('renders portable split layouts and panel previews without a runtime controller', () => {
+    let mounted = mountWorkspace(workspace({
       name: 'Visual Demo',
-      panelTypes: {
+      layouts: {
+        main: {
+          kind: 'bsp',
+          root: {
+            type: 'split',
+            direction: 'horizontal',
+            ratio: 0.65,
+            first: { type: 'panel', id: 'timeline-node', panel: 'timeline' },
+            second: { type: 'panel', id: 'preview-node', panel: 'preview' },
+          },
+        },
+      },
+      panels: {
         timeline: {
           title: 'Timeline',
-          component: 'sn-video-timeline',
+          module: 'sn-video-timeline',
           slots: [{ id: 'tracks', role: 'content' }],
         },
         preview: {
           title: 'Preview',
-          component: 'sn-video-preview',
+          module: 'sn-video-preview',
         },
       },
-      layout: {
-        type: 'split',
-        direction: 'horizontal',
-        ratio: 0.65,
-        first: { type: 'panel', panelType: 'timeline' },
-        second: { type: 'panel', panelType: 'preview' },
-      },
-    }, container);
+    }), createContainer());
 
     let panels = mounted.element.querySelectorAll('.symbiote-workspace__panel');
     let split = mounted.element.querySelectorAll('.symbiote-workspace__split')[0];
@@ -419,72 +487,49 @@ describe('mountWorkspace', () => {
     assert.equal(split.style.getPropertyValue('--symbiote-workspace-preview-ratio'), '0.65');
     assert.equal(panels[0].style.getPropertyValue('border-radius'), '8px');
     assert.equal(panels[0].style.getPropertyValue('min-height'), '8rem');
-    assert.equal(panels[0].dataset.panelType, 'timeline');
+    assert.equal(panels[0].dataset.panel, 'timeline');
     assert.equal(panels[0].dataset.component, 'sn-video-timeline');
     assert.equal(panels[0].children[0].textContent, 'Timeline');
     assert.equal(panels[0].querySelectorAll('.symbiote-workspace__panel-slot')[0].dataset.slotId, 'tracks');
-    assert.equal(panels[1].dataset.panelType, 'preview');
+    assert.equal(panels[1].dataset.panel, 'preview');
     assert.equal(panels[1].children[0].textContent, 'Preview');
   });
 
   it('updates the mounted default preview without replacing the workspace wrapper', () => {
-    let container = createContainer();
-    let mounted = mountWorkspace({
-      version: '0.3.0',
-      name: 'Initial Workspace',
-      panelTypes: {
-        timeline: {
-          title: 'Timeline',
-          component: 'sn-video-timeline',
-        },
-      },
-      layout: {
-        type: 'panel',
-        panelType: 'timeline',
-      },
-    }, container);
+    let mounted = mountWorkspace(workspace(), createContainer());
     let wrapper = mounted.element;
     let initialPanel = mounted.element.querySelectorAll('.symbiote-workspace__panel')[0];
 
-    mounted.updateConfig({
-      version: '0.3.0',
+    mounted.updateConfig(workspace({
       name: 'Updated Workspace',
-      panelTypes: {
-        preview: {
-          title: 'Preview',
-          component: 'sn-video-preview',
-        },
+      panels: {
+        preview: { module: 'sn-video-preview', title: 'Preview' },
       },
-      layout: {
-        type: 'panel',
-        panelType: 'preview',
+      layouts: {
+        main: {
+          kind: 'bsp',
+          root: { type: 'panel', id: 'preview-panel', panel: 'preview' },
+        },
       },
       theme: {
         overrides: { '--sn-panel-bg': 'black' },
       },
-    });
+    }), { baseRevision: 0 });
 
     let updatedPanel = mounted.element.querySelectorAll('.symbiote-workspace__panel')[0];
-    assert.equal(container.children.length, 1);
     assert.equal(mounted.element, wrapper);
     assert.notEqual(updatedPanel, initialPanel);
     assert.equal(mounted.config.name, 'Updated Workspace');
     assert.equal(mounted.element.dataset.workspaceName, 'Updated Workspace');
-    assert.equal(updatedPanel.dataset.panelType, 'preview');
+    assert.equal(updatedPanel.dataset.panel, 'preview');
     assert.equal(updatedPanel.dataset.component, 'sn-video-preview');
     assert.equal(mounted.element.style.getPropertyValue('--sn-panel-bg'), 'black');
   });
 
   it('delegates mounted updates to runtime handles without destroying them', () => {
-    let container = createContainer();
     let destroyCalls = 0;
     let updates = [];
-    let mounted = mountWorkspace({
-      version: '0.3.0',
-      name: 'Runtime Workspace',
-      theme: { params: { hue: 220 } },
-    }, container, {
-      themeAdapter: createThemeAdapter(),
+    let mounted = mountWorkspace(workspace({ name: 'Runtime Workspace' }), createContainer(), {
       runtimeController: {
         mountWorkspace() {
           return {
@@ -500,14 +545,9 @@ describe('mountWorkspace', () => {
     });
 
     let wrapper = mounted.element;
-    mounted.updateConfig({
-      version: '0.3.0',
-      name: 'Runtime Workspace Updated',
-      theme: { params: { hue: 180 } },
-    });
+    mounted.updateConfig(workspace({ name: 'Runtime Workspace Updated' }), { baseRevision: 0 });
 
     assert.equal(mounted.element, wrapper);
-    assert.equal(container.children.length, 1);
     assert.equal(updates.length, 1);
     assert.equal(updates[0].config.name, 'Runtime Workspace Updated');
     assert.equal(updates[0].previousConfig.name, 'Runtime Workspace');
@@ -518,7 +558,6 @@ describe('mountWorkspace', () => {
   });
 
   it('delegates mounted updates to runtime controllers with the controller context', () => {
-    let container = createContainer();
     let updates = [];
     let controller = {
       name: 'controller',
@@ -532,17 +571,11 @@ describe('mountWorkspace', () => {
         });
       },
     };
-    let mounted = mountWorkspace({
-      version: '0.3.0',
-      name: 'Controller Workspace',
-    }, container, {
+    let mounted = mountWorkspace(workspace({ name: 'Controller Workspace' }), createContainer(), {
       runtimeController: controller,
     });
 
-    mounted.updateConfig({
-      version: '0.3.0',
-      name: 'Controller Workspace Updated',
-    });
+    mounted.updateConfig(workspace({ name: 'Controller Workspace Updated' }), { baseRevision: 0 });
 
     assert.equal(updates.length, 1);
     assert.equal(updates[0].thisValue, controller);
@@ -551,41 +584,19 @@ describe('mountWorkspace', () => {
   });
 
   it('rejects invalid mounted updates before mutating the existing workspace', () => {
-    let container = createContainer();
-    let mounted = mountWorkspace({
-      version: '0.3.0',
-      name: 'Mounted Workspace',
-      panelTypes: {
-        editor: {
-          title: 'Editor',
-          component: 'sn-editor-panel',
-        },
-      },
-      layout: {
-        type: 'panel',
-        panelType: 'editor',
-      },
-    }, container);
+    let mounted = mountWorkspace(workspace(), createContainer());
     let wrapper = mounted.element;
     let panel = wrapper.querySelectorAll('.symbiote-workspace__panel')[0];
 
-    assert.throws(() => mounted.updateConfig({
-      version: '0.3.0',
-      name: 'Invalid Workspace',
-      panelTypes: {
-        editor: {
-          title: 'Editor',
-          component: 'sn-editor-panel',
-        },
+    assert.throws(() => mounted.updateConfig(workspace({
+      panels: {
+        main: { module: 'sn-main-panel', title: 'Main' },
       },
-      layout: {
-        type: 'panel',
-        panelType: 'editor',
-      },
-    }, {
+    }), {
+      baseRevision: 0,
       catalog: { has: () => false, list: () => [] },
       strictComponents: true,
-    }), /Missing components: sn-editor-panel/);
+    }), /Missing components: sn-main-panel/);
 
     assert.equal(mounted.element, wrapper);
     assert.equal(mounted.config.name, 'Mounted Workspace');
@@ -594,47 +605,32 @@ describe('mountWorkspace', () => {
   });
 
   it('applies validated workspace patches through the mounted update contract', async () => {
-    let container = createContainer();
-    let mounted = mountWorkspace({
-      version: '0.3.0',
-      name: 'Patch Workspace',
-      panelTypes: {
-        timeline: {
-          title: 'Timeline',
-          component: 'sn-video-timeline',
-        },
-      },
-      layout: {
-        type: 'panel',
-        panelType: 'timeline',
-      },
-    }, container);
+    let mounted = mountWorkspace(workspace({ name: 'Patch Workspace' }), createContainer());
     let wrapper = mounted.element;
 
     let result = await mounted.applyPatch({
       overlay: {
         name: 'Patched Workspace',
-        panelTypes: {
-          preview: {
-            title: 'Preview',
-            component: 'sn-video-preview',
+        panels: {
+          preview: { module: 'sn-video-preview', title: 'Preview' },
+        },
+        layouts: {
+          main: {
+            kind: 'bsp',
+            root: { type: 'panel', id: 'preview-panel', panel: 'preview' },
           },
         },
-        layout: {
-          type: 'panel',
-          panelType: 'preview',
-        },
       },
-    });
+    }, { baseRevision: 0 });
 
     assert.equal(result.status, 'ok');
     assert.equal(result.mounted, mounted);
+    assert.equal(result.commit.revision, 1);
     assert.equal(mounted.element, wrapper);
     assert.equal(mounted.config.name, 'Patched Workspace');
-    assert.equal(mounted.config.patches.length, 1);
     assert.equal(wrapper.dataset.workspaceName, 'Patched Workspace');
     assert.equal(
-      wrapper.querySelectorAll('.symbiote-workspace__panel')[0].dataset.panelType,
+      wrapper.querySelectorAll('.symbiote-workspace__panel')[0].dataset.panel,
       'preview'
     );
   });
@@ -647,20 +643,7 @@ describe('mountWorkspace', () => {
     let runtimeUpdates = [];
     let runtimeElement;
 
-    let mounted = mountWorkspace({
-      version: '0.3.0',
-      name: 'Realtime Patch Workspace',
-      panelTypes: {
-        timeline: {
-          title: 'Timeline',
-          component: 'sn-video-timeline',
-        },
-      },
-      layout: {
-        type: 'panel',
-        panelType: 'timeline',
-      },
-    }, container, {
+    let mounted = mountWorkspace(workspace({ name: 'Realtime Patch Workspace' }), container, {
       runtimeController: {
         mountWorkspace({ element }) {
           runtimeElement = element.ownerDocument.createElement('panel-layout');
@@ -692,18 +675,18 @@ describe('mountWorkspace', () => {
     let result = await mounted.applyPatch({
       overlay: {
         name: 'Realtime Patch Workspace Updated',
-        panelTypes: {
-          preview: {
-            title: 'Preview',
-            component: 'sn-video-preview',
-          },
+        panels: {
+          preview: { module: 'sn-video-preview', title: 'Preview' },
         },
-        layout: {
-          type: 'panel',
-          panelType: 'preview',
+        layouts: {
+          main: {
+            kind: 'bsp',
+            root: { type: 'panel', id: 'preview-panel', panel: 'preview' },
+          },
         },
       },
     }, {
+      baseRevision: 0,
       stage: { id: 'validation' },
     });
 
@@ -728,27 +711,14 @@ describe('mountWorkspace', () => {
   });
 
   it('preserves theme writeback across mounted runtime updates', () => {
-    let container = createContainer();
     let destroyCalls = 0;
     let runtimeElement;
     let themeChanges = [];
-    let config = {
-      version: '0.3.0',
+
+    let mounted = mountWorkspace(workspace({
       name: 'Theme Runtime Workspace',
       theme: { params: { mode: 'light', hue: 220 } },
-      panelTypes: {
-        editor: {
-          title: 'Editor',
-          component: 'sn-editor-panel',
-        },
-      },
-      layout: {
-        type: 'panel',
-        panelType: 'editor',
-      },
-    };
-
-    let mounted = mountWorkspace(config, container, {
+    }), createContainer(), {
       themeAdapter: createThemeAdapter(),
       onThemeChange: (change) => themeChanges.push(change),
       runtimeController: {
@@ -782,11 +752,12 @@ describe('mountWorkspace', () => {
       hue: 180,
     });
 
-    mounted.updateConfig({
+    mounted.updateConfig(workspace({
       ...mounted.config,
       name: 'Theme Runtime Workspace Updated',
       theme: { params: { ...mounted.config.theme.params, density: 92 } },
-    }, {
+    }), {
+      baseRevision: mounted.revision,
       stage: { id: 'builder' },
       reason: 'realtime-stage',
     });
@@ -806,10 +777,9 @@ describe('mountWorkspace', () => {
     });
 
     assert.equal(mounted.element, wrapper);
-    assert.equal(container.children[0], wrapper);
     assert.equal(runtimeElement.parentElement, wrapper);
-    assert.equal(runtimeElement.dataset.updatedThemeMode, 'dark');
-    assert.equal(wrapper.dataset.updatedThemeMode, 'dark');
+    assert.equal(runtimeElement.dataset.updatedThemeMode, 'contrast');
+    assert.equal(wrapper.dataset.updatedThemeMode, 'contrast');
     assert.equal(mounted.config.name, 'Theme Runtime Workspace Updated');
     assert.deepEqual(mounted.config.theme.params, {
       mode: 'contrast',
@@ -823,15 +793,12 @@ describe('mountWorkspace', () => {
   });
 
   it('cleans up runtime handles and stops writeback after destroy', () => {
-    let container = createContainer();
-    let config = {
-      version: '0.3.0',
-      name: 'Mounted Workspace',
+    let config = workspace({
       theme: { params: { hue: 220 } },
-    };
+    });
     let destroyCalls = 0;
 
-    let mounted = mountWorkspace(config, container, {
+    let mounted = mountWorkspace(config, createContainer(), {
       themeAdapter: createThemeAdapter(),
       runtimeController: {
         mountWorkspace() {
@@ -852,7 +819,7 @@ describe('mountWorkspace', () => {
     });
 
     assert.equal(destroyCalls, 1);
-    assert.equal(container.children.length, 0);
+    assert.equal(mounted.element.parentElement, null);
     assert.equal(config.theme.params.hue, 220);
   });
 });

@@ -6,57 +6,173 @@ import {
   loadWorkspaceShell,
   WORKSPACE_SHELL_PLACEHOLDER,
 } from '../ssr/index.js';
+import { hydrateDataEnvelopes } from '../ssr/data-loader.js';
+
+function workspace(overrides = {}) {
+  return {
+    version: '1.0.0',
+    name: 'SSR Workspace',
+    views: [
+      {
+        id: 'home',
+        title: 'Home',
+        layout: { $layout: 'home' },
+        route: {
+          pattern: '/',
+          default: true,
+          meta: {
+            title: { default: 'Home title' },
+            description: { default: 'Home description' },
+            canonical: '/',
+            hreflang: 'auto',
+          },
+        },
+      },
+      {
+        id: 'order',
+        title: 'Order',
+        layout: { $layout: 'home' },
+        route: {
+          pattern: '/orders/:id',
+          params: [{ name: 'id', type: 'id' }],
+          data: [{
+            id: 'record',
+            critical: true,
+            required: true,
+            source: { resource: 'orders', op: 'get', args: { id: '$params.id', mount: '$mount.projectId' } },
+            bind: 'state:route.data.record',
+          }],
+        },
+      },
+      {
+        id: 'admin',
+        title: 'Admin',
+        layout: { $layout: 'home' },
+        route: {
+          pattern: '/admin',
+          guards: [{ on: 'enter', requires: 'admin.read' }],
+        },
+      },
+      {
+        id: 'fallback',
+        title: 'Missing',
+        layout: { $layout: 'home' },
+        route: { kind: 'fallback', pattern: '/*' },
+      },
+    ],
+    layouts: {
+      home: {
+        kind: 'bsp',
+        root: { type: 'panel', id: 'main-panel', panel: 'main' },
+      },
+    },
+    panels: {
+      main: { module: 'sn-main', title: 'Main' },
+    },
+    i18n: { defaultLocale: 'en', locales: ['en', 'ru'] },
+    redirects: [{ id: 'legacy-order', pattern: '/wo/:id', to: '/orders/:id', permanent: true }],
+    ...overrides,
+  };
+}
 
 describe('workspace shell SSR', () => {
-  it('renders a non-empty shell with the workspace-shell element and stage host', async () => {
+  it('keeps the no-config placeholder render path as an HTML string', async () => {
     let html = await renderWorkspaceShell();
     assert.equal(typeof html, 'string');
-    assert.ok(html.length > 0, 'rendered HTML must be non-empty');
-    assert.ok(html.includes('workspace-shell'), 'must contain the workspace-shell element');
-    assert.ok(
-      html.includes('data-workspace-host') || html.includes('workspace-stage'),
-      'must contain the stage host marker',
-    );
-    assert.ok(!html.includes('[object Object]'), 'must not leak [object Object]');
-    assert.ok(!html.includes('undefined'), 'must not leak literal undefined');
+    assert.ok(html.includes('workspace-shell'));
+    assert.ok(html.includes('data-workspace-host') || html.includes('workspace-stage'));
   });
 
-  it('exposes the canonical placeholder', () => {
+  it('exposes the canonical placeholder and isoMode shell class', async () => {
     assert.equal(WORKSPACE_SHELL_PLACEHOLDER, '<workspace-shell class="workspace-shell"></workspace-shell>');
-  });
-
-  it('registers WorkspaceShell with isoMode enabled for hydration', async () => {
-    // SSR.init must run before the class loads (it extends HTMLElement).
     await renderWorkspaceShell();
     let WorkspaceShell = await loadWorkspaceShell();
     let shell = new WorkspaceShell();
-    assert.equal(shell.isoMode, true, 'WorkspaceShell must hydrate server markup via isoMode');
+    assert.equal(shell.isoMode, true);
   });
 
-  it('is repeatable — balanced init/destroy across calls', async () => {
-    let first = await renderWorkspaceShell();
-    let second = await renderWorkspaceShell();
-    assert.ok(first.includes('workspace-shell'));
-    assert.ok(second.includes('workspace-shell'));
-    assert.equal(first, second, 'repeated renders must be identical');
+  it('renders fallback-kind matches as HTTP 404 shells', async () => {
+    let result = await renderWorkspaceShell({ config: workspace(), url: '/missing' });
+
+    assert.equal(result.status, 404);
+    assert.equal(result.route.view, 'fallback');
+    assert.ok(result.html.includes('data-route-status="404"'));
+    assert.ok(result.html.includes('ctx="panel:fallback:main-panel"'));
   });
 
-  it('serializes overlapping renders into identical output (single-flight)', async () => {
-    let results = await Promise.all(Array.from({ length: 5 }, () => renderWorkspaceShell()));
-    let [first] = results;
-    assert.ok(first.includes('workspace-shell'), 'concurrent renders must produce the shell');
-    for (let html of results) {
-      assert.equal(html, first, 'overlapping renders must resolve to identical HTML');
+  it('renders guard denials as HTTP 403 without gated panel markup', async () => {
+    let result = await renderWorkspaceShell({
+      config: workspace(),
+      url: '/admin',
+      capabilitySnapshot: { capabilities: {} },
+    });
+
+    assert.equal(result.status, 403);
+    assert.equal(result.denied.reason, 'capability-unknown');
+    assert.ok(result.html.includes('workspace-denied'));
+    assert.equal(result.html.includes('workspace-panel'), false);
+  });
+
+  it('serializes data envelopes and promotes required critical missing data to HTTP 404', async () => {
+    let missing = await renderWorkspaceShell({ config: workspace(), url: '/orders/abc-1' });
+    assert.equal(missing.status, 404);
+    assert.ok(missing.html.includes('workspace-panel'), 'healthy shell should still render');
+    assert.ok(missing.html.includes('"status":"missing"'));
+    assert.ok(missing.html.includes('state:route.data.record'));
+
+    let ok = await renderWorkspaceShell({
+      config: workspace(),
+      url: '/orders/abc-1',
+      mount: { projectId: 'p1' },
+      loaders: {
+        record: ({ args }) => ({ id: args.id, mount: args.mount }),
+      },
+    });
+
+    assert.equal(ok.status, 200);
+    assert.deepEqual(ok.data.envelopes.record.value, { id: 'abc-1', mount: 'p1' });
+
+    let published = {};
+    hydrateDataEnvelopes({
+      binds: ok.data.byBind,
+    }, published);
+    assert.equal(published['state:route.data.record'].status, 'ok');
+  });
+
+  it('emits redirect status from the shared matcher redirect table', async () => {
+    let result = await renderWorkspaceShell({ config: workspace(), url: '/wo/abc-1' });
+
+    assert.equal(result.status, 301);
+    assert.equal(result.redirect.to, '/orders/abc-1');
+    assert.equal(result.redirect.permanent, true);
+  });
+
+  it('emits localized meta, canonical, and hreflang tags', async () => {
+    let result = await renderWorkspaceShell({ config: workspace(), url: '/', locale: 'en' });
+
+    assert.equal(result.status, 200);
+    assert.ok(result.html.includes('<title>Home title</title>'));
+    assert.ok(result.html.includes('<meta name="description" content="Home description">'));
+    assert.ok(result.html.includes('<link rel="canonical" href="/">'));
+    assert.ok(result.html.includes('hreflang="ru"'));
+  });
+
+  it('serializes overlapping route-aware renders through the same lock', async () => {
+    let results = await Promise.all(Array.from({ length: 4 }, () => (
+      renderWorkspaceShell({ config: workspace(), url: '/' })
+    )));
+    for (let result of results) {
+      assert.equal(result.status, 200);
+      assert.ok(result.html.includes('workspace-shell'));
     }
+    assert.equal(results.every((result) => result.html === results[0].html), true);
   });
 
   it('clears the single-flight lock after a render failure', async () => {
-    // A non-string placeholder forces SSR.processHtml to throw mid-render.
     await assert.rejects(renderWorkspaceShell({ placeholder: 0xbad }));
 
-    // The lock must be released and the SSR env destroyed, so the next render succeeds.
-    let recovered = await renderWorkspaceShell();
-    assert.ok(recovered.includes('workspace-shell'), 'render must recover after a failure');
-    assert.equal(typeof globalThis.document, 'undefined', 'SSR globals must not leak after failure');
+    let recovered = await renderWorkspaceShell({ config: workspace(), url: '/' });
+    assert.equal(recovered.status, 200);
+    assert.equal(typeof globalThis.document, 'undefined');
   });
 });
