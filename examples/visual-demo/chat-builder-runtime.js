@@ -110,7 +110,8 @@ ${escapeScriptJson({ imports })}
     .cb-back { flex: 0 0 auto; }
     #stage { flex: 1; min-height: 0; padding: 12px; box-sizing: border-box;
       display: flex; flex-direction: column; gap: 10px; }
-    #stage.cb-menu-mode > .cb-scenario-head { display: none; }
+    #stage.cb-menu-mode > .cb-scenario-head,
+    #stage.cb-menu-mode > .cb-presentation { display: none; }
     /* Scenario header: the Layout (variant) choice is the clear visual PRIMARY — its
        chips lead the bar with a strong "Layout" label — and the answered-questionnaire
        summary is the secondary, dimmed recap that follows. The live theme control no
@@ -189,6 +190,38 @@ ${escapeScriptJson({ imports })}
       background: color-mix(in srgb, var(--sn-node-selected, #58a6ff) 14%, transparent); }
     .cb-relaunch:disabled { opacity: 0.6; cursor: default; }
     .cb-relaunch:focus-visible {
+      outline: 2px solid var(--cb-focus-ring); outline-offset: 2px; }
+    .cb-presentation { flex: 0 0 auto; display: grid; grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px 12px; align-items: center; padding: 8px 12px; border-radius: 9px; min-width: 0;
+      border: 1px solid color-mix(in srgb, var(--sn-node-selected, #58a6ff) 35%, transparent);
+      background: color-mix(in srgb, var(--sn-panel-bg, #161b22) 86%, transparent); }
+    .cb-presentation-main { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .cb-presentation-status { font-size: 11px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.04em; color: color-mix(in srgb, var(--sn-node-selected, #58a6ff) 84%, var(--sn-text, #fff) 16%);
+      flex: 0 0 auto; }
+    .cb-presentation-narration { font-size: 12px; line-height: 1.35; color: var(--sn-text, #fff);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+    .cb-presentation-segments { grid-column: 1 / -1; display: flex; gap: 6px; min-width: 0;
+      overflow-x: auto; scrollbar-width: thin; }
+    .cb-presentation-segment, .cb-presentation-action { display: inline-flex; align-items: center;
+      gap: 5px; flex: 0 0 auto; max-width: 220px; padding: 3px 8px; border-radius: 999px;
+      font-size: 11px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      border: 1px solid color-mix(in srgb, var(--sn-text, #fff) 14%, transparent);
+      background: color-mix(in srgb, var(--sn-bg, #0e1116) 68%, transparent);
+      color: var(--sn-text-dim, #8b949e); }
+    .cb-presentation-segment[data-active="true"] { color: var(--sn-text, #fff);
+      border-color: var(--sn-node-selected, #58a6ff);
+      background: color-mix(in srgb, var(--sn-node-selected, #58a6ff) 18%, transparent); }
+    .cb-presentation-action { color: var(--sn-text, #fff);
+      border-color: color-mix(in srgb, var(--sn-success, #3fb950) 50%, transparent);
+      background: color-mix(in srgb, var(--sn-success, #3fb950) 12%, transparent); }
+    .cb-presentation-replay { font: inherit; font-size: 12px; line-height: 1.2; cursor: pointer;
+      display: inline-flex; align-items: center; gap: 6px; justify-content: center; padding: 5px 10px;
+      border-radius: 7px; white-space: nowrap; color: inherit;
+      border: 1px solid color-mix(in srgb, var(--sn-text, #fff) 18%, transparent);
+      background: color-mix(in srgb, var(--sn-bg, #0e1116) 70%, transparent); }
+    .cb-presentation-replay .cb-icon { font-family: "Material Symbols Outlined"; font-size: 16px; line-height: 1; }
+    .cb-presentation-replay:focus-visible {
       outline: 2px solid var(--cb-focus-ring); outline-offset: 2px; }
     /* Transient completion toast for the relaunch: pinned to the viewport corner, fades
        in/out on data-visible, and never blocks interaction (pointer-events: none). */
@@ -349,7 +382,11 @@ ${escapeScriptJson({ imports })}
 function generateAppJs(scenarios, chatComponent) {
   return `import { applyCascadeTheme, CASCADE_THEME_DEFAULTS, defineModule } from 'symbiote-ui/ui';
 import { geometrySpacePrimitives, GEOMETRY_PROFILE_NAMES } from 'symbiote-ui/tokens/scale.js';
-import { importConfig } from 'symbiote-workspace/browser';
+import {
+  createWorkspacePresentationTimeline,
+  importConfig,
+  playWorkspacePresentationTimeline,
+} from 'symbiote-workspace/browser';
 import 'symbiote-ui/board';
 // Register <workspace-shell>; isoMode hydrates the build-time SSR markup in <body>
 // instead of re-rendering it. The bare '@symbiotejs/symbiote' import it pulls in is
@@ -979,6 +1016,18 @@ function chatWorkspaceState(scenario, config = scenario.config) {
   };
 }
 
+function settleChatWorkspace(chat) {
+  if (!chat) return;
+  if (chat.$ && typeof chat.$ === 'object') {
+    chat.$.liveStatus = null;
+    chat.$.backgroundState = 'idle';
+  }
+  chat.removeAttribute?.('streaming');
+  for (let node of chat.querySelectorAll?.('.live-status-indicator, .spin-icon') || []) {
+    node.remove();
+  }
+}
+
 // Deterministic mock content keyed by component tag, so every real workspace panel
 // renders attractive, non-trivial content through its public setter.
 function seedPanel(root, panelType, panel, scenario, config = scenario.config) {
@@ -992,6 +1041,8 @@ function seedPanel(root, panelType, panel, scenario, config = scenario.config) {
     let chat = findPanelElement(root, CHAT_COMPONENT);
     chat?.classList?.add('chat-workspace-view');
     chat?.setWorkspaceState?.(chatWorkspaceState(scenario, config));
+    settleChatWorkspace(chat);
+    requestAnimationFrame(() => settleChatWorkspace(chat));
     return;
   }
   if (component === 'source-editor') {
@@ -1297,11 +1348,203 @@ const ASSEMBLY_SETTLE_MS = 60;
 // document.body.dataset.assemblyPhase so a headless smoke can poll the staged build.
 // frames/mounted/hydrated are monotonic within one assembly run (they only ever grow).
 let assembly = { phase: 'idle', frames: 0, mounted: 0, hydrated: 0, total: 0 };
+let presentationState = { phase: 'idle', driver: 'webmcp', runId: 0 };
 
 function publishAssembly(next) {
   assembly = { ...assembly, ...next };
   window.__chatBuilder ? (window.__chatBuilder.assembly = assembly) : null;
   document.body.dataset.assemblyPhase = assembly.phase;
+}
+
+function safeWasSegment(value, fallback) {
+  let text = String(value || fallback || 'panel')
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/^[^a-z]+/, '')
+    .replace(/-+$/g, '')
+    .replace(/-{2,}/g, '-');
+  return text || 'panel';
+}
+
+function panelElementForType(layout, config, panelType, nodeIdsByType) {
+  let panel = config.panelTypes?.[panelType] || {};
+  let component = panel.component ? resolveModuleTag(panel.component) : '';
+  let nodeIds = nodeIdsByType.get(panelType) || new Set();
+  if (nodeIds.size > 0) {
+    for (let nodeId of nodeIds) {
+      let found = layout.querySelector('[data-panel-id="' + nodeId + '"]');
+      if (found) return found;
+    }
+  }
+  return component ? layout.querySelector(component) : null;
+}
+
+function legacyPresentationContext(config, layout, scenario, variantId) {
+  let tree = normalizeLayoutNode(config.layout);
+  let order = workspacePanelOrder(tree);
+  let nodeIdsByType = panelTypeNodeIds(tree);
+  let panels = order.map((panelType) => {
+    let panel = config.panelTypes?.[panelType] || {};
+    let nodeIds = [...(nodeIdsByType.get(panelType) || [])];
+    let nodeId = nodeIds[0] || panelType;
+    let component = panel.component ? resolveModuleTag(panel.component) : '';
+    let address = 'panel:workspace:' + safeWasSegment(nodeId || panelType, panelType);
+    let element = panelElementForType(layout, config, panelType, nodeIdsByType);
+    return {
+      address,
+      kind: 'panel',
+      panelId: panelType,
+      nodeId,
+      title: panel.title || panelType,
+      module: component || panel.component || '',
+      visible: Boolean(element && element.isConnected),
+      rendered: Boolean(element && element.isConnected),
+      safeActions: [{ id: 'presentation.focus', label: 'Focus panel' }],
+      webmcpTools: [{ name: 'demo.presentation.focus' }],
+      enrichment: {
+        panelType,
+        component,
+        variant: variantId,
+      },
+    };
+  });
+  return {
+    workspace: {
+      name: scenario.label || scenario.key,
+      version: variantId,
+    },
+    activeViewId: 'workspace',
+    views: [{
+      id: 'workspace',
+      address: 'view:workspace',
+      title: scenario.label || scenario.key,
+      visible: true,
+      revealActions: [],
+    }],
+    stacks: [],
+    panels,
+    runtimeTargets: panels,
+    targets: [
+      { address: 'view:workspace', kind: 'view', visible: true },
+      ...panels,
+    ],
+    dataContext: {
+      selectedRecords: [{ type: 'workspace-scenario', id: scenario.key, variant: variantId }],
+      mockData: {
+        scenario: scenario.key,
+        variant: variantId,
+        panels: order,
+      },
+    },
+    summary: {
+      viewCount: 1,
+      stackCount: 0,
+      panelCount: panels.length,
+      visiblePanelCount: panels.filter((panel) => panel.visible).length,
+      hiddenPanelCount: panels.filter((panel) => !panel.visible).length,
+      runtimeTargetCount: panels.length,
+    },
+  };
+}
+
+function ensurePresentationStrip(config, layout, scenario, variantId) {
+  let strip = stageEl.querySelector('.cb-presentation');
+  if (!strip) {
+    strip = document.createElement('section');
+    strip.className = 'cb-presentation';
+    strip.setAttribute('aria-label', 'Workspace presentation');
+    strip.innerHTML =
+      '<div class="cb-presentation-main">' +
+        '<span class="cb-presentation-status">Presentation</span>' +
+        '<span class="cb-presentation-narration"></span>' +
+      '</div>' +
+      '<button class="cb-presentation-replay" type="button" data-presentation-control="replay">' +
+        '<span class="cb-icon" aria-hidden="true">play_arrow</span><span>Replay</span>' +
+      '</button>' +
+      '<div class="cb-presentation-segments"></div>';
+    let head = stageEl.querySelector('.cb-scenario-head');
+    if (head) head.after(strip);
+    else stageEl.prepend(strip);
+  }
+  let replay = strip.querySelector('[data-presentation-control="replay"]');
+  replay.onclick = () => runPresentationProof(config, layout, scenario, variantId);
+  return strip;
+}
+
+function renderPresentationSegments(strip, timeline, activeTarget, actions = []) {
+  let wrap = strip.querySelector('.cb-presentation-segments');
+  wrap.replaceChildren();
+  for (let segment of timeline.segments || []) {
+    let item = document.createElement('span');
+    item.className = 'cb-presentation-segment';
+    item.dataset.presentationSegment = segment.id || '';
+    item.dataset.targetAddress = segment.target || '';
+    item.dataset.active = segment.target === activeTarget ? 'true' : 'false';
+    item.textContent = segment.narration || segment.target || 'segment';
+    wrap.appendChild(item);
+  }
+  for (let action of actions) {
+    let chip = document.createElement('span');
+    chip.className = 'cb-presentation-action';
+    chip.dataset.presentationActionSource = action.source || '';
+    chip.textContent = (action.source || 'action') + ': ' + (action.name || '');
+    wrap.appendChild(chip);
+  }
+}
+
+async function runPresentationProof(config, layout, scenario, variantId) {
+  let strip = ensurePresentationStrip(config, layout, scenario, variantId);
+  let runId = (presentationState.runId || 0) + 1;
+  strip.dataset.phase = 'running';
+  strip.dataset.driver = 'webmcp';
+  strip.dataset.runId = String(runId);
+  let context = legacyPresentationContext(config, layout, scenario, variantId);
+  let timeline = createWorkspacePresentationTimeline(context, {
+    prompt: 'Present this built workspace from its live WebMCP context and data.',
+    profile: 'data-grounded',
+    revision: runId,
+    maxSegments: Math.min(3, Math.max(1, context.panels.length)),
+  });
+  let executedActions = [];
+  let activeTarget = timeline.segments?.[0]?.target || '';
+  renderPresentationSegments(strip, timeline, activeTarget, executedActions);
+  let mounted = { getInterfaceContext: () => context };
+  let events = await playWorkspacePresentationTimeline(timeline, mounted, {
+    onFocus: async ({ target }) => {
+      activeTarget = target?.address || activeTarget;
+      strip.dataset.activeTarget = activeTarget;
+      renderPresentationSegments(strip, timeline, activeTarget, executedActions);
+    },
+    onNarration: async ({ segment }) => {
+      let narration = strip.querySelector('.cb-presentation-narration');
+      if (narration) narration.textContent = segment.narration || '';
+    },
+    executeAction: async (action) => {
+      executedActions.push({ source: action.source, name: action.name, target: action.target });
+      renderPresentationSegments(strip, timeline, activeTarget, executedActions);
+    },
+  });
+  let driver = executedActions.some((action) => action.source === 'webmcp') ? 'webmcp' : 'local';
+  strip.dataset.phase = 'done';
+  strip.dataset.driver = driver;
+  strip.dataset.runId = String(runId);
+  presentationState = {
+    phase: 'done',
+    driver,
+    runId,
+    context,
+    timeline,
+    events,
+    executedActions,
+  };
+  if (window.__chatBuilder) window.__chatBuilder.presentation = presentationState;
+  return presentationState;
+}
+
+function renderPresentationProof(config, layout, scenario, variantId) {
+  ensurePresentationStrip(config, layout, scenario, variantId);
+  return runPresentationProof(config, layout, scenario, variantId);
 }
 
 // Collect the WORKSPACE panel types in layout order (the docked chat is excluded — it is
@@ -1521,6 +1764,7 @@ async function mountVariant(scenario, variant, animate = false) {
   } else {
     await seedLayout(layout, config, scenario, variant.id);
   }
+  await renderPresentationProof(config, layout, scenario, variant.id);
 }
 
 // PORTABILITY relaunch: rebuild the active variant in a genuinely fresh panel-layout
@@ -1554,6 +1798,7 @@ async function relaunchFromExport(key) {
   await seedLayout(layout, config2, scenario, variantId, () => {
     document.body.dataset.relaunched = key + ':' + variantId;
   });
+  await renderPresentationProof(config2, layout, scenario, variantId);
   // Re-apply E's tab wiring so the fresh stage tabpanel stays labelled by the active tab.
   syncVariantButtons();
   return true;
@@ -2141,6 +2386,8 @@ window.__chatBuilder = {
   chatComponent: CHAT_COMPONENT,
   chatPanel: CHAT_PANEL,
   unseededComponents,
+  presentation: presentationState,
+  getPresentation: () => presentationState,
   // Render alias for free-created custom modules (recipe tag -> sn-data-table stand-in),
   // so smoke can resolve an exported recipe tag to the element that actually paints.
   resolveModuleTag,

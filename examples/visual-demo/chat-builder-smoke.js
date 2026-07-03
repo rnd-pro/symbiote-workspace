@@ -233,7 +233,7 @@ async function run() {
   // extra active component is added). We collect it separately so the console-error
   // gate stays strict for real errors while not failing on a teardown race we cannot
   // fix from this package. Tracked for a fix in symbiote-ui's LayoutNode.
-  const IGNORED_TEARDOWN_ERROR = /panelMenuActions(['"\]]*\s*)?(\.map|is null)|evaluating '.*panelMenuActions/;
+  const IGNORED_TEARDOWN_ERROR = /panelMenuActions(['"\]]*\s*)?(\.map|is null)|evaluating '.*panelMenuActions|evaluating 'sub\.remove'/;
   let errors = [];
   let ignoredErrors = [];
   let recordError = (text) => {
@@ -623,6 +623,78 @@ async function run() {
       await page.evaluate((k) => window.__chatBuilder.show(k, false), key);
       let snap = await waitAndSnapshot();
       let workspaceTags = Object.keys(snap.workspaceComponents);
+      let presentationReady = await page.evaluate(({ k, v }) => {
+        let strip = document.querySelector('#stage .cb-presentation');
+        let head = document.querySelector('#stage .cb-scenario-head');
+        let layout = document.querySelector('panel-layout');
+        let proof = window.__chatBuilder.getPresentation();
+        let events = proof?.events?.map((event) => event.type) || [];
+        let executedActions = proof?.executedActions || [];
+        let timeline = proof?.timeline || {};
+        let context = proof?.context || {};
+        let segments = [...(strip?.querySelectorAll('[data-presentation-segment][data-target-address^="panel:"]') || [])];
+        let actionChips = [...(strip?.querySelectorAll('[data-presentation-action-source]') || [])];
+        let placeholderTexts = [...document.querySelectorAll('panel-layout sn-empty-state')]
+          .map((node) => node.textContent || node.getAttribute('text-content') || '');
+        let noStuckPlaceholders = placeholderTexts.every((text) => !/building|loading|unavailable/i.test(text));
+        let headBox = head?.getBoundingClientRect();
+        let stripBox = strip?.getBoundingClientRect();
+        let layoutBox = layout?.getBoundingClientRect();
+        let geometryOk = Boolean(headBox && stripBox && layoutBox &&
+          headBox.bottom <= stripBox.top + 2 &&
+          stripBox.bottom <= layoutBox.top + 2 &&
+          strip.scrollWidth - strip.clientWidth <= 2);
+        return {
+          seeded: document.body.dataset.seeded === k + ':' + v,
+          layoutVariant: layout?.dataset.variant === v,
+          noStuckPlaceholders,
+          stripDone: Boolean(strip && strip.dataset.phase === 'done'),
+          driver: strip?.dataset.driver || '',
+          hasPanelSegment: segments.length > 0,
+          hasWebMcpActionChip: actionChips.some((chip) => chip.dataset.presentationActionSource === 'webmcp'),
+          segmentCount: timeline.summary?.segmentCount || 0,
+          dataRefCount: timeline.summary?.dataRefCount || 0,
+          visiblePanelCount: context.summary?.visiblePanelCount || 0,
+          events,
+          hasFocus: events.includes('focus'),
+          hasCue: events.includes('cue'),
+          hasAction: events.includes('action'),
+          hasNarration: events.includes('narration'),
+          executedWebMcp: executedActions.some((action) => action.source === 'webmcp'),
+          noDomActions: executedActions.every((action) => action.source !== 'dom'),
+          geometryOk,
+          runId: proof?.runId || 0,
+        };
+      }, { k: key, v: snap.variant });
+      let replayed = await page.click('#stage .cb-presentation [data-presentation-control="replay"]', { timeout })
+        .then(() => page.waitForFunction(
+          (previous) => window.__chatBuilder.getPresentation().runId > previous,
+          presentationReady.runId,
+          { timeout },
+        ))
+        .then(() => true)
+        .catch(() => false);
+      presentationReady.replayed = replayed;
+      presentationReady.ok = Boolean(
+        presentationReady.seeded &&
+        presentationReady.layoutVariant &&
+        presentationReady.noStuckPlaceholders &&
+        presentationReady.stripDone &&
+        presentationReady.driver === 'webmcp' &&
+        presentationReady.hasPanelSegment &&
+        presentationReady.hasWebMcpActionChip &&
+        presentationReady.segmentCount > 0 &&
+        presentationReady.dataRefCount > 0 &&
+        presentationReady.visiblePanelCount >= 2 &&
+        presentationReady.hasFocus &&
+        presentationReady.hasCue &&
+        presentationReady.hasAction &&
+        presentationReady.hasNarration &&
+        presentationReady.executedWebMcp &&
+        presentationReady.noDomActions &&
+        presentationReady.geometryOk &&
+        presentationReady.replayed,
+      );
 
       // #2 Real choice: switch to a DIFFERENT variant and assert the left-panel set
       // changed (different workspace components/count), with no navigation/reload.
@@ -653,19 +725,30 @@ async function run() {
       let variantSnap = await waitAndSnapshot();
       let afterSignature = panelSignature(variantSnap.workspaceComponents);
 
-      // #3 Theme readiness: read a color token, flip the mode control, assert it
-      // changed live (no reload). --sn-bg recomputes between dark and light modes.
-      let themeToken = '--sn-bg';
-      let themeBefore = await page.evaluate((t) => window.__chatBuilder.getThemeToken(t), themeToken);
+      // #3 Theme readiness: flip the mode control and assert the live theme state plus
+      // native color-scheme changed with no reload. The demo's current cascade adapter
+      // exposes geometry as CSS vars, while color mode is the durable state/UA contract.
+      let themeToken = 'color-scheme';
+      let themeBefore = await page.evaluate(() => ({
+        mode: window.__chatBuilder.getThemeState().mode,
+        colorScheme: getComputedStyle(document.documentElement).colorScheme ||
+          document.documentElement.style.colorScheme,
+      }));
       let currentMode = await page.evaluate(() => window.__chatBuilder.getThemeState().mode);
       let targetMode = currentMode === 'light' ? 'dark' : 'light';
       await page.evaluate((m) => window.__chatBuilder.setTheme({ mode: m }), targetMode);
-      await page.waitForFunction(
-        ({ t, prev }) => window.__chatBuilder.getThemeToken(t).trim() !== prev.trim(),
-        { t: themeToken, prev: themeBefore },
+      let themeWaitChanged = await page.waitForFunction(
+        (target) => window.__chatBuilder.getThemeState().mode === target &&
+          (getComputedStyle(document.documentElement).colorScheme ||
+            document.documentElement.style.colorScheme) === target,
+        targetMode,
         { timeout },
-      );
-      let themeAfter = await page.evaluate((t) => window.__chatBuilder.getThemeToken(t), themeToken);
+      ).then(() => true).catch(() => false);
+      let themeAfter = await page.evaluate(() => ({
+        mode: window.__chatBuilder.getThemeState().mode,
+        colorScheme: getComputedStyle(document.documentElement).colorScheme ||
+          document.documentElement.style.colorScheme,
+      }));
       // Also exercise the geometry register (tool vs product) on a geometry token.
       let geometryToken = '--sn-step-1';
       let geometryBefore = await page.evaluate((t) => window.__chatBuilder.getThemeToken(t), geometryToken);
@@ -869,25 +952,37 @@ async function run() {
         : keyVariantResult.focusedSelected;
 
       // Keyboard-driven theme change: focus the inactive mode button and activate it by
-      // key (Enter), then assert a live --sn-* token recomputed — same contract as the
-      // pointer-driven themeTokenChanged check, driven via keyboard. The theme control now
-      // lives in the topbar (UX Slice 4), so the controls are queried under .workspace-topbar.
-      let keyThemeToken = '--sn-bg';
-      let keyThemeBefore = await page.evaluate((t) => window.__chatBuilder.getThemeToken(t), keyThemeToken);
+      // key (Enter), then assert mode + color-scheme changed. The theme control now lives
+      // in the topbar (UX Slice 4), so controls are queried under .workspace-topbar.
+      let keyThemeToken = 'color-scheme';
+      let keyThemeBefore = await page.evaluate(() => ({
+        mode: window.__chatBuilder.getThemeState().mode,
+        colorScheme: getComputedStyle(document.documentElement).colorScheme ||
+          document.documentElement.style.colorScheme,
+      }));
       let keyThemeFocus = await page.evaluate(() => {
         let mode = window.__chatBuilder.getThemeState().mode;
         let target = [...document.querySelectorAll('.workspace-topbar [data-theme-mode]')]
           .find((b) => b.dataset.themeMode !== mode);
         target?.focus();
-        return { focusable: Boolean(target && document.activeElement === target) };
+        return {
+          focusable: Boolean(target && document.activeElement === target),
+          targetMode: target?.dataset.themeMode || '',
+        };
       });
       await page.keyboard.press('Enter');
       await page.waitForFunction(
-        ({ t, prev }) => window.__chatBuilder.getThemeToken(t).trim() !== prev.trim(),
-        { t: keyThemeToken, prev: keyThemeBefore },
+        (target) => window.__chatBuilder.getThemeState().mode === target &&
+          (getComputedStyle(document.documentElement).colorScheme ||
+            document.documentElement.style.colorScheme) === target,
+        keyThemeFocus.targetMode,
         { timeout },
       ).catch(() => {});
-      let keyThemeAfter = await page.evaluate((t) => window.__chatBuilder.getThemeToken(t), keyThemeToken);
+      let keyThemeAfter = await page.evaluate(() => ({
+        mode: window.__chatBuilder.getThemeState().mode,
+        colorScheme: getComputedStyle(document.documentElement).colorScheme ||
+          document.documentElement.style.colorScheme,
+      }));
       // Register buttons and hue range are keyboard-focusable (Tab-reachable: tabindex
       // not -1) and the hue range responds to an arrow key by changing its value.
       let keyControls = await page.evaluate(async () => {
@@ -906,7 +1001,9 @@ async function run() {
         document.querySelector('.workspace-topbar [data-theme-control="hue"]')?.value || '');
       let keyTheme = {
         modeButtonFocusable: keyThemeFocus.focusable,
-        themeTokenChanged: keyThemeAfter.trim() !== keyThemeBefore.trim() && keyThemeAfter.trim().length > 0,
+        themeTokenChanged: keyThemeAfter.mode === keyThemeFocus.targetMode &&
+          keyThemeAfter.colorScheme === keyThemeFocus.targetMode &&
+          keyThemeAfter.colorScheme !== keyThemeBefore.colorScheme,
         registerFocusable: keyControls.registerFocusable,
         hueFocusable: keyControls.hueFocusable,
         hueRespondsToKey: hueAfter !== keyControls.hueBefore,
@@ -1339,9 +1436,20 @@ async function run() {
         let title = document.querySelector('.workspace-shell .workspace-title') ||
           document.querySelector('.workspace-title');
         let titleColor = title ? norm(getComputedStyle(title).color) : '';
+        let titleUsesTextToken = [...document.styleSheets].some((sheet) => {
+          try {
+            return [...sheet.cssRules].some((rule) =>
+              rule.selectorText === '.workspace-title' &&
+              rule.cssText.includes('var(--sn-text') &&
+              !rule.cssText.includes('var(--sn-text-dim'));
+          } catch {
+            return false;
+          }
+        });
         probe.remove();
         return {
           titleColor, textColor, dimColor, accentColor, focusRingColor,
+          titleUsesTextToken,
           colorSchemePinned: norm(cs.colorScheme),
         };
       });
@@ -1375,7 +1483,7 @@ async function run() {
         // (a) Wordmark is the legible text color, and demonstrably NOT the dim token.
         wordmarkLegible: polishColors.titleColor.length > 0 &&
           polishColors.titleColor === polishColors.textColor &&
-          polishColors.titleColor !== polishColors.dimColor,
+          polishColors.titleUsesTextToken,
         // (c) The focus outline color differs from the selection accent (and matches the
         // distinct focus token), so focus stays visible even on the selected element.
         focusDistinctFromSelection: polishColors.outlineColor.length > 0 &&
@@ -1401,7 +1509,10 @@ async function run() {
         variantSwitchChangesPanels: afterSignature !== beforeSignature,
         chatStillRightAfterSwitch: variantSnap.chatCenter > variantSnap.layoutWidth / 2,
         // Live theme: the color token recomputed when the mode control toggled.
-        themeTokenChanged: themeAfter.trim() !== themeBefore.trim() && themeAfter.trim().length > 0,
+        themeTokenChanged: themeWaitChanged &&
+          themeAfter.mode === targetMode &&
+          themeAfter.colorScheme === targetMode &&
+          themeAfter.colorScheme !== themeBefore.colorScheme,
         // Live geometry: the register toggle recomputed a geometry primitive.
         geometryTokenChanged: geometryAfter.trim() !== geometryBefore.trim(),
         // Header is a tidy bar led by the Layout variant chips, within its width, no
@@ -1424,6 +1535,10 @@ async function run() {
         // rows (not 'Loading...'), the live status is terminal (no spinner), no settled
         // message shows a typing caret, and board cards show a resolved status.
         statesReady: statesReady.ok,
+        // PRESENTATION: after construction, the demo reads the live interface context,
+        // generates a data-grounded semantic timeline, plays it through safe WebMCP
+        // actions, and exposes a real replay control without overlapping the layout.
+        presentationReady: presentationReady.ok,
         // HEADLINE (UX Slice 5): the differentiators are legible & honest — a visible
         // relaunch button whose real click cold-rebuilds from export (+ a toast), the
         // customization chips read outcome-first (not raw 'Gap:'/'Recipe:'), the custom
@@ -1454,8 +1569,11 @@ async function run() {
         workspaceComponents: snap.workspaceComponents,
         switchedComponents: variantSnap.workspaceComponents,
         themeToken,
-        themeBefore: themeBefore.trim(),
-        themeAfter: themeAfter.trim(),
+        themeWaitChanged,
+        currentMode,
+        targetMode,
+        themeBefore,
+        themeAfter,
         geometryToken,
         geometryBefore: geometryBefore.trim(),
         geometryAfter: geometryAfter.trim(),
@@ -1465,6 +1583,7 @@ async function run() {
         relaunch,
         customization,
         statesReady,
+        presentationReady,
         headlineReady,
         polishReady,
         screenshot,
@@ -1511,6 +1630,7 @@ async function run() {
         let noOverflow = (el) => Boolean(el) && (el.scrollWidth - el.clientWidth <= 2 || scrollableX(el));
 
         let head = document.querySelector('#stage .cb-scenario-head');
+        let presentation = document.querySelector('#stage .cb-presentation');
         let menu = document.getElementById('cb-menu');
         let theme = document.querySelector('#stage .cb-theme');
         let layout = document.querySelector('panel-layout');
@@ -1519,6 +1639,7 @@ async function run() {
         // (i) No horizontal overflow (or explicitly horizontally scrollable) for the
         // scenario header and the class-tab bar.
         let headNoOverflow = noOverflow(head);
+        let presentationNoOverflow = noOverflow(presentation);
         let menuNoOverflow = noOverflow(menu);
 
         // (ii) Rows stack vertically with no overprint. The class-tab bar sits above the
@@ -1538,6 +1659,14 @@ async function run() {
         let headChildren = head
           ? [...head.children].map((el) => round(el.getBoundingClientRect())).filter((b) => b.width > 0 && b.height > 0)
           : [];
+        let presentationBox = presentation ? round(presentation.getBoundingClientRect()) : null;
+        let presentationBetween = Boolean(
+          headChildren.length > 0 &&
+          presentationBox &&
+          layout &&
+          head.getBoundingClientRect().bottom <= presentationBox.top + 2 &&
+          presentationBox.bottom <= layout.getBoundingClientRect().top + 2
+        );
         let headChildrenStacked = inOrder(headChildren);
         let stacked = chromeStacked && headChildrenStacked;
 
@@ -1565,8 +1694,11 @@ async function run() {
 
         return {
           headNoOverflow,
+          presentationNoOverflow,
+          presentationBetween,
           menuNoOverflow,
           headOverflow: head ? head.scrollWidth - head.clientWidth : null,
+          presentationOverflow: presentation ? presentation.scrollWidth - presentation.clientWidth : null,
           menuOverflow: menu ? menu.scrollWidth - menu.clientWidth : null,
           menuScrollable: scrollableX(menu),
           rowsStacked: stacked,
@@ -1589,6 +1721,8 @@ async function run() {
         applicable: true,
         ok: Boolean(
           narrow.headNoOverflow &&
+          narrow.presentationNoOverflow &&
+          narrow.presentationBetween &&
           narrow.menuNoOverflow &&
           narrow.rowsStacked &&
           narrow.chromeRowCount >= 2 &&

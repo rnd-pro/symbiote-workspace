@@ -310,6 +310,17 @@ DOM selectors as targets, unsupported action/data sources, and timelines built
 against an older `provenance.revision` unless they are explicitly marked
 `freshness: "stale"`.
 
+`createWorkspacePresentationTimeline(context, request)` turns the collected
+interface context into a portable timeline draft. `request.prompt`,
+`request.profile`, or `request.depth` select the prompt profile: `brief` keeps a
+compact visible-target tour, `full` expands target coverage across hidden and
+visible panels, and `data-grounded` prioritizes data-bearing targets and attaches
+`dataRefs` from route data, selected records, retrieved context, mock/demo data,
+live data, or document presentation sidecars. Mounted workspaces expose this as
+`mounted.createPresentationTimeline(request, contextOptions)`, so a host can
+construct the workspace first, read the live WebMCP/interface context, generate a
+prompt-specific timeline, and then play or export that same artifact.
+
 `playWorkspacePresentationTimeline(timeline, mounted, options)` executes that
 artifact against a mounted workspace. It reads `mounted.getInterfaceContext()`,
 runs declared reveal actions before focus/cue/action/narration callbacks, uses

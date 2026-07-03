@@ -123,3 +123,9 @@ export {
   createMemoryTrace,
   buildConstructionPlan,
 } from './scripted-adapter.js';
+export {
+  PRESENTATION_PROMPT_PROFILES,
+  createWorkspacePresentationTimeline,
+  normalizePresentationPrompt,
+  summarizePresentationTimeline,
+} from './presentation.js';

@@ -493,6 +493,13 @@ describe('mountWorkspace', () => {
     await mounted.ready;
     assert.equal(mounted.router.getState('state:route.view'), 'home');
 
+    let generated = mounted.createPresentationTimeline({
+      prompt: 'сделай полную презентацию интерфейса',
+      revision: 1,
+    });
+    assert.equal(generated.summary.profile, 'full');
+    assert.ok(generated.summary.targetCoverage.includes('panel:detail:detail-node'));
+
     let callbackOrder = [];
     let events = await mounted.playPresentationTimeline({
       id: 'detail-tour',

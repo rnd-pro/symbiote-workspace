@@ -55,6 +55,7 @@ describe('browser entrypoint', () => {
     assert.equal(typeof browser.mountWorkspace, 'function');
     assert.equal(typeof browser.applyWorkspaceTheme, 'function');
     assert.equal(typeof browser.collectWorkspaceInterfaceContext, 'function');
+    assert.equal(typeof browser.createWorkspacePresentationTimeline, 'function');
     assert.equal(typeof browser.playWorkspacePresentationTimeline, 'function');
   });
 

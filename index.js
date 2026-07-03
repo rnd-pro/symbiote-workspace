@@ -123,4 +123,8 @@ export {
   buildDataChangeMessage,
   isDataChangeMessage,
   broadcastDataChange,
+  PRESENTATION_PROMPT_PROFILES,
+  createWorkspacePresentationTimeline,
+  normalizePresentationPrompt,
+  summarizePresentationTimeline,
 } from './runtime/index.js';

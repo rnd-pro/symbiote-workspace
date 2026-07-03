@@ -106,6 +106,13 @@ export {
 
 export { subscribeDataChange } from './runtime/data-change-client.js';
 
+export {
+  PRESENTATION_PROMPT_PROFILES,
+  createWorkspacePresentationTimeline,
+  normalizePresentationPrompt,
+  summarizePresentationTimeline,
+} from './runtime/presentation.js';
+
 import {
   extractThemeOverrides,
   extractThemeParams,
@@ -119,6 +126,7 @@ import {
 import { WORKSPACE_CONFIG_CHANNEL } from './schema/constants.js';
 import { broadcastDataChange } from './runtime/data-change.js';
 import { createRouter } from './runtime/router-lane.js';
+import { createWorkspacePresentationTimeline } from './runtime/presentation.js';
 import { createWorkspaceState } from './runtime/workspace-state.js';
 
 function isObject(value) {
@@ -1376,6 +1384,13 @@ export function mountWorkspace(config, container, options = {}) {
     },
     playPresentationTimeline(timeline, timelineOptions = {}) {
       return playWorkspacePresentationTimeline(timeline, mounted, timelineOptions);
+    },
+    createPresentationTimeline(request = {}, contextOptions = {}) {
+      let input = typeof request === 'string' ? { prompt: request } : request || {};
+      let options = isObject(input.contextOptions)
+        ? { ...contextOptions, ...input.contextOptions }
+        : contextOptions;
+      return createWorkspacePresentationTimeline(mounted.getInterfaceContext(options), input);
     },
     destroy() {
       if (destroyed) return;

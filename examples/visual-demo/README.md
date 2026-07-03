@@ -159,8 +159,13 @@ validates, and the chat is the right-hand child of the root split. For
 real-browser evidence, run the opt-in WebKit smoke, which serves the bundle,
 opens on the chat menu, builds each class, and asserts the chat is docked on the
 right at full height with real components, that switching a variant changes the
-rendered panels, that the theme control changes a live `--sn-*` token (color and
-geometry register), and no console errors, capturing a screenshot per class:
+rendered panels, that the theme control changes the live mode/color-scheme and
+geometry register, and no console errors. It also asserts the post-build
+presentation flow: after construction the demo reads the live panel/interface
+context, generates a data-grounded timeline, plays WebMCP safe actions, exposes a
+real replay control, and keeps the presentation strip non-overlapping with no
+stuck loading or construction placeholders. The smoke captures a screenshot per
+class:
 
 ```bash
 npx playwright install webkit

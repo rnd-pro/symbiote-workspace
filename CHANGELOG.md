@@ -25,6 +25,24 @@ All notable changes to this project will be documented in this file.
   interface context exposed to agents, runs declared reveal actions before
   narration/focus, uses the mounted router for `view.select`, and requires a host
   `executeAction` callback for safe WebMCP/host/workspace timeline actions.
+- Added `createWorkspacePresentationTimeline()` plus
+  `mounted.createPresentationTimeline()` for post-build prompt-depth
+  customization. The same collected interface context can now produce brief,
+  full, or data-grounded semantic timelines with different segment counts,
+  target coverage, narration density, and data references, without hardcoded
+  product tours.
+- Added post-build presentation proof to the chat-builder visual demo. After a
+  workspace is constructed, the demo now reads a live interface context from the
+  rendered panels, generates a data-grounded semantic timeline, plays it through
+  safe WebMCP actions, and exposes a real replay control plus
+  `window.__chatBuilder.presentation` evidence. The WebKit smoke asserts the
+  presentation strip is visible, non-overlapping, replayable, data-referenced,
+  WebMCP-driven, and free of DOM action bypasses or stuck placeholder states.
+- Fixed demo proof gates uncovered by the presentation smoke: root exports now
+  include the Node-safe presentation timeline helpers, settled chat seeding clears
+  lingering live-status indicators, theme smoke checks the actual
+  mode/color-scheme contract instead of an unset CSS variable, and the known
+  LayoutNode teardown race is classified without masking real console errors.
 - Synced product docs with the Phase 1 target-schema implementation: README,
   agent resource map, local agent instructions, and product docs now describe
   schema `1.0.0`, the 85-tool dispatch registry, catalog tools, server and SSR
