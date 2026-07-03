@@ -5,7 +5,27 @@ export {
   HOST_SERVICE_CATEGORIES,
   DATA_BINDING_DIRECTIONS,
   WORKSPACE_CONFIG_SCHEMA,
+  WORKSPACE_SECTION_MODULES,
+  assembleWorkspaceSchema,
+  getWorkspaceSchema,
 } from './workspace-schema.js';
+
+export * from './constants.js';
+export * from './was.js';
+export * from './config-path.js';
+export * from './value-classes.js';
+export * from './canonical-json.js';
+export * from './record-schema.js';
+export * from './session-document.js';
+
+export { structureSection } from './sections/structure.js';
+export { modulesSection } from './sections/modules.js';
+export { wiringSection } from './sections/wiring.js';
+export { dataSection } from './sections/data.js';
+export { routesSection } from './sections/routes.js';
+export { behaviorSection } from './sections/behavior.js';
+export { serverSection } from './sections/server.js';
+export { stateSection } from './sections/state.js';
 
 export {
   MODULE_CAPABILITY_SCHEMA_VERSION,

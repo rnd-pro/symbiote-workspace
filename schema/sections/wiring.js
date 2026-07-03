@@ -461,7 +461,7 @@ function validateKeybindings(config, context) {
       }
     }
     if (!chordError) {
-      let scopeKey = `${keybinding.chord} ${keybinding.when ?? ''}`;
+      let scopeKey = `${keybinding.chord}\u0000${keybinding.when ?? ''}`;
       if (scopedChords.has(scopeKey)) {
         context.error(`${path}.chord`, 'wiring.keybinding.duplicate_chord', `Duplicate chord ${JSON.stringify(keybinding.chord)} within the same when scope.`);
       }

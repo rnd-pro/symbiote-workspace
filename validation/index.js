@@ -3,6 +3,9 @@ export {
 } from './design-guardrails.js';
 
 export {
+  clearRegisteredSections,
+  getRegisteredSections,
+  registerSection,
   validateWorkspaceConfig,
   isCompatibleVersion,
 } from './core.js';

@@ -9,8 +9,8 @@
 
 export {
   PLUGIN_SCHEMA,
-  PLUGIN_CATEGORIES,
   validatePluginDefinition,
+  validatePluginWorkspaceTemplate,
 } from './plugin-schema.js';
 
 export {

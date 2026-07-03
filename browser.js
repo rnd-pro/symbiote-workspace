@@ -76,8 +76,8 @@ export {
 
 export {
   PLUGIN_SCHEMA,
-  PLUGIN_CATEGORIES,
   validatePluginDefinition,
+  validatePluginWorkspaceTemplate,
   registerPlugin,
   activatePlugin,
   unregisterPlugin,

@@ -24,14 +24,26 @@ describe('schema assembler', () => {
     assert.equal(isCompatibleVersion(WORKSPACE_SCHEMA_VERSION), true);
   });
 
-  it('ships the keystone with zero registered section modules', () => {
+  it('ships the W1 section modules through the assembler', () => {
     assert.ok(Object.isFrozen(WORKSPACE_SECTION_MODULES));
-    assert.deepEqual([...WORKSPACE_SECTION_MODULES], []);
+    assert.deepEqual(WORKSPACE_SECTION_MODULES.map((section) => section.id), [
+      'structure',
+      'modules',
+      'wiring',
+      'data',
+      'routes',
+      'behavior',
+      'server',
+      'state',
+    ]);
   });
 
   it('assembles a schema descriptor from the section registry', () => {
     let descriptor = assembleWorkspaceSchema();
-    assert.deepEqual(descriptor, { version: WORKSPACE_SCHEMA_VERSION, sections: [] });
+    assert.deepEqual(descriptor, {
+      version: WORKSPACE_SCHEMA_VERSION,
+      sections: WORKSPACE_SECTION_MODULES.map((section) => section.id),
+    });
     assert.deepEqual(getWorkspaceSchema(), descriptor);
   });
 
@@ -42,14 +54,15 @@ describe('schema assembler', () => {
     assert.deepEqual(result.errors, []);
   });
 
-  it('remains pluggable: unknown fields do not error without a section that owns them', () => {
+  it('validates through the registered section modules', () => {
     assembleWorkspaceSchema();
     let result = validateWorkspaceConfig({
       version: WORKSPACE_SCHEMA_VERSION,
       name: 'Pluggable Workspace',
-      routes: [{ pattern: '/orders/:id' }],
+      groups: {},
     });
-    assert.equal(result.ok, true, JSON.stringify(result.errors));
+    assert.equal(result.ok, false);
+    assert.ok(result.errors.some((error) => error.path === 'groups'));
   });
 
   it('rejects incompatible config versions through the assembler surface', () => {

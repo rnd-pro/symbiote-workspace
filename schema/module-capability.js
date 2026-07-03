@@ -22,6 +22,31 @@ import {
 
 export const MODULE_CAPABILITY_SCHEMA_VERSION = '0.2.0';
 
+export const MODULE_CAPABILITY_DESCRIPTOR_SCHEMA = Object.freeze({
+  type: 'object',
+  schemaVersion: MODULE_CAPABILITY_SCHEMA_VERSION,
+  required: Object.freeze(['tagName']),
+  properties: Object.freeze({
+    tagName: Object.freeze({ type: 'string' }),
+    title: Object.freeze({ oneOf: Object.freeze([{ type: 'string' }, { type: 'object' }]) }),
+    description: Object.freeze({ oneOf: Object.freeze([{ type: 'string' }, { type: 'object' }]) }),
+    provider: Object.freeze({ type: 'string' }),
+    capabilities: Object.freeze({ type: 'array', items: Object.freeze({ type: 'string' }) }),
+    actions: Object.freeze({ type: 'array' }),
+    settings: Object.freeze({ type: 'array' }),
+    state: Object.freeze({ type: 'array' }),
+    events: Object.freeze({ type: 'array' }),
+    bindings: Object.freeze({ type: 'array' }),
+    slots: Object.freeze({ type: 'array' }),
+    runtimeSlots: Object.freeze({ type: 'array' }),
+    streams: Object.freeze({ type: 'array' }),
+    hostServices: Object.freeze({ type: 'object' }),
+    lifecycle: Object.freeze({ type: 'object' }),
+    webmcp: Object.freeze({ type: 'object' }),
+    placement: Object.freeze({ type: 'object' }),
+  }),
+});
+
 const PORTABLE_ID_PATTERN = /^[a-z][a-z0-9]*(?:[./:_-][a-z0-9]+)*$/;
 const CUSTOM_ELEMENT_PATTERN = /^[a-z][a-z0-9]*(-[a-z0-9]+)+$/;
 
