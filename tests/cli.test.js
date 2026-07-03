@@ -39,6 +39,8 @@ describe('CLI registry projection', () => {
     assert.match(result.stdout, /workspace-describe/);
     assert.match(result.stdout, /construction-scaffold-blank/);
     assert.match(result.stdout, /module-register/);
+    assert.match(result.stdout, /workspace\.session\.snapshot\.list/);
+    assert.match(result.stdout, /execution-submit/);
     assert.doesNotMatch(result.stdout, /add-group/);
 
     for (let tool of TOOLS) {
@@ -96,5 +98,14 @@ describe('CLI registry projection', () => {
     assert.equal(body.status, 'error');
     assert.equal(body.code, 'tool-contract');
     assert.match(body.hint, /baseRevision/);
+  });
+
+  it('runs a W2 read-only session tool from the live registry', () => {
+    let result = runCli(['workspace.session.snapshot.list']);
+
+    assert.equal(result.status, 0, result.stderr);
+    let body = parseJson(result.stdout);
+    assert.equal(body.status, 'ok');
+    assert.deepEqual(body.snapshots, []);
   });
 });

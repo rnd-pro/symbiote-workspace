@@ -1,14 +1,14 @@
 /**
  * Document tool-family projection.
  *
- * The dispatch composition root imports this family later; this module keeps
- * the collection/document capability surface isolated from the monolithic
- * dispatcher while using the runtime/documents.js seam.
+ * This module keeps the collection/document capability surface isolated from
+ * the dispatch composition root while using the runtime/documents.js seam.
  *
  * @module symbiote-workspace/runtime/tools/document-tools
  */
 
 import { createDocumentRuntime } from '../documents.js';
+import { defineToolFamily } from './registry.js';
 
 function objectSchema(properties = {}, required = []) {
   return {
@@ -46,6 +46,7 @@ export const tools = Object.freeze([
       actor: { type: 'object' },
     }, ['collectionId', 'id']),
     mutates: true,
+    revisionScope: 'document',
   },
   {
     name: 'collection.delete',
@@ -56,6 +57,7 @@ export const tools = Object.freeze([
       actor: { type: 'object' },
     }, ['collectionId', 'id']),
     mutates: true,
+    revisionScope: 'document',
   },
   {
     name: 'document.load',
@@ -78,6 +80,7 @@ export const tools = Object.freeze([
       pointerUp: { type: 'boolean' },
     }, ['docAddress', 'ops']),
     mutates: true,
+    revisionScope: 'document',
   },
   {
     name: 'document.patches',
@@ -95,6 +98,7 @@ export const tools = Object.freeze([
       actor: { type: 'object' },
     }, ['docAddress']),
     mutates: true,
+    revisionScope: 'document',
   },
   {
     name: 'document.snapshot',
@@ -112,6 +116,7 @@ export const tools = Object.freeze([
       scope: { type: 'string', description: 'Presentation sidecar scope; defaults to viewport.' },
     }, ['docAddress', 'value']),
     mutates: true,
+    revisionScope: 'document',
   },
   {
     name: 'document.presentation.load',
@@ -127,13 +132,20 @@ function documentAddressFromParts(collectionId, id) {
   return `doc:${collectionId}:${id}`;
 }
 
-export function resolveDocumentRuntime(session = {}, options = {}) {
+function contextSession(context = {}) {
+  return context.session || context;
+}
+
+export function resolveDocumentRuntime(context = {}, options = {}) {
   if (options.runtime) return options.runtime;
+  let session = contextSession(context);
+  if (context.documentRuntime) return context.documentRuntime;
+  if (context.documents) return context.documents;
   if (session.documentRuntime) return session.documentRuntime;
   if (session.documents) return session.documents;
   if (!session.__documentRuntime) {
     session.__documentRuntime = createDocumentRuntime({
-      config: session.config || {},
+      config: context.config || session.config || {},
       persistence: session.documentPersistence,
       persistenceAdapters: session.documentPersistenceAdapters,
       broadcast: session.broadcast,
@@ -144,34 +156,34 @@ export function resolveDocumentRuntime(session = {}, options = {}) {
 }
 
 export function createDocumentToolHandlers(options = {}) {
-  let runtimeFor = options.runtimeFor || ((session) => resolveDocumentRuntime(session, options));
+  let runtimeFor = options.runtimeFor || ((context) => resolveDocumentRuntime(context, options));
   return {
-    'collection.list': async (args = {}, session = {}) => runtimeFor(session, args).listCollections(),
-    'collection.query': async (args = {}, session = {}) => (
-      runtimeFor(session, args).queryCollection(args.collectionId)
+    'collection.list': async (args = {}, context = {}) => runtimeFor(context, args).listCollections(),
+    'collection.query': async (args = {}, context = {}) => (
+      runtimeFor(context, args).queryCollection(args.collectionId)
     ),
-    'collection.create': async (args = {}, session = {}) => (
-      runtimeFor(session, args).createDocument(args.collectionId, args)
+    'collection.create': async (args = {}, context = {}) => (
+      runtimeFor(context, args).createDocument(args.collectionId, args)
     ),
-    'collection.delete': async (args = {}, session = {}) => (
-      runtimeFor(session, args).deleteDocument(documentAddressFromParts(args.collectionId, args.id), args)
+    'collection.delete': async (args = {}, context = {}) => (
+      runtimeFor(context, args).deleteDocument(documentAddressFromParts(args.collectionId, args.id), args)
     ),
-    'document.load': async (args = {}, session = {}) => runtimeFor(session, args).load(args.docAddress),
-    'document.commit': async (args = {}, session = {}) => (
-      runtimeFor(session, args).commit(args.docAddress, args.ops, args)
+    'document.load': async (args = {}, context = {}) => runtimeFor(context, args).load(args.docAddress),
+    'document.commit': async (args = {}, context = {}) => (
+      runtimeFor(context, args).commit(args.docAddress, args.ops, args)
     ),
-    'document.patches': async (args = {}, session = {}) => (
-      runtimeFor(session, args).getPatches(args.docAddress, args.sinceRevision)
+    'document.patches': async (args = {}, context = {}) => (
+      runtimeFor(context, args).getPatches(args.docAddress, args.sinceRevision)
     ),
-    'document.delete': async (args = {}, session = {}) => (
-      runtimeFor(session, args).deleteDocument(args.docAddress, args)
+    'document.delete': async (args = {}, context = {}) => (
+      runtimeFor(context, args).deleteDocument(args.docAddress, args)
     ),
-    'document.snapshot': async (args = {}, session = {}) => runtimeFor(session, args).snapshot(args.docAddress),
-    'document.presentation.save': async (args = {}, session = {}) => (
-      runtimeFor(session, args).savePresentation(args.docAddress, args.value, args)
+    'document.snapshot': async (args = {}, context = {}) => runtimeFor(context, args).snapshot(args.docAddress),
+    'document.presentation.save': async (args = {}, context = {}) => (
+      runtimeFor(context, args).savePresentation(args.docAddress, args.value, args)
     ),
-    'document.presentation.load': async (args = {}, session = {}) => (
-      runtimeFor(session, args).loadPresentation(args.docAddress, args)
+    'document.presentation.load': async (args = {}, context = {}) => (
+      runtimeFor(context, args).loadPresentation(args.docAddress, args)
     ),
   };
 }
@@ -182,3 +194,7 @@ export const documentTools = Object.freeze({
   tools,
   handlers,
 });
+
+export const documentToolFamily = defineToolFamily('document', tools, handlers);
+
+export default documentToolFamily;

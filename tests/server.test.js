@@ -4,7 +4,7 @@ import { writeFile, mkdir, rm } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { loadPluginsFromDir, activateAllPlugins } from '../server/plugin-loader.js';
+import { loadPluginsFromDir, activateAllPlugins, registerBuiltInServerPlugins } from '../server/plugin-loader.js';
 import { createWorkspaceServer } from '../server/index.js';
 import { createIngressPlugin } from '../server/ingress.js';
 import { createJobRuntime } from '../server/jobs.js';
@@ -15,7 +15,7 @@ import { clearRegistry, getNodeType } from 'symbiote-engine';
 let __dirname = dirname(fileURLToPath(import.meta.url));
 let FIXTURES_DIR = join(__dirname, '_test_plugins_fixtures');
 
-describe('Server: Plugin Loader (from directory)', () => {
+describe('Server: Plugin Loader (from directory)', { concurrency: 1 }, () => {
   beforeEach(async () => {
     clearPlugins();
     clearRegistry();
@@ -141,7 +141,7 @@ describe('Server: Plugin Loader (from directory)', () => {
   });
 });
 
-describe('Server: workspace server startup', () => {
+describe('Server: workspace server startup', { concurrency: 1 }, () => {
   beforeEach(async () => {
     clearPlugins();
     clearRegistry();
@@ -157,6 +157,61 @@ describe('Server: workspace server startup', () => {
     } finally {
       await handle.close();
     }
+  });
+
+  it('registers built-in server-plane plugins only when config needs them', async () => {
+    let skipped = registerBuiltInServerPlugins({ config: {} });
+    assert.deepEqual(skipped, []);
+
+    let registered = registerBuiltInServerPlugins({ config: serverConfig() });
+    assert.deepEqual(registered.map((entry) => entry.status), ['registered', 'registered']);
+    assert.equal(listPlugins().some((plugin) => plugin.name === 'symbiote.workspace.ingress'), true);
+    assert.equal(listPlugins().some((plugin) => plugin.name === 'symbiote.workspace.triggers'), true);
+  });
+
+  it('starts server mode with activated built-in server-plane runtimes', async () => {
+    let config = serverConfig();
+    let serverPlane = {};
+    let hostCalls = [];
+    let executionRuntime = createJobRuntime({ config, autoStart: false });
+    let ingressHost = {
+      async register(record) {
+        hostCalls.push(['register', record.registrationId]);
+        return { transportId: `transport:${record.registrationId}` };
+      },
+      async unregister(record) {
+        hostCalls.push(['unregister', record.registrationId]);
+      },
+    };
+
+    let handle = await createWorkspaceServer({
+      port: 0,
+      watchFiles: false,
+      config,
+      serverPlane,
+      executionRuntime,
+      ingressHost,
+    });
+    try {
+      assert.ok(handle.serverPlane.ingress);
+      assert.ok(handle.serverPlane.triggers);
+      assert.equal(handle.executionRuntime, executionRuntime);
+      assert.equal(handle.plugins.some((plugin) => plugin.name === 'symbiote.workspace.ingress'), true);
+      assert.equal(hostCalls[0][0], 'register');
+
+      let registration = [...handle.serverPlane.ingress.registrations.values()][0];
+      let response = await handle.serverPlane.ingress.route({
+        method: 'POST',
+        path: registration.path,
+        body: { event: 'created' },
+      });
+
+      assert.equal(response.statusCode, 202);
+      assert.equal(typeof response.body.runId, 'string');
+    } finally {
+      await handle.close();
+    }
+    assert.equal(hostCalls.at(-1)[0], 'unregister');
   });
 });
 
@@ -184,7 +239,7 @@ function serverConfig() {
   };
 }
 
-describe('server-plane plugin composition', () => {
+describe('server-plane plugin composition', { concurrency: 1 }, () => {
   beforeEach(() => {
     clearPlugins();
   });

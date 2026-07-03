@@ -120,8 +120,13 @@ describe('MCP registry projection', () => {
       let names = new Set(listed.result.tools.map((tool) => tool.name));
       assert.equal(names.has('workspace_describe'), true);
       assert.equal(names.has('module_register'), true);
+      assert.equal(names.has('navigate'), true);
+      assert.equal(names.has('document.commit'), true);
+      assert.equal(names.has('workspace.session.snapshot.list'), true);
+      assert.equal(names.has('execution_submit'), true);
       assert.equal(names.has('register_panel_type'), false);
       assert.equal(listed.result.tools.every((tool) => tool.annotations), true);
+      assert.equal(listed.result.tools.some((tool) => tool.revisionScope), false);
     });
   });
 
@@ -182,6 +187,20 @@ describe('MCP registry projection', () => {
       assert.equal(body.status, 'ok');
       assert.equal(body.origin.actor, 'agent-gated');
       assert.deepEqual(body.origin.principal, { kind: 'agent', id: 'mcp:actor-test' });
+    });
+  });
+
+  it('calls W2 session tools through the public MCP registry', async () => {
+    await withMcp(async (client) => {
+      let response = await client.request('tools/call', {
+        name: 'workspace.session.snapshot.list',
+        arguments: { session_id: 'w2-session' },
+      });
+      let body = parseToolResult(response);
+
+      assert.equal(response.result.isError, undefined);
+      assert.equal(body.status, 'ok');
+      assert.deepEqual(body.snapshots, []);
     });
   });
 });

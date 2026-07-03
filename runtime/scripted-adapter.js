@@ -25,7 +25,7 @@
  *
  * A tool step may carry a non-contract `resolveArgs(ctx, baseArgs)` function to
  * thread state from prior turns (e.g. the live questionnaire array that
- * `answer_construction_question` needs) into its args. The adapter calls it
+ * `construction_question_answer` needs) into its args. The adapter calls it
  * against the read-only ctx and strips it before yielding, so the emitted step
  * stays on-contract.
  *
@@ -99,7 +99,7 @@ export function createMemoryTrace({ confirmDecision = { action: 'confirm' } } = 
  * @param {Object} input.chat - { panel, component, behavior }.
  * @param {Object} input.dock - { layoutTree } horizontal split docking chat right.
  * @param {Array<{target: string, behavior: Object}>} input.panelBehaviors - Per-panel + chat behaviors.
- * @param {Object} input.rootBehavior - update_layout_behavior payload.
+ * @param {Object} input.rootBehavior - layout_behavior_update payload.
  * @returns {import('./construction-agent.js').Step[]}
  */
 export function buildConstructionPlan(input) {
@@ -119,13 +119,13 @@ export function buildConstructionPlan(input) {
 
   plan.push({
     type: 'tool',
-    toolName: 'classify_workspace',
+    toolName: 'construction_classify',
     args: { intent, ...extras },
     display: 'Classifying the workspace intent.',
   });
   plan.push({
     type: 'tool',
-    toolName: 'build_construction_questions',
+    toolName: 'construction_questions_build',
     args: { intent, template, ...extras },
     display: 'Building the construction questionnaire.',
   });
@@ -136,7 +136,7 @@ export function buildConstructionPlan(input) {
     answerObject[questionId] = answer;
     plan.push({
       type: 'tool',
-      toolName: 'answer_construction_question',
+      toolName: 'construction_question_answer',
       args: { questionId, answer },
       // Thread the live questionnaire from the previous turn's result, exactly as
       // the demo threads its evolving `questionnaire` array between answers.
@@ -150,13 +150,13 @@ export function buildConstructionPlan(input) {
 
   plan.push({
     type: 'tool',
-    toolName: 'plan_workspace',
+    toolName: 'construction_plan',
     args: { intent, template, answers: answerObject, ...extras },
     display: 'Planning the workspace construction.',
   });
   plan.push({
     type: 'tool',
-    toolName: 'construct_workspace',
+    toolName: 'construction_construct',
     args: { intent, template, answers: answerObject, ...extras },
     display: 'Constructing the workspace from the template.',
   });
@@ -165,7 +165,7 @@ export function buildConstructionPlan(input) {
   if (chat) {
     plan.push({
       type: 'tool',
-      toolName: 'register_panel_type',
+      toolName: 'module_register',
       args: { name: chat.panel, title: 'Chat', icon: 'chat', component: chat.component },
       display: 'Registering the chat panel type.',
     });
@@ -173,7 +173,7 @@ export function buildConstructionPlan(input) {
   if (dock) {
     plan.push({
       type: 'tool',
-      toolName: 'set_layout',
+      toolName: 'layout_set',
       args: { layoutTree: dock.layoutTree },
       display: 'Docking the chat on the right.',
     });
@@ -181,7 +181,7 @@ export function buildConstructionPlan(input) {
   for (let { target, behavior } of panelBehaviors) {
     plan.push({
       type: 'tool',
-      toolName: 'set_behavior',
+      toolName: 'layout_behavior_set',
       args: { target, behavior },
       display: `Setting behavior for ${target}.`,
     });
@@ -189,15 +189,15 @@ export function buildConstructionPlan(input) {
   if (rootBehavior) {
     plan.push({
       type: 'tool',
-      toolName: 'update_layout_behavior',
-      args: { behavior: rootBehavior },
+      toolName: 'layout_behavior_update',
+      args: { target: 'root', behavior: rootBehavior },
       display: 'Setting the root reflow policy.',
     });
   }
 
   plan.push({
     type: 'tool',
-    toolName: 'export_config',
+    toolName: 'config_export',
     args: { strict: true },
     display: 'Exporting the portable config.',
   });

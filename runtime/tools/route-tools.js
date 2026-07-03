@@ -1,20 +1,36 @@
 import { createRouteMatcher } from '../route-matcher.js';
+import { defineToolFamily } from './registry.js';
 
-function routerFromSession(session) {
+function contextSession(context = {}) {
+  return context.session || context;
+}
+
+function routerFromContext(context = {}) {
+  let session = contextSession(context);
   return session?.router
     || session?.routeRouter
     || session?.runtime?.router
-    || session?.routers?.route;
+    || session?.routers?.route
+    || context.router
+    || context.routeRouter;
 }
 
-function configFromSession(session) {
+function configFromContext(context = {}) {
+  let session = contextSession(context);
+  if (context.config) return context.config;
   if (session?.config) return session.config;
   if (typeof session?.ensure === 'function') return session.ensure();
   return null;
 }
 
-function actorSource(args, session) {
-  return args?.source || session?.actor || session?.principal || 'user';
+function actorSource(args, context) {
+  let session = contextSession(context);
+  return args?.source
+    || context?.origin?.principal
+    || session?.principal
+    || context?.actor
+    || session?.actor
+    || 'user';
 }
 
 export const tools = Object.freeze([
@@ -80,24 +96,24 @@ export const tools = Object.freeze([
   },
 ]);
 
-async function navigate(args = {}, session = {}) {
-  let router = routerFromSession(session);
+async function navigate(args = {}, context = {}) {
+  let router = routerFromContext(context);
   if (!router || typeof router.navigate !== 'function') {
     throw new Error('navigate requires a session router created by createRouter().');
   }
   return router.navigate({
     to: args.to,
     history: args.history,
-    source: actorSource(args, session),
+    source: actorSource(args, context),
   });
 }
 
-async function resolveRoute(args = {}, session = {}) {
-  let router = routerFromSession(session);
+async function resolveRoute(args = {}, context = {}) {
+  let router = routerFromContext(context);
   if (router && typeof router.resolve === 'function') {
     return router.resolve(args.to);
   }
-  let config = configFromSession(session);
+  let config = configFromContext(context);
   if (!config) throw new Error('resolve_route requires a session config or router.');
   let matcher = createRouteMatcher(config);
   if (args.to?.url) return matcher.resolve(args.to.url);
@@ -118,4 +134,6 @@ export async function dispatchRouteTool(toolName, args, session) {
   return handler(args, session);
 }
 
-export default Object.freeze({ tools, handlers });
+export const routeToolFamily = defineToolFamily('route', tools, handlers);
+
+export default routeToolFamily;

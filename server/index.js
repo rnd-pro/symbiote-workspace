@@ -8,7 +8,16 @@
  */
 
 export { createWorkspaceServer } from './serve.js';
-export { loadPluginsFromDir, loadPluginsFromPackages, activateAllPlugins } from './plugin-loader.js';
+export {
+  loadPluginsFromDir,
+  loadPluginsFromPackages,
+  registerBuiltInServerPlugins,
+  activatePlugins,
+  activateAllPlugins,
+} from './plugin-loader.js';
+export { createIngressRouter, createIngressPlugin } from './ingress.js';
+export { createTriggerReconciler, createTriggerReconcilerPlugin } from './triggers.js';
+export { createJobRuntime, createMemoryExecutionStore, deterministicRunId } from './jobs.js';
 export {
   DATA_CHANGE_MESSAGE_TYPE,
   buildDataChangeMessage,

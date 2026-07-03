@@ -12,6 +12,7 @@ import {
   splitJsonPointer,
   unescapePointerSegment,
 } from '../schema/config-path.js';
+import { assembleWorkspaceSchema, WORKSPACE_SCHEMA_VERSION } from '../schema/index.js';
 import { validateWorkspacePatch } from '../validation/workspace-patches.js';
 
 describe('config path dialect', () => {
@@ -55,33 +56,65 @@ describe('config path dialect', () => {
   });
 
   it('keeps workspace-patches pointer behavior compatible', async () => {
+    assembleWorkspaceSchema();
     let config = {
-      version: '0.2.0',
+      version: WORKSPACE_SCHEMA_VERSION,
       name: 'Patch Test',
-      layout: {
-        type: 'split',
-        direction: 'horizontal',
-        ratio: 0.5,
-        first: { type: 'panel', panelType: 'main' },
-        second: { type: 'panel', panelType: 'side' },
+      register: 'tool',
+      requires: {
+        packages: [{ id: 'symbiote-ui', version: '^1.0.0' }],
       },
-      panelTypes: {
-        main: { title: 'Main', component: 'sn-main' },
-        side: { title: 'Side', component: 'sn-side' },
+      modules: [
+        {
+          id: 'symbiote-ui:main',
+          source: { kind: 'package', package: 'symbiote-ui' },
+          tagName: 'sn-main',
+          capabilities: ['workspace.main'],
+        },
+        {
+          id: 'symbiote-ui:side',
+          source: { kind: 'package', package: 'symbiote-ui' },
+          tagName: 'sn-side',
+          capabilities: ['workspace.side'],
+        },
+      ],
+      panels: {
+        main: { module: 'symbiote-ui:main', title: 'Main' },
+        side: { module: 'symbiote-ui:side', title: 'Side' },
       },
+      layouts: {
+        main: {
+          kind: 'bsp',
+          root: {
+            type: 'split',
+            id: 'root',
+            direction: 'horizontal',
+            ratio: 0.5,
+            first: { type: 'panel', id: 'main-node', panel: 'main' },
+            second: { type: 'panel', id: 'side-node', panel: 'side' },
+          },
+        },
+      },
+      views: [{ id: 'main', title: 'Main', layout: { $layout: 'main' } }],
     };
     let report = await validateWorkspacePatch(config, {
-      layout: {
-        type: 'split',
-        direction: 'horizontal',
-        ratio: 0.01,
-        first: { type: 'panel', panelType: 'main' },
-        second: { type: 'panel', panelType: 'side' },
+      layouts: {
+        main: {
+          kind: 'bsp',
+          root: {
+            type: 'split',
+            id: 'root',
+            direction: 'horizontal',
+            ratio: 0.01,
+            first: { type: 'panel', id: 'main-node', panel: 'main' },
+            second: { type: 'panel', id: 'side-node', panel: 'side' },
+          },
+        },
       },
     });
 
     assert.equal(report.status, 'blocked');
-    assert.ok(report.diagnostics.some((item) => item.path === '/layout/ratio'));
-    assert.ok(report.suggestedPatches.some((item) => item.path === '/layout/ratio'));
+    assert.ok(report.diagnostics.some((item) => item.path === '/layouts/main/root/ratio'));
+    assert.ok(report.suggestedPatches.some((item) => item.path === '/layouts/main/root/ratio'));
   });
 });

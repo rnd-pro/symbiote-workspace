@@ -1,8 +1,19 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createSession, dispatch, isMutating, TOOLS } from '../runtime/index.js';
+import {
+  WorkspaceState,
+  createDocumentRuntime,
+  createMemoryDocumentPersistence,
+  createMemorySessionPersistence,
+  createRouter,
+  createSession,
+  dispatch,
+  isMutating,
+  TOOLS,
+} from '../runtime/index.js';
 import { createToolRegistry, defineToolFamily } from '../runtime/tools/registry.js';
+import { WORKSPACE_SCHEMA_VERSION } from '../schema/value-classes.js';
 
 const legacyToolNames = [
   'bridge_event',
@@ -16,6 +27,19 @@ function withBase(session, args = {}) {
   return { ...args, baseRevision: session.revision };
 }
 
+function documentConfig() {
+  return {
+    version: WORKSPACE_SCHEMA_VERSION,
+    name: 'Dispatch Documents',
+    data: {
+      collections: [{
+        id: 'notes',
+        itemSchema: { kind: 'custom', schemaRef: 'note' },
+      }],
+    },
+  };
+}
+
 describe('dispatch registry composition', () => {
   it('merges family registries into one unique source of truth', () => {
     let names = TOOLS.map((tool) => tool.name);
@@ -25,6 +49,12 @@ describe('dispatch registry composition', () => {
     assert.ok(names.includes('module_register'));
     assert.ok(names.includes('config_export'));
     assert.ok(names.includes('pack_export'));
+    assert.ok(names.includes('navigate'));
+    assert.ok(names.includes('document.commit'));
+    assert.ok(names.includes('workspace.session.commit'));
+    assert.ok(names.includes('hook_add'));
+    assert.ok(names.includes('grant_revoke'));
+    assert.ok(names.includes('execution_submit'));
   });
 
   it('fails loudly on duplicate tool names across families', () => {
@@ -71,8 +101,12 @@ describe('session and mutation contract', () => {
   it('identifies mutating tools under renamed names only', () => {
     assert.equal(isMutating('construction_scaffold_blank'), true);
     assert.equal(isMutating('module_register'), true);
+    assert.equal(isMutating('document.commit'), true);
+    assert.equal(isMutating('workspace.session.commit'), true);
+    assert.equal(isMutating('grant_revoke'), true);
     assert.equal(isMutating('config_import'), true);
     assert.equal(isMutating('workspace_describe'), false);
+    assert.equal(isMutating('navigate'), false);
     assert.equal(isMutating('component_discover'), false);
     assert.equal(isMutating('add_group'), false);
   });
@@ -139,6 +173,95 @@ describe('session and mutation contract', () => {
     assert.equal(result.status, 'error');
     assert.equal(result.code, 'workspace_config_missing');
     assert.equal(session.config, null);
+  });
+});
+
+describe('W2 dispatch integration', () => {
+  it('routes navigation through the composed registry context', async () => {
+    let router = createRouter({
+      views: [{
+        id: 'item',
+        route: {
+          pattern: '/items/:id',
+          params: [{ name: 'id', type: 'string' }],
+        },
+      }],
+    }, { mode: 'memory' });
+    let session = createSession({
+      principal: { kind: 'agent', id: 'navigator' },
+      actor: 'agent-gated',
+    });
+    session.router = router;
+
+    let result = await dispatch('navigate', {
+      to: { view: 'item', params: { id: 'tool' } },
+    }, session, { actor: 'agent-gated' });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.view, 'item');
+    assert.match(result.intentId, /^navigate\.agent:/);
+  });
+
+  it('keeps document CAS independent from workspace session revision', async () => {
+    let config = documentConfig();
+    let documentRuntime = createDocumentRuntime({
+      config,
+      persistence: createMemoryDocumentPersistence(),
+    });
+    let session = createSession({ config });
+    session.documentRuntime = documentRuntime;
+
+    let created = await dispatch('collection.create', {
+      baseRevision: 0,
+      collectionId: 'notes',
+      id: 'note_1',
+      body: { text: 'draft' },
+    }, session, { actor: 'agent-gated' });
+    assert.equal(created.docAddress, 'doc:notes:note_1');
+    assert.equal(session.revision, 0);
+
+    let committed = await dispatch('document.commit', {
+      baseRevision: 0,
+      docAddress: 'doc:notes:note_1',
+      ops: [{ op: 'set', path: 'body.text', value: 'updated' }],
+    }, session, { actor: 'agent-gated' });
+    assert.deepEqual(committed, { revision: 1 });
+    assert.equal(session.revision, 0);
+  });
+
+  it('settles session-layout restoreOverlay before returning through dispatch', async () => {
+    let configStack = new WorkspaceState({
+      version: WORKSPACE_SCHEMA_VERSION,
+      layout: { left: { ratio: 0.5 } },
+    });
+    let session = createSession({
+      workspaceId: 'dispatch-layout',
+      principal: { kind: 'human', id: 'u1' },
+      actor: 'user-direct',
+      sessionPersistence: createMemorySessionPersistence(),
+    });
+    session.workspaceState = configStack;
+
+    await dispatch('workspace.session.commit', {
+      baseRevision: 0,
+      ops: [{ op: 'replace', path: '/geometry', value: { main: { left: { ratio: 0.35 } } } }],
+    }, session, { actor: 'user-direct' });
+
+    let promoted = await dispatch('layout_promote_geometry', {
+      baseRevision: 0,
+      sessionBaseRevision: 1,
+      ops: [{ op: 'replace', path: 'layout.left.ratio', value: 0.35 }],
+    }, session, { actor: 'user-direct' });
+    assert.equal(promoted.status, 'ok');
+    assert.deepEqual(promoted.restoreOverlay, { main: { left: { ratio: 0.35 } } });
+
+    let undo = await dispatch('session.layout.undo', {
+      baseRevision: 0,
+      action: 'undo',
+    }, session, { actor: 'user-direct' });
+    assert.equal(undo.status, 'ok');
+    assert.deepEqual(undo.restoreOverlayResult.restored, promoted.restoreOverlay);
+    assert.equal(JSON.parse(JSON.stringify(undo)).restoreOverlayResult.restored.main.left.ratio, 0.35);
   });
 });
 

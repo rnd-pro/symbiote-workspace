@@ -14,11 +14,11 @@ import { validateStep, assertStep, buildCtx, toolViews } from '../runtime/constr
 
 describe('validateStep — closed union', () => {
   it('accepts a tool step with a known toolName and object args', () => {
-    assert.equal(validateStep({ type: 'tool', toolName: 'classify_workspace', args: { intent: 'x' } }).valid, true);
+    assert.equal(validateStep({ type: 'tool', toolName: 'construction_classify', args: { intent: 'x' } }).valid, true);
   });
 
   it('accepts a tool step without args', () => {
-    assert.equal(validateStep({ type: 'tool', toolName: 'export_config' }).valid, true);
+    assert.equal(validateStep({ type: 'tool', toolName: 'config_export' }).valid, true);
   });
 
   it('accepts message and done steps', () => {
@@ -40,8 +40,8 @@ describe('validateStep — closed union', () => {
   });
 
   it('rejects a tool step with non-object args', () => {
-    assert.equal(validateStep({ type: 'tool', toolName: 'classify_workspace', args: 'nope' }).valid, false);
-    assert.equal(validateStep({ type: 'tool', toolName: 'classify_workspace', args: [1, 2] }).valid, false);
+    assert.equal(validateStep({ type: 'tool', toolName: 'construction_classify', args: 'nope' }).valid, false);
+    assert.equal(validateStep({ type: 'tool', toolName: 'construction_classify', args: [1, 2] }).valid, false);
   });
 
   it('rejects a message step without a string display', () => {
@@ -58,7 +58,7 @@ describe('validateStep — closed union', () => {
 
 describe('assertStep', () => {
   it('returns the step when valid', () => {
-    let step = { type: 'tool', toolName: 'export_config' };
+    let step = { type: 'tool', toolName: 'config_export' };
     assert.equal(assertStep(step), step);
   });
 
@@ -74,12 +74,12 @@ describe('toolViews', () => {
   it('exposes name/description/inputSchema/mutates for every tool, cloned from the registry', () => {
     let views = toolViews();
     assert.equal(views.length, TOOLS.length);
-    let construct = views.find((v) => v.name === 'construct_workspace');
+    let construct = views.find((v) => v.name === 'construction_construct');
     assert.equal(construct.mutates, true);
-    let describe = views.find((v) => v.name === 'describe_workspace');
+    let describe = views.find((v) => v.name === 'workspace_describe');
     assert.equal(describe.mutates, false);
     // Cloned, not the live registry object.
-    let live = TOOLS.find((t) => t.name === 'construct_workspace');
+    let live = TOOLS.find((t) => t.name === 'construction_construct');
     assert.notEqual(construct.inputSchema, live.inputSchema);
   });
 });
@@ -87,7 +87,7 @@ describe('toolViews', () => {
 describe('buildCtx', () => {
   it('assembles a read-only context with cloned config/intent and the tool slice', () => {
     let session = { config: { name: 'WS', groups: [] } };
-    let history = [{ toolName: 'classify_workspace', args: {}, envelope: { summary: 's', warnings: [], data: {} } }];
+    let history = [{ toolName: 'construction_classify', args: {}, envelope: { summary: 's', warnings: [], data: {} } }];
     let ctx = buildCtx(session, history, { status: 'ok' }, 'plan-workspace', 'an intent');
 
     assert.equal(ctx.intent, 'an intent');

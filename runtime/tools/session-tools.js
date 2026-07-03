@@ -1,14 +1,14 @@
 /**
  * Session tool-family projection.
  *
- * Dispatch imports this family in a later integration slice; this module keeps
- * session-document persistence, snapshots, and layout overlay affordances behind
- * the injected session-store seam.
+ * This module keeps session-document persistence, snapshots, and layout overlay
+ * affordances behind the injected session-store seam.
  *
  * @module symbiote-workspace/runtime/tools/session-tools
  */
 
 import { createSessionStore } from '../session-store.js';
+import { defineToolFamily } from './registry.js';
 
 function objectSchema(properties = {}, required = []) {
   return {
@@ -44,6 +44,7 @@ export const tools = Object.freeze([
       actor: actorSchema,
     }, ['ops']),
     mutates: true,
+    revisionScope: 'session',
   },
   {
     name: 'workspace.session.snapshot.save',
@@ -52,6 +53,7 @@ export const tools = Object.freeze([
       snapshotId: { type: 'string' },
     }, ['snapshotId']),
     mutates: true,
+    revisionScope: 'session',
   },
   {
     name: 'workspace.session.snapshot.load',
@@ -75,6 +77,7 @@ export const tools = Object.freeze([
       sessionBaseRevision: { type: 'integer' },
     }),
     mutates: true,
+    revisionScope: 'session',
   },
   {
     name: 'session.layout.undo',
@@ -85,6 +88,7 @@ export const tools = Object.freeze([
       principal: { type: 'object' },
     }),
     mutates: true,
+    revisionScope: 'session',
   },
 ]);
 
@@ -129,6 +133,19 @@ function configStackFromContext(args = {}, context = {}) {
     || session.state;
 }
 
+async function settleOverlayResult(result) {
+  let next = await Promise.resolve(result);
+  if (next && typeof next === 'object') {
+    if (next.restoreOverlayResult && typeof next.restoreOverlayResult.then === 'function') {
+      next = { ...next, restoreOverlayResult: await next.restoreOverlayResult };
+    }
+    if (next.clearOverlayResult && typeof next.clearOverlayResult.then === 'function') {
+      next = { ...next, clearOverlayResult: await next.clearOverlayResult };
+    }
+  }
+  return next;
+}
+
 export function createSessionToolHandlers(options = {}) {
   let storeFor = options.storeFor || ((context) => resolveSessionStore(context, options));
   return {
@@ -166,12 +183,12 @@ export function createSessionToolHandlers(options = {}) {
       }
       let store = storeFor(context, args);
       let session = contextSession(context);
-      return stack[action]({
+      return settleOverlayResult(stack[action]({
         ...args,
         principal: args.principal || context.actor?.principal || session.principal,
         actor: args.actor?.actor || args.actor || action,
         restoreOverlayExecutor: store.restoreOverlayExecutor(),
-      });
+      }));
     },
   };
 }
@@ -183,10 +200,12 @@ export const sessionTools = Object.freeze({
   handlers,
 });
 
+export const sessionToolFamily = defineToolFamily('session', tools, handlers);
+
 export async function dispatchSessionTool(toolName, args, context) {
   let handler = handlers[toolName];
   if (!handler) throw new Error(`Unknown session tool: ${toolName}`);
   return handler(args, context);
 }
 
-export default sessionTools;
+export default sessionToolFamily;

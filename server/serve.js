@@ -11,7 +11,13 @@
  * @module symbiote-workspace/server/serve
  */
 
-import { loadPluginsFromDir, loadPluginsFromPackages, activateAllPlugins } from './plugin-loader.js';
+import {
+  activatePlugins,
+  loadPluginsFromDir,
+  loadPluginsFromPackages,
+  registerBuiltInServerPlugins,
+} from './plugin-loader.js';
+import { createJobRuntime } from './jobs.js';
 import { listPlugins, clearPlugins } from '../plugins/index.js';
 
 /**
@@ -23,6 +29,8 @@ import { listPlugins, clearPlugins } from '../plugins/index.js';
  * @property {string} [workflowFile] - Path to .workflow.json (passed to engine)
  * @property {boolean} [watchFiles=true] - Enable file watching (passed to engine)
  * @property {boolean} [verbose=false] - Verbose logging
+ * @property {Object} [config] - Workspace config used by built-in server-plane plugins
+ * @property {Object} [serverPlane] - Mutable holder populated with activated server-plane runtimes
  */
 
 /**
@@ -46,6 +54,22 @@ export async function createWorkspaceServer(options = {}) {
     workflowFile,
     watchFiles = true,
     verbose = false,
+    config = {},
+    serverPlane = {},
+    builtInServerPlugins = true,
+    executionRuntime,
+    jobRuntime,
+    jobs,
+    ingressHost,
+    scheduleHost,
+    documentRuntime,
+    documents,
+    ingress,
+    triggers,
+    executionStore,
+    executionRunner,
+    executionAutoStart,
+    executionCapacityGroups,
   } = options;
 
   let log = verbose ? console.log.bind(console) : () => {};
@@ -63,11 +87,20 @@ export async function createWorkspaceServer(options = {}) {
     loadResults.push(...pkgResults);
   }
 
+  let builtInResults = registerBuiltInServerPlugins({
+    config,
+    enabled: builtInServerPlugins,
+    ingress,
+    triggers,
+  });
+  loadResults.push(...builtInResults);
+
   let loadedCount = loadResults.filter((r) => r.status === 'registered').length;
+  let existingCount = loadResults.filter((r) => r.status === 'already_registered').length;
   let errorCount = loadResults.filter((r) => r.status === 'error').length;
 
-  if (loadedCount > 0 || errorCount > 0) {
-    log(`📦 [workspace-server] Plugins: ${loadedCount} loaded, ${errorCount} errors`);
+  if (loadedCount > 0 || existingCount > 0 || errorCount > 0) {
+    log(`📦 [workspace-server] Plugins: ${loadedCount} loaded, ${existingCount} existing, ${errorCount} errors`);
   }
 
   // 2. Import and start engine server
@@ -91,14 +124,33 @@ export async function createWorkspaceServer(options = {}) {
   });
 
   // 3. Activate all pending plugins with server context
+  let effectiveExecutionRuntime = executionRuntime || jobRuntime || jobs || (builtInResults.length > 0
+    ? createJobRuntime({
+      config,
+      store: executionStore,
+      runner: executionRunner,
+      autoStart: executionAutoStart,
+      capacityGroups: executionCapacityGroups,
+    })
+    : null);
+
   let activationContext = {
     server: engineResult.server,
     wss: engineResult.wss,
     graph: engineResult.graph,
     broadcast: engineResult.broadcast,
+    config,
+    serverPlane,
+    executionRuntime: effectiveExecutionRuntime,
+    ingressHost,
+    scheduleHost,
+    documentRuntime: documentRuntime || documents,
   };
 
-  let activationResults = await activateAllPlugins(activationContext);
+  let serverPluginNames = [...new Set(loadResults
+    .filter((result) => result.status === 'registered' || result.status === 'already_registered')
+    .map((result) => result.name))];
+  let activationResults = await activatePlugins(serverPluginNames, activationContext);
 
   for (let result of activationResults) {
     if (result.ok) {
@@ -114,8 +166,9 @@ export async function createWorkspaceServer(options = {}) {
   let engineClose = engineResult.close;
 
   async function close() {
-    // Deactivate plugins in reverse order
-    let registered = listPlugins();
+    // Deactivate this server handle's plugins in reverse order.
+    let names = new Set(serverPluginNames);
+    let registered = listPlugins().filter((plugin) => names.has(plugin.name));
     for (let i = registered.length - 1; i >= 0; i--) {
       let plugin = registered[i];
       if (plugin.status === 'active') {
@@ -133,7 +186,9 @@ export async function createWorkspaceServer(options = {}) {
     server: engineResult.server,
     wss: engineResult.wss,
     graph: engineResult.graph,
-    plugins: listPlugins(),
+    serverPlane,
+    executionRuntime: effectiveExecutionRuntime,
+    plugins: listPlugins().filter((plugin) => serverPluginNames.includes(plugin.name)),
     close,
   };
 }

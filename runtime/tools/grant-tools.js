@@ -70,6 +70,7 @@ export const grantTools = [
       required: ['grantId'],
     },
     mutates: true,
+    revisionScope: 'grant',
   },
 ];
 

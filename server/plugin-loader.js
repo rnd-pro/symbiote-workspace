@@ -17,8 +17,11 @@ import { pathToFileURL } from 'node:url';
 import {
   registerPlugin,
   activatePlugin,
+  getPlugin,
   validatePluginDefinition,
 } from '../plugins/index.js';
+import { createIngressPlugin } from './ingress.js';
+import { createTriggerReconcilerPlugin } from './triggers.js';
 
 /**
  * Try to import symbiote-engine public registry API.
@@ -64,6 +67,56 @@ function registerHandlers(plugin, registry) {
       registry.registerNodeType(nodeDef);
     }
   }
+}
+
+function hasGraphTrigger(config, kinds) {
+  let graphs = Array.isArray(config?.engine?.graphs) ? config.engine.graphs : [];
+  return graphs.some((graph) => {
+    let nodes = Array.isArray(graph?.nodes) ? graph.nodes : [];
+    return nodes.some((node) => kinds.has(node?.trigger?.kind));
+  });
+}
+
+function needsServerPlaneBuiltIns(config) {
+  let endpoints = Array.isArray(config?.server?.endpoints) ? config.server.endpoints : [];
+  if (endpoints.length > 0) return true;
+  return hasGraphTrigger(config, new Set(['ingress', 'schedule']));
+}
+
+function registerPluginIfAbsent(plugin) {
+  if (getPlugin(plugin.name)) return { name: plugin.name, status: 'already_registered' };
+  let result = registerPlugin(plugin);
+  if (!result.ok) {
+    return {
+      name: plugin.name,
+      status: 'error',
+      error: result.errors?.map((entry) => entry.message).join('; ') || 'Invalid built-in plugin.',
+    };
+  }
+  return { name: plugin.name, status: 'registered' };
+}
+
+/**
+ * Register host-neutral server-plane built-ins when a config declares server
+ * endpoints or graph trigger nodes.
+ *
+ * @param {Object} [options]
+ * @param {Object} [options.config]
+ * @param {boolean} [options.enabled=true]
+ * @param {boolean} [options.force=false]
+ * @param {Object} [options.ingress]
+ * @param {Object} [options.triggers]
+ * @returns {Array<{ name: string, status: string, error?: string }>}
+ */
+export function registerBuiltInServerPlugins(options = {}) {
+  if (options.enabled === false) return [];
+  let config = options.config || {};
+  if (options.force !== true && !needsServerPlaneBuiltIns(config)) return [];
+
+  return [
+    registerPluginIfAbsent(createIngressPlugin({ ...(options.ingress || {}), config })),
+    registerPluginIfAbsent(createTriggerReconcilerPlugin({ ...(options.triggers || {}), config })),
+  ];
 }
 
 /**
@@ -216,5 +269,21 @@ export async function activateAllPlugins(context = {}) {
     }
   }
 
+  return results;
+}
+
+/**
+ * Activate a specific set of registered plugins.
+ *
+ * @param {string[]} names
+ * @param {Object} [context]
+ * @returns {Promise<Array<{ name: string, ok: boolean, error?: string }>>}
+ */
+export async function activatePlugins(names, context = {}) {
+  let results = [];
+  for (let name of names) {
+    let result = await activatePlugin(name, context);
+    results.push({ name, ...result });
+  }
   return results;
 }

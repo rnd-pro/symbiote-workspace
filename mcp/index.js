@@ -87,6 +87,7 @@ function publicToolDefinition(tool) {
     family,
     mutates,
     requiresConfig,
+    revisionScope,
     writesFiles,
     annotations,
     ...rest

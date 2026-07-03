@@ -12,8 +12,14 @@ import { ORIGIN_ACTORS } from '../schema/sections/wiring.js';
 import { configToolFamily } from './tools/config-tools.js';
 import { constructionToolFamily } from './tools/construction-tools.js';
 import { discoveryToolFamily } from './tools/discovery-tools.js';
+import { documentToolFamily } from './tools/document-tools.js';
+import { executionToolFamily } from './tools/execution-tools.js';
+import { grantToolFamily } from './tools/grant-tools.js';
+import { hookToolFamily } from './tools/hook-tools.js';
 import { packageToolFamily } from './tools/package-tools.js';
 import { createToolRegistry } from './tools/registry.js';
+import { routeToolFamily } from './tools/route-tools.js';
+import { sessionToolFamily } from './tools/session-tools.js';
 import { structureToolFamily } from './tools/structure-tools.js';
 
 export const TOOL_FAMILIES = Object.freeze([
@@ -22,6 +28,12 @@ export const TOOL_FAMILIES = Object.freeze([
   structureToolFamily,
   configToolFamily,
   packageToolFamily,
+  routeToolFamily,
+  documentToolFamily,
+  sessionToolFamily,
+  hookToolFamily,
+  grantToolFamily,
+  executionToolFamily,
 ]);
 
 export const TOOL_REGISTRY = createToolRegistry(TOOL_FAMILIES);
@@ -127,6 +139,7 @@ function validateBaseRevision(tool, args = {}, session) {
       hint: `Mutating tool "${tool.name}" requires integer baseRevision.`,
     };
   }
+  if (tool.revisionScope && tool.revisionScope !== 'workspace') return null;
   let currentRevision = session?.revision ?? 0;
   if (args.baseRevision !== currentRevision) {
     return {
@@ -169,6 +182,7 @@ function resultIsError(result) {
 
 function applyMutationResult(tool, args, session, result, actor) {
   if (!session || resultIsError(result)) return result;
+  if (tool.revisionScope && tool.revisionScope !== 'workspace') return result;
 
   let next = result;
   if (tool.mutates === true && result?.status === 'ok') {

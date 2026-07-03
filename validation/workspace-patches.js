@@ -1,5 +1,5 @@
 import { validateWorkspaceConfig } from './core.js';
-import { pathToPointer, prefixPointer } from '../schema/config-path.js';
+import { escapePointerSegment, pathToPointer, prefixPointer } from '../schema/config-path.js';
 import { diffConfigs, mergeConfigs } from '../sharing/config-portability.js';
 
 function isObject(value) {
@@ -95,6 +95,11 @@ function pointerForSurface(path, surface, patch) {
 function layoutSuggestions(config) {
   let suggestions = [];
   collectRatioSuggestions(config?.layout, '/layout', suggestions);
+  if (isObject(config?.layouts)) {
+    for (let [layoutId, layout] of Object.entries(config.layouts)) {
+      collectRatioSuggestions(layout?.root, `/layouts/${escapePointerSegment(layoutId)}/root`, suggestions);
+    }
+  }
   return suggestions;
 }
 
