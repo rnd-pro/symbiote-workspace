@@ -5,7 +5,7 @@ import {
   WORKSPACE_REGISTER_VALUES,
 } from '../schema/workspace-schema.js';
 import { validateModuleCapabilityDescriptor } from '../schema/module-capability.js';
-import { validateWorkspaceConfig } from '../schema/validate.js';
+import { validateWorkspaceConfig } from '../validation/core.js';
 import { exportConfig } from '../sharing/config-portability.js';
 import { checkDesignGuardrails } from '../validation/design-guardrails.js';
 

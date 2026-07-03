@@ -1,10 +1,10 @@
-import { validateWorkspaceConfig } from '../schema/validate.js';
+import { validateWorkspaceConfig } from '../validation/core.js';
 
 /**
  * @typedef {Object} LoaderResult
  * @property {boolean} valid - Whether config validation passed
- * @property {import('../schema/validate.js').ValidationError[]} errors
- * @property {import('../schema/validate.js').ValidationError[]} warnings
+ * @property {import('../validation/core.js').ValidationError[]} errors
+ * @property {import('../validation/core.js').ValidationError[]} warnings
  * @property {import('../schema/workspace-schema.js').WorkspaceConfig} config
  * @property {ResolvedComponent[]} resolvedComponents
  * @property {string[]} missingComponents

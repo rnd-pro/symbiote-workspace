@@ -6,12 +6,12 @@ import {
   isCompatibleVersion,
 } from '../validation/core.js';
 import {
-  validateWorkspaceConfig as validateViaLegacyPath,
-  isCompatibleVersion as isCompatibleViaLegacyPath,
-} from '../schema/validate.js';
-import {
   validateWorkspaceConfig as validateViaSchemaIndex,
 } from '../schema/index.js';
+import {
+  validateWorkspaceConfig as validateViaValidationIndex,
+  isCompatibleVersion as isCompatibleViaValidationIndex,
+} from '../validation/index.js';
 
 describe('validation/core', () => {
   it('exports the workspace validator from the keystone module', () => {
@@ -33,10 +33,10 @@ describe('validation/core', () => {
     assert.equal(result.errors.length, 0);
   });
 
-  it('keeps schema index and legacy validate path on the same implementation', () => {
+  it('keeps public schema and validation entrypoints on the same implementation', () => {
     assert.equal(validateViaSchemaIndex, validateWorkspaceConfig);
-    assert.equal(validateViaLegacyPath, validateWorkspaceConfig);
-    assert.equal(isCompatibleViaLegacyPath, isCompatibleVersion);
+    assert.equal(validateViaValidationIndex, validateWorkspaceConfig);
+    assert.equal(isCompatibleViaValidationIndex, isCompatibleVersion);
   });
 
   it('rejects non-portable values through the extracted core', () => {

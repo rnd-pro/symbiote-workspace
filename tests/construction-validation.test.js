@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { validateWorkspaceConfig } from '../schema/validate.js';
+import { validateWorkspaceConfig } from '../validation/core.js';
 import {
   applyWorkspacePatch,
   loadWorkspaceDesignPolicy,

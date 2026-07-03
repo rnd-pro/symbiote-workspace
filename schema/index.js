@@ -17,4 +17,4 @@ export {
 export {
   validateWorkspaceConfig,
   isCompatibleVersion,
-} from './validate.js';
+} from '../validation/core.js';

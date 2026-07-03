@@ -15,7 +15,7 @@ import {
   validateModuleCapabilityDescriptor,
   validatePortableStringArray,
 } from '../schema/module-capability.js';
-import { validateWorkspaceConfig } from '../schema/validate.js';
+import { validateWorkspaceConfig } from '../validation/core.js';
 
 export const PLUGIN_CATEGORIES = Object.freeze([
   'handler',

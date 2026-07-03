@@ -331,7 +331,6 @@ describe('packed package consumer', () => {
           'symbiote-workspace/runtime',
           'symbiote-workspace/constructor',
           'symbiote-workspace/schema',
-          'symbiote-workspace/schema/validate.js',
           'symbiote-workspace/loader',
           'symbiote-workspace/sharing',
           'symbiote-workspace/validation',
@@ -389,7 +388,8 @@ describe('packed package consumer', () => {
         import packageMeta from 'symbiote-workspace/package.json' with { type: 'json' };
         import { describeWorkspace, setLayout, workflowKanban } from 'symbiote-workspace/handlers';
         import { loadWorkspaceConfig } from 'symbiote-workspace/loader';
-        import { validateWorkspaceConfig } from 'symbiote-workspace/schema/validate.js';
+        import { validateWorkspaceConfig } from 'symbiote-workspace/schema';
+        import { validateWorkspaceConfig as validateViaValidation } from 'symbiote-workspace/validation';
         import { WORKSPACE_CONFIG_SCHEMA } from 'symbiote-workspace/schema/workspace-schema.js';
         import { MODULE_CAPABILITY_DESCRIPTOR_SCHEMA } from 'symbiote-workspace/schema/module-capability.js';
 
@@ -402,7 +402,8 @@ describe('packed package consumer', () => {
         if (typeof setLayout !== 'function') throw new Error('handlers setLayout export missing');
         if (typeof workflowKanban !== 'function') throw new Error('handlers workflowKanban export missing');
         if (typeof loadWorkspaceConfig !== 'function') throw new Error('loader loadWorkspaceConfig export missing');
-        if (typeof validateWorkspaceConfig !== 'function') throw new Error('schema wildcard validateWorkspaceConfig export missing');
+        if (typeof validateWorkspaceConfig !== 'function') throw new Error('schema validateWorkspaceConfig export missing');
+        if (validateViaValidation !== validateWorkspaceConfig) throw new Error('validation entrypoint drifted from schema entrypoint');
         if (!WORKSPACE_CONFIG_SCHEMA?.properties) throw new Error('schema wildcard WORKSPACE_CONFIG_SCHEMA export missing');
         if (!MODULE_CAPABILITY_DESCRIPTOR_SCHEMA?.properties) throw new Error('schema wildcard MODULE_CAPABILITY_DESCRIPTOR_SCHEMA export missing');
         let validationReportSchema = WORKSPACE_CONFIG_SCHEMA.$defs?.validationReport;

@@ -1933,7 +1933,7 @@ export async function dispatch(toolName, args, session) {
 
     // ── Validate ──
     case 'validate_config': {
-      let { validateWorkspaceConfig } = await import('../schema/validate.js');
+      let { validateWorkspaceConfig } = await import('../validation/core.js');
       return validateWorkspaceConfig(config, { strict: args.strict });
     }
 

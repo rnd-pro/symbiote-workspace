@@ -354,7 +354,7 @@ describe('layout', () => {
 
 describe('integration: video studio via handlers', () => {
   it('constructs a complete valid workspace', async () => {
-    let { validateWorkspaceConfig } = await import('../schema/validate.js');
+    let { validateWorkspaceConfig } = await import('../validation/core.js');
 
     let config = scaffoldFromScratch({ name: 'Video Studio' });
 

@@ -170,7 +170,6 @@ describe('schema constants', () => {
   it('does not introduce duplicate constant export names outside S1.0 legacy exports', async () => {
     let schemaFiles = [
       'schema/constants.js',
-      'schema/validate.js',
       'schema/workspace-schema.js',
     ];
     let exportedNames = new Set(Object.keys(constants));

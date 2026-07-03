@@ -1,4 +1,4 @@
-import { validateWorkspaceConfig } from '../schema/validate.js';
+import { validateWorkspaceConfig } from './core.js';
 import { pathToPointer, prefixPointer } from '../schema/config-path.js';
 import { diffConfigs, mergeConfigs } from '../sharing/config-portability.js';
 
