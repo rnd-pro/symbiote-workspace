@@ -282,6 +282,93 @@ describe('behavior narration', () => {
     assert.equal(ok.ok, true, JSON.stringify(ok.errors));
   });
 
+  it('accepts portable narration audio profiles for live, render, and alignment slots', () => {
+    let result = run({
+      requires: {
+        hostServices: {
+          required: ['speech.tts', 'ai.provider.audio.tts', 'ai.provider.audio.transcribe'],
+          optional: [],
+        },
+      },
+      narration: {
+        audio: {
+          live: {
+            kind: 'browser-tts',
+            profile: 'browser',
+            hostService: 'speech.tts',
+          },
+          render: {
+            kind: 'local-tts',
+            profile: 'qwen3',
+            providerId: 'local-tts',
+            modelClass: 'qwen3',
+            voiceRef: 'qwen3:speaker:vivian',
+            hostService: 'ai.provider.audio.tts',
+          },
+          alignment: {
+            kind: 'local-transcribe',
+            profile: 'whisper',
+            providerId: 'local-whisper',
+            modelClass: 'whisper',
+            hostService: 'ai.provider.audio.transcribe',
+          },
+        },
+      },
+    });
+    assert.equal(result.ok, true, JSON.stringify(result.errors));
+  });
+
+  it('rejects browser TTS in the render slot because it cannot produce artifacts', () => {
+    let result = run({
+      requires: { hostServices: { required: ['speech.tts'], optional: [] } },
+      narration: {
+        audio: {
+          render: {
+            kind: 'browser-tts',
+            profile: 'browser',
+            hostService: 'speech.tts',
+          },
+        },
+      },
+    });
+    assert.ok(codes(result).includes('behavior.narration.audio.slot_kind'));
+  });
+
+  it('rejects endpoint, secret, and path fields in narration audio profiles', () => {
+    let result = run({
+      requires: { hostServices: { required: ['ai.provider.audio.tts'], optional: [] } },
+      narration: {
+        audio: {
+          render: {
+            kind: 'local-tts',
+            profile: 'qwen3',
+            hostService: 'ai.provider.audio.tts',
+            endpoint: 'http://127.0.0.1:5128',
+            secret: 'TOKEN_NAME',
+            voicePath: '/Users/me/voice.wav',
+          },
+        },
+      },
+    });
+    assert.equal(codes(result).filter((code) => code === 'behavior.narration.audio.private_field').length, 3);
+  });
+
+  it('requires narration audio host services to be declared in requires.hostServices', () => {
+    let result = run({
+      requires: { hostServices: { required: [], optional: [] } },
+      narration: {
+        audio: {
+          render: {
+            kind: 'local-tts',
+            profile: 'qwen3',
+            hostService: 'ai.provider.audio.tts',
+          },
+        },
+      },
+    });
+    assert.ok(codes(result).includes('behavior.narration.audio.host_service.unresolved'));
+  });
+
   it('accepts a semantic presentation timeline with WAS targets, actions, and data refs', () => {
     let result = run({
       provenance: { revision: 7 },

@@ -8,9 +8,10 @@ import {
   NON_STRUCTURAL_PATH_PREFIXES,
   PORTABLE_ID_PATTERN,
   CATALOG_FINGERPRINT_PATTERN,
+  AUDIO_PROVIDER_KINDS,
 } from '../constants.js';
 import { parseWorkspaceAddress } from '../was.js';
-import { isGrantObject, isUrlShaped } from '../value-classes.js';
+import { isGrantObject, isUrlShaped, nonPortableStringReason } from '../value-classes.js';
 
 /**
  * BEHAVIOR & POLICY section (spec Section 6). Owns hooks[], provenance + narration
@@ -63,6 +64,29 @@ export const TIMELINE_FRESHNESS = Object.freeze(['fresh', 'stale', 'unknown']);
 export const TIMELINE_CUE_KINDS = Object.freeze(['focus', 'highlight', 'annotation', 'cursor', 'transcript', 'pause']);
 export const TIMELINE_ACTION_SOURCES = Object.freeze(['webmcp', 'host', 'workspace']);
 export const TIMELINE_DATA_REF_SOURCES = Object.freeze(['route', 'document.presentation', 'selected', 'retrieved', 'mock', 'live']);
+export const NARRATION_AUDIO_SLOTS = Object.freeze(['live', 'render', 'alignment']);
+
+const NARRATION_AUDIO_SLOT_KINDS = Object.freeze({
+  live: new Set(['browser-tts', 'local-tts']),
+  render: new Set(['local-tts']),
+  alignment: new Set(['local-transcribe']),
+});
+
+const NARRATION_AUDIO_PRIVATE_KEYS = Object.freeze(new Set([
+  'endpoint',
+  'url',
+  'baseUrl',
+  'host',
+  'path',
+  'localPath',
+  'remotePath',
+  'voicePath',
+  'voiceSamplePath',
+  'secret',
+  'token',
+  'credential',
+  'apiKey',
+]));
 
 /** provenance.lineage source ancestry kinds (L1 ruling 7). */
 export const LINEAGE_SOURCE_KINDS = Object.freeze([
@@ -569,6 +593,77 @@ function validateDecision(decision, index, ctx) {
   }
 }
 
+function validateNarrationAudio(config, ctx) {
+  let audio = config.narration?.audio;
+  if (audio === undefined) return;
+  if (!isObject(audio)) {
+    ctx.error('narration.audio', 'behavior.narration.audio.type', 'narration.audio must be an object.');
+    return;
+  }
+
+  let declaredHostServices = hostServiceIds(config);
+  for (let slot of NARRATION_AUDIO_SLOTS) {
+    let profile = audio[slot];
+    if (profile === undefined) continue;
+    validateNarrationAudioSlot(profile, `narration.audio.${slot}`, slot, declaredHostServices, ctx);
+  }
+}
+
+function validateNarrationAudioSlot(profile, path, slot, declaredHostServices, ctx) {
+  if (!isObject(profile)) {
+    ctx.error(path, 'behavior.narration.audio.profile', `${path} must be an object.`);
+    return;
+  }
+
+  for (let [key, value] of Object.entries(profile)) {
+    let fieldPath = `${path}.${key}`;
+    if (NARRATION_AUDIO_PRIVATE_KEYS.has(key)) {
+      ctx.error(
+        fieldPath,
+        'behavior.narration.audio.private_field',
+        'narration audio profiles declare portable ids only; endpoints, paths, credentials, and voice sample paths are host state.',
+      );
+      continue;
+    }
+    let reason = nonPortableStringReason({ path: fieldPath, value });
+    if (reason) {
+      ctx.error(
+        fieldPath,
+        'behavior.narration.audio.non_portable',
+        `narration audio profile value is not portable (${reason}).`,
+      );
+    }
+  }
+
+  let kind = profile.kind;
+  if (typeof kind !== 'string' || !AUDIO_PROVIDER_KINDS.includes(kind)) {
+    ctx.error(`${path}.kind`, 'behavior.narration.audio.kind', `audio profile kind must be one of ${AUDIO_PROVIDER_KINDS.join('|')}.`);
+    return;
+  }
+  if (!NARRATION_AUDIO_SLOT_KINDS[slot].has(kind)) {
+    ctx.error(`${path}.kind`, 'behavior.narration.audio.slot_kind', `narration.audio.${slot} cannot use ${kind}.`);
+  }
+
+  for (let field of ['profile', 'providerId', 'modelClass', 'voiceRef']) {
+    if (profile[field] !== undefined && !isPortableId(profile[field])) {
+      ctx.error(`${path}.${field}`, 'behavior.narration.audio.portable_id', `${field} must be a portable id.`);
+    }
+  }
+
+  if (!isPortableId(profile.profile)) {
+    ctx.error(`${path}.profile`, 'behavior.narration.audio.profile_id', 'audio profile requires a portable profile id.');
+  }
+  if (!isPortableId(profile.hostService)) {
+    ctx.error(`${path}.hostService`, 'behavior.narration.audio.host_service', 'audio profile requires a portable hostService id.');
+  } else if (!declaredHostServices.has(profile.hostService)) {
+    ctx.error(
+      `${path}.hostService`,
+      'behavior.narration.audio.host_service.unresolved',
+      `audio profile host service "${profile.hostService}" must appear in requires.hostServices.`,
+    );
+  }
+}
+
 function validateNarration(config, ctx) {
   let narration = config.narration;
   if (narration === undefined) return;
@@ -580,6 +675,7 @@ function validateNarration(config, ctx) {
     // Deleted island (L1 ruling 6): locale variants ride top-level i18n.locales.
     ctx.error('narration.locales', 'behavior.narration.locales.deleted', 'narration.locales is deleted — locale variants ride i18n.locales.');
   }
+  validateNarrationAudio(config, ctx);
   validateNarrationRecords(narration.timelines, 'narration.timelines', config, ctx, true);
   validateNarrationRecords(narration.enrichment, 'narration.enrichment', config, ctx, false);
 }

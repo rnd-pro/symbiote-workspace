@@ -107,7 +107,10 @@
     "demo:realtime-builder": "node examples/visual-demo/realtime-builder.js",
     "demo:chat-builder": "node examples/visual-demo/chat-builder.js",
     "test:visual-demo-browser": "node examples/visual-demo/browser-smoke.js",
-    "test:chat-builder-browser": "node examples/visual-demo/chat-builder-smoke.js"
+    "test:chat-builder-browser": "node examples/visual-demo/chat-builder-smoke.js",
+    "libs:status": "node ../symbiote-dev-plane/bin/symbiote-libs.js status",
+    "libs:link": "node ../symbiote-dev-plane/bin/symbiote-libs.js link",
+    "libs:unlink": "node ../symbiote-dev-plane/bin/symbiote-libs.js unlink --install"
   },
   "keywords": [
     "workspace",
@@ -127,7 +130,7 @@
     "@symbiotejs/symbiote": "3.8.0-webmcp.2",
     "linkedom": "^0.18.12",
     "symbiote-engine": ">=0.3.0-alpha.12",
-    "symbiote-ui": ">=0.3.0-alpha.46"
+    "symbiote-ui": ">=0.3.0-alpha.50"
   },
   "peerDependenciesMeta": {
     "@symbiotejs/symbiote": {
@@ -144,7 +147,7 @@
     "linkedom": "^0.18.12",
     "playwright": "1.61.0",
     "symbiote-engine": "0.3.0-alpha.12",
-    "symbiote-ui": "0.3.0-alpha.46"
+    "symbiote-ui": "0.3.0-alpha.50"
   },
   "repository": {
     "type": "git",

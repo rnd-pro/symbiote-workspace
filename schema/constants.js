@@ -110,6 +110,12 @@ export const ASSET_KINDS = Object.freeze([
   'model.3d',
 ]);
 
+export const AUDIO_PROVIDER_KINDS = Object.freeze([
+  'browser-tts',
+  'local-tts',
+  'local-transcribe',
+]);
+
 export const COLLECTION_ITEM_KINDS = Object.freeze(['engine-graph', 'custom']);
 export const RESOURCE_OPERATIONS = Object.freeze(['list', 'get', 'create', 'update', 'delete']);
 export const I18N_STRATEGIES = Object.freeze(['prefix', 'query', 'none']);

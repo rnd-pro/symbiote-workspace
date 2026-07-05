@@ -19,6 +19,10 @@ All notable changes to this project will be documented in this file.
   timing hints, and required host services. Validation rejects DOM-selector
   targets, unsupported action/data sources, and stale timelines that do not
   declare `freshness: "stale"` after `provenance.revision` advances.
+- Added `narration.audio.live/render/alignment` provider-profile validation for
+  presentation audio. Profiles carry portable ids only, require declared host
+  services, keep browser TTS live-only, and reject endpoints, credentials, local
+  paths, and voice sample paths from portable configs.
 - Added `playWorkspacePresentationTimeline()` plus
   `mounted.playPresentationTimeline()` so hosts can execute generated
   presentation timelines against a mounted workspace. Playback reads the same

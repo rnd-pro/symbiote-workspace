@@ -310,6 +310,14 @@ DOM selectors as targets, unsupported action/data sources, and timelines built
 against an older `provenance.revision` unless they are explicitly marked
 `freshness: "stale"`.
 
+Presentation audio selection lives in `narration.audio`. The `live` slot can use
+browser TTS for interactive playback, while `render` must use an
+artifact-producing TTS provider and `alignment` must use a transcription provider.
+Each slot carries portable ids such as `kind`, `profile`, `providerId`,
+`modelClass`, `voiceRef`, and `hostService`; the referenced host service must be
+declared in `requires.hostServices`. Portable configs never store provider
+endpoints, credentials, local paths, or voice sample paths.
+
 `createWorkspacePresentationTimeline(context, request)` turns the collected
 interface context into a portable timeline draft. `request.prompt`,
 `request.profile`, or `request.depth` select the prompt profile: `brief` keeps a
