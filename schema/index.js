@@ -22,6 +22,16 @@ export { structureSection } from './sections/structure.js';
 export { modulesSection } from './sections/modules.js';
 export { wiringSection } from './sections/wiring.js';
 export { dataSection } from './sections/data.js';
+export {
+  workspaceSurfacesSection,
+  deriveWorkspaceSurfaceRoute,
+  WORKSPACE_SURFACES_SECTION_ID,
+  WORKSPACE_SURFACE_ROUTE_DERIVATIONS,
+  WORKSPACE_SURFACE_SESSION_SCOPES,
+  WORKSPACE_SURFACE_CHAT_MODES,
+  WORKSPACE_SURFACE_THEME_MODES,
+  WORKSPACE_SURFACE_PROGRESS_CHANNELS,
+} from './sections/workspace-surfaces.js';
 export { routesSection } from './sections/routes.js';
 export { behaviorSection } from './sections/behavior.js';
 export { serverSection } from './sections/server.js';

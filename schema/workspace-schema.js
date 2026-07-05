@@ -8,6 +8,7 @@ import {
 import { WORKSPACE_SCHEMA_VERSION } from './value-classes.js';
 import {
   COLLAPSE_POLICIES,
+  HOST_SERVICE_CATEGORIES,
   MOBILE_DOCKS,
   OVERFLOW_POLICIES,
   RESPONSIVE_MODES,
@@ -17,6 +18,7 @@ import { structureSection } from './sections/structure.js';
 import { modulesSection } from './sections/modules.js';
 import { wiringSection } from './sections/wiring.js';
 import { dataSection } from './sections/data.js';
+import { workspaceSurfacesSection } from './sections/workspace-surfaces.js';
 import { routesSection } from './sections/routes.js';
 import { behaviorSection } from './sections/behavior.js';
 import { serverSection } from './sections/server.js';
@@ -47,20 +49,6 @@ export const EXECUTION_MODELS = Object.freeze([
   'automation-bridge',
 ]);
 
-export const HOST_SERVICE_CATEGORIES = Object.freeze([
-  'agent.runtime',
-  'ai.provider',
-  'clipboard',
-  'file.system',
-  'media.realtime',
-  'network.fetch',
-  'notifications',
-  'presence.session',
-  'selection',
-  'storage.archive',
-  'storage.project',
-]);
-
 export const DATA_BINDING_DIRECTIONS = Object.freeze(['input', 'output', 'two-way']);
 
 const VALIDATION_REPORT_SCHEMA = Object.freeze({
@@ -88,6 +76,7 @@ export const WORKSPACE_SECTION_MODULES = Object.freeze([
   modulesSection,
   wiringSection,
   dataSection,
+  workspaceSurfacesSection,
   routesSection,
   behaviorSection,
   serverSection,
@@ -123,6 +112,7 @@ export const WORKSPACE_CONFIG_SCHEMA = Object.freeze({
 
 export {
   COLLAPSE_POLICIES,
+  HOST_SERVICE_CATEGORIES,
   MOBILE_DOCKS,
   OVERFLOW_POLICIES,
   RESPONSIVE_MODES,

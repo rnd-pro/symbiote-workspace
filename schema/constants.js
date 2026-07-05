@@ -116,6 +116,20 @@ export const AUDIO_PROVIDER_KINDS = Object.freeze([
   'local-transcribe',
 ]);
 
+export const HOST_SERVICE_CATEGORIES = Object.freeze([
+  'agent.runtime',
+  'ai.provider',
+  'clipboard',
+  'file.system',
+  'media.realtime',
+  'network.fetch',
+  'notifications',
+  'presence.session',
+  'selection',
+  'storage.archive',
+  'storage.project',
+]);
+
 export const COLLECTION_ITEM_KINDS = Object.freeze(['engine-graph', 'custom']);
 export const RESOURCE_OPERATIONS = Object.freeze(['list', 'get', 'create', 'update', 'delete']);
 export const I18N_STRATEGIES = Object.freeze(['prefix', 'query', 'none']);

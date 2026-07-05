@@ -32,6 +32,7 @@ describe('schema assembler', () => {
       'modules',
       'wiring',
       'data',
+      'workspace-surfaces',
       'routes',
       'behavior',
       'server',
