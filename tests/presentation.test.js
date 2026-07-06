@@ -2,8 +2,13 @@ import { beforeEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  PRESENTATION_CONTRACT_VERSION,
+  createPresentationTimelineContract,
+  createPresentationTimelineHash,
   createWorkspacePresentationTimeline,
   normalizePresentationPrompt,
+  normalizePresentationTimeline,
+  presentationTimelineHasTurns,
 } from '../index.js';
 import {
   clearRegisteredSections,
@@ -152,5 +157,107 @@ describe('presentation timeline generation', () => {
     assert.equal(timeline.summary.targetCoverage.includes('element:queue-row-WO-1'), false);
     let report = validationReport([timeline]);
     assert.equal(report.ok, true, JSON.stringify(report.errors));
+  });
+});
+
+describe('canonical presentation timeline contract', () => {
+  it('normalizes authored turns into a versioned hashable contract', () => {
+    let input = {
+      id: 'maximo-tour',
+      title: 'Adaptive Maximo Workbench',
+      locale: 'en',
+      profile: 'full',
+      personas: {
+        ops: { rate: 0.96, lang: 'en-US', name: 'Operations' },
+        guide: { name: 'Guide', lang: 'en-US', rate: 1 },
+      },
+      summary: { ignored: true },
+      turns: [
+        {
+          webmcp: { tool: 'select_window', input: { boardId: 'orders' } },
+          persona: 'guide',
+          text: 'Open the active work-order queue.',
+          cue: { marker: 'box', tabId: 'orders', targetId: 'panel:orders:queue' },
+          renderCue: { durationMs: 1800 },
+        },
+        {
+          cue: { targetId: 'panel:orders:asset', marker: 'circle', tabId: 'orders' },
+          text: 'Review the selected asset and crew panel.',
+          persona: 'ops',
+        },
+      ],
+    };
+
+    let contract = createPresentationTimelineContract(input);
+
+    assert.equal(contract.contractVersion, PRESENTATION_CONTRACT_VERSION);
+    assert.equal(contract.id, 'maximo-tour');
+    assert.equal(contract.title, 'Adaptive Maximo Workbench');
+    assert.equal(contract.turns.length, 2);
+    assert.deepEqual(contract.turns[0].cue, {
+      marker: 'box',
+      tabId: 'orders',
+      targetId: 'panel:orders:queue',
+    });
+    assert.deepEqual(contract.turns[0].webmcp, { tool: 'select_window', input: { boardId: 'orders' } });
+    assert.deepEqual(contract.turns[0].renderCue, { durationMs: 1800 });
+    assert.match(contract.hash, /^presentation-timeline-v1:sha256-/);
+    assert.equal(contract.hash, createPresentationTimelineHash(input));
+    assert.equal(presentationTimelineHasTurns(contract), true);
+  });
+
+  it('hashes the canonical turn projection independent of object key order', () => {
+    let a = {
+      id: 'tour',
+      title: 'Tour',
+      locale: 'en',
+      personas: { guide: { name: 'Guide', lang: 'en-US', rate: 1 } },
+      turns: [{ persona: 'guide', text: 'Start here.', cue: { targetId: 'a', tabId: 'tab', marker: 'box' } }],
+    };
+    let b = {
+      turns: [{ cue: { marker: 'box', tabId: 'tab', targetId: 'a' }, text: 'Start here.', persona: 'guide' }],
+      personas: { guide: { rate: 1, lang: 'en-US', name: 'Guide' } },
+      locale: 'en',
+      title: 'Tour',
+      id: 'tour',
+    };
+
+    assert.equal(createPresentationTimelineHash(a), createPresentationTimelineHash(b));
+    assert.equal(createPresentationTimelineHash(a, { contractVersion: 'presentation-timeline-v2' }).startsWith('presentation-timeline-v2:'), true);
+    assert.notEqual(
+      createPresentationTimelineHash(a),
+      createPresentationTimelineHash(a, { contractVersion: 'presentation-timeline-v2' }),
+    );
+  });
+
+  it('derives turns from semantic segments when no authored turns are present', () => {
+    let generated = createWorkspacePresentationTimeline(context(), {
+      prompt: 'сделай полную подробную презентацию интерфейса',
+      revision: 4,
+    });
+    let contract = createPresentationTimelineContract(generated);
+
+    assert.equal(contract.turns.length, generated.segments.length);
+    assert.equal(contract.turns[0].text, generated.segments[0].narration);
+    assert.equal(contract.turns[0].cue.targetId, generated.segments[0].focusTarget);
+    assert.equal(contract.summary.segmentCount, generated.segments.length);
+    assert.equal(contract.hash, createPresentationTimelineHash(generated));
+  });
+
+  it('filters non-text turns and fails loud when no narrated turns remain', () => {
+    let normalized = normalizePresentationTimeline({
+      id: 'empty',
+      turns: [
+        { persona: 'guide', text: '   ', cue: { targetId: 'a' } },
+        { persona: 'guide', cue: { targetId: 'b' } },
+      ],
+    });
+
+    assert.equal(normalized.turns.length, 0);
+    assert.equal(presentationTimelineHasTurns(normalized), false);
+    assert.throws(
+      () => createPresentationTimelineContract(normalized),
+      /presentation timeline requires at least one narrated turn/,
+    );
   });
 });

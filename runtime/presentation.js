@@ -1,6 +1,8 @@
 import { parseWorkspaceAddress } from '../schema/was.js';
+import { computeIntegrity } from '../schema/canonical-json.js';
 
 export const PRESENTATION_PROMPT_PROFILES = Object.freeze(['brief', 'full', 'data-grounded']);
+export const PRESENTATION_CONTRACT_VERSION = 'presentation-timeline-v1';
 
 const PROFILE_ALIASES = Object.freeze({
   brief: 'brief',
@@ -64,6 +66,10 @@ function compactObject(value) {
     if (child !== undefined) result[key] = child;
   }
   return result;
+}
+
+function hasKeys(value) {
+  return isObject(value) && Object.keys(value).length > 0;
 }
 
 function hasData(value) {
@@ -257,6 +263,169 @@ function narrationFor(profile, target, index, total, refs, context) {
 function segmentDataRefs(target, profile, refs) {
   if (profile !== 'data-grounded') return [];
   return refs.map((ref) => ({ ...ref, target: target.address }));
+}
+
+function cleanTimelineText(value, fallback = '') {
+  let text = String(value ?? fallback ?? '').replace(/\s+/g, ' ').trim();
+  return text && text !== 'undefined' && text !== 'null' ? text : String(fallback || '').trim();
+}
+
+function normalizeCueTarget(value, fallback = '') {
+  return cleanTimelineText(value, fallback);
+}
+
+function normalizePresentationCue(cue = {}, fallback = {}) {
+  let source = isObject(cue) ? cue : {};
+  return compactObject({
+    targetId: normalizeCueTarget(
+      source.targetId || source.target || source.address || fallback.targetId || fallback.target || fallback.focusTarget,
+    ),
+    tabId: cleanTimelineText(source.tabId || fallback.tabId),
+    marker: cleanTimelineText(source.marker || fallback.marker || fallback.kind),
+  });
+}
+
+function normalizePresentationTurn(turn = {}, index = 0) {
+  if (!isObject(turn)) return null;
+  let text = cleanTimelineText(turn.text ?? turn.narration ?? turn.caption);
+  if (!text) return null;
+  let persona = cleanTimelineText(turn.persona ?? turn.speaker, index % 2 ? 'ops' : 'guide') || 'guide';
+  let cue = normalizePresentationCue(turn.cue, turn);
+  return compactObject({
+    persona,
+    text,
+    cue: hasKeys(cue) ? cue : undefined,
+    webmcp: clonePortable(turn.webmcp),
+    annotations: clonePortable(turn.annotations),
+    renderCue: clonePortable(turn.renderCue),
+  });
+}
+
+function segmentToPresentationTurn(segment = {}, index = 0) {
+  if (!isObject(segment)) return null;
+  let firstCue = listValue(segment.cues)[0] || {};
+  return normalizePresentationTurn({
+    persona: segment.persona || segment.speaker,
+    text: segment.narration || segment.text,
+    cue: {
+      targetId: firstCue.target || firstCue.targetId || segment.focusTarget || segment.target,
+      tabId: firstCue.tabId || segment.tabId,
+      marker: firstCue.marker || firstCue.kind,
+    },
+    annotations: segment.annotations,
+  }, index);
+}
+
+function normalizePresentationPersonas(personas = {}, turns = [], locale = 'en-US') {
+  let result = {};
+  if (isObject(personas)) {
+    for (let [key, persona] of Object.entries(personas)) {
+      let id = cleanTimelineText(key);
+      if (!id) continue;
+      if (typeof persona === 'string') {
+        result[id] = { name: cleanTimelineText(persona, id) };
+        continue;
+      }
+      if (!isObject(persona)) {
+        result[id] = { name: id };
+        continue;
+      }
+      result[id] = compactObject({
+        name: cleanTimelineText(persona.name, id),
+        lang: cleanTimelineText(persona.lang || persona.locale),
+        rate: Number.isFinite(Number(persona.rate)) ? Number(persona.rate) : undefined,
+        pitch: Number.isFinite(Number(persona.pitch)) ? Number(persona.pitch) : undefined,
+      });
+    }
+  }
+  for (let turn of turns) {
+    let id = cleanTimelineText(turn.persona, 'guide') || 'guide';
+    if (!result[id]) result[id] = { name: id, lang: cleanTimelineText(locale) };
+  }
+  return result;
+}
+
+function hashableTimelineProjection(timeline) {
+  return {
+    contractVersion: timeline.contractVersion,
+    id: timeline.id,
+    title: timeline.title,
+    locale: timeline.locale,
+    profile: timeline.profile,
+    personas: timeline.personas,
+    turns: timeline.turns.map((turn) => compactObject({
+      persona: turn.persona,
+      text: turn.text,
+      cue: hasKeys(turn.cue) ? turn.cue : undefined,
+    })),
+  };
+}
+
+export function normalizePresentationTimeline(input = {}, options = {}) {
+  let source = isObject(input) ? input : {};
+  let contractVersion = cleanTimelineText(
+    options.contractVersion || source.contractVersion,
+    PRESENTATION_CONTRACT_VERSION,
+  );
+  let locale = cleanTimelineText(source.locale || source.lang || source.language, 'en-US');
+  let title = cleanTimelineText(source.title || source.name, 'Workspace presentation');
+  let profile = cleanTimelineText(source.profile || source.promptProfile || source.prompt?.profile || source.summary?.profile, 'brief');
+  let turns = listValue(source.turns)
+    .map((turn, index) => normalizePresentationTurn(turn, index))
+    .filter(Boolean);
+  if (!turns.length) {
+    turns = listValue(source.segments)
+      .map((segment, index) => segmentToPresentationTurn(segment, index))
+      .filter(Boolean);
+  }
+  let segments = clonePortable(source.segments);
+  let normalized = compactObject({
+    contractVersion,
+    id: portableId(source.id || title, 'presentation'),
+    title,
+    locale,
+    profile,
+    personas: normalizePresentationPersonas(source.personas, turns, locale),
+    turns,
+    segments: Array.isArray(segments) ? segments : undefined,
+    source: cleanTimelineText(source.source),
+    metadata: clonePortable(source.metadata),
+  });
+  let summary = isObject(source.summary)
+    ? clonePortable(source.summary)
+    : summarizePresentationTimeline(normalized);
+  normalized.summary = compactObject({
+    ...summary,
+    turnCount: turns.length,
+  });
+  return normalized;
+}
+
+export function createPresentationTimelineHash(input = {}, options = {}) {
+  let timeline = normalizePresentationTimeline(input, options);
+  if (!timeline.turns.length) {
+    throw new Error('presentation timeline requires at least one narrated turn');
+  }
+  return `${timeline.contractVersion}:${computeIntegrity(hashableTimelineProjection(timeline))}`;
+}
+
+export function createPresentationTimelineContract(input = {}, options = {}) {
+  let timeline = normalizePresentationTimeline(input, options);
+  if (!timeline.turns.length) {
+    throw new Error('presentation timeline requires at least one narrated turn');
+  }
+  return {
+    ...timeline,
+    hash: createPresentationTimelineHash(timeline, { contractVersion: timeline.contractVersion }),
+  };
+}
+
+export function presentationTimelineHasTurns(timeline = {}) {
+  try {
+    return normalizePresentationTimeline(timeline).turns.length > 0;
+  } catch {
+    return false;
+  }
 }
 
 function createSegment(target, index, total, profile, refs, context) {

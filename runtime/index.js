@@ -124,8 +124,25 @@ export {
   buildConstructionPlan,
 } from './scripted-adapter.js';
 export {
+  PRESENTATION_CONTRACT_VERSION,
   PRESENTATION_PROMPT_PROFILES,
+  createPresentationTimelineContract,
+  createPresentationTimelineHash,
   createWorkspacePresentationTimeline,
   normalizePresentationPrompt,
+  normalizePresentationTimeline,
+  presentationTimelineHasTurns,
   summarizePresentationTimeline,
 } from './presentation.js';
+export {
+  MEDIA_PROJECT_DEFAULT_SURFACE,
+  MEDIA_PROJECT_ROUTE_PARAM,
+  MEDIA_PROJECT_SCHEMA_VERSION,
+  createMediaProject,
+  createMediaProjectId,
+  createMediaProjectRouteSearch,
+  createMemoryMediaProjectStore,
+  createStorageMediaProjectStore,
+  normalizeMediaProject,
+  parseMediaProjectRouteSearch,
+} from './media-projects.js';
