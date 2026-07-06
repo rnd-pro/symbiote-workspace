@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Documented and covered portable cascade `themeVariant`, `tabShape`,
+  `tabRadius`, and `cellRadius` params so library theme variants, tab geometry,
+  and animated `cell-bg` circle sizing round-trip through `cascade-theme-change`
+  without a new workspace adapter.
 - Added `collectWorkspaceInterfaceContext()` to the browser entrypoint and
   `mounted.getInterfaceContext()` on mounted workspaces. Hosts and agents can now
   read a full interface map before generating a presentation/tour timeline:

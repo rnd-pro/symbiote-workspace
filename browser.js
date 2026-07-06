@@ -196,9 +196,9 @@ function ensureStyleTarget(element, label) {
 }
 
 function resolveThemeAdapter(options = {}) {
-  if (options.themeAdapter?.applyCascadeTheme) return options.themeAdapter;
+  if (options.themeAdapter?.applyCascadeTheme || options.themeAdapter?.applyCascadeGeometryRegister) return options.themeAdapter;
   let globalUi = globalThis?.SymbioteUI || globalThis?.symbioteUI;
-  if (globalUi?.applyCascadeTheme) return globalUi;
+  if (globalUi?.applyCascadeTheme || globalUi?.applyCascadeGeometryRegister) return globalUi;
   return null;
 }
 
@@ -207,6 +207,19 @@ function buildThemeOptions(params = {}, relations = {}) {
     return { ...params, relations: { ...relations } };
   }
   return { ...params };
+}
+
+function normalizeThemeRegister(register) {
+  if (register === 'default' || register == null) return '';
+  return typeof register === 'string' ? register : '';
+}
+
+function splitThemeParams(params = {}) {
+  let next = { ...(params || {}) };
+  let hasRegister = Object.hasOwn(next, 'register');
+  let register = normalizeThemeRegister(next.register);
+  delete next.register;
+  return { params: next, register, hasRegister };
 }
 
 function applyTokenOverrides(element, overrides = {}, label = 'theme.overrides') {
@@ -220,14 +233,29 @@ function applyTokenOverrides(element, overrides = {}, label = 'theme.overrides')
 }
 
 function applyCascadeParams(element, params, relations, adapter, eventOptions) {
-  if (!hasKeys(params) && !hasKeys(relations)) return null;
-  if (!adapter?.applyCascadeTheme) {
-    throw new Error(
-      'mountWorkspace requires options.themeAdapter.applyCascadeTheme or ' +
-      'globalThis.SymbioteUI.applyCascadeTheme to apply cascade theme params.'
-    );
+  let split = splitThemeParams(params);
+  let theme = null;
+  if (hasKeys(split.params) || hasKeys(relations)) {
+    if (!adapter?.applyCascadeTheme) {
+      throw new Error(
+        'mountWorkspace requires options.themeAdapter.applyCascadeTheme or ' +
+        'globalThis.SymbioteUI.applyCascadeTheme to apply cascade theme params.'
+      );
+    }
+    theme = adapter.applyCascadeTheme(element, buildThemeOptions(split.params, relations), eventOptions);
   }
-  return adapter.applyCascadeTheme(element, buildThemeOptions(params, relations), eventOptions);
+  if (split.hasRegister) {
+    if (!adapter?.applyCascadeGeometryRegister) {
+      throw new Error(
+        'mountWorkspace requires options.themeAdapter.applyCascadeGeometryRegister or ' +
+        'globalThis.SymbioteUI.applyCascadeGeometryRegister to apply cascade geometry registers.'
+      );
+    }
+    adapter.applyCascadeGeometryRegister(element, split.register, eventOptions);
+  }
+  if (theme) return theme;
+  if (split.hasRegister) return { state: { register: split.register }, tokens: {} };
+  return null;
 }
 
 function collectScopedTargets(root, selector) {
@@ -280,6 +308,10 @@ function updateThemeParams(config, state, targetSelector) {
     return;
   }
   updateThemeScope(config.theme, state);
+}
+
+function updateThemeGeometryRegister(config, register, targetSelector) {
+  updateThemeParams(config, { params: { register: normalizeThemeRegister(register) } }, targetSelector);
 }
 
 function appendTextElement(document, parent, tagName, className, text) {
@@ -1396,28 +1428,35 @@ export function mountWorkspace(config, container, options = {}) {
       if (destroyed) return;
       destroyed = true;
       wrapper.removeEventListener('cascade-theme-change', onThemeChange);
+      wrapper.removeEventListener('cascade-geometry-register-change', onGeometryRegisterChange);
       if (typeof routeUnsubscribe === 'function') routeUnsubscribe();
       router.destroy?.();
       if (typeof runtimeHandle?.destroy === 'function') runtimeHandle.destroy();
       wrapper.remove();
     },
   };
+
+  function commitThemeMutation(mutator, reason) {
+    if (!writeThemeChanges) return;
+    let nextConfig = cloneJson(currentConfig);
+    mutator(nextConfig);
+    let nextLoaderResult = validateNextConfig(nextConfig, {
+      baseRevision: workspaceState.revision,
+    });
+    let committed = commitNextConfig(nextLoaderResult.config, {
+      baseRevision: workspaceState.revision,
+      reason,
+    }, reason);
+    if (committed.accepted) {
+      applyCommittedConfig(committed.config, nextLoaderResult, {}, committed.result, committed.origin);
+    }
+  }
+
   let onThemeChange = (event) => {
     let detail = event.detail || {};
-    if (writeThemeChanges) {
-      let nextConfig = cloneJson(currentConfig);
+    commitThemeMutation((nextConfig) => {
       updateThemeParams(nextConfig, detail.state, detail.targetSelector);
-      let nextLoaderResult = validateNextConfig(nextConfig, {
-        baseRevision: workspaceState.revision,
-      });
-      let committed = commitNextConfig(nextLoaderResult.config, {
-        baseRevision: workspaceState.revision,
-        reason: 'themeChange',
-      }, 'themeChange');
-      if (committed.accepted) {
-        applyCommittedConfig(committed.config, nextLoaderResult, {}, committed.result, committed.origin);
-      }
-    }
+    }, 'themeChange');
     options.onThemeChange?.({
       config: currentConfig,
       theme,
@@ -1426,7 +1465,21 @@ export function mountWorkspace(config, container, options = {}) {
       targetSelector: detail.targetSelector || null,
     });
   };
+  let onGeometryRegisterChange = (event) => {
+    let detail = event.detail || {};
+    commitThemeMutation((nextConfig) => {
+      updateThemeGeometryRegister(nextConfig, detail.register, detail.targetSelector);
+    }, 'themeGeometryChange');
+    options.onThemeChange?.({
+      config: currentConfig,
+      theme,
+      event,
+      state: { register: normalizeThemeRegister(detail.register) },
+      targetSelector: detail.targetSelector || null,
+    });
+  };
   wrapper.addEventListener('cascade-theme-change', onThemeChange);
+  wrapper.addEventListener('cascade-geometry-register-change', onGeometryRegisterChange);
   publishMountContexts(currentConfig, loaderResult, options);
 
   let initial = initialRouteRequest(currentConfig, routerBundle.options, container);

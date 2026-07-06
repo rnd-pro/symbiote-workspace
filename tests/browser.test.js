@@ -121,10 +121,15 @@ class TestDocument {
 function createThemeAdapter(calls = []) {
   return {
     applyCascadeTheme(element, options, eventOptions) {
-      calls.push({ element, options, eventOptions });
+      calls.push({ type: 'theme', element, options, eventOptions });
       if (options.hue !== undefined) element.style.setProperty('--sn-theme-hue', options.hue);
       if (options.density !== undefined) element.style.setProperty('--sn-theme-density', options.density);
       return { state: options, tokens: {} };
+    },
+    applyCascadeGeometryRegister(element, register, eventOptions) {
+      calls.push({ type: 'geometry', element, register, eventOptions });
+      element.style.setProperty('--sn-theme-register', register || 'default');
+      return register || '';
     },
   };
 }
@@ -183,6 +188,29 @@ describe('applyWorkspaceTheme', () => {
     assert.deepEqual(result.warnings, []);
   });
 
+  it('applies geometry registers through the theme adapter without passing them as cascade params', () => {
+    let root = createContainer();
+    let side = root.ownerDocument.createElement('aside');
+    side.className = 'sidebar';
+    root.appendChild(side);
+    let calls = [];
+
+    applyWorkspaceTheme({
+      version: '1.0.0',
+      name: 'Theme Geometry',
+      theme: {
+        params: { hue: 220, register: 'tool' },
+        subtrees: [{ selector: '.sidebar', params: { register: 'spacious' } }],
+      },
+    }, root, { themeAdapter: createThemeAdapter(calls) });
+
+    assert.equal(root.style.getPropertyValue('--sn-theme-hue'), '220');
+    assert.equal(root.style.getPropertyValue('--sn-theme-register'), 'tool');
+    assert.equal(side.style.getPropertyValue('--sn-theme-register'), 'spacious');
+    assert.equal(calls.find((call) => call.type === 'theme').options.register, undefined);
+    assert.equal(calls.filter((call) => call.type === 'geometry').length, 2);
+  });
+
   it('reports unmatched subtree selectors without hiding the warning', () => {
     let root = createContainer();
     let result = applyWorkspaceTheme({
@@ -202,7 +230,7 @@ describe('applyWorkspaceTheme', () => {
     assert.throws(() => applyWorkspaceTheme({
       version: '1.0.0',
       name: 'Theme',
-      theme: { params: { hue: 220 } },
+      theme: { params: { hue: 220, themeVariant: 'modern', tabShape: 'frame' } },
     }, root), /requires options\.themeAdapter\.applyCascadeTheme/);
 
     assert.throws(() => applyWorkspaceTheme({
@@ -621,11 +649,15 @@ describe('mountWorkspace', () => {
     mounted.element.dispatchEvent({
       type: 'cascade-theme-change',
       bubbles: true,
-      detail: { state: { hue: 180 }, targetSelector: null },
+      detail: { state: { hue: 180, themeVariant: 'classic', tabShape: 'classic-ear', tabRadius: 24, cellRadius: 17 }, targetSelector: null },
     });
 
     assert.equal(mounted.revision, 1);
     assert.equal(mounted.config.theme.params.hue, 180);
+    assert.equal(mounted.config.theme.params.themeVariant, 'classic');
+    assert.equal(mounted.config.theme.params.tabShape, 'classic-ear');
+    assert.equal(mounted.config.theme.params.tabRadius, 24);
+    assert.equal(mounted.config.theme.params.cellRadius, 17);
     assert.equal(mounted.lastCommit.reason, 'themeChange');
   });
 
@@ -709,6 +741,53 @@ describe('mountWorkspace', () => {
     assert.deepEqual(mounted.config.theme.subtrees[0].overrides, {
       '--sn-node-radius': '6px',
     });
+  });
+
+  it('writes geometry register changes into portable theme config and reapplies them', () => {
+    let calls = [];
+    let mounted = mountWorkspace(workspace({
+      theme: {
+        params: { hue: 220 },
+        subtrees: [{ selector: '.preview', params: { hue: 40 } }],
+      },
+    }), createContainer(), {
+      themeAdapter: createThemeAdapter(calls),
+    });
+    let preview = mounted.element.ownerDocument.createElement('section');
+    preview.className = 'preview';
+    mounted.element.appendChild(preview);
+
+    mounted.element.dispatchEvent({
+      type: 'cascade-geometry-register-change',
+      bubbles: true,
+      detail: { register: 'tool', targetSelector: null },
+    });
+    mounted.element.dispatchEvent({
+      type: 'cascade-geometry-register-change',
+      bubbles: true,
+      detail: { register: 'spacious', targetSelector: '.preview' },
+    });
+
+    assert.equal(mounted.config.theme.params.register, 'tool');
+    assert.equal(mounted.config.theme.subtrees[0].params.register, 'spacious');
+    assert.equal(mounted.element.style.getPropertyValue('--sn-theme-register'), 'tool');
+    assert.equal(preview.style.getPropertyValue('--sn-theme-register'), 'spacious');
+
+    let remountCalls = [];
+    let remount = mountWorkspace(mounted.config, createContainer(), {
+      themeAdapter: createThemeAdapter(remountCalls),
+    });
+    let remountPreview = remount.element.ownerDocument.createElement('section');
+    remountPreview.className = 'preview';
+    remount.element.appendChild(remountPreview);
+    remount.theme = applyWorkspaceTheme(remount.config, remount.element, {
+      themeAdapter: createThemeAdapter(remountCalls),
+    });
+
+    assert.equal(remount.element.style.getPropertyValue('--sn-theme-register'), 'tool');
+    assert.equal(remountPreview.style.getPropertyValue('--sn-theme-register'), 'spacious');
+    assert.ok(remountCalls.some((call) => call.type === 'geometry' && call.register === 'tool'));
+    assert.ok(remountCalls.some((call) => call.type === 'geometry' && call.register === 'spacious'));
   });
 
   it('exposes missing panel modules and only fails when strict components are enabled', () => {

@@ -263,26 +263,39 @@ runtime dispatch remains in `symbiote-workspace/runtime`.
 
 ```javascript
 import { mountWorkspace } from 'symbiote-workspace/browser';
-import { applyCascadeTheme } from 'symbiote-ui/ui';
+import { applyCascadeGeometryRegister, applyCascadeTheme } from 'symbiote-ui/ui';
 
 let mounted = mountWorkspace(config, document.querySelector('#workspace'), {
-  themeAdapter: { applyCascadeTheme },
+  themeAdapter: { applyCascadeTheme, applyCascadeGeometryRegister },
   onThemeChange({ config }) {
     saveConfig(config);
   }
 });
 ```
 
-`theme.params` and `theme.relations` are passed to the adapter. `theme.overrides`
-are applied as CSS custom properties on the workspace root, and `theme.subtrees`
-apply scoped params, relations, and overrides to matching descendants. If params
-or relations are present without a theme adapter, mounting throws instead of
-silently skipping the cascade.
+`theme.params` and `theme.relations` are passed to the cascade adapter. A
+`theme.params.register` value is applied through `applyCascadeGeometryRegister`
+instead of being forwarded as a color parameter. `theme.overrides` are applied
+as CSS custom properties on the workspace root, and `theme.subtrees` apply scoped
+params, relations, overrides, and geometry registers to matching descendants. If
+params, relations, or registers are present without the matching theme adapter,
+mounting throws instead of silently skipping the cascade.
+
+Discrete cascade params such as `themeVariant` (`modern` or `classic`),
+`tabShape` (`frame`, `ear`, or `classic-ear`), `tabRadius`, and `cellRadius`
+stay in `theme.params` and are forwarded through `applyCascadeTheme`; workspace
+does not model them as recipes, overrides, or geometry registers. `tabRadius` is
+separate from the general `radius` control so hosts can round project tabs
+independently from controls, cards, tables, graph chrome, chat surfaces, and
+layout panels. `cellRadius` is also independent so animated `cell-bg` dot sizes
+can remain stable when the UI chrome uses sharp corners.
 
 `cascade-theme-change` events from `cascade-theme-widget` or
 `cascade-theme-editor` write normalized params back into `config.theme.params`.
 Events with `detail.targetSelector` update the matching `theme.subtrees[]`
 entry so manual theme edits survive export/import as portable config.
+`cascade-geometry-register-change` events write `detail.register` into the same
+portable params object for the root or matching subtree.
 
 For agent-facing presentation or guidance, the browser entrypoint also exports
 `collectWorkspaceInterfaceContext(config, root, options)`. A mounted workspace

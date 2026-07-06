@@ -788,6 +788,9 @@ describe('host integration contract', () => {
     assert.equal(result.contract.browser.themeAdapter, 'symbiote-ui/ui.applyCascadeTheme');
     assert.equal(result.contract.browser.themeAdapterModule, 'symbiote-ui/ui');
     assert.equal(result.contract.browser.themeAdapterExport, 'applyCascadeTheme');
+    assert.equal(result.contract.browser.themeGeometryAdapter, 'symbiote-ui/ui.applyCascadeGeometryRegister');
+    assert.equal(result.contract.browser.themeGeometryAdapterExport, 'applyCascadeGeometryRegister');
+    assert.deepEqual(result.contract.browser.themeAdapterExports, ['applyCascadeTheme', 'applyCascadeGeometryRegister']);
     assert.ok(result.contract.persistence.requiredTools.includes('config_export'));
     assert.ok(result.contract.persistence.requiredTools.includes('config_import'));
     assert.deepEqual(result.contract.persistence.requiredEngineServices, ['storage.project']);

@@ -165,10 +165,11 @@ When `imports` is omitted, preview defaults to local package specifiers and the
 returned `hint` identifies the serve root for `symbiote-workspace/browser`,
 `symbiote-ui/ui`, `symbiote-engine`, and `symbiote-engine/contracts`.
 
-The generated runtime imports `applyCascadeTheme` from `symbiote-ui/ui`, passes
-it as `themeAdapter` to `mountWorkspace()`, verifies import-map support before
-loading bare modules, renders loader warnings with `data-preview-warning`, and
-reports import-map, module-load, and mount failures separately.
+The generated runtime imports `applyCascadeTheme` and
+`applyCascadeGeometryRegister` from `symbiote-ui/ui`, passes them as
+`themeAdapter` to `mountWorkspace()`, verifies import-map support before loading
+bare modules, renders loader warnings with `data-preview-warning`, and reports
+import-map, module-load, and mount failures separately.
 
 ## Visual Demo Process
 

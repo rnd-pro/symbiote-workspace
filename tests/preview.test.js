@@ -141,7 +141,7 @@ describe('startPreview', () => {
 
       assert.match(app, /import\('symbiote-workspace\/browser'\)/);
       assert.match(app, /import\('symbiote-ui\/ui'\)/);
-      assert.match(app, /themeAdapter: \{ applyCascadeTheme \}/);
+      assert.match(app, /themeAdapter: \{ applyCascadeTheme, applyCascadeGeometryRegister \}/);
       assert.match(app, /mountWorkspace\(config, document\.body,/);
       assert.doesNotMatch(app, /browser not available/);
       assert.doesNotMatch(app, /Ensure symbiote-workspace is installed/);

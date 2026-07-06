@@ -25,6 +25,9 @@ export function createBrowserRuntimeContract(extra = {}) {
     themeAdapter: `${BROWSER_THEME_IMPORT}.applyCascadeTheme`,
     themeAdapterModule: BROWSER_THEME_IMPORT,
     themeAdapterExport: 'applyCascadeTheme',
+    themeGeometryAdapter: `${BROWSER_THEME_IMPORT}.applyCascadeGeometryRegister`,
+    themeGeometryAdapterExport: 'applyCascadeGeometryRegister',
+    themeAdapterExports: ['applyCascadeTheme', 'applyCascadeGeometryRegister'],
     requiredImports: [...BROWSER_REQUIRED_IMPORTS],
     importMap: {
       ...BROWSER_IMPORT_MAP_CONTRACT,

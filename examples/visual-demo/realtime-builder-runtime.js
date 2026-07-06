@@ -79,7 +79,7 @@ ${escapeScriptJson({ imports })}
 
 function generateAppJs(demo) {
   return `import { mountWorkspace, validateWorkspaceConfig } from 'symbiote-workspace/browser';
-import { applyCascadeTheme, CASCADE_THEME_DEFAULTS, defineModule } from '${BROWSER_THEME_IMPORT}';
+import { applyCascadeGeometryRegister, applyCascadeTheme, CASCADE_THEME_DEFAULTS, defineModule } from '${BROWSER_THEME_IMPORT}';
 import 'symbiote-ui/board';
 
 let demo = ${escapeScriptJson(demo)};
@@ -1849,7 +1849,7 @@ function renderWorkspace(stage) {
   }
   mounted = mountWorkspace(config, workspace, {
     runtimeController: createSymbioteLayoutRuntime(stage),
-    themeAdapter: { applyCascadeTheme },
+    themeAdapter: { applyCascadeTheme, applyCascadeGeometryRegister },
     strictComponents: false,
   });
   applyAdaptiveScenario(stage);

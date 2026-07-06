@@ -213,7 +213,7 @@ async function startPreview() {
     renderPreviewError('Import map support check failed', error);
     throw error;
   }
-  let [{ mountWorkspace }, { applyCascadeTheme }] = await loadPreviewModules();
+  let [{ mountWorkspace }, { applyCascadeGeometryRegister, applyCascadeTheme }] = await loadPreviewModules();
   try {
     if (typeof mountWorkspace !== 'function') {
       throw new Error('symbiote-workspace/browser did not export mountWorkspace().');
@@ -221,8 +221,11 @@ async function startPreview() {
     if (typeof applyCascadeTheme !== 'function') {
       throw new Error('${BROWSER_THEME_IMPORT} did not export applyCascadeTheme().');
     }
+    if (typeof applyCascadeGeometryRegister !== 'function') {
+      throw new Error('${BROWSER_THEME_IMPORT} did not export applyCascadeGeometryRegister().');
+    }
     let mounted = mountWorkspace(config, document.body, {
-      themeAdapter: { applyCascadeTheme },
+      themeAdapter: { applyCascadeTheme, applyCascadeGeometryRegister },
     });
     renderPreviewWarnings(mounted.loaderResult);
   } catch (error) {

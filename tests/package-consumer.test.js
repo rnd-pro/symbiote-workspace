@@ -372,6 +372,8 @@ describe('packed package consumer', () => {
       ]);
       assert.equal(previewContract.browser.themeAdapterModule, 'symbiote-ui/ui');
       assert.equal(previewContract.browser.themeAdapterExport, 'applyCascadeTheme');
+      assert.equal(previewContract.browser.themeGeometryAdapterExport, 'applyCascadeGeometryRegister');
+      assert.deepEqual(previewContract.browser.themeAdapterExports, ['applyCascadeTheme', 'applyCascadeGeometryRegister']);
       assert.equal(
         previewContract.importMap.imports['symbiote-ui/ui'],
         '/__symbiote_ui__/ui/index.js',
