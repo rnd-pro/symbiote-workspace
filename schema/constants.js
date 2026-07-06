@@ -148,7 +148,7 @@ export const COLLAPSE_POLICIES = Object.freeze(['auto', 'manual', 'never']);
 export const OVERFLOW_POLICIES = Object.freeze(['collapse', 'scroll-inline', 'scroll-block', 'scroll']);
 export const RESPONSIVE_MODES = Object.freeze(['preserve', 'stack', 'scroll-inline', 'drawer', 'swipe']);
 export const MOBILE_DOCKS = Object.freeze(['auto', 'primary', 'start', 'end']);
-export const SWIPE_CONTROLS = Object.freeze(['edge', 'island', 'none']);
+export const SWIPE_CONTROLS = Object.freeze(['edge', 'rail', 'none']);
 
 export const SPLIT_RATIO_BOUNDS = Object.freeze({ min: 0.05, max: 0.95 });
 

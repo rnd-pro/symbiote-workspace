@@ -101,6 +101,23 @@ describe('schema constants', () => {
     ]);
     assert.deepEqual(constants.PARK_STAGES, ['confirmPending', 'pendingApproval']);
     assert.deepEqual(constants.LAYOUT_KINDS, ['bsp', 'stack']);
+    assert.deepEqual(constants.LAYOUT_NODE_TYPES, ['panel', 'split']);
+    assert.deepEqual(constants.COLLAPSE_POLICIES, ['auto', 'manual', 'never']);
+    assert.deepEqual(constants.OVERFLOW_POLICIES, [
+      'collapse',
+      'scroll-inline',
+      'scroll-block',
+      'scroll',
+    ]);
+    assert.deepEqual(constants.RESPONSIVE_MODES, [
+      'preserve',
+      'stack',
+      'scroll-inline',
+      'drawer',
+      'swipe',
+    ]);
+    assert.deepEqual(constants.MOBILE_DOCKS, ['auto', 'primary', 'start', 'end']);
+    assert.deepEqual(constants.SWIPE_CONTROLS, ['edge', 'rail', 'none']);
     assert.deepEqual(constants.SPLIT_RATIO_BOUNDS, { min: 0.05, max: 0.95 });
   });
 
