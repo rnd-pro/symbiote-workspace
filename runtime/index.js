@@ -132,6 +132,7 @@ export {
   normalizePresentationPrompt,
   normalizePresentationTimeline,
   presentationTimelineHasTurns,
+  reviewPresentationTimeline,
   summarizePresentationTimeline,
 } from './presentation.js';
 export {

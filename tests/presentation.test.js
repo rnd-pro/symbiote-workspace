@@ -9,6 +9,7 @@ import {
   normalizePresentationPrompt,
   normalizePresentationTimeline,
   presentationTimelineHasTurns,
+  reviewPresentationTimeline,
 } from '../index.js';
 import {
   clearRegisteredSections,
@@ -258,6 +259,98 @@ describe('canonical presentation timeline contract', () => {
     assert.throws(
       () => createPresentationTimelineContract(normalized),
       /presentation timeline requires at least one narrated turn/,
+    );
+  });
+
+  it('reviews a valid task-scoped dialogue timeline', () => {
+    let timeline = createPresentationTimelineContract({
+      id: 'orders-tour',
+      title: 'Orders tour',
+      turns: [
+        {
+          persona: 'guide',
+          text: 'Open the storm queue and start with the priority work order.',
+          cue: { targetId: 'panel:orders:queue', tabId: 'orders' },
+          webmcp: { tool: 'select_window', input: { boardId: 'orders' } },
+        },
+        {
+          persona: 'ops',
+          text: 'The asset panel confirms the feeder location and crew state.',
+          cue: { targetId: 'panel:orders:asset', tabId: 'orders' },
+        },
+      ],
+    });
+
+    let review = reviewPresentationTimeline(timeline, {
+      allowedTargetIds: ['panel:orders:queue', 'panel:orders:asset'],
+      allowedToolNames: ['select_window'],
+      requestedSurfaceIds: ['panel:orders:queue'],
+      selectedTabIds: ['orders'],
+      turnBudget: { min: 2, max: 4 },
+      requireDialogue: true,
+    });
+
+    assert.equal(review.verdict, 'pass');
+    assert.deepEqual(review.issues, []);
+    assert.equal(review.coverage.turnCount, 2);
+    assert.deepEqual(review.coverage.personas.sort(), ['guide', 'ops']);
+  });
+
+  it('rejects unsafe targets, tools, and missing requested coverage', () => {
+    let timeline = createPresentationTimelineContract({
+      id: 'bad-tour',
+      title: 'Bad tour',
+      turns: [{
+        persona: 'guide',
+        text: 'Show the queue.',
+        cue: { targetId: 'panel:other:queue', tabId: 'other' },
+        webmcp: { tool: 'dangerous_tool', input: {} },
+      }],
+    });
+
+    let review = reviewPresentationTimeline(timeline, {
+      allowedTargetIds: ['panel:orders:queue'],
+      allowedToolNames: ['select_window'],
+      requestedSurfaceIds: ['panel:orders:queue'],
+      selectedTabIds: ['orders'],
+    });
+
+    assert.equal(review.verdict, 'reject');
+    assert.deepEqual(
+      review.issues.map((issue) => issue.code).sort(),
+      ['disallowed-target', 'disallowed-tool', 'missing-requested-surface', 'missing-requested-tab'].sort(),
+    );
+  });
+
+  it('flags TTS and dialogue quality issues before audio generation', () => {
+    let timeline = createPresentationTimelineContract({
+      id: 'rough-tour',
+      title: 'Rough tour',
+      turns: [
+        {
+          persona: 'guide',
+          text: 'This **undefined** queue explanation has far too many words for a clean short model-service speech segment today.',
+          cue: { targetId: 'panel:orders:queue', tabId: 'orders' },
+        },
+        {
+          persona: 'guide',
+          text: 'The second line stays on the same voice.',
+          cue: { targetId: 'panel:orders:asset', tabId: 'orders' },
+        },
+      ],
+    });
+
+    let review = reviewPresentationTimeline(timeline, {
+      allowedTargetIds: ['panel:orders:queue', 'panel:orders:asset'],
+      maxWordsPerTurn: 8,
+      turnBudget: { min: 3, max: 4 },
+      requireDialogue: true,
+    });
+
+    assert.equal(review.verdict, 'revise');
+    assert.deepEqual(
+      review.issues.map((issue) => issue.code).sort(),
+      ['dialogue-single-persona', 'tts-long-turn', 'tts-markup', 'tts-unsafe-token', 'turn-budget-underflow'].sort(),
     );
   });
 });

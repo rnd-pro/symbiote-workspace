@@ -131,6 +131,7 @@ export {
   normalizePresentationPrompt,
   normalizePresentationTimeline,
   presentationTimelineHasTurns,
+  reviewPresentationTimeline,
   summarizePresentationTimeline,
   MEDIA_PROJECT_DEFAULT_SURFACE,
   MEDIA_PROJECT_ROUTE_PARAM,

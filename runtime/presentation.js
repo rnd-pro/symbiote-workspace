@@ -270,6 +270,50 @@ function cleanTimelineText(value, fallback = '') {
   return text && text !== 'undefined' && text !== 'null' ? text : String(fallback || '').trim();
 }
 
+function nonNegativeNumber(value, fallback = undefined) {
+  let number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : fallback;
+}
+
+function idList(value) {
+  return listValue(value)
+    .map((item) => cleanTimelineText(item))
+    .filter(Boolean);
+}
+
+function wordCount(text) {
+  let words = cleanTimelineText(text)
+    .split(/\s+/)
+    .map((word) => word.trim())
+    .filter(Boolean);
+  return words.length;
+}
+
+function hasTtsUnsafeToken(text) {
+  return /\b(?:undefined|null|nan)\b/i.test(String(text || ''));
+}
+
+function hasSpokenMarkup(text) {
+  return /https?:\/\/|www\.|\*\*|__|[`{}[\]]/.test(String(text || ''));
+}
+
+function normalizeTurnBudget(intent = {}) {
+  let source = isObject(intent.turnBudget) ? intent.turnBudget : {};
+  let min = nonNegativeNumber(source.min ?? source.minTurns ?? intent.minTurns, undefined);
+  let max = nonNegativeNumber(source.max ?? source.maxTurns ?? intent.maxTurns, undefined);
+  return compactObject({
+    minTurns: min === undefined ? undefined : Math.floor(min),
+    maxTurns: max === undefined ? undefined : Math.floor(max),
+  });
+}
+
+function tabCovered(tabId, targetIds, tabIds) {
+  if (tabIds.has(tabId)) return true;
+  return [...targetIds].some((targetId) => (
+    targetId === `window:${tabId}` || targetId.startsWith(`panel:${tabId}:`)
+  ));
+}
+
 function normalizeCueTarget(value, fallback = '') {
   return cleanTimelineText(value, fallback);
 }
@@ -295,6 +339,9 @@ function normalizePresentationTurn(turn = {}, index = 0) {
     persona,
     text,
     cue: hasKeys(cue) ? cue : undefined,
+    emotion: cleanTimelineText(turn.emotion || turn.style),
+    pauseBeforeMs: nonNegativeNumber(turn.pauseBeforeMs ?? turn.gapMs),
+    overlapMs: nonNegativeNumber(turn.overlapMs ?? turn.overlap),
     webmcp: clonePortable(turn.webmcp),
     annotations: clonePortable(turn.annotations),
     renderCue: clonePortable(turn.renderCue),
@@ -426,6 +473,103 @@ export function presentationTimelineHasTurns(timeline = {}) {
   } catch {
     return false;
   }
+}
+
+export function reviewPresentationTimeline(input = {}, intent = {}) {
+  let timeline = normalizePresentationTimeline(input);
+  let turns = listValue(timeline.turns);
+  let issues = [];
+  let addIssue = (code, message, { severity = 'warning', turnIndex } = {}) => {
+    issues.push(compactObject({ code, severity, message, turnIndex }));
+  };
+
+  if (!turns.length) {
+    addIssue('missing-turns', 'Presentation timeline has no narrated turns.', { severity: 'error' });
+  }
+
+  let allowedTargetIds = new Set(idList(intent.allowedTargetIds));
+  let allowedToolNames = new Set(idList(intent.allowedToolNames));
+  let requestedSurfaceIds = idList(intent.requestedSurfaceIds || intent.requestedTargets);
+  let selectedTabIds = idList(intent.selectedTabIds || intent.requestedTabIds);
+  let budget = normalizeTurnBudget(intent);
+  let targetIds = new Set();
+  let tabIds = new Set();
+  let personas = new Set();
+  let maxWordsPerTurn = Math.max(1, Math.floor(Number(intent.maxWordsPerTurn || intent.tts?.maxWordsPerTurn || 24)));
+
+  for (let [index, turn] of turns.entries()) {
+    let targetId = cleanTimelineText(turn?.cue?.targetId);
+    let tabId = cleanTimelineText(turn?.cue?.tabId);
+    let persona = cleanTimelineText(turn?.persona);
+    if (targetId) targetIds.add(targetId);
+    if (tabId) tabIds.add(tabId);
+    if (persona) personas.add(persona);
+
+    if (allowedTargetIds.size && targetId && !allowedTargetIds.has(targetId)) {
+      addIssue('disallowed-target', `Turn ${index + 1} targets "${targetId}", which is not in the allowed target set.`, {
+        severity: 'error',
+        turnIndex: index,
+      });
+    }
+    let toolName = cleanTimelineText(turn?.webmcp?.tool);
+    if (allowedToolNames.size && toolName && !allowedToolNames.has(toolName)) {
+      addIssue('disallowed-tool', `Turn ${index + 1} uses "${toolName}", which is not an allowed presentation action.`, {
+        severity: 'error',
+        turnIndex: index,
+      });
+    }
+    if (hasTtsUnsafeToken(turn?.text)) {
+      addIssue('tts-unsafe-token', `Turn ${index + 1} contains a token that should not be spoken.`, { turnIndex: index });
+    }
+    if (hasSpokenMarkup(turn?.text)) {
+      addIssue('tts-markup', `Turn ${index + 1} contains markup, a URL, or symbols that should be removed before TTS.`, { turnIndex: index });
+    }
+    let words = wordCount(turn?.text);
+    if (words > maxWordsPerTurn) {
+      addIssue('tts-long-turn', `Turn ${index + 1} has ${words} words; max is ${maxWordsPerTurn}.`, { turnIndex: index });
+    }
+  }
+
+  for (let targetId of requestedSurfaceIds) {
+    if (!targetIds.has(targetId)) {
+      addIssue('missing-requested-surface', `Requested surface "${targetId}" is not covered by the timeline.`, {
+        severity: 'error',
+      });
+    }
+  }
+  for (let tabId of selectedTabIds) {
+    if (!tabCovered(tabId, targetIds, tabIds)) {
+      addIssue('missing-requested-tab', `Requested tab "${tabId}" is not covered by the timeline.`, {
+        severity: 'error',
+      });
+    }
+  }
+  if (budget.minTurns !== undefined && turns.length < budget.minTurns) {
+    addIssue('turn-budget-underflow', `Timeline has ${turns.length} turns; minimum is ${budget.minTurns}.`);
+  }
+  if (budget.maxTurns !== undefined && turns.length > budget.maxTurns) {
+    addIssue('turn-budget-overflow', `Timeline has ${turns.length} turns; maximum is ${budget.maxTurns}.`);
+  }
+  if (intent.requireDialogue === true && turns.length > 1 && personas.size < 2) {
+    addIssue('dialogue-single-persona', 'Dialogue mode requires at least two personas in the narrated turns.');
+  }
+
+  let hasError = issues.some((issue) => issue.severity === 'error');
+  return {
+    verdict: hasError ? 'reject' : issues.length ? 'revise' : 'pass',
+    issues,
+    coverage: {
+      turnCount: turns.length,
+      targetIds: [...targetIds],
+      requestedSurfaceIds,
+      missingRequestedSurfaceIds: requestedSurfaceIds.filter((targetId) => !targetIds.has(targetId)),
+      selectedTabIds,
+      missingSelectedTabIds: selectedTabIds.filter((tabId) => !tabCovered(tabId, targetIds, tabIds)),
+      personas: [...personas],
+      turnBudget: budget,
+      maxWordsPerTurn,
+    },
+  };
 }
 
 function createSegment(target, index, total, profile, refs, context) {
