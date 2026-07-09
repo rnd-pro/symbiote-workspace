@@ -5,7 +5,218 @@ import {
   applyWorkspaceTheme,
   collectWorkspaceInterfaceContext,
   mountWorkspace,
+  prepareWorkspacePresentation,
 } from '../browser.js';
+
+it('prepares a presentation with one bounded WebMCP deepening round', async () => {
+  let revealed = false;
+  let planCalls = 0;
+  let executed = [];
+  let events = [];
+  let collectContext = () => ({
+    targets: [{
+      address: 'panel:orders:detail',
+      kind: 'panel',
+      tabId: 'orders',
+      title: 'Order detail',
+      visible: revealed,
+      webmcpTools: [{ name: 'orders.reveal-detail' }],
+    }],
+    panels: [],
+    dataContext: { selectedRecords: [{ id: 'wo-1', status: revealed ? 'approved' : 'queued' }] },
+  });
+
+  let result = await prepareWorkspacePresentation({
+    viewport: { width: 1080, height: 1920, fps: 30 },
+    source: { url: '/workbench?token=secret', surface: 'orders', tabId: 'orders' },
+    request: { prompt: 'Explain the order detail', profile: 'data-grounded' },
+    async rehydrate() {},
+    async waitForSettlement() {},
+    collectContext,
+    async executeSafeAction(action) {
+      executed.push(action.tool);
+      revealed = true;
+    },
+    async plan(request, snapshot) {
+      planCalls += 1;
+      if (planCalls === 1) {
+        return {
+          status: 'needs-context',
+          requestedActions: [{ source: 'webmcp', tool: 'orders.reveal-detail', target: 'panel:orders:detail', reason: 'Reveal details' }],
+        };
+      }
+      let source = snapshot.dataSources[0];
+      return {
+        status: 'ready',
+        basis: { targetSnapshotHash: request.targetSnapshotHash, generation: request.generation },
+        timeline: {
+          title: 'Order detail',
+          grounding: { sources: snapshot.dataSources },
+          turns: [{
+            id: 'detail-explain',
+            persona: 'guide',
+            dialogueAct: 'explain',
+            text: 'The visible order detail confirms the approved state.',
+            cue: { targetId: 'panel:orders:detail', tabId: 'orders' },
+            sourceRefs: [{ sourceId: source.id, targetId: 'panel:orders:detail', hash: source.contentHash }],
+          }],
+        },
+      };
+    },
+    reviewIntent: { requireGrounding: true },
+    onEvent(event) { events.push(event.type); },
+  });
+
+  assert.equal(planCalls, 2);
+  assert.deepEqual(executed, ['orders.reveal-detail']);
+  assert.notEqual(result.sourceSnapshot.identityHash, result.targetSnapshot.identityHash);
+  assert.equal(result.targetSnapshot.generation, 1);
+  assert.equal(result.status, 'ready');
+  assert.ok(events.includes('tour.deepening.action.done'));
+});
+
+it('allows one review-guided repair on the same target snapshot', async () => {
+  let planCalls = 0;
+  let requests = [];
+  let events = [];
+  let result = await prepareWorkspacePresentation({
+    viewport: { width: 1920, height: 1080, fps: 30 },
+    source: { surface: 'api-graph', tabId: 'tab-1' },
+    request: { prompt: 'Explain the API graph', profile: 'data-grounded' },
+    async rehydrate() {},
+    async waitForSettlement() {},
+    async executeSafeAction() {},
+    collectContext() {
+      return {
+        targets: [{ address: 'panel:api:graph', tabId: 'tab-1', visible: true }],
+        dataContext: { selectedRecords: [{ id: 'api-graph', nodes: 4 }] },
+      };
+    },
+    async plan(request, snapshot) {
+      planCalls += 1;
+      requests.push(request);
+      let source = snapshot.dataSources[0];
+      return {
+        status: 'ready',
+        basis: { targetSnapshotHash: request.targetSnapshotHash, generation: request.generation },
+        timeline: {
+          profile: 'data-grounded',
+          grounding: { sources: snapshot.dataSources },
+          turns: [{
+            id: 'api-explain',
+            persona: 'guide',
+            dialogueAct: 'explain',
+            text: planCalls === 1 ? 'Open https://example.test for the graph.' : 'The graph shows four connected API nodes.',
+            cue: { targetId: 'panel:api:graph', tabId: 'tab-1' },
+            sourceRefs: [{ sourceId: source.id, targetId: 'panel:api:graph', hash: source.contentHash }],
+          }],
+        },
+      };
+    },
+    reviewIntent: { requireGrounding: true },
+    reviewRepairAttempts: 1,
+    onEvent(event) { events.push(event.type); },
+  });
+
+  assert.equal(planCalls, 2);
+  assert.equal(requests[1].targetSnapshotHash, requests[0].targetSnapshotHash);
+  assert.equal(requests[1].generation, requests[0].generation);
+  assert.deepEqual(requests[1].reviewFeedback.issues.map((issue) => issue.code), ['unsafe-tts-text']);
+  assert.equal(result.review.verdict, 'pass');
+  assert.ok(events.includes('tour.replan.review-repair.done'));
+});
+
+function deepeningFailureOptions({ plan, executeSafeAction = async () => {} } = {}) {
+  return {
+    viewport: { width: 1080, height: 1920, fps: 30 },
+    source: { surface: 'orders', tabId: 'orders' },
+    request: { prompt: 'Explain the order detail', profile: 'data-grounded' },
+    async rehydrate() {},
+    async waitForSettlement() {},
+    executeSafeAction,
+    collectContext() {
+      return {
+        targets: [{
+          address: 'panel:orders:detail',
+          tabId: 'orders',
+          visible: false,
+          webmcpTools: [{ name: 'orders.reveal-detail' }],
+        }],
+        dataContext: { selectedRecords: [{ id: 'wo-1', status: 'queued' }] },
+      };
+    },
+    plan,
+  };
+}
+
+it('rejects a deepening action outside the exact snapshot allowlist', async () => {
+  await assert.rejects(prepareWorkspacePresentation(deepeningFailureOptions({
+    async plan() {
+      return {
+        status: 'needs-context',
+        requestedActions: [{ source: 'webmcp', tool: 'orders.delete', target: 'panel:orders:detail' }],
+      };
+    },
+  })), { code: 'DEEPENING_ACTION_UNSAFE' });
+});
+
+it('fails closed when an allowed deepening action fails', async () => {
+  await assert.rejects(prepareWorkspacePresentation(deepeningFailureOptions({
+    async plan() {
+      return {
+        status: 'needs-context',
+        requestedActions: [{ source: 'webmcp', tool: 'orders.reveal-detail', target: 'panel:orders:detail' }],
+      };
+    },
+    async executeSafeAction() { throw new Error('action failed'); },
+  })), { code: 'DEEPENING_ACTION_FAILED' });
+});
+
+it('fails closed when deepening does not change interface or data context', async () => {
+  await assert.rejects(prepareWorkspacePresentation(deepeningFailureOptions({
+    async plan() {
+      return {
+        status: 'needs-context',
+        requestedActions: [{ source: 'webmcp', tool: 'orders.reveal-detail', target: 'panel:orders:detail' }],
+      };
+    },
+  })), { code: 'DEEPENING_NO_EFFECT' });
+});
+
+it('does not permit a review repair to request another deepening round', async () => {
+  let calls = 0;
+  await assert.rejects(prepareWorkspacePresentation({
+    ...deepeningFailureOptions(),
+    reviewRepairAttempts: 1,
+    reviewIntent: { requireGrounding: true },
+    async plan(request, snapshot) {
+      calls += 1;
+      if (calls > 1) {
+        return {
+          status: 'needs-context',
+          requestedActions: [{ source: 'webmcp', tool: 'orders.reveal-detail', target: 'panel:orders:detail' }],
+        };
+      }
+      let source = snapshot.dataSources[0];
+      return {
+        status: 'ready',
+        basis: { targetSnapshotHash: request.targetSnapshotHash, generation: request.generation },
+        timeline: {
+          grounding: { sources: snapshot.dataSources },
+          turns: [{
+            id: 'unsafe-turn',
+            persona: 'guide',
+            dialogueAct: 'explain',
+            text: 'Open https://example.test now.',
+            cue: { targetId: 'panel:orders:detail', tabId: 'orders' },
+            sourceRefs: [{ sourceId: source.id, targetId: 'panel:orders:detail', hash: source.contentHash }],
+          }],
+        },
+      };
+    },
+  }), { code: 'DEEPENING_BUDGET_EXHAUSTED' });
+  assert.equal(calls, 2);
+});
 
 class TestStyle {
   values = new Map();

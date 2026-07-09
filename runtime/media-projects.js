@@ -23,6 +23,13 @@ export const MEDIA_RENDER_READINESS_SCHEMA_VERSION = 'workspace-media-render-rea
 
 export const MEDIA_RENDER_EVENT_TYPES = Object.freeze([
   'media.project.created',
+  'tour.context.rehydrate.started',
+  'tour.context.rehydrate.done',
+  'tour.context.rehydrate.failed',
+  'tour.context.collected',
+  'tour.deepening.action.started',
+  'tour.deepening.action.done',
+  'tour.deepening.action.failed',
   'tour.replan.started',
   'tour.replan.done',
   'tour.replan.failed',

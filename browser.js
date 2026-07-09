@@ -108,19 +108,26 @@ export { subscribeDataChange } from './runtime/data-change-client.js';
 
 export {
   PRESENTATION_CONTRACT_VERSION,
+  PRESENTATION_CONTEXT_SNAPSHOT_SCHEMA_VERSION,
   PRESENTATION_LESSON_AUDIT_SCHEMA_VERSION,
   PRESENTATION_LESSON_REVIEW_CODES,
   PRESENTATION_PROMPT_PROFILES,
+  PRESENTATION_REPLAN_REQUEST_SCHEMA_VERSION,
+  PRESENTATION_REPLAN_RESULT_SCHEMA_VERSION,
   alignPresentationTimelineToAudio,
   createPresentationLessonAuditPacket,
+  createPresentationContextSnapshot,
+  createPresentationReplanRequest,
   createPresentationTimelineContract,
   createPresentationTimelineHash,
   createPresentationTtsProjection,
   createWorkspacePresentationTimeline,
+  finalizePresentationReplan,
   normalizePresentationPrompt,
   normalizePresentationTimeline,
   presentationTimelineHasTurns,
   reviewPresentationTimeline,
+  reviewPresentationTimelineAgainstSnapshot,
   summarizePresentationTimeline,
 } from './runtime/presentation.js';
 export {
@@ -176,7 +183,12 @@ import {
 import { WORKSPACE_CONFIG_CHANNEL } from './schema/constants.js';
 import { broadcastDataChange } from './runtime/data-change.js';
 import { createRouter } from './runtime/router-lane.js';
-import { createWorkspacePresentationTimeline } from './runtime/presentation.js';
+import {
+  createPresentationContextSnapshot,
+  createPresentationReplanRequest,
+  createWorkspacePresentationTimeline,
+  finalizePresentationReplan,
+} from './runtime/presentation.js';
 import { createWorkspaceState } from './runtime/workspace-state.js';
 
 function isObject(value) {
@@ -892,6 +904,172 @@ export async function playWorkspacePresentationTimeline(timeline, mounted, optio
     }
   }
   return events;
+}
+
+function presentationPreparationError(code, message, cause) {
+  let error = new Error(message, cause ? { cause } : undefined);
+  error.code = code;
+  return error;
+}
+
+/**
+ * Prepare a presentation inside the target viewport before audio generation.
+ * The host owns all effects; this function owns the bounded, fail-closed order.
+ */
+export async function prepareWorkspacePresentation(options = {}) {
+  for (let name of ['rehydrate', 'collectContext', 'plan', 'executeSafeAction', 'waitForSettlement']) {
+    if (typeof options[name] !== 'function') {
+      throw presentationPreparationError('TOUR_REPLAN_UNAVAILABLE', `prepareWorkspacePresentation requires ${name}()`);
+    }
+  }
+  let emit = async (type, detail = {}) => options.onEvent?.({ type, ...cloneJson(detail) });
+  let collectSnapshot = async (generation) => {
+    let context = await options.collectContext({ generation });
+    return createPresentationContextSnapshot(context, {
+      generation,
+      viewport: options.viewport,
+      source: options.source,
+      stability: { settled: true, waitedFor: options.waitedFor || [] },
+    });
+  };
+
+  await emit('tour.context.rehydrate.started');
+  try {
+    await options.rehydrate({ viewport: cloneJson(options.viewport), source: cloneJson(options.source) });
+    await options.waitForSettlement({ phase: 'rehydrate' });
+  } catch (cause) {
+    if (cause?.code) throw cause;
+    throw presentationPreparationError('TOUR_HYDRATION_TIMEOUT', 'target viewport did not finish rehydration', cause);
+  }
+  await emit('tour.context.rehydrate.done');
+
+  let sourceSnapshot = await collectSnapshot(0);
+  await emit('tour.context.collected', {
+    generation: sourceSnapshot.generation,
+    identityHash: sourceSnapshot.identityHash,
+    dataHash: sourceSnapshot.dataHash,
+    targetCount: sourceSnapshot.summary.targetCount,
+  });
+  let request = createPresentationReplanRequest({
+    request: options.request,
+    timeline: options.timeline,
+    sourceSnapshot,
+    targetSnapshot: sourceSnapshot,
+    personaSpec: options.personaSpec,
+    turnBudget: options.turnBudget,
+    actionBudget: options.actionBudget,
+  });
+  let candidate;
+  try {
+    candidate = await options.plan(request, sourceSnapshot);
+  } catch (cause) {
+    throw presentationPreparationError('TOUR_REPLAN_UNAVAILABLE', 'presentation planner is unavailable', cause);
+  }
+  if (!candidate || !['ready', 'needs-context'].includes(candidate.status)) {
+    throw presentationPreparationError('TOUR_REPLAN_REJECTED', 'presentation planner returned an invalid result');
+  }
+
+  let targetSnapshot = sourceSnapshot;
+  let snapshotChain = [{ phase: 'source', generation: 0, identityHash: sourceSnapshot.identityHash, dataHash: sourceSnapshot.dataHash }];
+  if (candidate.status === 'needs-context') {
+    let actions = Array.isArray(candidate.requestedActions) ? candidate.requestedActions : [];
+    if (request.actionBudget.remainingRounds < 1 || !actions.length || actions.length > request.actionBudget.remainingActions) {
+      throw presentationPreparationError('DEEPENING_BUDGET_EXHAUSTED', 'presentation deepening request exceeds its action budget');
+    }
+    let allowed = new Set(request.allowedActions.map((action) => `${action.source || 'webmcp'}:${action.tool}:${action.target}`));
+    for (let action of actions) {
+      let source = String(action?.source || 'webmcp');
+      let key = `${source}:${String(action?.tool || '')}:${String(action?.target || '')}`;
+      if (!allowed.has(key)) {
+        throw presentationPreparationError('DEEPENING_ACTION_UNSAFE', `presentation deepening action is not allowed: ${key}`);
+      }
+      await emit('tour.deepening.action.started', { generation: 0, source, tool: action.tool, target: action.target });
+      try {
+        await options.executeSafeAction(cloneJson(action), { snapshot: sourceSnapshot, request });
+        await options.waitForSettlement({ phase: 'deepening', action: cloneJson(action) });
+      } catch (cause) {
+        throw presentationPreparationError('DEEPENING_ACTION_FAILED', `presentation deepening action failed: ${action.tool}`, cause);
+      }
+      await emit('tour.deepening.action.done', { generation: 0, source, tool: action.tool, target: action.target });
+    }
+    targetSnapshot = await collectSnapshot(1);
+    if (targetSnapshot.identityHash === sourceSnapshot.identityHash && targetSnapshot.dataHash === sourceSnapshot.dataHash) {
+      throw presentationPreparationError('DEEPENING_NO_EFFECT', 'presentation deepening actions did not change collected context');
+    }
+    snapshotChain.push({
+      phase: 'target',
+      generation: 1,
+      identityHash: targetSnapshot.identityHash,
+      dataHash: targetSnapshot.dataHash,
+      actions: actions.map((action) => ({ source: action.source || 'webmcp', tool: action.tool, target: action.target })),
+    });
+    request = createPresentationReplanRequest({
+      request: options.request,
+      timeline: options.timeline,
+      sourceSnapshot,
+      targetSnapshot,
+      personaSpec: options.personaSpec,
+      turnBudget: options.turnBudget,
+      actionBudget: { remainingRounds: 0, remainingActions: 0 },
+    });
+    try {
+      candidate = await options.plan(request, targetSnapshot);
+    } catch (cause) {
+      throw presentationPreparationError('TOUR_REPLAN_UNAVAILABLE', 'final presentation planner call is unavailable', cause);
+    }
+    if (candidate?.status === 'needs-context') {
+      throw presentationPreparationError('DEEPENING_BUDGET_EXHAUSTED', 'presentation planner requested another deepening round');
+    }
+  }
+
+  let finalize = () => finalizePresentationReplan(candidate, request, {
+    snapshot: targetSnapshot,
+    snapshotChain,
+    intent: options.reviewIntent || {},
+  });
+  let result;
+  try {
+    result = finalize();
+  } catch (cause) {
+    let repairLimit = Math.min(1, Math.max(0, Math.floor(Number(options.reviewRepairAttempts) || 0)));
+    if (!repairLimit || cause?.code !== 'TOUR_REPLAN_REJECTED' || !cause?.review?.issues?.length) throw cause;
+    request = {
+      ...request,
+      reviewFeedback: {
+        attempt: 1,
+        issues: cause.review.issues.map((issue) => ({
+          code: issue.code,
+          turnIndex: issue.turnIndex,
+          turnId: issue.turnId,
+          message: issue.message,
+        })),
+      },
+    };
+    await emit('tour.replan.review-repair.started', request.reviewFeedback);
+    try {
+      candidate = await options.plan(request, targetSnapshot);
+    } catch (repairCause) {
+      throw presentationPreparationError('TOUR_REPLAN_UNAVAILABLE', 'presentation review repair call is unavailable', repairCause);
+    }
+    if (candidate?.status !== 'ready') {
+      throw presentationPreparationError(
+        candidate?.status === 'needs-context' ? 'DEEPENING_BUDGET_EXHAUSTED' : 'TOUR_REPLAN_REJECTED',
+        'presentation review repair did not return a ready timeline',
+      );
+    }
+    result = finalize();
+    await emit('tour.replan.review-repair.done', { timelineHash: result.timelineHash });
+  }
+  await emit('tour.replan.done', {
+    generation: targetSnapshot.generation,
+    identityHash: targetSnapshot.identityHash,
+    timelineHash: result.timelineHash,
+  });
+  return {
+    ...result,
+    sourceSnapshot,
+    targetSnapshot,
+  };
 }
 
 /**

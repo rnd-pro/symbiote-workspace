@@ -2,16 +2,57 @@ import { parseWorkspaceAddress } from '../schema/was.js';
 import { computeIntegrity } from '../schema/canonical-json.js';
 
 export const PRESENTATION_PROMPT_PROFILES = Object.freeze(['brief', 'full', 'data-grounded', 'task-specific', 'dialogue']);
-export const PRESENTATION_CONTRACT_VERSION = 'presentation-timeline-v1';
-export const PRESENTATION_LESSON_AUDIT_SCHEMA_VERSION = 'presentation-lesson-audit-v1';
+export const PRESENTATION_CONTRACT_VERSION = 'presentation-timeline-v2';
+export const PRESENTATION_LESSON_AUDIT_SCHEMA_VERSION = 'presentation-lesson-audit-v2';
+export const PRESENTATION_CONTEXT_SNAPSHOT_SCHEMA_VERSION = 'presentation-context-snapshot-v1';
+export const PRESENTATION_REPLAN_REQUEST_SCHEMA_VERSION = 'presentation-replan-request-v1';
+export const PRESENTATION_REPLAN_RESULT_SCHEMA_VERSION = 'presentation-replan-result-v1';
 export const PRESENTATION_LESSON_REVIEW_CODES = Object.freeze([
+  'action-disallowed-target',
+  'action-missing-name',
+  'dialogue-clarification-missing',
+  'dialogue-grounding-disconnected',
+  'dialogue-question-missing',
   'spoken-speaker-label',
+  'spoken-dom-token',
+  'spoken-metadata-token',
   'unsafe-tts-text',
   'repeated-boilerplate',
+  'disallowed-target',
+  'disallowed-tool',
+  'dialogue-reply-missing',
+  'dialogue-role-count',
+  'dialogue-question-unanswered',
+  'dialogue-single-persona',
   'missing-dialogue-handoff',
+  'missing-cue-tab',
+  'missing-cue-target',
+  'missing-requested-surface',
+  'missing-requested-tab',
+  'missing-required-persona',
+  'missing-turns',
+  'grounding-required',
+  'grounding-ref-unknown',
+  'grounding-target-mismatch',
+  'request-keyword-missing',
+  'tts-long-turn',
+  'turn-budget-overflow',
+  'turn-budget-underflow',
+  'unsupported-action-source',
   'dialogue-monologue-run',
   'self-overlap',
   'overlong-overlap-turn',
+]);
+
+const PRESENTATION_DIALOGUE_ACTS = new Set([
+  'open',
+  'explain',
+  'ask',
+  'clarify',
+  'confirm',
+  'respond',
+  'handoff',
+  'close',
 ]);
 
 const PROFILE_ALIASES = Object.freeze({
@@ -245,16 +286,51 @@ function contextTargets(context = {}) {
 function dataRefCandidates(dataContext = {}) {
   let refs = [];
   if (hasData(dataContext.route?.data)) {
-    for (let key of Object.keys(dataContext.route.data)) {
-      refs.push({ source: 'route', path: `state:route.data.${key}` });
+    for (let [key, value] of Object.entries(dataContext.route.data)) {
+      refs.push(createSourceEvidence('route', `state:route.data.${key}`, value));
     }
   } else if (hasData(dataContext.route)) {
-    refs.push({ source: 'route', path: 'state:route' });
+    refs.push(createSourceEvidence('route', 'state:route', dataContext.route));
   }
   for (let [key, source] of Object.entries(DATA_REF_SOURCES)) {
-    if (hasData(dataContext[key])) refs.push({ source, path: key });
+    if (hasData(dataContext[key])) refs.push(createSourceEvidence(source, key, dataContext[key]));
   }
   return refs;
+}
+
+function sanitizedEvidenceSummary(value, maxLength = 200) {
+  let text;
+  try {
+    text = typeof value === 'string' ? value : JSON.stringify(clonePortable(value));
+  } catch {
+    text = String(value || '');
+  }
+  return cleanTimelineText(text)
+    .replace(/https?:\/\/\S+/gi, '[url]')
+    .replace(/([?&](?:token|key|secret|password|authorization)=)[^&\s]+/gi, '$1[redacted]')
+    .slice(0, Math.max(0, maxLength));
+}
+
+function createSourceEvidence(kind, path, value, options = {}) {
+  let portable = clonePortable(value);
+  let serialized;
+  try {
+    serialized = JSON.stringify(portable);
+  } catch {
+    serialized = String(value || '');
+  }
+  let id = portableId(options.id || `source-${kind}-${path}`, 'source');
+  return compactObject({
+    id,
+    source: kind,
+    kind,
+    path: cleanTimelineText(path),
+    targetId: cleanTimelineText(options.targetId),
+    contentHash: computeIntegrity(serialized),
+    length: serialized.length,
+    generation: Number.isInteger(options.generation) ? options.generation : undefined,
+    summary: sanitizedEvidenceSummary(value),
+  });
 }
 
 function uniqueByAddress(targets) {
@@ -365,9 +441,9 @@ function narrationFor(profile, target, index, total, refs, context, requestInfo 
     let focus = listValue(requestInfo.keywords).slice(0, 6).join(', ');
     let suffix = focus ? ` for ${focus}` : '';
     if (index === 0) return `Start with ${title}${suffix} so the viewer has the source context.`;
-    if (index % 2 === 1) return `Right, ${title} confirms what the previous step means in the workspace.`;
-    if (index === total - 1) return `Then close on ${title} and connect it back to the requested outcome.`;
-    return `Now move to ${title} and show the next concrete workspace signal.`;
+    if (index === 1) return `What does ${title} add to the result we just saw?`;
+    if (index === total - 1) return `${title} closes the explanation by connecting the evidence to the requested outcome.`;
+    return `${title} answers that by showing the next concrete workspace signal.`;
   }
   if (profile === 'data-grounded') {
     let sources = refs.map((ref) => ref.source).filter(Boolean).join(', ') || 'available';
@@ -375,12 +451,12 @@ function narrationFor(profile, target, index, total, refs, context, requestInfo 
   }
   let actions = listValue(target.safeActions).length + listValue(target.webmcpTools).length;
   let hidden = listValue(target.hiddenReasons).join(', ') || 'none';
-  return `${index + 1}/${total}: ${title} (${target.kind || 'target'}, module ${target.module || 'unspecified'}) is ${visibility}; hidden reasons: ${hidden}; declared actions/tools: ${actions}.`;
+  return `${title} is ${visibility}. It exposes ${actions} guided interaction${actions === 1 ? '' : 's'} for this part of the workflow.`;
 }
 
 function segmentDataRefs(target, profile, refs) {
   if (!['data-grounded', 'task-specific', 'dialogue'].includes(profile)) return [];
-  return refs.map((ref) => ({ ...ref, target: target.address }));
+  return refs.map((ref) => ({ ...ref, target: target.address, targetId: target.address }));
 }
 
 function cleanTimelineText(value, fallback = '') {
@@ -434,7 +510,8 @@ function hasTtsUnsafeToken(text) {
 }
 
 function hasSpokenMarkup(text) {
-  return /https?:\/\/|www\.|\*\*|__|[`{}[\]]/.test(String(text || ''));
+  return /https?:\/\/|www\.|<\/?(?:speak|prosody|break|emphasis)\b|\*\*|__|[`{}[\]]|[\u0000-\u001f\u007f]/i
+    .test(String(text || ''));
 }
 
 function hasSpokenSpeakerLabel(text) {
@@ -448,6 +525,33 @@ function boilerplateSignature(text) {
     .split(/\s+/)
     .filter(Boolean);
   return words.slice(0, 5).join(' ');
+}
+
+function normalizedTurnText(text) {
+  return cleanTimelineText(text)
+    .toLowerCase()
+    .replace(/\b(?:this|that|the|a|an)\b/g, ' ')
+    .replace(/[^a-zа-яё0-9\s]+/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function spokenRegistryToken(text, tokens = []) {
+  let spoken = String(text || '').toLowerCase();
+  return tokens.find((token) => {
+    let value = cleanTimelineText(token).toLowerCase();
+    return value.length >= 3 && spoken.includes(value);
+  }) || '';
+}
+
+function hasDomSpeechToken(text) {
+  return /(?:^|\s)(?:#[a-z][\w-]*|\.[a-z][\w-]*|\[[a-z][^\]]*\]|(?:queryselector|dataset|classname|innerhtml)\b)/i
+    .test(String(text || ''));
+}
+
+function hasSerializedMetadataToken(text) {
+  return /\b(?:targetId|tabId|panelId|workspaceId|dataRefs|sourceRefs|dialogueAct|replyTo|contractVersion|renderCue|webmcpTools)(?:\b|\s*[:.[\]])/i
+    .test(String(text || ''));
 }
 
 function hasDialogueHandoff(text) {
@@ -500,16 +604,66 @@ function normalizePresentationCue(cue = {}, fallback = {}) {
   });
 }
 
+function normalizeSourceRef(ref = {}) {
+  if (typeof ref === 'string') return compactObject({ sourceId: cleanTimelineText(ref) });
+  if (!isObject(ref)) return null;
+  return compactObject({
+    sourceId: cleanTimelineText(ref.sourceId || ref.id || ref.source),
+    path: cleanTimelineText(ref.path),
+    hash: cleanTimelineText(ref.hash || ref.contentHash),
+    targetId: cleanTimelineText(ref.targetId || ref.target),
+  });
+}
+
+function normalizeGroundingSource(source = {}) {
+  if (!isObject(source)) return null;
+  let id = cleanTimelineText(source.id || source.sourceId || source.source);
+  if (!id) return null;
+  return compactObject({
+    id,
+    kind: cleanTimelineText(source.kind || source.source),
+    path: cleanTimelineText(source.path),
+    targetId: cleanTimelineText(source.targetId || source.target),
+    contentHash: cleanTimelineText(source.contentHash || source.hash),
+    length: nonNegativeNumber(source.length, undefined),
+    generation: Number.isInteger(source.generation) ? source.generation : undefined,
+    summary: sanitizedEvidenceSummary(source.summary || source.excerpt || ''),
+  });
+}
+
+function groundingSourcesFromSegments(segments = []) {
+  let byId = new Map();
+  for (let segment of listValue(segments)) {
+    for (let ref of listValue(segment?.dataRefs)) {
+      let source = normalizeGroundingSource({
+        ...ref,
+        id: ref?.id || portableId(`source-${ref?.source || 'data'}-${ref?.path || 'value'}`, 'source'),
+        targetId: ref?.targetId || ref?.target || segment?.target,
+      });
+      if (source) byId.set(source.id, source);
+    }
+  }
+  return [...byId.values()];
+}
+
 function normalizePresentationTurn(turn = {}, index = 0) {
   if (!isObject(turn)) return null;
   let text = cleanTimelineText(turn.text ?? turn.narration ?? turn.caption);
   if (!text) return null;
-  let persona = cleanTimelineText(turn.persona ?? turn.speaker, index % 2 ? 'ops' : 'guide') || 'guide';
+  let persona = cleanTimelineText(turn.persona ?? turn.speaker);
   let cue = normalizePresentationCue(turn.cue, turn);
   return compactObject({
+    id: cleanTimelineText(turn.id, `turn-${index + 1}`),
     persona,
     text,
     cue: hasKeys(cue) ? cue : undefined,
+    dialogueAct: PRESENTATION_DIALOGUE_ACTS.has(cleanTimelineText(turn.dialogueAct || turn.act))
+      ? cleanTimelineText(turn.dialogueAct || turn.act)
+      : undefined,
+    replyTo: cleanTimelineText(turn.replyTo || turn.responseToTurnId),
+    sourceRefs: listValue(turn.sourceRefs || turn.dataRefs)
+      .map((ref) => normalizeSourceRef(ref))
+      .filter(Boolean),
     emotion: cleanTimelineText(turn.emotion || turn.style),
     pauseBeforeMs: nonNegativeNumber(turn.pauseBeforeMs ?? turn.gapMs),
     overlapMs: nonNegativeNumber(turn.overlapMs ?? turn.overlap),
@@ -526,6 +680,7 @@ function segmentToPresentationTurn(segment = {}, index = 0) {
   if (!isObject(segment)) return null;
   let firstCue = listValue(segment.cues)[0] || {};
   return normalizePresentationTurn({
+    id: segment.id || `turn-${index + 1}`,
     persona: segment.persona || segment.speaker,
     text: segment.narration || segment.text,
     cue: {
@@ -534,6 +689,14 @@ function segmentToPresentationTurn(segment = {}, index = 0) {
       marker: firstCue.marker || firstCue.kind,
     },
     actions: segment.actions,
+    dialogueAct: segment.dialogueAct,
+    replyTo: segment.replyTo,
+    sourceRefs: listValue(segment.sourceRefs).length ? segment.sourceRefs : listValue(segment.dataRefs).map((ref) => ({
+      sourceId: ref?.id || portableId(`source-${ref?.source || 'data'}-${ref?.path || 'value'}`, 'source'),
+      path: ref?.path,
+      hash: ref?.contentHash || ref?.hash,
+      targetId: ref?.targetId || ref?.target || segment.target,
+    })),
     annotations: segment.annotations,
   }, index);
 }
@@ -561,7 +724,8 @@ function normalizePresentationPersonas(personas = {}, turns = [], locale = 'en-U
     }
   }
   for (let turn of turns) {
-    let id = cleanTimelineText(turn.persona, 'guide') || 'guide';
+    let id = cleanTimelineText(turn.persona);
+    if (!id) continue;
     if (!result[id]) result[id] = { name: id, lang: cleanTimelineText(locale) };
   }
   return result;
@@ -575,10 +739,15 @@ function hashableTimelineProjection(timeline) {
     locale: timeline.locale,
     profile: timeline.profile,
     personas: timeline.personas,
+    grounding: timeline.grounding,
     turns: timeline.turns.map((turn) => compactObject({
       persona: turn.persona,
+      id: turn.id,
       text: turn.text,
       cue: hasKeys(turn.cue) ? turn.cue : undefined,
+      dialogueAct: turn.dialogueAct,
+      replyTo: turn.replyTo,
+      sourceRefs: listValue(turn.sourceRefs).length ? turn.sourceRefs : undefined,
       pauseBeforeMs: turn.pauseBeforeMs,
       overlapMs: turn.overlapMs,
       webmcp: hasKeys(turn.webmcp) ? turn.webmcp : undefined,
@@ -594,6 +763,9 @@ export function normalizePresentationTimeline(input = {}, options = {}) {
     options.contractVersion || source.contractVersion,
     PRESENTATION_CONTRACT_VERSION,
   );
+  if (contractVersion !== PRESENTATION_CONTRACT_VERSION) {
+    throw new Error(`unsupported presentation contract version: ${contractVersion}`);
+  }
   let locale = cleanTimelineText(source.locale || source.lang || source.language, 'en-US');
   let title = cleanTimelineText(source.title || source.name, 'Workspace presentation');
   let profile = cleanTimelineText(source.profile || source.promptProfile || source.prompt?.profile || source.summary?.profile, 'brief');
@@ -613,6 +785,11 @@ export function normalizePresentationTimeline(input = {}, options = {}) {
     locale,
     profile,
     personas: normalizePresentationPersonas(source.personas, turns, locale),
+    grounding: {
+      sources: listValue(source.grounding?.sources).length
+        ? listValue(source.grounding.sources).map(normalizeGroundingSource).filter(Boolean)
+        : groundingSourcesFromSegments(source.segments),
+    },
     turns,
     segments: Array.isArray(segments) ? segments : undefined,
     source: cleanTimelineText(source.source),
@@ -715,6 +892,9 @@ export function reviewPresentationTimeline(input = {}, intent = {}) {
   let turns = listValue(timeline.turns);
   let issues = [];
   let addIssue = (code, message, { severity = 'warning', turnIndex, ...detail } = {}) => {
+    if (!PRESENTATION_LESSON_REVIEW_CODES.includes(code)) {
+      throw new Error(`unregistered presentation lesson review code: ${code}`);
+    }
     issues.push(compactObject({ code, severity, message, turnIndex, ...detail }));
   };
 
@@ -738,6 +918,17 @@ export function reviewPresentationTimeline(input = {}, intent = {}) {
   let maxOverlapWords = Math.max(1, Math.floor(Number(intent.maxOverlapWords || intent.dialogue?.maxOverlapWords || 5)));
   let maxSamePersonaRun = Math.max(1, Math.floor(Number(intent.maxSamePersonaRun || intent.dialogue?.maxSamePersonaRun || 2)));
   let strictDialogueQuality = intent.strictDialogueQuality === true || intent.hardGate === true;
+  let groundingRequired = intent.requireGrounding === true || strictDialogueQuality;
+  let groundingSources = new Map(listValue(timeline.grounding?.sources).map((source) => [source.id, source]));
+  let turnById = new Map(turns.map((turn) => [turn.id, turn]));
+  let speechRegistryTokens = [
+    ...allowedTargetIds,
+    ...allowedToolNames,
+    ...idList(intent.forbiddenSpeechTokens),
+  ];
+  let normalizedTexts = new Map();
+  let questionCount = 0;
+  let clarificationCount = 0;
   let boilerplateCounts = new Map();
   let handoffCount = 0;
   let previousPersona = '';
@@ -789,10 +980,10 @@ export function reviewPresentationTimeline(input = {}, intent = {}) {
       });
     }
     if (!targetId && (allowedTargetIds.size || requestedSurfaceIds.length || selectedTabIds.length)) {
-      addIssue('missing-cue-target', `Turn ${index + 1} has no stable cue target.`, { turnIndex: index });
+      addIssue('missing-cue-target', `Turn ${index + 1} has no stable cue target.`, { severity: 'error', turnIndex: index });
     }
     if (!tabId && selectedTabIds.length) {
-      addIssue('missing-cue-tab', `Turn ${index + 1} has no stable tab cue.`, { turnIndex: index });
+      addIssue('missing-cue-tab', `Turn ${index + 1} has no stable tab cue.`, { severity: 'error', turnIndex: index });
     }
     let actions = [
       ...(hasKeys(turn?.webmcp) ? [{ source: 'webmcp', ...turn.webmcp }] : []),
@@ -838,25 +1029,47 @@ export function reviewPresentationTimeline(input = {}, intent = {}) {
     }
     if (hasTtsUnsafeToken(turn?.text)) {
       addIssue('unsafe-tts-text', `Turn ${index + 1} contains a token that should not be spoken.`, {
-        severity: strictDialogueQuality ? 'error' : 'warning',
+        severity: 'error',
         turnIndex: index,
+        turnId: turn.id,
       });
     }
     if (hasSpokenMarkup(turn?.text)) {
       addIssue('unsafe-tts-text', `Turn ${index + 1} contains markup, a URL, or symbols that should be removed before TTS.`, {
-        severity: strictDialogueQuality ? 'error' : 'warning',
+        severity: 'error',
         turnIndex: index,
+        turnId: turn.id,
       });
     }
     if (hasSpokenSpeakerLabel(turn?.text)) {
       addIssue('spoken-speaker-label', `Turn ${index + 1} starts with a speaker label that would be spoken by TTS.`, {
         severity: 'error',
         turnIndex: index,
+        turnId: turn.id,
+      });
+    }
+    if (hasDomSpeechToken(turn?.text)) {
+      addIssue('spoken-dom-token', `Turn ${index + 1} contains a DOM selector or browser implementation token.`, {
+        severity: 'error',
+        turnIndex: index,
+        turnId: turn.id,
+      });
+    }
+    let registryToken = spokenRegistryToken(turn?.text, speechRegistryTokens);
+    if (hasSerializedMetadataToken(turn?.text) || registryToken) {
+      addIssue('spoken-metadata-token', `Turn ${index + 1} contains serialized interface metadata.`, {
+        severity: 'error',
+        turnIndex: index,
+        turnId: turn.id,
+        token: registryToken || undefined,
       });
     }
     let words = wordCount(turn?.text);
     if (words > maxWordsPerTurn) {
-      addIssue('tts-long-turn', `Turn ${index + 1} has ${words} words; max is ${maxWordsPerTurn}.`, { turnIndex: index });
+      addIssue('tts-long-turn', `Turn ${index + 1} has ${words} words; max is ${maxWordsPerTurn}.`, {
+        severity: 'error',
+        turnIndex: index,
+      });
     }
     let signature = boilerplateSignature(turn?.text);
     if (signature) {
@@ -867,6 +1080,50 @@ export function reviewPresentationTimeline(input = {}, intent = {}) {
           severity: strictDialogueQuality ? 'error' : 'warning',
           turnIndex: index,
           signature,
+        });
+      }
+    }
+    let normalizedText = normalizedTurnText(turn?.text);
+    if (normalizedText) {
+      if (normalizedTexts.has(normalizedText)) {
+        addIssue('repeated-boilerplate', `Turn ${index + 1} repeats another turn.`, {
+          severity: strictDialogueQuality ? 'error' : 'warning',
+          turnIndex: index,
+          turnId: turn.id,
+          relatedTurnId: normalizedTexts.get(normalizedText),
+        });
+      } else {
+        normalizedTexts.set(normalizedText, turn.id);
+      }
+    }
+    let refs = listValue(turn.sourceRefs);
+    if (groundingRequired && ['explain', 'respond', 'confirm'].includes(turn.dialogueAct) && !refs.length) {
+      addIssue('grounding-required', `Turn ${index + 1} requires source grounding.`, {
+        severity: 'error',
+        turnIndex: index,
+        turnId: turn.id,
+      });
+    }
+    for (let ref of refs) {
+      let source = groundingSources.get(ref.sourceId);
+      if (!source) {
+        addIssue('grounding-ref-unknown', `Turn ${index + 1} references an unknown grounding source.`, {
+          severity: 'error',
+          turnIndex: index,
+          turnId: turn.id,
+          sourceRef: ref.sourceId,
+        });
+        continue;
+      }
+      let refTarget = ref.targetId || source.targetId;
+      if (targetId && refTarget && refTarget !== targetId && source.targetId !== tabId) {
+        addIssue('grounding-target-mismatch', `Turn ${index + 1} grounding does not match its cue target.`, {
+          severity: 'error',
+          turnIndex: index,
+          turnId: turn.id,
+          sourceRef: ref.sourceId,
+          actual: refTarget,
+          expected: targetId,
         });
       }
     }
@@ -907,13 +1164,80 @@ export function reviewPresentationTimeline(input = {}, intent = {}) {
     }
   }
   if (budget.minTurns !== undefined && turns.length < budget.minTurns) {
-    addIssue('turn-budget-underflow', `Timeline has ${turns.length} turns; minimum is ${budget.minTurns}.`);
+    addIssue('turn-budget-underflow', `Timeline has ${turns.length} turns; minimum is ${budget.minTurns}.`, { severity: 'error' });
   }
   if (budget.maxTurns !== undefined && turns.length > budget.maxTurns) {
-    addIssue('turn-budget-overflow', `Timeline has ${turns.length} turns; maximum is ${budget.maxTurns}.`);
+    addIssue('turn-budget-overflow', `Timeline has ${turns.length} turns; maximum is ${budget.maxTurns}.`, { severity: 'error' });
   }
   if (intent.requireDialogue === true && turns.length > 1 && personas.size < 2) {
     addIssue('dialogue-single-persona', 'Dialogue mode requires at least two personas in the narrated turns.');
+  }
+  if (intent.requireDialogue === true && personas.size !== 2) {
+    addIssue('dialogue-role-count', `Dialogue requires exactly two explicit personas; found ${personas.size}.`, {
+      severity: 'error',
+      actual: personas.size,
+      expected: 2,
+    });
+  }
+  if (intent.requireDialogue === true) {
+    for (let [index, turn] of turns.entries()) {
+      if (!turn.persona) {
+        addIssue('dialogue-role-count', `Turn ${index + 1} has no explicit persona.`, {
+          severity: 'error', turnIndex: index, turnId: turn.id,
+        });
+      }
+      if (!turn.dialogueAct || !PRESENTATION_DIALOGUE_ACTS.has(turn.dialogueAct)) {
+        addIssue('dialogue-reply-missing', `Turn ${index + 1} has no valid dialogue act.`, {
+          severity: 'error', turnIndex: index, turnId: turn.id, path: 'dialogueAct',
+        });
+      }
+      if (index > 0) {
+        let previous = turns[index - 1];
+        let reply = turnById.get(turn.replyTo);
+        if (!reply || reply.id !== previous.id || reply.persona === turn.persona) {
+          addIssue('dialogue-reply-missing', `Turn ${index + 1} must reply to the adjacent turn from the other persona.`, {
+            severity: 'error', turnIndex: index, turnId: turn.id, relatedTurnId: turn.replyTo,
+          });
+        } else if (groundingRequired) {
+          let previousRefs = new Set(listValue(previous.sourceRefs).map((ref) => ref.sourceId));
+          let sharesSource = listValue(turn.sourceRefs).some((ref) => previousRefs.has(ref.sourceId));
+          if (!sharesSource) {
+            addIssue('dialogue-grounding-disconnected', `Turn ${index + 1} shares no source with the turn it answers.`, {
+              severity: 'error', turnIndex: index, turnId: turn.id, relatedTurnId: previous.id,
+            });
+          }
+        }
+      }
+      if (['ask', 'clarify'].includes(turn.dialogueAct)) {
+        if (turn.dialogueAct === 'ask') questionCount += 1;
+        if (turn.dialogueAct === 'clarify') clarificationCount += 1;
+        let responses = turns.slice(index + 1, index + 3);
+        let answered = responses.some((candidate) => (
+          candidate.replyTo === turn.id
+          && candidate.persona !== turn.persona
+          && ['respond', 'confirm'].includes(candidate.dialogueAct)
+        ));
+        if (!answered) {
+          addIssue(
+            turn.dialogueAct === 'clarify' ? 'dialogue-clarification-missing' : 'dialogue-question-unanswered',
+            `Turn ${index + 1} has no structured response within two turns.`,
+            { severity: 'error', turnIndex: index, turnId: turn.id },
+          );
+        }
+      }
+    }
+    let minQuestions = Math.max(0, Math.floor(Number(intent.minQuestions || intent.dialogue?.minQuestions || 0)));
+    let minClarifications = Math.max(0, Math.floor(Number(intent.minClarifications || intent.dialogue?.minClarifications || 0)));
+    if (questionCount < minQuestions) {
+      addIssue('dialogue-question-missing', `Dialogue requires ${minQuestions} question turn(s); found ${questionCount}.`, {
+        severity: 'error', actual: questionCount, expected: minQuestions,
+      });
+    }
+    if (clarificationCount < minClarifications) {
+      addIssue('dialogue-clarification-missing', `Dialogue requires ${minClarifications} clarification turn(s); found ${clarificationCount}.`, {
+        severity: 'error', actual: clarificationCount, expected: minClarifications,
+      });
+    }
   }
   if (intent.requireDialogue === true && personas.size > 1 && longestPersonaRun > maxSamePersonaRun) {
     addIssue('dialogue-monologue-run', `Dialogue has ${longestPersonaRun} consecutive turns from one persona; max is ${maxSamePersonaRun}.`, {
@@ -971,6 +1295,18 @@ export function reviewPresentationTimeline(input = {}, intent = {}) {
 
 export function createPresentationTtsProjection(input = {}, options = {}) {
   let timeline = normalizePresentationTimeline(input);
+  let review = options.review || null;
+  if (review?.verdict === 'reject') {
+    return {
+      schemaVersion: 'presentation-tts-projection-v2',
+      model: 'deterministic-text-only',
+      status: 'blocked',
+      readyForTts: false,
+      itemCount: 0,
+      estimatedDurationMs: 0,
+      items: [],
+    };
+  }
   let estimatedMsPerWord = positiveNumber(options.estimatedMsPerWord || options.msPerWord, 310);
   let minTurnMs = positiveNumber(options.minTurnMs, 700);
   let punctuationPauseMs = nonNegativeNumber(options.punctuationPauseMs, 120);
@@ -994,8 +1330,10 @@ export function createPresentationTtsProjection(input = {}, options = {}) {
     });
   });
   return {
-    schemaVersion: 'presentation-tts-projection-v1',
+    schemaVersion: 'presentation-tts-projection-v2',
     model: 'deterministic-text-only',
+    status: 'ready',
+    readyForTts: true,
     estimatedMsPerWord,
     minTurnMs,
     punctuationPauseMs,
@@ -1007,20 +1345,16 @@ export function createPresentationTtsProjection(input = {}, options = {}) {
 
 function normalizePresentationLessonReview(review = {}) {
   let source = isObject(review) ? review : {};
-  let issues = listValue(source.issues).map((issue) => compactObject({
-    code: cleanTimelineText(issue?.code),
-    severity: cleanTimelineText(issue?.severity, 'warning'),
-    turnIndex: Number.isInteger(issue?.turnIndex) ? issue.turnIndex : undefined,
-    persona: cleanTimelineText(issue?.persona),
-    keyword: cleanTimelineText(issue?.keyword),
-    source: cleanTimelineText(issue?.source),
-    name: cleanTimelineText(issue?.name),
-    targetId: cleanTimelineText(issue?.targetId),
-    message: cleanTimelineText(issue?.message),
-  })).filter((issue) => issue.code);
+  let issues = listValue(source.issues).map((issue) => {
+    let normalized = clonePortable(issue) || {};
+    normalized.code = cleanTimelineText(issue?.code);
+    normalized.severity = cleanTimelineText(issue?.severity, 'warning');
+    normalized.message = cleanTimelineText(issue?.message);
+    return compactObject(normalized);
+  }).filter((issue) => issue.code);
   let issueCodes = [...new Set(issues.map((issue) => issue.code))];
   return {
-    schemaVersion: 'presentation-lesson-review-v1',
+    schemaVersion: 'presentation-lesson-review-v2',
     verdict: cleanTimelineText(source.verdict, issues.some((issue) => issue.severity === 'error') ? 'reject' : issues.length ? 'revise' : 'pass'),
     issueCodes,
     issues,
@@ -1046,7 +1380,7 @@ function normalizeAuditSettings(settings = {}) {
 function normalizeAuditSource(source = {}) {
   let value = isObject(source) ? source : {};
   return compactObject({
-    url: cleanTimelineText(value.url),
+    url: sanitizePresentationUrl(value.url),
     route: cleanTimelineText(value.route),
     surface: cleanTimelineText(value.surface || value.surfaceId),
     tabId: cleanTimelineText(value.tabId || value.tab),
@@ -1057,10 +1391,30 @@ function normalizeAuditSource(source = {}) {
   });
 }
 
+function sanitizePresentationUrl(value) {
+  let text = cleanTimelineText(value);
+  if (!text) return '';
+  try {
+    let parsed = new URL(text, 'https://presentation.invalid');
+    parsed.username = '';
+    parsed.password = '';
+    parsed.search = '';
+    parsed.hash = '';
+    if (parsed.origin === 'https://presentation.invalid') return parsed.pathname;
+    return parsed.toString();
+  } catch {
+    return text.split(/[?#]/, 1)[0];
+  }
+}
+
 export function createPresentationLessonAuditPacket(input = {}, options = {}) {
   let timeline = createPresentationTimelineContract(input);
   let intent = clonePortable(options.intent || {});
   let review = normalizePresentationLessonReview(options.review || reviewPresentationTimeline(timeline, intent));
+  let ttsProjection = createPresentationTtsProjection(timeline, {
+    ...(options.ttsProjection || {}),
+    review,
+  });
   let packet = {
     schemaVersion: PRESENTATION_LESSON_AUDIT_SCHEMA_VERSION,
     timelineId: timeline.id,
@@ -1071,8 +1425,18 @@ export function createPresentationLessonAuditPacket(input = {}, options = {}) {
     profile: timeline.profile,
     renderSettings: normalizeAuditSettings(options.renderSettings || options.settings),
     source: normalizeAuditSource(options.source),
-    contextSummary: clonePortable(options.contextSummary || {}),
-    ttsProjection: createPresentationTtsProjection(timeline, options.ttsProjection),
+    contextSummary: compactObject({
+      identityHash: cleanTimelineText(options.contextSummary?.identityHash),
+      dataHash: cleanTimelineText(options.contextSummary?.dataHash),
+      generation: Number.isInteger(options.contextSummary?.generation) ? options.contextSummary.generation : undefined,
+      visibleTargetCount: nonNegativeNumber(options.contextSummary?.visibleTargetCount, undefined),
+      targetCount: nonNegativeNumber(options.contextSummary?.targetCount, undefined),
+    }),
+    grounding: clonePortable(timeline.grounding),
+    reviewPolicy: cleanTimelineText(options.reviewPolicy, 'structural-v2'),
+    generationInputHash: cleanTimelineText(options.generationInputHash),
+    readyForTts: review.verdict !== 'reject' && ttsProjection.readyForTts === true,
+    ttsProjection,
     review,
   };
   return {
@@ -1083,8 +1447,14 @@ export function createPresentationLessonAuditPacket(input = {}, options = {}) {
 
 function createSegment(target, index, total, profile, refs, context, requestInfo = {}) {
   let dataRefs = segmentDataRefs(target, profile, refs);
+  let dialogueAct = profile === 'dialogue'
+    ? index === 0 ? 'open' : index === 1 ? 'ask' : index === total - 1 ? 'close' : 'respond'
+    : 'explain';
   return compactObject({
-    id: portableId(`segment-${index + 1}-${profile}-${target.kind || 'target'}`),
+    id: portableId(`segment-${index + 1}-${profile}`),
+    persona: profile === 'dialogue' ? (index % 2 ? 'analyst' : 'guide') : 'guide',
+    dialogueAct,
+    replyTo: index > 0 ? portableId(`segment-${index}-${profile}`) : undefined,
     target: target.address,
     focusTarget: target.address,
     narration: narrationFor(profile, target, index, total, dataRefs, context, requestInfo),
@@ -1096,6 +1466,12 @@ function createSegment(target, index, total, profile, refs, context, requestInfo
     }],
     actions: segmentActions(target, profile),
     dataRefs,
+    sourceRefs: dataRefs.map((ref) => ({
+      sourceId: ref.id,
+      path: ref.path,
+      hash: ref.contentHash,
+      targetId: target.address,
+    })),
     requiredHostServices: listValue(target.webmcpTools).length > 0 ? ['agent.webmcp'] : undefined,
   });
 }
@@ -1133,6 +1509,12 @@ export function createWorkspacePresentationTimeline(context = {}, request = {}) 
     profile: prompt.profile,
     prompt: prompt.prompt ? { text: prompt.prompt, profile: prompt.profile } : { profile: prompt.profile },
     requiredHostServices: ['agent.webmcp', ...listValue(input.requiredHostServices)],
+    personas: prompt.profile === 'dialogue'
+      ? { guide: { name: 'Guide' }, analyst: { name: 'Analyst' } }
+      : { guide: { name: 'Guide' } },
+    grounding: {
+      sources: refs.map((ref) => normalizeGroundingSource(ref)).filter(Boolean),
+    },
     segments,
   });
   timeline.summary = {
@@ -1143,4 +1525,225 @@ export function createWorkspacePresentationTimeline(context = {}, request = {}) 
     narrationDensity: prompt.profile === 'full' ? 'detailed' : prompt.profile === 'data-grounded' ? 'contextual' : prompt.profile === 'dialogue' ? 'conversational' : prompt.profile === 'task-specific' ? 'focused' : 'compact',
   };
   return timeline;
+}
+
+function presentationContractError(code, message) {
+  let error = new Error(message);
+  error.code = code;
+  return error;
+}
+
+function snapshotActionName(action = {}) {
+  return cleanTimelineText(action.name || action.id || action.tool || action.type);
+}
+
+function snapshotTarget(target = {}) {
+  let address = cleanTimelineText(target.address || target.targetId || target.id);
+  if (!address) return null;
+  return compactObject({
+    address,
+    tabId: cleanTimelineText(target.tabId || target.viewId || target.boardId),
+    title: cleanTimelineText(target.title || target.label),
+    kind: cleanTimelineText(target.kind || target.type),
+    visible: Boolean(target.visible),
+    rendered: target.rendered === undefined ? undefined : Boolean(target.rendered),
+    hiddenReasons: idList(target.hiddenReasons),
+    safeActionNames: listValue(target.safeActions || target.revealActions)
+      .map(snapshotActionName)
+      .filter(Boolean),
+    webmcpToolNames: listValue(target.webmcpTools)
+      .map(snapshotActionName)
+      .filter(Boolean),
+  });
+}
+
+function normalizeSnapshotViewport(viewport = {}) {
+  let width = Math.max(1, Math.round(positiveNumber(viewport.width, 1920)));
+  let height = Math.max(1, Math.round(positiveNumber(viewport.height, 1080)));
+  return {
+    width,
+    height,
+    fps: Math.max(1, Math.round(positiveNumber(viewport.fps, 30))),
+    orientation: cleanTimelineText(viewport.orientation, width < height ? 'vertical' : 'horizontal'),
+    aspectRatio: cleanTimelineText(viewport.aspectRatio, `${width}:${height}`),
+  };
+}
+
+export function createPresentationContextSnapshot(context = {}, options = {}) {
+  let generation = Number.isInteger(options.generation)
+    ? options.generation
+    : Number.isInteger(context.generation) ? context.generation : 0;
+  let viewport = normalizeSnapshotViewport(options.viewport || context.viewport || {});
+  let source = normalizeAuditSource(options.source || context.source || context.workspace || {});
+  let targetRecords = [
+    ...listValue(context.targets),
+    ...listValue(context.panels),
+  ].map(snapshotTarget).filter(Boolean);
+  let targetMap = new Map();
+  for (let target of targetRecords) {
+    let existing = targetMap.get(target.address);
+    targetMap.set(target.address, existing ? compactObject({ ...existing, ...target }) : target);
+  }
+  let targets = [...targetMap.values()].sort((a, b) => a.address.localeCompare(b.address));
+  if (!targets.length) throw presentationContractError('TARGET_SNAPSHOT_EMPTY', 'presentation context snapshot has no targets');
+  let dataSources = dataRefCandidates(context.dataContext || options.dataContext || {})
+    .map((sourceRecord) => normalizeGroundingSource({ ...sourceRecord, generation }))
+    .filter(Boolean);
+  let stability = compactObject({
+    settled: options.stability?.settled === true || context.stability?.settled === true,
+    waitedFor: idList(options.stability?.waitedFor || context.stability?.waitedFor),
+  });
+  let identity = {
+    schemaVersion: PRESENTATION_CONTEXT_SNAPSHOT_SCHEMA_VERSION,
+    viewport,
+    source,
+    targets: targets.map((target) => ({
+      address: target.address,
+      tabId: target.tabId,
+      kind: target.kind,
+      visible: target.visible,
+      rendered: target.rendered,
+      hiddenReasons: target.hiddenReasons,
+      safeActionNames: target.safeActionNames,
+      webmcpToolNames: target.webmcpToolNames,
+    })),
+    stability,
+  };
+  let identityHash = `${PRESENTATION_CONTEXT_SNAPSHOT_SCHEMA_VERSION}:${computeIntegrity(identity)}`;
+  let dataHash = `${PRESENTATION_CONTEXT_SNAPSHOT_SCHEMA_VERSION}:data:${computeIntegrity(dataSources.map((item) => ({
+    id: item.id,
+    path: item.path,
+    contentHash: item.contentHash,
+  })))}`;
+  return {
+    ...identity,
+    generation,
+    targets,
+    dataSources,
+    summary: {
+      targetCount: targets.length,
+      visibleTargetCount: targets.filter((target) => target.visible).length,
+      dataSourceCount: dataSources.length,
+    },
+    identityHash,
+    dataHash,
+  };
+}
+
+function snapshotAllowedActions(snapshot = {}) {
+  let actions = [];
+  for (let target of listValue(snapshot.targets)) {
+    for (let tool of listValue(target.webmcpToolNames)) {
+      actions.push({ source: 'webmcp', tool, target: target.address });
+    }
+    for (let name of listValue(target.safeActionNames)) {
+      actions.push({ source: 'workspace', tool: name, target: target.address });
+    }
+  }
+  return actions;
+}
+
+export function createPresentationReplanRequest(input = {}) {
+  let targetSnapshot = input.targetSnapshot || input.snapshot;
+  if (!isObject(targetSnapshot) || !targetSnapshot.identityHash) {
+    throw presentationContractError('TARGET_SNAPSHOT_EMPTY', 'presentation replan requires a target snapshot');
+  }
+  let sourceSnapshot = input.sourceSnapshot || targetSnapshot;
+  let remainingRounds = Math.max(0, Math.min(1, Math.floor(Number(input.actionBudget?.remainingRounds ?? input.deepening?.remainingRounds ?? 1))));
+  let remainingActions = Math.max(0, Math.min(3, Math.floor(Number(input.actionBudget?.remainingActions ?? input.deepening?.remainingActions ?? 3))));
+  let prompt = normalizePresentationPrompt(input.request || input.prompt || {});
+  let request = {
+    schemaVersion: PRESENTATION_REPLAN_REQUEST_SCHEMA_VERSION,
+    sourceSnapshotHash: sourceSnapshot.identityHash,
+    targetSnapshotHash: targetSnapshot.identityHash,
+    generation: targetSnapshot.generation,
+    viewport: targetSnapshot.viewport,
+    prompt: prompt.prompt,
+    profile: prompt.profile,
+    personaSpec: clonePortable(input.personaSpec || input.request?.personaSpec || {}),
+    turnBudget: normalizeTurnBudget({
+      turnBudget: input.turnBudget || input.request?.turnBudget,
+      minTurns: input.request?.minTurns,
+      maxTurns: input.request?.maxTurns,
+    }),
+    allowedActions: clonePortable(input.allowedActions || snapshotAllowedActions(targetSnapshot)),
+    actionBudget: { remainingRounds, remainingActions },
+    priorTimelineHash: cleanTimelineText(input.timeline?.hash || input.priorTimelineHash),
+    grounding: { sources: clonePortable(targetSnapshot.dataSources || []) },
+  };
+  return {
+    ...request,
+    hash: `${PRESENTATION_REPLAN_REQUEST_SCHEMA_VERSION}:${computeIntegrity(request)}`,
+  };
+}
+
+export function reviewPresentationTimelineAgainstSnapshot(input = {}, snapshot = {}, intent = {}) {
+  let allowedTargetIds = listValue(snapshot.targets).map((target) => target.address).filter(Boolean);
+  let allowedToolNames = listValue(snapshot.targets).flatMap((target) => target.webmcpToolNames || []);
+  let timeline = createPresentationTimelineContract({
+    ...input,
+    grounding: listValue(input.grounding?.sources).length
+      ? input.grounding
+      : { sources: snapshot.dataSources || [] },
+  });
+  return reviewPresentationTimeline(timeline, {
+    ...intent,
+    allowedTargetIds,
+    allowedToolNames,
+    forbiddenSpeechTokens: [
+      ...allowedTargetIds,
+      ...allowedToolNames,
+      ...listValue(snapshot.targets).flatMap((target) => [target.tabId, ...listValue(target.safeActionNames)]),
+    ].filter(Boolean),
+  });
+}
+
+export function finalizePresentationReplan(candidate = {}, request = {}, options = {}) {
+  if (candidate.status !== 'ready' || !candidate.timeline) {
+    throw presentationContractError('TOUR_REPLAN_REJECTED', 'presentation planner did not return a ready timeline');
+  }
+  let expectedHash = cleanTimelineText(request.targetSnapshotHash);
+  let candidateHash = cleanTimelineText(candidate.basis?.targetSnapshotHash || candidate.snapshotHash);
+  if (!expectedHash || candidateHash !== expectedHash || Number(candidate.basis?.generation) !== Number(request.generation)) {
+    throw presentationContractError('TARGET_CONTEXT_STALE', 'presentation planner result targets a stale snapshot');
+  }
+  let snapshot = options.snapshot;
+  if (!snapshot || snapshot.identityHash !== expectedHash) {
+    throw presentationContractError('TARGET_CONTEXT_STALE', 'latest target snapshot is unavailable');
+  }
+  let timeline = createPresentationTimelineContract(candidate.timeline);
+  let review = reviewPresentationTimelineAgainstSnapshot(timeline, snapshot, {
+    turnBudget: request.turnBudget,
+    ...(options.intent || {}),
+  });
+  if (review.verdict === 'reject') {
+    let error = presentationContractError('TOUR_REPLAN_REJECTED', 'presentation timeline failed target-snapshot review');
+    error.review = review;
+    throw error;
+  }
+  let personaSpec = clonePortable(request.personaSpec || {});
+  let cacheIdentity = computeIntegrity({
+    snapshotHash: expectedHash,
+    timelineHash: timeline.hash,
+    viewport: request.viewport,
+    personaSpec,
+  });
+  return {
+    schemaVersion: PRESENTATION_REPLAN_RESULT_SCHEMA_VERSION,
+    status: 'ready',
+    basis: {
+      sourceSnapshotHash: request.sourceSnapshotHash,
+      targetSnapshotHash: expectedHash,
+      generation: request.generation,
+      requestHash: request.hash,
+    },
+    snapshotChain: clonePortable(options.snapshotChain || []),
+    timeline,
+    timelineHash: timeline.hash,
+    turns: timeline.turns,
+    review,
+    coverage: review.coverage,
+    renderSeedPatch: { timelineHash: timeline.hash, snapshotHash: expectedHash },
+    cacheIdentity,
+  };
 }

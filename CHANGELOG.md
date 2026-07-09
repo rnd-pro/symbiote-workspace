@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Upgraded render-time presentations to `presentation-timeline-v2` with
+  source-grounded turns, explicit dialogue acts/replies, complete lesson-review
+  codes, and fail-closed TTS projection. Added stable interface and volatile data
+  snapshot hashes plus a browser-owned target-viewport preparation loop with one
+  bounded safe WebMCP deepening round, one optional same-snapshot review repair,
+  and stale-result rejection.
 - Documented and covered portable cascade `themeVariant`, `tabShape`,
   `tabRadius`, and `cellRadius` params so library theme variants, tab geometry,
   and animated `cell-bg` circle sizing round-trip through `cascade-theme-change`

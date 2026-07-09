@@ -125,19 +125,26 @@ export {
 } from './scripted-adapter.js';
 export {
   PRESENTATION_CONTRACT_VERSION,
+  PRESENTATION_CONTEXT_SNAPSHOT_SCHEMA_VERSION,
   PRESENTATION_LESSON_AUDIT_SCHEMA_VERSION,
   PRESENTATION_LESSON_REVIEW_CODES,
   PRESENTATION_PROMPT_PROFILES,
+  PRESENTATION_REPLAN_REQUEST_SCHEMA_VERSION,
+  PRESENTATION_REPLAN_RESULT_SCHEMA_VERSION,
   alignPresentationTimelineToAudio,
+  createPresentationContextSnapshot,
   createPresentationLessonAuditPacket,
+  createPresentationReplanRequest,
   createPresentationTimelineContract,
   createPresentationTimelineHash,
   createPresentationTtsProjection,
   createWorkspacePresentationTimeline,
+  finalizePresentationReplan,
   normalizePresentationPrompt,
   normalizePresentationTimeline,
   presentationTimelineHasTurns,
   reviewPresentationTimeline,
+  reviewPresentationTimelineAgainstSnapshot,
   summarizePresentationTimeline,
 } from './presentation.js';
 export {

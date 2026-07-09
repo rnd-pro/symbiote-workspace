@@ -92,6 +92,7 @@ describe('browser entrypoint', () => {
       'collectWorkspaceInterfaceContext',
       'mountWorkspace',
       'playWorkspacePresentationTimeline',
+      'prepareWorkspacePresentation',
       'subscribeDataChange',
     ]);
   });

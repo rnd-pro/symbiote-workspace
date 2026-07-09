@@ -68,7 +68,7 @@ describe('media project contract', () => {
     assert.equal(project.id, 'project-a');
     assert.equal(project.surface, 'media-studio');
     assert.equal(project.timeline.turns.length, 2);
-    assert.match(project.timelineHash, /^presentation-timeline-v1:/);
+    assert.match(project.timelineHash, /^presentation-timeline-v2:/);
     assert.equal(project.renderSettings.includeAudio, true);
     assert.equal(project.renderSettings.autoRender, true);
     assert.equal(project.renderSettings.schemaVersion, MEDIA_RENDER_SETTINGS_SCHEMA_VERSION);

@@ -349,3 +349,31 @@ the mounted router for `view.select`, and requires the host to provide
 `executeAction` for timeline actions so WebMCP/host/workspace actions stay in
 the declared safe-action layer. Mounted workspaces expose the same helper as
 `mounted.playPresentationTimeline(...)`.
+
+Render-time lesson generation uses the `presentation-timeline-v2` contract.
+Every turn has an explicit id and persona and can carry `dialogueAct`, `replyTo`,
+and `sourceRefs`; `grounding.sources[]` records compact source identity, content
+hashes, and sanitized summaries. The structural review rejects unknown or
+target-mismatched sources, unregistered tools, DOM or metadata tokens in spoken
+text, and disconnected two-person dialogue. A rejected review produces no TTS
+items.
+
+`createPresentationContextSnapshot()` separates stable interface identity from
+volatile live data. `identityHash` includes viewport, visible/rendered targets,
+and declared safe actions, while `dataHash` tracks source content. Source URLs
+are stripped of credentials, query strings, and fragments. Horizontal and
+vertical snapshots therefore have different identities without invalidating an
+identity solely because live values changed.
+
+`prepareWorkspacePresentation(options)` owns the browser-side preflight loop.
+The host rehydrates the requested viewport, waits for layout/fonts/WebMCP to
+settle, collects a target snapshot, and calls its injected planner. The planner
+may request at most one deepening round with at most three actions; the host
+must execute only allowlisted safe actions, settle and recollect, then replan.
+Hosts may set `reviewRepairAttempts: 1` to permit one review-guided planner
+correction on the same target snapshot. That correction cannot request another
+deepening round; a missing, non-ready, stale, or still-rejected result fails the
+preflight.
+The finalizer rejects stale generations or snapshot hashes and returns one
+atomic timeline/cache identity. Rendering and TTS must consume that finalized
+packet rather than constructing a fallback timeline server-side.
