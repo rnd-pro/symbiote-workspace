@@ -3,9 +3,13 @@ import assert from 'node:assert/strict';
 
 import {
   PRESENTATION_CONTRACT_VERSION,
+  PRESENTATION_LESSON_AUDIT_SCHEMA_VERSION,
+  createPresentationLessonAuditPacket,
   createPresentationTimelineContract,
   createPresentationTimelineHash,
+  createPresentationTtsProjection,
   createWorkspacePresentationTimeline,
+  alignPresentationTimelineToAudio,
   normalizePresentationPrompt,
   normalizePresentationTimeline,
   presentationTimelineHasTurns,
@@ -106,6 +110,8 @@ describe('presentation timeline generation', () => {
     assert.equal(normalizePresentationPrompt('краткую презентацию').profile, 'brief');
     assert.equal(normalizePresentationPrompt({ prompt: 'полная подробная презентация' }).profile, 'full');
     assert.equal(normalizePresentationPrompt({ prompt: 'presentation based on data context' }).profile, 'data-grounded');
+    assert.equal(normalizePresentationPrompt({ prompt: 'focused task workflow for crew dispatch' }).profile, 'task-specific');
+    assert.equal(normalizePresentationPrompt({ prompt: 'two voice podcast walkthrough' }).profile, 'dialogue');
     assert.equal(normalizePresentationPrompt({ depth: 'detailed', prompt: 'summary' }).profile, 'full');
   });
 
@@ -143,6 +149,97 @@ describe('presentation timeline generation', () => {
     assert.equal(report.ok, true, JSON.stringify(report.errors));
   });
 
+  it('selects request-relevant targets for task-specific lessons instead of enumerating visible panels', () => {
+    let base = context();
+    let current = context({
+      panels: [
+        ...base.panels,
+        {
+          address: 'panel:home:crew-node',
+          kind: 'panel',
+          title: 'Crew and feeder availability',
+          module: 'demo.crew',
+          panelId: 'crew',
+          visible: true,
+          safeActions: [{ id: 'crew.filter', input: { feeder: 'FEEDER-12' } }],
+        },
+      ],
+      targets: [
+        ...base.targets,
+        {
+          address: 'panel:home:crew-node',
+          kind: 'panel',
+          title: 'Crew and feeder availability',
+          visible: true,
+          enrichment: { entity: 'crew', feeder: 'FEEDER-12' },
+        },
+      ],
+    });
+
+    let timeline = createWorkspacePresentationTimeline(current, {
+      prompt: 'focused task workflow for crew feeder dispatch',
+      maxSegments: 2,
+      revision: 4,
+    });
+    let contract = createPresentationTimelineContract(timeline);
+    let review = reviewPresentationTimeline(contract, {
+      allowedTargetIds: [
+        'panel:home:queue-node',
+        'panel:home:audit-node',
+        'panel:detail:detail-node',
+        'element:queue-row-wo-1',
+        'panel:home:crew-node',
+      ],
+      requestedSurfaceIds: ['panel:home:crew-node'],
+      requestPrompt: 'focused task workflow for crew feeder dispatch',
+      requireRequestFit: true,
+      maxWordsPerTurn: 24,
+    });
+
+    assert.equal(timeline.summary.profile, 'task-specific');
+    assert.equal(timeline.summary.narrationDensity, 'focused');
+    assert.equal(timeline.segments[0].target, 'panel:home:crew-node');
+    assert.equal(contract.turns[0].cue.tabId, 'home');
+    assert.ok(contract.turns[0].text.includes('crew'));
+    assert.ok(contract.turns[0].text.includes('feeder'));
+    assert.equal(review.verdict, 'pass');
+    assert.deepEqual(review.coverage.missingRequestedSurfaceIds, []);
+    assert.deepEqual(review.coverage.missingRequestKeywords, []);
+  });
+
+  it('generates dialogue-profile lessons with alternating personas and responsive handoffs', () => {
+    let timeline = createWorkspacePresentationTimeline(context(), {
+      prompt: 'two voice podcast walkthrough for work order data',
+      maxSegments: 4,
+      revision: 4,
+    });
+    let contract = createPresentationTimelineContract(timeline);
+    let review = reviewPresentationTimeline(contract, {
+      allowedTargetIds: [
+        'panel:home:queue-node',
+        'panel:home:audit-node',
+        'panel:detail:detail-node',
+        'element:queue-row-wo-1',
+      ],
+      requestPrompt: 'two voice podcast walkthrough for work order data',
+      requireRequestFit: true,
+      requireDialogue: true,
+      requireDialogueHandoffs: true,
+      strictDialogueQuality: true,
+      maxSamePersonaRun: 1,
+      turnBudget: { min: 4, max: 4 },
+    });
+
+    assert.equal(timeline.summary.profile, 'dialogue');
+    assert.equal(timeline.summary.narrationDensity, 'conversational');
+    assert.deepEqual(contract.turns.map((turn) => turn.persona), ['guide', 'ops', 'guide', 'ops']);
+    assert.deepEqual(contract.turns.map((turn) => turn.cue.tabId), ['home', 'home', 'home', 'detail']);
+    assert.equal(review.verdict, 'pass');
+    assert.equal(review.coverage.handoffCount >= 1, true);
+    assert.equal(review.coverage.longestPersonaRun, 1);
+    assert.deepEqual(review.coverage.missingRequestKeywords, []);
+  });
+
   it('does not generate timeline targets from invalid runtime addresses', () => {
     let timeline = createWorkspacePresentationTimeline(context({
       targets: [
@@ -176,6 +273,7 @@ describe('canonical presentation timeline contract', () => {
       turns: [
         {
           webmcp: { tool: 'select_window', input: { boardId: 'orders' } },
+          actions: [{ source: 'webmcp', name: 'select_window', target: 'panel:orders:queue' }],
           persona: 'guide',
           text: 'Open the active work-order queue.',
           cue: { marker: 'box', tabId: 'orders', targetId: 'panel:orders:queue' },
@@ -201,6 +299,9 @@ describe('canonical presentation timeline contract', () => {
       targetId: 'panel:orders:queue',
     });
     assert.deepEqual(contract.turns[0].webmcp, { tool: 'select_window', input: { boardId: 'orders' } });
+    assert.deepEqual(contract.turns[0].actions, [
+      { source: 'webmcp', name: 'select_window', target: 'panel:orders:queue' },
+    ]);
     assert.deepEqual(contract.turns[0].renderCue, { durationMs: 1800 });
     assert.match(contract.hash, /^presentation-timeline-v1:sha256-/);
     assert.equal(contract.hash, createPresentationTimelineHash(input));
@@ -228,6 +329,23 @@ describe('canonical presentation timeline contract', () => {
     assert.notEqual(
       createPresentationTimelineHash(a),
       createPresentationTimelineHash(a, { contractVersion: 'presentation-timeline-v2' }),
+    );
+    assert.notEqual(
+      createPresentationTimelineHash(a),
+      createPresentationTimelineHash({
+        ...a,
+        turns: [{
+          ...a.turns[0],
+          actions: [{ source: 'webmcp', name: 'select_window', target: 'a' }],
+        }],
+      }),
+    );
+    assert.notEqual(
+      createPresentationTimelineHash(a),
+      createPresentationTimelineHash({
+        ...a,
+        turns: [{ ...a.turns[0], renderCue: { startMs: 300, durationMs: 900 } }],
+      }),
     );
   });
 
@@ -296,6 +414,347 @@ describe('canonical presentation timeline contract', () => {
     assert.deepEqual(review.coverage.personas.sort(), ['guide', 'ops']);
   });
 
+  it('audits generated brief and full lessons before TTS without losing requested coverage', () => {
+    let current = context();
+    let targetIds = [
+      'panel:home:queue-node',
+      'panel:home:audit-node',
+      'panel:detail:detail-node',
+      'element:queue-row-wo-1',
+    ];
+    let brief = createPresentationTimelineContract(createWorkspacePresentationTimeline(current, {
+      prompt: 'сделай краткую презентацию интерфейса',
+      revision: 4,
+    }));
+    let full = createPresentationTimelineContract(createWorkspacePresentationTimeline(current, {
+      prompt: 'сделай полную подробную презентацию интерфейса',
+      revision: 4,
+    }));
+
+    let briefReview = reviewPresentationTimeline(brief, {
+      allowedTargetIds: targetIds,
+      allowedToolNames: ['demo.queue.query'],
+      requestedSurfaceIds: ['panel:home:queue-node'],
+      maxWordsPerTurn: 24,
+    });
+    let fullReview = reviewPresentationTimeline(full, {
+      allowedTargetIds: targetIds,
+      allowedToolNames: ['demo.queue.query'],
+      requestedSurfaceIds: targetIds,
+      maxWordsPerTurn: 24,
+      turnBudget: { min: 4, max: 4 },
+    });
+
+    assert.equal(briefReview.verdict, 'pass');
+    assert.equal(fullReview.verdict, 'pass');
+    assert.equal(brief.turns.length, 1);
+    assert.equal(full.turns.length, 4);
+    assert.deepEqual(fullReview.coverage.missingRequestedSurfaceIds, []);
+    assert.equal(createPresentationTtsProjection(full).items.every((item) => !/^(guide|ops)\s*:/i.test(item.text)), true);
+  });
+
+  it('passes a source-grounded two-host dialogue with responsive handoffs', () => {
+    let timeline = createPresentationTimelineContract({
+      id: 'notebook-style-tour',
+      title: 'API flow graph deep dive',
+      turns: [
+        {
+          persona: 'guide',
+          text: 'Start with the API graph so the viewer sees the request path.',
+          cue: { targetId: 'panel:tools:api-graph', tabId: 'tools' },
+        },
+        {
+          persona: 'ops',
+          text: 'Right, that graph shows where the adapter hands control to Maximo.',
+          cue: { targetId: 'panel:tools:api-graph', tabId: 'tools' },
+        },
+        {
+          persona: 'guide',
+          text: 'Now open the source code viewer and connect the script to that path.',
+          cue: { targetId: 'panel:tools:source-viewer', tabId: 'tools' },
+        },
+        {
+          persona: 'ops',
+          text: 'Exactly, the highlighted code connects the implementation the board calls.',
+          cue: { targetId: 'panel:tools:source-viewer', tabId: 'tools' },
+        },
+        {
+          persona: 'guide',
+          text: 'Then return to the board and show the work order data flowing back.',
+          cue: { targetId: 'panel:tools:orders', tabId: 'tools' },
+        },
+        {
+          persona: 'ops',
+          text: 'That closes the loop: request, adapter, script, and visible result.',
+          cue: { targetId: 'panel:tools:orders', tabId: 'tools' },
+        },
+      ],
+    });
+
+    let review = reviewPresentationTimeline(timeline, {
+      allowedTargetIds: [
+        'panel:tools:api-graph',
+        'panel:tools:source-viewer',
+        'panel:tools:orders',
+      ],
+      requestedSurfaceIds: [
+        'panel:tools:api-graph',
+        'panel:tools:source-viewer',
+        'panel:tools:orders',
+      ],
+      selectedTabIds: ['tools'],
+      requestPrompt: 'show the API flow graph and explain how source code connects to work orders',
+      requireRequestFit: true,
+      requireDialogue: true,
+      requireDialogueHandoffs: true,
+      strictDialogueQuality: true,
+      maxSamePersonaRun: 1,
+      turnBudget: { min: 6, max: 6 },
+    });
+
+    assert.equal(review.verdict, 'pass');
+    assert.equal(review.coverage.handoffCount >= 2, true);
+    assert.equal(review.coverage.longestPersonaRun, 1);
+    assert.deepEqual(review.coverage.missingRequestedSurfaceIds, []);
+    assert.deepEqual(review.coverage.missingSelectedTabIds, []);
+  });
+
+  it('audits flexible lesson scenarios before TTS across workspace surface types', () => {
+    let base = context();
+    let operationsContext = context({
+      panels: [
+        ...base.panels,
+        {
+          address: 'panel:home:crew-node',
+          kind: 'panel',
+          title: 'Crew feeder dispatch board',
+          module: 'demo.crew',
+          panelId: 'crew',
+          visible: true,
+          safeActions: [{ id: 'crew.filter', input: { feeder: 'FEEDER-12' } }],
+        },
+      ],
+      targets: [
+        ...base.targets,
+        {
+          address: 'panel:home:crew-node',
+          kind: 'panel',
+          title: 'Crew feeder dispatch board',
+          visible: true,
+          enrichment: { entity: 'crew', feeder: 'FEEDER-12', workflow: 'dispatch' },
+        },
+      ],
+    });
+    let toolsContext = context({
+      workspace: { name: 'Developer tools' },
+      activeViewId: 'tools',
+      panels: [
+        {
+          address: 'panel:tools:api-graph-node',
+          kind: 'panel',
+          title: 'API flow graph',
+          module: 'demo.apiGraph',
+          panelId: 'api-graph',
+          visible: true,
+          webmcpTools: [{ name: 'demo.apiGraph.expand', input: { node: 'adapter' } }],
+        },
+        {
+          address: 'panel:tools:source-viewer-node',
+          kind: 'panel',
+          title: 'UNIAPI adapter source code viewer',
+          module: 'demo.source',
+          panelId: 'source-viewer',
+          visible: true,
+          safeActions: [{ id: 'source.open', input: { file: 'sample-adapter/autoscripts/uniapi.js' } }],
+        },
+        {
+          address: 'panel:tools:registry-node',
+          kind: 'panel',
+          title: 'Adapter registry metadata',
+          module: 'demo.registry',
+          panelId: 'registry',
+          visible: true,
+        },
+        {
+          address: 'panel:tools:script-sync-node',
+          kind: 'panel',
+          title: 'Automation script deploy sync',
+          module: 'demo.sync',
+          panelId: 'script-sync',
+          visible: false,
+          revealActions: [{
+            type: 'view.select',
+            target: 'view:tools',
+            input: { viewId: 'tools', panelId: 'script-sync' },
+          }],
+        },
+      ],
+      targets: [
+        { address: 'panel:tools:api-graph-node', kind: 'panel', visible: true },
+        { address: 'panel:tools:source-viewer-node', kind: 'panel', visible: true },
+        { address: 'panel:tools:registry-node', kind: 'panel', visible: true },
+        { address: 'panel:tools:script-sync-node', kind: 'panel', visible: false },
+      ],
+      dataContext: {
+        route: { data: { adapter: { id: 'uniapi', endpoint: '/maximo/oslc' } } },
+        retrievedContext: [{ source: 'code-map', title: 'UNIAPI deploy path' }],
+      },
+    });
+    let workflowContext = context({
+      workspace: { name: 'Approval workflow' },
+      activeViewId: 'workflow',
+      panels: [
+        {
+          address: 'panel:workflow:process-graph-node',
+          kind: 'panel',
+          title: 'Approval workflow process graph',
+          module: 'demo.workflow',
+          panelId: 'process-graph',
+          visible: true,
+          webmcpTools: [{ name: 'demo.workflow.trace', input: { order: 'wo-1' } }],
+        },
+        {
+          address: 'panel:workflow:approval-detail-node',
+          kind: 'panel',
+          title: 'Approval detail state',
+          module: 'demo.approval',
+          panelId: 'approval-detail',
+          visible: true,
+        },
+        {
+          address: 'panel:workflow:history-node',
+          kind: 'panel',
+          title: 'Workflow history events',
+          module: 'demo.history',
+          panelId: 'history',
+          visible: false,
+          revealActions: [{
+            type: 'stack.select',
+            target: 'stack:workflow:workflow-stack',
+            input: { viewId: 'workflow', childId: 'history-node' },
+          }],
+        },
+      ],
+      targets: [
+        { address: 'panel:workflow:process-graph-node', kind: 'panel', visible: true },
+        { address: 'panel:workflow:approval-detail-node', kind: 'panel', visible: true },
+        { address: 'panel:workflow:history-node', kind: 'panel', visible: false },
+      ],
+      dataContext: {
+        route: { data: { approval: { status: 'pending', step: 'supervisor-review' } } },
+        selectedRecords: [{ type: 'work-order', id: 'wo-1' }],
+      },
+    });
+    let scenarios = [
+      {
+        name: 'operations-task',
+        context: operationsContext,
+        prompt: 'focused crew feeder dispatch board',
+        profile: 'task-specific',
+        maxSegments: 3,
+        selectedTabIds: ['home'],
+        requestedSurfaceIds: ['panel:home:crew-node'],
+        allowedToolNames: ['demo.queue.query'],
+      },
+      {
+        name: 'developer-dialogue',
+        context: toolsContext,
+        prompt: 'two voice podcast api graph adapter source code flow',
+        profile: 'dialogue',
+        maxSegments: 4,
+        selectedTabIds: ['tools'],
+        requestedSurfaceIds: ['panel:tools:api-graph-node', 'panel:tools:source-viewer-node'],
+        allowedToolNames: ['demo.apiGraph.expand'],
+        requireDialogue: true,
+      },
+      {
+        name: 'workflow-full',
+        context: workflowContext,
+        prompt: 'full approval workflow process graph presentation',
+        profile: 'full',
+        maxSegments: 3,
+        selectedTabIds: ['workflow'],
+        requestedSurfaceIds: [
+          'panel:workflow:process-graph-node',
+          'panel:workflow:approval-detail-node',
+          'panel:workflow:history-node',
+        ],
+        allowedToolNames: ['demo.workflow.trace'],
+      },
+    ];
+
+    for (let scenario of scenarios) {
+      let timeline = createWorkspacePresentationTimeline(scenario.context, {
+        prompt: scenario.prompt,
+        maxSegments: scenario.maxSegments,
+        revision: 4,
+      });
+      let contract = createPresentationTimelineContract(timeline);
+      let allowedTargetIds = [...new Set([
+        ...scenario.context.panels.map((panel) => panel.address),
+        ...scenario.context.targets.map((target) => target.address),
+      ])];
+      let intent = {
+        allowedTargetIds,
+        allowedToolNames: scenario.allowedToolNames,
+        requestedSurfaceIds: scenario.requestedSurfaceIds,
+        selectedTabIds: scenario.selectedTabIds,
+        requestPrompt: scenario.prompt,
+        requireRequestFit: true,
+        maxWordsPerTurn: 30,
+        turnBudget: { min: scenario.maxSegments, max: scenario.maxSegments },
+        requireDialogue: scenario.requireDialogue,
+        requireDialogueHandoffs: scenario.requireDialogue,
+        strictDialogueQuality: scenario.requireDialogue,
+        maxSamePersonaRun: 1,
+      };
+      let review = reviewPresentationTimeline(contract, intent);
+      let audit = createPresentationLessonAuditPacket(contract, {
+        intent,
+        renderSettings: { width: 1920, height: 1080, fps: 30, speakerMode: scenario.requireDialogue ? 'dialogue' : 'single' },
+        source: { surface: scenario.selectedTabIds[0], tabId: scenario.selectedTabIds[0], title: scenario.name },
+        contextSummary: { scenario: scenario.name, targetCount: allowedTargetIds.length },
+      });
+
+      assert.equal(timeline.summary.profile, scenario.profile, scenario.name);
+      assert.equal(contract.turns.length, scenario.maxSegments, scenario.name);
+      assert.equal(review.verdict, 'pass', `${scenario.name}: ${JSON.stringify(review.issues)}`);
+      assert.deepEqual(review.coverage.missingRequestedSurfaceIds, [], scenario.name);
+      assert.deepEqual(review.coverage.missingSelectedTabIds, [], scenario.name);
+      assert.equal(audit.review.verdict, 'pass', scenario.name);
+      assert.equal(audit.ttsProjection.items.length, contract.turns.length, scenario.name);
+      assert.equal(contract.turns.every((turn) => turn.cue?.targetId && turn.cue?.tabId), true, scenario.name);
+      assert.equal(contract.turns.every((turn) => !/^(guide|ops)\s*:/i.test(turn.text)), true, scenario.name);
+      if (scenario.requireDialogue) {
+        assert.deepEqual(contract.turns.map((turn) => turn.persona), ['guide', 'ops', 'guide', 'ops']);
+        assert.equal(review.coverage.handoffCount >= 1, true, scenario.name);
+      }
+    }
+  });
+
+  it('flags monologue runs inside two-voice dialogue mode', () => {
+    let timeline = createPresentationTimelineContract({
+      id: 'runaway-dialogue-tour',
+      title: 'Runaway dialogue tour',
+      turns: [
+        { persona: 'guide', text: 'Open the queue.', cue: { targetId: 'panel:orders:queue', tabId: 'orders' } },
+        { persona: 'guide', text: 'Now review the asset card.', cue: { targetId: 'panel:orders:asset', tabId: 'orders' } },
+        { persona: 'guide', text: 'Then explain the crew row.', cue: { targetId: 'panel:orders:crew', tabId: 'orders' } },
+        { persona: 'ops', text: 'Right, the crew row confirms the assignment.', cue: { targetId: 'panel:orders:crew', tabId: 'orders' } },
+      ],
+    });
+
+    let review = reviewPresentationTimeline(timeline, {
+      requireDialogue: true,
+      strictDialogueQuality: true,
+      maxSamePersonaRun: 2,
+    });
+
+    assert.equal(review.verdict, 'reject');
+    assert.ok(review.issues.some((issue) => issue.code === 'dialogue-monologue-run'));
+    assert.equal(review.coverage.longestPersonaRun, 3);
+  });
+
   it('rejects unsafe targets, tools, and missing requested coverage', () => {
     let timeline = createPresentationTimelineContract({
       id: 'bad-tour',
@@ -350,7 +809,200 @@ describe('canonical presentation timeline contract', () => {
     assert.equal(review.verdict, 'revise');
     assert.deepEqual(
       review.issues.map((issue) => issue.code).sort(),
-      ['dialogue-single-persona', 'tts-long-turn', 'tts-markup', 'tts-unsafe-token', 'turn-budget-underflow'].sort(),
+      ['dialogue-single-persona', 'tts-long-turn', 'turn-budget-underflow', 'unsafe-tts-text', 'unsafe-tts-text'].sort(),
+    );
+  });
+
+  it('rejects spoken labels and weak multi-turn dialogue before TTS', () => {
+    let timeline = createPresentationTimelineContract({
+      id: 'weak-dialogue-tour',
+      title: 'Weak dialogue tour',
+      turns: [
+        { persona: 'guide', text: 'GUIDE: Open the queue.', cue: { targetId: 'panel:orders:queue', tabId: 'orders' } },
+        { persona: 'ops', text: 'The queue has current work.', cue: { targetId: 'panel:orders:queue', tabId: 'orders' } },
+        { persona: 'guide', text: 'The queue has current work.', cue: { targetId: 'panel:orders:queue', tabId: 'orders' } },
+        { persona: 'ops', text: 'The queue has current work.', cue: { targetId: 'panel:orders:queue', tabId: 'orders' } },
+      ],
+    });
+
+    let review = reviewPresentationTimeline(timeline, {
+      requireDialogue: true,
+      requireDialogueHandoffs: true,
+      strictDialogueQuality: true,
+    });
+
+    assert.equal(review.verdict, 'reject');
+    assert.ok(review.issues.some((issue) => issue.code === 'spoken-speaker-label'));
+    assert.ok(review.issues.some((issue) => issue.code === 'repeated-boilerplate'));
+    assert.ok(review.issues.some((issue) => issue.code === 'missing-dialogue-handoff'));
+  });
+
+  it('rejects same-persona overlap and keeps overlap turns short', () => {
+    let timeline = createPresentationTimelineContract({
+      id: 'bad-overlap-tour',
+      title: 'Bad overlap tour',
+      turns: [
+        {
+          persona: 'guide',
+          text: 'First guide line.',
+          renderCue: { startMs: 0, durationMs: 1500 },
+        },
+        {
+          persona: 'guide',
+          text: 'This overlapping line is much too long for a natural interruption.',
+          renderCue: { startMs: 500, durationMs: 1000 },
+        },
+      ],
+    });
+
+    let review = reviewPresentationTimeline(timeline, {
+      strictDialogueQuality: true,
+      maxOverlapWords: 4,
+    });
+
+    assert.equal(review.verdict, 'reject');
+    assert.ok(review.issues.some((issue) => issue.code === 'self-overlap'));
+    assert.ok(review.issues.some((issue) => issue.code === 'overlong-overlap-turn'));
+  });
+
+  it('creates a deterministic portable lesson audit packet without provider data', () => {
+    let timeline = createPresentationTimelineContract({
+      id: 'audit-tour',
+      title: 'Audit tour',
+      turns: [
+        { persona: 'guide', text: 'Open the queue.', cue: { targetId: 'panel:orders:queue', tabId: 'orders' } },
+        { persona: 'ops', text: 'Right, the asset panel confirms the crew.', cue: { targetId: 'panel:orders:asset', tabId: 'orders' } },
+      ],
+    });
+    let options = {
+      intent: { requireDialogue: true },
+      renderSettings: { width: 1920, height: 1080, fps: 30, speakerMode: 'dialogue' },
+      source: { url: '/?surface=orders', surface: 'orders', tabId: 'orders' },
+      contextSummary: { visibleTargetCount: 2 },
+    };
+
+    let audit = createPresentationLessonAuditPacket(timeline, options);
+    let auditAgain = createPresentationLessonAuditPacket(timeline, options);
+    let projection = createPresentationTtsProjection(timeline);
+
+    assert.equal(audit.schemaVersion, PRESENTATION_LESSON_AUDIT_SCHEMA_VERSION);
+    assert.equal(audit.hash, auditAgain.hash);
+    assert.equal(audit.review.verdict, 'pass');
+    assert.equal(audit.ttsProjection.model, 'deterministic-text-only');
+    assert.equal(audit.ttsProjection.items.length, 2);
+    assert.equal(projection.items[0].text, 'Open the queue.');
+    assert.equal(JSON.stringify(audit).includes('providerId'), false);
+  });
+
+  it('rejects request mismatch and invalid actions while keeping non-blocking warnings separate', () => {
+    let timeline = createPresentationTimelineContract({
+      id: 'bad-actions-tour',
+      title: 'Generic tour',
+      turns: [
+        {
+          persona: 'guide',
+          text: 'This gives a generic introduction.',
+          cue: { targetId: 'panel:orders:queue', tabId: 'orders' },
+          actions: [{ source: 'dom-click', name: 'click', target: 'panel:orders:queue' }],
+        },
+        {
+          persona: 'ops',
+          text: 'This line has no stable focus target.',
+        },
+      ],
+    });
+
+    let review = reviewPresentationTimeline(timeline, {
+      allowedTargetIds: ['panel:orders:queue'],
+      requestKeywords: ['feeder', 'crew'],
+      requireRequestKeywords: true,
+      requiredPersonas: ['guide', 'ops', 'planner'],
+    });
+
+    assert.equal(review.verdict, 'reject');
+    assert.ok(review.issues.some((issue) => issue.code === 'request-keyword-missing'));
+    assert.ok(review.issues.some((issue) => issue.code === 'unsupported-action-source'));
+    assert.ok(review.issues.some((issue) => issue.code === 'missing-required-persona'));
+    assert.ok(review.warnings.some((issue) => issue.code === 'missing-cue-target'));
+    assert.deepEqual(review.coverage.missingRequiredPersonas, ['planner']);
+    assert.deepEqual(review.coverage.missingRequestKeywords.sort(), ['crew', 'feeder']);
+  });
+
+  it('does not reject broad overview requests on generic tour words', () => {
+    let timeline = createPresentationTimelineContract({
+      id: 'workspace-overview-tour',
+      title: 'Workspace overview',
+      turns: [
+        {
+          persona: 'guide',
+          text: 'The operations board, developer panel, and agent dock are ready for review.',
+          cue: { targetId: 'panel:workspace:overview', tabId: 'home' },
+        },
+      ],
+    });
+
+    let review = reviewPresentationTimeline(timeline, {
+      allowedTargetIds: ['panel:workspace:overview'],
+      requestedSurfaceIds: ['panel:workspace:overview'],
+      requestPrompt: 'Walk me through all available workspaces',
+      requireRequestFit: true,
+    });
+
+    assert.equal(review.verdict, 'pass');
+    assert.deepEqual(review.coverage.requestKeywords, []);
+    assert.deepEqual(review.coverage.missingRequestKeywords, []);
+  });
+
+  it('aligns render cues to audio authority without estimating missing overlap starts', () => {
+    let sequential = alignPresentationTimelineToAudio({
+      id: 'audio-authority-tour',
+      title: 'Audio authority tour',
+      turns: [
+        { persona: 'guide', text: 'First turn.', cue: { targetId: 'panel:a' } },
+        { persona: 'ops', text: 'Second turn.', cue: { targetId: 'panel:b' } },
+      ],
+    }, {
+      audioItems: [{ durationMs: 1200 }, { durationMs: 900 }],
+      sequenceMode: 'sequential',
+    });
+
+    assert.deepEqual(
+      sequential.turns.map((turn) => turn.renderCue),
+      [
+        { startMs: 0, durationMs: 1200, endMs: 1200, source: 'audio' },
+        { startMs: 1200, durationMs: 900, endMs: 2100, source: 'audio' },
+      ],
+    );
+    assert.equal(sequential.metadata.audioAuthority.durationMs, 2100);
+    assert.equal(sequential.metadata.audioAuthority.sequenceMode, 'sequential');
+
+    let overlap = alignPresentationTimelineToAudio({
+      id: 'overlap-tour',
+      title: 'Overlap tour',
+      turns: [
+        { persona: 'guide', text: 'Guide.', renderCue: { startMs: 0 } },
+        { persona: 'ops', text: 'Ops.', renderCue: { startMs: 500 } },
+      ],
+    }, {
+      audioItems: [{ durationMs: 1000 }, { durationMs: 800 }],
+      sequenceMode: 'overlap',
+    });
+
+    assert.deepEqual(overlap.turns.map((turn) => turn.renderCue.startMs), [0, 500]);
+    assert.equal(overlap.metadata.audioAuthority.durationMs, 1300);
+    assert.throws(
+      () => alignPresentationTimelineToAudio({
+        id: 'bad-overlap-tour',
+        title: 'Bad overlap tour',
+        turns: [
+          { persona: 'guide', text: 'Guide.', renderCue: { startMs: 0 } },
+          { persona: 'ops', text: 'Ops.' },
+        ],
+      }, {
+        audioItems: [{ durationMs: 1000 }, { durationMs: 800 }],
+        sequenceMode: 'overlap',
+      }),
+      /audio authority overlap timing requires renderCue.startMs/,
     );
   });
 });

@@ -1,8 +1,18 @@
 import { parseWorkspaceAddress } from '../schema/was.js';
 import { computeIntegrity } from '../schema/canonical-json.js';
 
-export const PRESENTATION_PROMPT_PROFILES = Object.freeze(['brief', 'full', 'data-grounded']);
+export const PRESENTATION_PROMPT_PROFILES = Object.freeze(['brief', 'full', 'data-grounded', 'task-specific', 'dialogue']);
 export const PRESENTATION_CONTRACT_VERSION = 'presentation-timeline-v1';
+export const PRESENTATION_LESSON_AUDIT_SCHEMA_VERSION = 'presentation-lesson-audit-v1';
+export const PRESENTATION_LESSON_REVIEW_CODES = Object.freeze([
+  'spoken-speaker-label',
+  'unsafe-tts-text',
+  'repeated-boilerplate',
+  'missing-dialogue-handoff',
+  'dialogue-monologue-run',
+  'self-overlap',
+  'overlong-overlap-turn',
+]);
 
 const PROFILE_ALIASES = Object.freeze({
   brief: 'brief',
@@ -17,7 +27,14 @@ const PROFILE_ALIASES = Object.freeze({
   data: 'data-grounded',
   grounded: 'data-grounded',
   'data-grounded': 'data-grounded',
+  dialogue: 'dialogue',
+  conversation: 'dialogue',
   contextual: 'data-grounded',
+  focused: 'task-specific',
+  podcast: 'dialogue',
+  task: 'task-specific',
+  'task-specific': 'task-specific',
+  walkthrough: 'task-specific',
 });
 
 const DATA_REF_SOURCES = Object.freeze({
@@ -31,6 +48,47 @@ const DATA_REF_SOURCES = Object.freeze({
   live: 'live',
   documentPresentation: 'document.presentation',
 });
+
+const PRESENTATION_REQUEST_STOPWORDS = new Set([
+  'a',
+  'about',
+  'all',
+  'and',
+  'are',
+  'available',
+  'current',
+  'describe',
+  'dialogue',
+  'explain',
+  'focused',
+  'for',
+  'from',
+  'how',
+  'interface',
+  'presentation',
+  'podcast',
+  'show',
+  'task',
+  'the',
+  'this',
+  'through',
+  'tour',
+  'two',
+  'ui',
+  'voice',
+  'walk',
+  'walkthrough',
+  'workspace',
+  'workspaces',
+  'интерфейс',
+  'как',
+  'мне',
+  'покажи',
+  'презентация',
+  'про',
+  'тур',
+  'что',
+ ]);
 
 function isObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -108,11 +166,17 @@ function requestObject(request) {
 
 function profileFromPrompt(prompt) {
   let text = String(prompt || '').toLowerCase();
-  if (/(на основе данных|данн|контекст|data|record|records|selected|retrieved|grounded)/i.test(text)) {
-    return 'data-grounded';
+  if (/(dialogue|conversation|podcast|two[-\s]?voice|two hosts|двухголос|диалог|подкаст)/i.test(text)) {
+    return 'dialogue';
   }
   if (/(полн|подроб|деталь|full|complete|detailed|deep)/i.test(text)) return 'full';
   if (/(крат|корот|быстр|brief|short|quick|summary|concise)/i.test(text)) return 'brief';
+  if (/(на основе данных|данн|контекст|data|record|records|selected|retrieved|grounded)/i.test(text)) {
+    return 'data-grounded';
+  }
+  if (/(task|specific|focus|focused|scenario|workflow|задач|конкретн|сценари|процесс)/i.test(text)) {
+    return 'task-specific';
+  }
   return 'brief';
 }
 
@@ -129,6 +193,14 @@ export function normalizePresentationPrompt(request = {}) {
 
 function targetTitle(target) {
   return target.title || target.label || target.panelId || target.nodeId || target.id || target.address || 'workspace target';
+}
+
+function targetTabId(target = {}, context = {}) {
+  let explicit = cleanTimelineText(target.tabId || target.viewId || target.windowId || target.boardId);
+  if (explicit) return explicit;
+  let address = cleanTimelineText(target.address);
+  let match = address.match(/^panel:([^:]+):/);
+  return match ? match[1] : cleanTimelineText(context.activeViewId || context.viewId);
 }
 
 function mergeTargetRecord(target, panel) {
@@ -213,14 +285,48 @@ function dataTargetScore(target) {
   return score;
 }
 
+function targetSearchText(target = {}) {
+  return JSON.stringify([
+    target.address,
+    target.kind,
+    target.title,
+    target.label,
+    target.panelId,
+    target.module,
+    target.enrichment,
+    target.safeActions,
+    target.webmcpTools,
+  ]).toLowerCase();
+}
+
+function requestTargetScore(target = {}, keywords = []) {
+  if (!keywords.length) return 0;
+  let haystack = targetSearchText(target);
+  let score = 0;
+  for (let keyword of keywords) {
+    if (haystack.includes(keyword)) score += 2;
+  }
+  if (target.visible) score += 1;
+  return score;
+}
+
 function choosePresentationTargets(context, profile, request) {
   let targets = contextTargets(context);
   let visible = targets.filter((target) => target.visible);
   let primary = visible.length > 0 ? visible : targets;
-  let defaultLimit = profile === 'full' ? targets.length : profile === 'data-grounded' ? 3 : 1;
+  let defaultLimit = profile === 'full' ? targets.length : profile === 'dialogue' ? 4 : profile === 'data-grounded' || profile === 'task-specific' ? 3 : 1;
   let limit = Number.isInteger(request.maxSegments) && request.maxSegments > 0 ? request.maxSegments : defaultLimit;
 
   if (profile === 'full') return targets.slice(0, limit);
+  if (profile === 'dialogue' || profile === 'task-specific') {
+    let keywords = keywordList(request.requestKeywords || request.keywords || request.prompt || request.taskText || request.goal);
+    let ranked = targets
+      .map((target) => ({ target, score: requestTargetScore(target, keywords) }))
+      .filter((item) => item.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .map((item) => item.target);
+    return uniqueByAddress([...ranked, ...primary, ...targets]).slice(0, limit);
+  }
   if (profile === 'data-grounded') {
     let ranked = [...targets].sort((a, b) => dataTargetScore(b) - dataTargetScore(a));
     return uniqueByAddress([primary[0], ...ranked]).slice(0, limit);
@@ -247,10 +353,22 @@ function segmentActions(target, profile) {
   return actions.slice(0, profile === 'full' ? 2 : 1).map(compactObject);
 }
 
-function narrationFor(profile, target, index, total, refs, context) {
+function narrationFor(profile, target, index, total, refs, context, requestInfo = {}) {
   let title = targetTitle(target);
   let visibility = target.visible ? 'visible' : 'hidden until revealed';
   if (profile === 'brief') return `${title}: ${visibility} workspace surface.`;
+  if (profile === 'task-specific') {
+    let focus = listValue(requestInfo.keywords).slice(0, 6).join(', ') || 'the requested workflow';
+    return `${title}: focus on ${focus} using this ${visibility} workspace surface.`;
+  }
+  if (profile === 'dialogue') {
+    let focus = listValue(requestInfo.keywords).slice(0, 6).join(', ');
+    let suffix = focus ? ` for ${focus}` : '';
+    if (index === 0) return `Start with ${title}${suffix} so the viewer has the source context.`;
+    if (index % 2 === 1) return `Right, ${title} confirms what the previous step means in the workspace.`;
+    if (index === total - 1) return `Then close on ${title} and connect it back to the requested outcome.`;
+    return `Now move to ${title} and show the next concrete workspace signal.`;
+  }
   if (profile === 'data-grounded') {
     let sources = refs.map((ref) => ref.source).filter(Boolean).join(', ') || 'available';
     return `${title}: present this surface using ${sources} context from the current workspace state.`;
@@ -261,7 +379,7 @@ function narrationFor(profile, target, index, total, refs, context) {
 }
 
 function segmentDataRefs(target, profile, refs) {
-  if (profile !== 'data-grounded') return [];
+  if (!['data-grounded', 'task-specific', 'dialogue'].includes(profile)) return [];
   return refs.map((ref) => ({ ...ref, target: target.address }));
 }
 
@@ -275,10 +393,32 @@ function nonNegativeNumber(value, fallback = undefined) {
   return Number.isFinite(number) && number >= 0 ? number : fallback;
 }
 
+function positiveNumber(value, fallback = undefined) {
+  let number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : fallback;
+}
+
 function idList(value) {
   return listValue(value)
     .map((item) => cleanTimelineText(item))
     .filter(Boolean);
+}
+
+function keywordList(value) {
+  let source = Array.isArray(value) ? value.join(' ') : String(value || '');
+  return [...new Set(source
+    .toLowerCase()
+    .normalize('NFKD')
+    .split(/[^a-zа-яё0-9_-]+/i)
+    .map((item) => item.trim())
+    .filter((item) => item.length > 2 && !PRESENTATION_REQUEST_STOPWORDS.has(item)))];
+}
+
+function requestKeywords(intent = {}) {
+  let explicit = keywordList(intent.requestKeywords || intent.keywords);
+  if (explicit.length) return explicit;
+  if (intent.requireRequestFit !== true) return [];
+  return keywordList(intent.requestPrompt || intent.prompt || intent.task || intent.goal);
 }
 
 function wordCount(text) {
@@ -295,6 +435,37 @@ function hasTtsUnsafeToken(text) {
 
 function hasSpokenMarkup(text) {
   return /https?:\/\/|www\.|\*\*|__|[`{}[\]]/.test(String(text || ''));
+}
+
+function hasSpokenSpeakerLabel(text) {
+  return /^\s*(?:speaker\s*\d+|guide|ops|host|narrator|assistant|user)\s*[:：-]\s+/i.test(String(text || ''));
+}
+
+function boilerplateSignature(text) {
+  let words = cleanTimelineText(text)
+    .toLowerCase()
+    .replace(/[^a-zа-яё0-9\s-]+/gi, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+  return words.slice(0, 5).join(' ');
+}
+
+function hasDialogueHandoff(text) {
+  return /\b(?:yes|right|exactly|also|and|but|so|then|now|that|this|those|because|while|here|notice|you|i see|correct|agreed|да|верно|точно|также|но|поэтому|тогда|сейчас|это|здесь)\b/i
+    .test(String(text || ''));
+}
+
+function turnStartMs(turn = {}) {
+  return nonNegativeNumber(turn.renderCue?.startMs ?? turn.renderCue?.start, undefined);
+}
+
+function turnEndMs(turn = {}) {
+  let explicit = nonNegativeNumber(turn.renderCue?.endMs ?? turn.renderCue?.end, undefined);
+  if (explicit !== undefined) return explicit;
+  let start = turnStartMs(turn);
+  let duration = positiveNumber(turn.renderCue?.durationMs ?? turn.renderCue?.duration, undefined);
+  if (start !== undefined && duration !== undefined) return start + duration;
+  return undefined;
 }
 
 function normalizeTurnBudget(intent = {}) {
@@ -343,6 +514,9 @@ function normalizePresentationTurn(turn = {}, index = 0) {
     pauseBeforeMs: nonNegativeNumber(turn.pauseBeforeMs ?? turn.gapMs),
     overlapMs: nonNegativeNumber(turn.overlapMs ?? turn.overlap),
     webmcp: clonePortable(turn.webmcp),
+    actions: listValue(turn.actions)
+      .map((action) => clonePortable(action))
+      .filter(hasKeys),
     annotations: clonePortable(turn.annotations),
     renderCue: clonePortable(turn.renderCue),
   });
@@ -359,6 +533,7 @@ function segmentToPresentationTurn(segment = {}, index = 0) {
       tabId: firstCue.tabId || segment.tabId,
       marker: firstCue.marker || firstCue.kind,
     },
+    actions: segment.actions,
     annotations: segment.annotations,
   }, index);
 }
@@ -404,6 +579,11 @@ function hashableTimelineProjection(timeline) {
       persona: turn.persona,
       text: turn.text,
       cue: hasKeys(turn.cue) ? turn.cue : undefined,
+      pauseBeforeMs: turn.pauseBeforeMs,
+      overlapMs: turn.overlapMs,
+      webmcp: hasKeys(turn.webmcp) ? turn.webmcp : undefined,
+      actions: listValue(turn.actions).length ? turn.actions : undefined,
+      renderCue: hasKeys(turn.renderCue) ? turn.renderCue : undefined,
     })),
   };
 }
@@ -475,12 +655,67 @@ export function presentationTimelineHasTurns(timeline = {}) {
   }
 }
 
+export function alignPresentationTimelineToAudio(input = {}, options = {}) {
+  let timeline = createPresentationTimelineContract(input);
+  let turns = listValue(timeline.turns);
+  let audioItems = listValue(options.audioItems || options.audio?.items);
+  let sequenceMode = cleanTimelineText(options.sequenceMode || timeline.metadata?.audioAuthority?.sequenceMode, 'sequential');
+  sequenceMode = sequenceMode === 'overlap' ? 'overlap' : 'sequential';
+  let requireAudio = options.requireAudio !== false;
+  let estimatedTurnMs = positiveNumber(options.estimatedTurnMs, 1000);
+  let cursorMs = 0;
+  let correctedTurns = turns.map((turn, index) => {
+    let audio = audioItems[index] || {};
+    let audioDurationMs = positiveNumber(audio.durationMs ?? audio.duration, undefined);
+    if (audioDurationMs === undefined) {
+      audioDurationMs = positiveNumber(Number(audio.durationSec) * 1000, undefined);
+    }
+    let durationMs = positiveNumber(
+      audioDurationMs ?? turn.renderCue?.durationMs,
+      requireAudio ? undefined : estimatedTurnMs,
+    );
+    if (!durationMs) {
+      throw new Error(`audio authority timing requires duration for turn ${index + 1}`);
+    }
+    let requestedStart = nonNegativeNumber(turn.renderCue?.startMs ?? turn.renderCue?.start, undefined);
+    if (sequenceMode === 'overlap' && requestedStart === undefined) {
+      throw new Error(`audio authority overlap timing requires renderCue.startMs for turn ${index + 1}`);
+    }
+    let startMs = sequenceMode === 'overlap' ? requestedStart : cursorMs;
+    let endMs = Math.max(startMs + 1, startMs + Math.round(durationMs));
+    cursorMs = sequenceMode === 'overlap' ? Math.max(cursorMs, endMs) : endMs;
+    return {
+      ...turn,
+      renderCue: {
+        ...(turn.renderCue || {}),
+        startMs,
+        durationMs: endMs - startMs,
+        endMs,
+        source: 'audio',
+      },
+    };
+  });
+  return createPresentationTimelineContract({
+    ...timeline,
+    turns: correctedTurns,
+    metadata: {
+      ...(timeline.metadata || {}),
+      audioAuthority: {
+        source: 'audio-items',
+        sequenceMode,
+        turnCount: correctedTurns.length,
+        durationMs: cursorMs,
+      },
+    },
+  });
+}
+
 export function reviewPresentationTimeline(input = {}, intent = {}) {
   let timeline = normalizePresentationTimeline(input);
   let turns = listValue(timeline.turns);
   let issues = [];
-  let addIssue = (code, message, { severity = 'warning', turnIndex } = {}) => {
-    issues.push(compactObject({ code, severity, message, turnIndex }));
+  let addIssue = (code, message, { severity = 'warning', turnIndex, ...detail } = {}) => {
+    issues.push(compactObject({ code, severity, message, turnIndex, ...detail }));
   };
 
   if (!turns.length) {
@@ -489,13 +724,48 @@ export function reviewPresentationTimeline(input = {}, intent = {}) {
 
   let allowedTargetIds = new Set(idList(intent.allowedTargetIds));
   let allowedToolNames = new Set(idList(intent.allowedToolNames));
+  let allowedActionSources = new Set(idList(intent.allowedActionSources || ['webmcp', 'workspace', 'host']));
+  let requiredPersonas = idList(intent.requiredPersonas);
+  let requiredKeywords = requestKeywords(intent);
   let requestedSurfaceIds = idList(intent.requestedSurfaceIds || intent.requestedTargets);
   let selectedTabIds = idList(intent.selectedTabIds || intent.requestedTabIds);
   let budget = normalizeTurnBudget(intent);
   let targetIds = new Set();
   let tabIds = new Set();
   let personas = new Set();
+  let actionCount = 0;
   let maxWordsPerTurn = Math.max(1, Math.floor(Number(intent.maxWordsPerTurn || intent.tts?.maxWordsPerTurn || 24)));
+  let maxOverlapWords = Math.max(1, Math.floor(Number(intent.maxOverlapWords || intent.dialogue?.maxOverlapWords || 5)));
+  let maxSamePersonaRun = Math.max(1, Math.floor(Number(intent.maxSamePersonaRun || intent.dialogue?.maxSamePersonaRun || 2)));
+  let strictDialogueQuality = intent.strictDialogueQuality === true || intent.hardGate === true;
+  let boilerplateCounts = new Map();
+  let handoffCount = 0;
+  let previousPersona = '';
+  let personaRunLength = 0;
+  let longestPersonaRun = 0;
+  let handoffRequired = intent.requireDialogueHandoffs === true ||
+    (intent.requireDialogue === true && turns.length >= 4);
+  let timelineText = [
+    timeline.title,
+    timeline.profile,
+    ...turns.flatMap((turn) => [
+      turn?.text,
+      turn?.cue?.targetId,
+      turn?.cue?.tabId,
+      turn?.persona,
+    ]),
+  ].join(' ').toLowerCase();
+  let missingRequestKeywords = requiredKeywords.filter((keyword) => !timelineText.includes(keyword));
+  let requestKeywordSeverity = intent.requireRequestKeywords === true || intent.requireRequestFit === true
+    ? 'error'
+    : 'warning';
+  for (let keyword of missingRequestKeywords) {
+    addIssue(
+      'request-keyword-missing',
+      `Request keyword "${keyword}" is not covered by the presentation timeline.`,
+      { severity: requestKeywordSeverity, keyword },
+    );
+  }
 
   for (let [index, turn] of turns.entries()) {
     let targetId = cleanTimelineText(turn?.cue?.targetId);
@@ -504,6 +774,13 @@ export function reviewPresentationTimeline(input = {}, intent = {}) {
     if (targetId) targetIds.add(targetId);
     if (tabId) tabIds.add(tabId);
     if (persona) personas.add(persona);
+    if (persona && persona === previousPersona) {
+      personaRunLength += 1;
+    } else {
+      previousPersona = persona;
+      personaRunLength = persona ? 1 : 0;
+    }
+    longestPersonaRun = Math.max(longestPersonaRun, personaRunLength);
 
     if (allowedTargetIds.size && targetId && !allowedTargetIds.has(targetId)) {
       addIssue('disallowed-target', `Turn ${index + 1} targets "${targetId}", which is not in the allowed target set.`, {
@@ -511,22 +788,107 @@ export function reviewPresentationTimeline(input = {}, intent = {}) {
         turnIndex: index,
       });
     }
-    let toolName = cleanTimelineText(turn?.webmcp?.tool);
-    if (allowedToolNames.size && toolName && !allowedToolNames.has(toolName)) {
-      addIssue('disallowed-tool', `Turn ${index + 1} uses "${toolName}", which is not an allowed presentation action.`, {
+    if (!targetId && (allowedTargetIds.size || requestedSurfaceIds.length || selectedTabIds.length)) {
+      addIssue('missing-cue-target', `Turn ${index + 1} has no stable cue target.`, { turnIndex: index });
+    }
+    if (!tabId && selectedTabIds.length) {
+      addIssue('missing-cue-tab', `Turn ${index + 1} has no stable tab cue.`, { turnIndex: index });
+    }
+    let actions = [
+      ...(hasKeys(turn?.webmcp) ? [{ source: 'webmcp', ...turn.webmcp }] : []),
+      ...listValue(turn?.actions),
+    ];
+    for (let action of actions) {
+      if (!isObject(action)) continue;
+      actionCount += 1;
+      let source = cleanTimelineText(action.source, action.tool ? 'webmcp' : 'workspace');
+      let name = cleanTimelineText(action.tool || action.name || action.id);
+      let actionTarget = cleanTimelineText(action.target || action.targetId);
+      if (!allowedActionSources.has(source)) {
+        addIssue('unsupported-action-source', `Turn ${index + 1} uses unsupported action source "${source}".`, {
+          severity: 'error',
+          turnIndex: index,
+          source,
+        });
+      }
+      if (!name) {
+        addIssue('action-missing-name', `Turn ${index + 1} has an action without a stable name.`, {
+          severity: 'error',
+          turnIndex: index,
+          source,
+        });
+      }
+      if (allowedToolNames.size && source === 'webmcp' && name && !allowedToolNames.has(name)) {
+        addIssue('disallowed-tool', `Turn ${index + 1} uses "${name}", which is not an allowed presentation action.`, {
+          severity: 'error',
+          turnIndex: index,
+          source,
+          name,
+        });
+      }
+      if (allowedTargetIds.size && actionTarget && !allowedTargetIds.has(actionTarget)) {
+        addIssue('action-disallowed-target', `Turn ${index + 1} action targets "${actionTarget}", which is not allowed.`, {
+          severity: 'error',
+          turnIndex: index,
+          source,
+          name,
+          targetId: actionTarget,
+        });
+      }
+    }
+    if (hasTtsUnsafeToken(turn?.text)) {
+      addIssue('unsafe-tts-text', `Turn ${index + 1} contains a token that should not be spoken.`, {
+        severity: strictDialogueQuality ? 'error' : 'warning',
+        turnIndex: index,
+      });
+    }
+    if (hasSpokenMarkup(turn?.text)) {
+      addIssue('unsafe-tts-text', `Turn ${index + 1} contains markup, a URL, or symbols that should be removed before TTS.`, {
+        severity: strictDialogueQuality ? 'error' : 'warning',
+        turnIndex: index,
+      });
+    }
+    if (hasSpokenSpeakerLabel(turn?.text)) {
+      addIssue('spoken-speaker-label', `Turn ${index + 1} starts with a speaker label that would be spoken by TTS.`, {
         severity: 'error',
         turnIndex: index,
       });
     }
-    if (hasTtsUnsafeToken(turn?.text)) {
-      addIssue('tts-unsafe-token', `Turn ${index + 1} contains a token that should not be spoken.`, { turnIndex: index });
-    }
-    if (hasSpokenMarkup(turn?.text)) {
-      addIssue('tts-markup', `Turn ${index + 1} contains markup, a URL, or symbols that should be removed before TTS.`, { turnIndex: index });
-    }
     let words = wordCount(turn?.text);
     if (words > maxWordsPerTurn) {
       addIssue('tts-long-turn', `Turn ${index + 1} has ${words} words; max is ${maxWordsPerTurn}.`, { turnIndex: index });
+    }
+    let signature = boilerplateSignature(turn?.text);
+    if (signature) {
+      let count = (boilerplateCounts.get(signature) || 0) + 1;
+      boilerplateCounts.set(signature, count);
+      if (count > 1 && signature.split(/\s+/).length >= 4) {
+        addIssue('repeated-boilerplate', `Turn ${index + 1} repeats the same opening phrase as another turn.`, {
+          severity: strictDialogueQuality ? 'error' : 'warning',
+          turnIndex: index,
+          signature,
+        });
+      }
+    }
+    if (index > 0 && turn?.persona !== turns[index - 1]?.persona && hasDialogueHandoff(turn?.text)) {
+      handoffCount += 1;
+    }
+    let overlapMs = nonNegativeNumber(turn?.overlapMs, 0);
+    let startMs = turnStartMs(turn);
+    let previousEndMs = index > 0 ? turnEndMs(turns[index - 1]) : undefined;
+    let overlapsPrevious = overlapMs > 0 ||
+      (startMs !== undefined && previousEndMs !== undefined && startMs < previousEndMs);
+    if (overlapsPrevious && index > 0 && turn?.persona === turns[index - 1]?.persona) {
+      addIssue('self-overlap', `Turn ${index + 1} overlaps the previous turn from the same persona.`, {
+        severity: 'error',
+        turnIndex: index,
+      });
+    }
+    if (overlapsPrevious && words > maxOverlapWords) {
+      addIssue('overlong-overlap-turn', `Turn ${index + 1} has ${words} words inside an overlap; max is ${maxOverlapWords}.`, {
+        severity: strictDialogueQuality ? 'error' : 'warning',
+        turnIndex: index,
+      });
     }
   }
 
@@ -553,11 +915,36 @@ export function reviewPresentationTimeline(input = {}, intent = {}) {
   if (intent.requireDialogue === true && turns.length > 1 && personas.size < 2) {
     addIssue('dialogue-single-persona', 'Dialogue mode requires at least two personas in the narrated turns.');
   }
+  if (intent.requireDialogue === true && personas.size > 1 && longestPersonaRun > maxSamePersonaRun) {
+    addIssue('dialogue-monologue-run', `Dialogue has ${longestPersonaRun} consecutive turns from one persona; max is ${maxSamePersonaRun}.`, {
+      severity: strictDialogueQuality ? 'error' : 'warning',
+      longestPersonaRun,
+      maxSamePersonaRun,
+    });
+  }
+  let missingRequiredPersonas = requiredPersonas.filter((persona) => !personas.has(persona));
+  for (let persona of missingRequiredPersonas) {
+    addIssue('missing-required-persona', `Required persona "${persona}" is not present in the timeline.`, {
+      severity: 'error',
+      persona,
+    });
+  }
+  if (handoffRequired && personas.size > 1 && turns.length >= 4) {
+    let requiredHandoffs = Math.max(1, Math.floor((turns.length - 1) * 0.25));
+    if (handoffCount < requiredHandoffs) {
+      addIssue('missing-dialogue-handoff', `Dialogue has ${handoffCount} responsive handoffs; minimum is ${requiredHandoffs}.`, {
+        severity: strictDialogueQuality ? 'error' : 'warning',
+        handoffCount,
+        requiredHandoffs,
+      });
+    }
+  }
 
   let hasError = issues.some((issue) => issue.severity === 'error');
   return {
     verdict: hasError ? 'reject' : issues.length ? 'revise' : 'pass',
     issues,
+    warnings: issues.filter((issue) => issue.severity !== 'error'),
     coverage: {
       turnCount: turns.length,
       targetIds: [...targetIds],
@@ -566,22 +953,145 @@ export function reviewPresentationTimeline(input = {}, intent = {}) {
       selectedTabIds,
       missingSelectedTabIds: selectedTabIds.filter((tabId) => !tabCovered(tabId, targetIds, tabIds)),
       personas: [...personas],
+      requiredPersonas,
+      missingRequiredPersonas,
+      requestKeywords: requiredKeywords,
+      missingRequestKeywords,
       turnBudget: budget,
       maxWordsPerTurn,
+      maxOverlapWords,
+      maxSamePersonaRun,
+      longestPersonaRun,
+      handoffCount,
+      handoffRequired,
+      actionCount,
     },
   };
 }
 
-function createSegment(target, index, total, profile, refs, context) {
+export function createPresentationTtsProjection(input = {}, options = {}) {
+  let timeline = normalizePresentationTimeline(input);
+  let estimatedMsPerWord = positiveNumber(options.estimatedMsPerWord || options.msPerWord, 310);
+  let minTurnMs = positiveNumber(options.minTurnMs, 700);
+  let punctuationPauseMs = nonNegativeNumber(options.punctuationPauseMs, 120);
+  let items = timeline.turns.map((turn, index) => {
+    let text = cleanTimelineText(turn.text);
+    let words = wordCount(text);
+    let punctuationPauses = (text.match(/[,.!?;:]/g) || []).length;
+    let estimatedDurationMs = Math.max(
+      minTurnMs,
+      Math.round((words * estimatedMsPerWord) + (punctuationPauses * punctuationPauseMs)),
+    );
+    return compactObject({
+      index,
+      persona: turn.persona,
+      text,
+      textHash: computeIntegrity(text),
+      wordCount: words,
+      charCount: text.length,
+      estimatedDurationMs,
+      cue: hasKeys(turn.cue) ? turn.cue : undefined,
+    });
+  });
+  return {
+    schemaVersion: 'presentation-tts-projection-v1',
+    model: 'deterministic-text-only',
+    estimatedMsPerWord,
+    minTurnMs,
+    punctuationPauseMs,
+    itemCount: items.length,
+    estimatedDurationMs: items.reduce((total, item) => total + item.estimatedDurationMs, 0),
+    items,
+  };
+}
+
+function normalizePresentationLessonReview(review = {}) {
+  let source = isObject(review) ? review : {};
+  let issues = listValue(source.issues).map((issue) => compactObject({
+    code: cleanTimelineText(issue?.code),
+    severity: cleanTimelineText(issue?.severity, 'warning'),
+    turnIndex: Number.isInteger(issue?.turnIndex) ? issue.turnIndex : undefined,
+    persona: cleanTimelineText(issue?.persona),
+    keyword: cleanTimelineText(issue?.keyword),
+    source: cleanTimelineText(issue?.source),
+    name: cleanTimelineText(issue?.name),
+    targetId: cleanTimelineText(issue?.targetId),
+    message: cleanTimelineText(issue?.message),
+  })).filter((issue) => issue.code);
+  let issueCodes = [...new Set(issues.map((issue) => issue.code))];
+  return {
+    schemaVersion: 'presentation-lesson-review-v1',
+    verdict: cleanTimelineText(source.verdict, issues.some((issue) => issue.severity === 'error') ? 'reject' : issues.length ? 'revise' : 'pass'),
+    issueCodes,
+    issues,
+    coverage: clonePortable(source.coverage || {}),
+  };
+}
+
+function normalizeAuditSettings(settings = {}) {
+  let source = isObject(settings) ? settings : {};
+  return compactObject({
+    width: nonNegativeNumber(source.width, undefined),
+    height: nonNegativeNumber(source.height, undefined),
+    fps: positiveNumber(source.fps, undefined),
+    orientation: cleanTimelineText(source.orientation),
+    aspectRatio: cleanTimelineText(source.aspectRatio),
+    speakerMode: cleanTimelineText(source.speakerMode),
+    sequenceMode: cleanTimelineText(source.sequenceMode),
+    captionsMode: cleanTimelineText(source.captionsMode),
+    includeAudio: source.includeAudio === undefined ? undefined : source.includeAudio !== false,
+  });
+}
+
+function normalizeAuditSource(source = {}) {
+  let value = isObject(source) ? source : {};
+  return compactObject({
+    url: cleanTimelineText(value.url),
+    route: cleanTimelineText(value.route),
+    surface: cleanTimelineText(value.surface || value.surfaceId),
+    tabId: cleanTimelineText(value.tabId || value.tab),
+    section: cleanTimelineText(value.section),
+    title: cleanTimelineText(value.title),
+    tabs: clonePortable(value.tabs),
+    surfaces: clonePortable(value.surfaces),
+  });
+}
+
+export function createPresentationLessonAuditPacket(input = {}, options = {}) {
+  let timeline = createPresentationTimelineContract(input);
+  let intent = clonePortable(options.intent || {});
+  let review = normalizePresentationLessonReview(options.review || reviewPresentationTimeline(timeline, intent));
+  let packet = {
+    schemaVersion: PRESENTATION_LESSON_AUDIT_SCHEMA_VERSION,
+    timelineId: timeline.id,
+    timelineHash: timeline.hash,
+    timelineContractVersion: timeline.contractVersion,
+    title: timeline.title,
+    locale: timeline.locale,
+    profile: timeline.profile,
+    renderSettings: normalizeAuditSettings(options.renderSettings || options.settings),
+    source: normalizeAuditSource(options.source),
+    contextSummary: clonePortable(options.contextSummary || {}),
+    ttsProjection: createPresentationTtsProjection(timeline, options.ttsProjection),
+    review,
+  };
+  return {
+    ...packet,
+    hash: `${PRESENTATION_LESSON_AUDIT_SCHEMA_VERSION}:${computeIntegrity(packet)}`,
+  };
+}
+
+function createSegment(target, index, total, profile, refs, context, requestInfo = {}) {
   let dataRefs = segmentDataRefs(target, profile, refs);
   return compactObject({
     id: portableId(`segment-${index + 1}-${profile}-${target.kind || 'target'}`),
     target: target.address,
     focusTarget: target.address,
-    narration: narrationFor(profile, target, index, total, dataRefs, context),
+    narration: narrationFor(profile, target, index, total, dataRefs, context, requestInfo),
     cues: [{
       kind: profile === 'brief' ? 'focus' : 'highlight',
       target: target.address,
+      tabId: targetTabId(target, context),
       text: targetTitle(target),
     }],
     actions: segmentActions(target, profile),
@@ -610,7 +1120,10 @@ export function createWorkspacePresentationTimeline(context = {}, request = {}) 
   let prompt = normalizePresentationPrompt(input);
   let targets = choosePresentationTargets(context, prompt.profile, input);
   let refs = dataRefCandidates(context.dataContext || {});
-  let segments = targets.map((target, index) => createSegment(target, index, targets.length, prompt.profile, refs, context));
+  let requestInfo = {
+    keywords: keywordList(input.requestKeywords || input.keywords || input.prompt || input.taskText || input.goal),
+  };
+  let segments = targets.map((target, index) => createSegment(target, index, targets.length, prompt.profile, refs, context, requestInfo));
   let timeline = compactObject({
     id: portableId(input.id || `${prompt.profile}-presentation`),
     source: input.source || 'local',
@@ -627,7 +1140,7 @@ export function createWorkspacePresentationTimeline(context = {}, request = {}) 
     visibleTargetCount: targets.filter((target) => target.visible).length,
     hiddenTargetCount: targets.filter((target) => !target.visible).length,
     dataSourceCount: refs.length,
-    narrationDensity: prompt.profile === 'full' ? 'detailed' : prompt.profile === 'data-grounded' ? 'contextual' : 'compact',
+    narrationDensity: prompt.profile === 'full' ? 'detailed' : prompt.profile === 'data-grounded' ? 'contextual' : prompt.profile === 'dialogue' ? 'conversational' : prompt.profile === 'task-specific' ? 'focused' : 'compact',
   };
   return timeline;
 }
