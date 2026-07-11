@@ -1,6 +1,6 @@
 import { isIntegrityString } from '../../schema/canonical-json.js';
 
-export const AUDIO_SYNTHESIS_RECEIPT_VERSION = 'symbiote-audio-synthesis-receipt-v1';
+export const AUDIO_SYNTHESIS_RECEIPT_VERSION = 'symbiote-audio-synthesis-receipt-v2';
 export const MEDIA_SPEAKER_IDENTITY_CLAIMS = Object.freeze([
   'provider-attested+acoustic-cluster',
 ]);
@@ -10,10 +10,22 @@ const TURN_KEYS = new Set(['turnId', 'persona', 'artifactRef', 'receiptRef']);
 const RECEIPT_KEYS = new Set([
   'receiptVersion', 'requestHash', 'requestedVoiceRef', 'resolvedVoiceRef',
   'speakerAttestation', 'model', 'language', 'sampleRate', 'durationMs',
-  'artifactHash', 'receiptHmac',
+  'artifactHash', 'receiptHmac', 'speakerProbe', 'normalization',
 ]);
 const MODEL_KEYS = new Set(['family', 'versionToken']);
+const SPEAKER_PROBE_KEYS = new Set([
+  'probeFamily', 'probeVersionToken', 'enrollmentRevision',
+  'segmentationRevision', 'segmentCount', 'enrolledVoiceMatch',
+  'segmentsConsistent', 'maxEnrolledDistance', 'minOtherVoiceMargin',
+  'maxSegmentDistance', 'thresholds',
+]);
+const SPEAKER_THRESHOLD_KEYS = new Set([
+  'enrolledDistanceMax', 'otherVoiceMarginMin', 'segmentDistanceMax',
+]);
+const NORMALIZATION_KEYS = new Set(['version', 'applied', 'targetLufs', 'truePeakLimitDbfs']);
 const SHA256_HEX = /^[a-f0-9]{64}$/;
+const SAFE_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+const PRIVATE_FIELD = /(?:biometric|vector|embedding|private|raw)/i;
 const BASE64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 
 function isObject(value) {
@@ -28,6 +40,18 @@ function assertObject(value, path) {
 function assertKnownKeys(value, keys, path) {
   for (let key of Object.keys(assertObject(value, path))) {
     if (!keys.has(key)) throw new TypeError(`${path}.${key} is not supported`);
+  }
+}
+
+function assertPortableFields(value, path) {
+  if (Array.isArray(value)) {
+    value.forEach((child, index) => assertPortableFields(child, `${path}[${index}]`));
+    return;
+  }
+  if (!isObject(value)) return;
+  for (let [key, child] of Object.entries(value)) {
+    if (PRIVATE_FIELD.test(key)) throw new TypeError(`${path}.${key} is private and not portable`);
+    assertPortableFields(child, `${path}.${key}`);
   }
 }
 
@@ -47,6 +71,24 @@ function digest(value, path) {
   let text = requiredString(value, path);
   if (!SHA256_HEX.test(text)) throw new TypeError(`${path} must be a lowercase SHA-256 hex digest`);
   return text;
+}
+
+function safeToken(value, path) {
+  let text = requiredString(value, path);
+  if (!SAFE_TOKEN.test(text)) throw new TypeError(`${path} must be a safe token`);
+  return text;
+}
+
+function requiredBoolean(value, path) {
+  if (typeof value !== 'boolean') throw new TypeError(`${path} must be a boolean`);
+  return value;
+}
+
+function numberInRange(value, minimum, maximum, path) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < minimum || value > maximum) {
+    throw new TypeError(`${path} must be a finite number in [${minimum}, ${maximum}]`);
+  }
+  return value;
 }
 
 function digestIntegrity(value) {
@@ -70,6 +112,51 @@ function positiveInteger(value, path) {
   return value;
 }
 
+function normalizeSpeakerProbe(value, path) {
+  assertKnownKeys(value, SPEAKER_PROBE_KEYS, path);
+  assertKnownKeys(value.thresholds, SPEAKER_THRESHOLD_KEYS, `${path}.thresholds`);
+  let thresholds = {
+    enrolledDistanceMax: numberInRange(value.thresholds.enrolledDistanceMax, 0, 2, `${path}.thresholds.enrolledDistanceMax`),
+    otherVoiceMarginMin: numberInRange(value.thresholds.otherVoiceMarginMin, -2, 2, `${path}.thresholds.otherVoiceMarginMin`),
+    segmentDistanceMax: numberInRange(value.thresholds.segmentDistanceMax, 0, 2, `${path}.thresholds.segmentDistanceMax`),
+  };
+  let result = {
+    probeFamily: safeToken(value.probeFamily, `${path}.probeFamily`),
+    probeVersionToken: digest(value.probeVersionToken, `${path}.probeVersionToken`),
+    enrollmentRevision: digest(value.enrollmentRevision, `${path}.enrollmentRevision`),
+    segmentationRevision: safeToken(value.segmentationRevision, `${path}.segmentationRevision`),
+    segmentCount: positiveInteger(value.segmentCount, `${path}.segmentCount`),
+    enrolledVoiceMatch: requiredBoolean(value.enrolledVoiceMatch, `${path}.enrolledVoiceMatch`),
+    segmentsConsistent: requiredBoolean(value.segmentsConsistent, `${path}.segmentsConsistent`),
+    maxEnrolledDistance: numberInRange(value.maxEnrolledDistance, 0, 2, `${path}.maxEnrolledDistance`),
+    minOtherVoiceMargin: numberInRange(value.minOtherVoiceMargin, -2, 2, `${path}.minOtherVoiceMargin`),
+    maxSegmentDistance: numberInRange(value.maxSegmentDistance, 0, 2, `${path}.maxSegmentDistance`),
+    thresholds,
+  };
+  if (!result.enrolledVoiceMatch) throw new TypeError(`${path}.enrolledVoiceMatch must be true`);
+  if (!result.segmentsConsistent) throw new TypeError(`${path}.segmentsConsistent must be true`);
+  if (result.maxEnrolledDistance > thresholds.enrolledDistanceMax) {
+    throw new TypeError(`${path}.maxEnrolledDistance must not exceed thresholds.enrolledDistanceMax`);
+  }
+  if (result.minOtherVoiceMargin < thresholds.otherVoiceMarginMin) {
+    throw new TypeError(`${path}.minOtherVoiceMargin must meet thresholds.otherVoiceMarginMin`);
+  }
+  if (result.maxSegmentDistance > thresholds.segmentDistanceMax) {
+    throw new TypeError(`${path}.maxSegmentDistance must not exceed thresholds.segmentDistanceMax`);
+  }
+  return result;
+}
+
+function normalizeNormalization(value, path) {
+  assertKnownKeys(value, NORMALIZATION_KEYS, path);
+  return {
+    version: safeToken(value.version, `${path}.version`),
+    applied: requiredBoolean(value.applied, `${path}.applied`),
+    targetLufs: numberInRange(value.targetLufs, -40, -5, `${path}.targetLufs`),
+    truePeakLimitDbfs: numberInRange(value.truePeakLimitDbfs, -12, 0, `${path}.truePeakLimitDbfs`),
+  };
+}
+
 function sameSet(left, right) {
   return left.size === right.size && [...left].every((value) => right.has(value));
 }
@@ -85,6 +172,7 @@ function languageKey(value) {
 
 function normalizeReceipt(value, index) {
   let path = `manifest.synthesisEvidence.receipts[${index}]`;
+  assertPortableFields(value, path);
   assertKnownKeys(value, RECEIPT_KEYS, path);
   let receiptVersion = requiredString(value.receiptVersion, `${path}.receiptVersion`);
   if (receiptVersion !== AUDIO_SYNTHESIS_RECEIPT_VERSION) {
@@ -108,6 +196,8 @@ function normalizeReceipt(value, index) {
     durationMs: positiveInteger(value.durationMs, `${path}.durationMs`),
     artifactHash: digest(value.artifactHash, `${path}.artifactHash`),
     receiptHmac: digest(value.receiptHmac, `${path}.receiptHmac`),
+    speakerProbe: normalizeSpeakerProbe(value.speakerProbe, `${path}.speakerProbe`),
+    normalization: normalizeNormalization(value.normalization, `${path}.normalization`),
   };
 }
 

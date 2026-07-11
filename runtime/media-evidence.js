@@ -156,7 +156,7 @@ function plainValue(value, path) {
   if (isObject(value)) {
     let result = {};
     for (let [key, child] of Object.entries(value)) {
-      if (key !== 'versionToken' && /(?:token|secret|password|credential|api[-_]?key|samplePath|sessionId)/i.test(key)) {
+      if (!['versionToken', 'probeVersionToken'].includes(key) && /(?:token|secret|password|credential|api[-_]?key|samplePath|sessionId)/i.test(key)) {
         throw new TypeError(`${path}.${key} is private and not portable`);
       }
       result[key] = plainValue(child, `${path}.${key}`);

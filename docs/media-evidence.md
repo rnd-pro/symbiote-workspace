@@ -4,7 +4,7 @@
 
 - `workspace-media-artifact-graph-v1` describes artifact instances and their
   dependencies.
-- `workspace-media-evidence-v1` binds that graph to render settings, metrics,
+- `workspace-media-evidence-v2` binds that graph to render settings, metrics,
   gates, provenance, and a publication verdict.
 
 These contracts contain portable identity and evidence only. Capture processes,
@@ -58,10 +58,19 @@ A `pass` verdict requires every gate to pass. A blocked verdict must name every
 failed or not-run gate. Metrics and gates may reference only existing graph nodes
 and metric IDs.
 
-The exact v1 schema rejects unknown fields, unsupported versions, cycles,
+The exact v2 schema rejects unknown fields, unsupported versions, cycles,
 duplicate IDs, tampered cache identities, URL values, URL search/hash state,
 absolute paths, parent traversal, credentials, session IDs, raw render state,
 and false publication passes.
+
+Audio-enabled manifests require `symbiote-audio-synthesis-receipt-v2` evidence
+for every audio turn. Each receipt binds its canonical request and artifact
+hashes to voice provenance, a provider attestation, strict acoustic-cluster
+speaker-probe verdicts and thresholds, and portable loudness/true-peak
+normalization evidence. The workspace validates receipt shape, coverage,
+threshold relations, and canonical identity, but intentionally does not verify
+the provider-owned receipt HMAC. Biometric labels and vector, embedding, raw, or
+private provider fields are not portable and are rejected at any receipt depth.
 
 ```js
 import {

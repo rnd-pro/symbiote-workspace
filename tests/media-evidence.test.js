@@ -161,6 +161,29 @@ function manifestInput() {
         durationMs: 1400,
         artifactHash: digest('audio'),
         receiptHmac: digest('receipt'),
+        speakerProbe: {
+          probeFamily: 'speaker-cluster-v2',
+          probeVersionToken: digest('speaker-probe-version'),
+          enrollmentRevision: digest('opaque-enrollment-revision'),
+          segmentationRevision: 'vad-segments-v2',
+          segmentCount: 4,
+          enrolledVoiceMatch: true,
+          segmentsConsistent: true,
+          maxEnrolledDistance: 0.24,
+          minOtherVoiceMargin: 0.63,
+          maxSegmentDistance: 0.31,
+          thresholds: {
+            enrolledDistanceMax: 0.35,
+            otherVoiceMarginMin: 0.5,
+            segmentDistanceMax: 0.4,
+          },
+        },
+        normalization: {
+          version: 'ebu-r128-v1',
+          applied: true,
+          targetLufs: -16,
+          truePeakLimitDbfs: -1,
+        },
       }],
     },
     publication: {
@@ -252,9 +275,76 @@ describe('media evidence contract', () => {
     assert.equal(first.id, second.id);
     assert.equal(first.publication.verdict, 'pass');
     assert.equal(first.schemaVersion, 'workspace-media-evidence-v2');
+    assert.equal(AUDIO_SYNTHESIS_RECEIPT_VERSION, 'symbiote-audio-synthesis-receipt-v2');
     assert.deepEqual(MEDIA_SPEAKER_IDENTITY_CLAIMS, ['provider-attested+acoustic-cluster']);
     assert.equal(validateMediaEvidenceManifest(first).ok, true);
     assert.doesNotMatch(JSON.stringify(first), /\/Users\/|\/tmp\/|\?token=|renderSeed/);
+  });
+
+  it('requires strict receipt v2 speaker probe and normalization evidence', () => {
+    let mutations = [
+      [input => { delete input.synthesisEvidence.receipts[0].speakerProbe; }, /speakerProbe must be an object/],
+      [input => { delete input.synthesisEvidence.receipts[0].normalization; }, /normalization must be an object/],
+      [input => { input.synthesisEvidence.receipts[0].receiptVersion = 'symbiote-audio-synthesis-receipt-v1'; }, /must equal symbiote-audio-synthesis-receipt-v2/],
+      [input => { input.synthesisEvidence.receipts[0].speakerProbe.probeFamily = 'unsafe probe'; }, /must be a safe token/],
+      [input => { input.synthesisEvidence.receipts[0].speakerProbe.probeVersionToken = 'ABC'; }, /lowercase SHA-256/],
+      [input => { input.synthesisEvidence.receipts[0].speakerProbe.enrollmentRevision = hash('not-opaque-hex'); }, /lowercase SHA-256/],
+      [input => { input.synthesisEvidence.receipts[0].speakerProbe.segmentCount = 0; }, /positive integer/],
+      [input => { input.synthesisEvidence.receipts[0].normalization.applied = 'true'; }, /must be a boolean/],
+      [input => { input.synthesisEvidence.receipts[0].normalization.version = '../normalizer'; }, /must be a safe token/],
+      [input => { input.synthesisEvidence.receipts[0].speakerProbe.score = 0.2; }, /speakerProbe.score is not supported/],
+      [input => { input.synthesisEvidence.receipts[0].speakerProbe.thresholds.profile = 'strict'; }, /thresholds.profile is not supported/],
+      [input => { input.synthesisEvidence.receipts[0].normalization.integratedLufs = -16; }, /normalization.integratedLufs is not supported/],
+    ];
+    for (let [mutate, expected] of mutations) {
+      let input = manifestInput();
+      mutate(input);
+      assert.match(validateMediaEvidenceManifest(input).errors[0], expected);
+    }
+  });
+
+  it('rejects false speaker verdicts and observations that fail declared thresholds', () => {
+    let mutations = [
+      [input => { input.synthesisEvidence.receipts[0].speakerProbe.enrolledVoiceMatch = false; }, /enrolledVoiceMatch must be true/],
+      [input => { input.synthesisEvidence.receipts[0].speakerProbe.segmentsConsistent = false; }, /segmentsConsistent must be true/],
+      [input => { input.synthesisEvidence.receipts[0].speakerProbe.maxEnrolledDistance = 0.36; }, /must not exceed thresholds.enrolledDistanceMax/],
+      [input => { input.synthesisEvidence.receipts[0].speakerProbe.minOtherVoiceMargin = 0.49; }, /must meet thresholds.otherVoiceMarginMin/],
+      [input => { input.synthesisEvidence.receipts[0].speakerProbe.maxSegmentDistance = 0.41; }, /must not exceed thresholds.segmentDistanceMax/],
+    ];
+    for (let [mutate, expected] of mutations) {
+      let input = manifestInput();
+      mutate(input);
+      assert.match(validateMediaEvidenceManifest(input).errors[0], expected);
+    }
+  });
+
+  it('rejects out-of-range receipt v2 observations and thresholds', () => {
+    let mutations = [
+      input => { input.synthesisEvidence.receipts[0].speakerProbe.maxEnrolledDistance = 2.01; },
+      input => { input.synthesisEvidence.receipts[0].speakerProbe.minOtherVoiceMargin = -2.01; },
+      input => { input.synthesisEvidence.receipts[0].speakerProbe.maxSegmentDistance = -0.01; },
+      input => { input.synthesisEvidence.receipts[0].speakerProbe.thresholds.enrolledDistanceMax = -0.01; },
+      input => { input.synthesisEvidence.receipts[0].speakerProbe.thresholds.otherVoiceMarginMin = 2.01; },
+      input => { input.synthesisEvidence.receipts[0].speakerProbe.thresholds.segmentDistanceMax = 2.01; },
+      input => { input.synthesisEvidence.receipts[0].normalization.targetLufs = -40.01; },
+      input => { input.synthesisEvidence.receipts[0].normalization.truePeakLimitDbfs = 0.01; },
+    ];
+    for (let mutate of mutations) {
+      let input = manifestInput();
+      mutate(input);
+      assert.match(validateMediaEvidenceManifest(input).errors[0], /must be a finite number in/);
+    }
+  });
+
+  it('binds receipt v2 evidence into canonical manifest identity', () => {
+    let original = createMediaEvidenceManifest(manifestInput());
+    let changedInput = manifestInput();
+    changedInput.synthesisEvidence.receipts[0].normalization.targetLufs = -18;
+    let changed = createMediaEvidenceManifest(changedInput);
+
+    assert.notEqual(changed.id, original.id);
+    original.synthesisEvidence.receipts[0].speakerProbe.segmentCount += 1;
+    assert.match(validateMediaEvidenceManifest(original).errors[0], /id does not match canonical identity/);
   });
 
   it('requires exact per-turn receipt, artifact, persona, voice, and language coverage', () => {
@@ -307,6 +397,12 @@ describe('media evidence contract', () => {
       let input = manifestInput();
       input.synthesisEvidence.receipts[0][field] = value;
       assert.match(validateMediaEvidenceManifest(input).errors[0], /is not supported/, field);
+    }
+
+    for (let field of ['biometricScore', 'speakerVector', 'voiceEmbedding', 'privateMetadata', 'rawDistances']) {
+      let input = manifestInput();
+      input.synthesisEvidence.receipts[0].speakerProbe[field] = [0.1, 0.2];
+      assert.match(validateMediaEvidenceManifest(input).errors[0], /private and not portable/, field);
     }
   });
 

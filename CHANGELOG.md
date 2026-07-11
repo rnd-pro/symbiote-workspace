@@ -10,7 +10,9 @@ All notable changes to this project will be documented in this file.
 - Added strict `workspace-media-evidence-v2` synthesis receipt coverage. Audio
   turns now bind provider-attested receipts to artifact hashes, personas,
   unique voice provenance, locale, and `versions.voice`, while rejecting
-  biometric claims, missing coverage, and private provider fields.
+  biometric claims, missing coverage, and private provider fields. Receipt v2
+  additionally requires bounded acoustic-cluster speaker-probe verdicts with
+  enforced thresholds and portable loudness/true-peak normalization evidence.
 
 - Added the frozen `presentation-dialogue-quality-v1` review profile with shared
   EN/RU tokenization, distinct-role and reply-cohesion checks, turn pacing,
