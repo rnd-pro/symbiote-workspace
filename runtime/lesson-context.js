@@ -1,6 +1,11 @@
 import { computeIntegrity } from '../schema/canonical-json.js';
+import {
+  PRESENTATION_CONTEXT_SNAPSHOT_SCHEMA_VERSION,
+  normalizePresentationOutputSpec,
+  normalizePresentationTargetComposition,
+} from './presentation-output.js';
 
-export const LESSON_CONTEXT_SCHEMA_VERSION = 'workspace-lesson-context-v1';
+export const LESSON_CONTEXT_SCHEMA_VERSION = 'workspace-lesson-context-v2';
 export const LESSON_TEXT_RULES_VERSION = 'lesson-text-rules-en-ru-v1';
 export const LESSON_TYPES = Object.freeze([
   'operational-task',
@@ -311,6 +316,7 @@ function normalizeTarget(raw = {}) {
     hiddenReasons: uniqueSorted(raw.hiddenReasons),
     revealRefs: uniqueSorted(list(raw.revealRefs).concat(list(raw.revealActions).map((item) => item?.name || item?.id || item?.type))),
     toolRefs: uniqueSorted(raw.toolRefs),
+    composition: normalizePresentationTargetComposition(raw.composition || raw.metadata?.composition || {}),
     metadata: boundedPortableValue(raw.enrichment || raw.metadata || {}, `target.${id}.metadata`),
   };
 }
@@ -376,6 +382,11 @@ function normalizeLesson(raw = {}) {
 
 export function createPresentationLessonContext(context = {}, options = {}) {
   let lesson = normalizeLesson(options.lesson || context.lesson || options.request || {});
+  let sourceSnapshot = clonePortable(options.sourceSnapshot || context.sourceSnapshot || context.snapshot || {});
+  let targetSnapshot = clonePortable(options.targetSnapshot || context.targetSnapshot || context.snapshot || {});
+  if (sourceSnapshot.schemaVersion !== PRESENTATION_CONTEXT_SNAPSHOT_SCHEMA_VERSION) throw new TypeError('lesson source snapshot version is unsupported');
+  if (targetSnapshot.schemaVersion !== PRESENTATION_CONTEXT_SNAPSHOT_SCHEMA_VERSION) throw new TypeError('lesson target snapshot version is unsupported');
+  let output = normalizePresentationOutputSpec(options.output || context.output || targetSnapshot.output || { viewport: targetSnapshot.viewport });
   let toolDescriptors = collectDescriptors(context);
   let descriptorByName = new Map(toolDescriptors.map((descriptor) => [descriptor.name, descriptor]));
   let targets = canonicalList([...list(context.targets), ...list(context.panels)].map((raw) => {
@@ -395,9 +406,10 @@ export function createPresentationLessonContext(context = {}, options = {}) {
     id: portableId(options.id || context.id || `${lesson.type || 'lesson'}-context`, 'lesson-context'),
     textRulesVersion: LESSON_TEXT_RULES_VERSION,
     lesson,
+    output,
     constraints: boundedPortableValue(options.constraints || context.constraints || {}, 'constraints'),
-    sourceSnapshot: clonePortable(options.sourceSnapshot || context.sourceSnapshot || context.snapshot || {}),
-    targetSnapshot: clonePortable(options.targetSnapshot || context.targetSnapshot || context.snapshot || {}),
+    sourceSnapshot,
+    targetSnapshot,
     targets,
     toolDescriptors,
     facts,
@@ -428,6 +440,9 @@ export function auditPresentationLessonContext(input = {}) {
   let issues = [];
   let add = (code, path, message) => issues.push(auditIssue(code, path, message));
   if (packet.schemaVersion !== LESSON_CONTEXT_SCHEMA_VERSION) add('lesson-schema-unsupported', 'schemaVersion', 'unsupported lesson context schema');
+  if (packet.sourceSnapshot?.schemaVersion !== PRESENTATION_CONTEXT_SNAPSHOT_SCHEMA_VERSION) add('lesson-schema-unsupported', 'sourceSnapshot.schemaVersion', 'unsupported embedded source snapshot schema');
+  if (packet.targetSnapshot?.schemaVersion !== PRESENTATION_CONTEXT_SNAPSHOT_SCHEMA_VERSION) add('lesson-schema-unsupported', 'targetSnapshot.schemaVersion', 'unsupported embedded target snapshot schema');
+  if (packet.output?.hash !== normalizePresentationOutputSpec(packet.output || {}).hash) add('lesson-context-stale', 'output.hash', 'lesson output hash does not match output content');
   let expectedHash = `${LESSON_CONTEXT_SCHEMA_VERSION}:${computeIntegrity(Object.fromEntries(Object.entries(packet).filter(([key]) => key !== 'hash')))}`;
   if (packet.hash !== expectedHash) add('lesson-context-stale', 'hash', 'lesson context hash does not match packet content');
   if (!LESSON_TYPES.includes(packet.lesson?.type)) add('lesson-type-invalid', 'lesson.type', 'lesson type is required');

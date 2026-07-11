@@ -62,8 +62,8 @@ function packetFor(type, overrides = {}) {
       requiredFactIds: overrides.requiredFactIds || facts.map((item) => item.id),
       requiredTargetIds: overrides.requiredTargetIds || targets.slice(0, 2).map((item) => item.id),
     },
-    sourceSnapshot: { identityHash: 'source', generation: 0, targets },
-    targetSnapshot: { identityHash: 'target', generation: 0, targets: targets.map((item) => ({ address: item.id })) },
+    sourceSnapshot: { schemaVersion: 'presentation-context-snapshot-v2', identityHash: 'source', generation: 0, viewport: { width: 1920, height: 1080, fps: 30 }, targets },
+    targetSnapshot: { schemaVersion: 'presentation-context-snapshot-v2', identityHash: 'target', generation: 0, viewport: { width: 1920, height: 1080, fps: 30 }, targets: targets.map((item) => ({ address: item.id })) },
   });
 }
 

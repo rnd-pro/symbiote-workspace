@@ -4,10 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
-- Added the browser-safe `workspace-lesson-context-v1` packet, typed lesson
+- Added the browser-safe `workspace-lesson-context-v2` packet, typed lesson
   facts/claims/relations, normalized WebMCP descriptors and safety hints,
   deterministic EN/RU grounding and depth audits, lesson-context-bound replans,
-  and per-action safe deepening evidence before TTS.
+  output constraints, and per-action safe deepening evidence before TTS.
+- Added `workspace-presentation-output-v1` and
+  `workspace-presentation-composition-v1`: horizontal, vertical, and square
+  30 FPS/DPR 1 output specs now define safe content and caption regions,
+  language, voice sequence, and duration bounds. Target-viewport preparation
+  measures real target geometry, clipping, occlusion, readability, reversible
+  UI state, and scroll projections; render adoption fails closed on stale or
+  rejected composition evidence, and one bounded repair must preserve lesson
+  intent.
 - Added strict browser-safe `workspace-media-evidence-v1` and
   `workspace-media-artifact-graph-v1` contracts with canonical cache identity,
   host-sensitive frame/encode keys, explicit timing artifacts, transitive

@@ -19,11 +19,12 @@ function graphNodes() {
   return [
     { kind: 'context', logicalId: 'context:source', inputHashes: { source: hash('source') }, versions: { schema: 'context-v2' }, outputHash: hash('context') },
     { kind: 'plan', logicalId: 'plan:lesson', dependsOn: ['context:source'], versions: { planner: 'planner-v1' }, outputHash: hash('plan') },
+    { kind: 'composition-plan', logicalId: 'composition:lesson', dependsOn: ['plan:lesson'], versions: { browser: 'chromium-v1', layout: 'layout-v1' }, hostFingerprint, outputHash: hash('composition') },
     { kind: 'dialogue', logicalId: 'dialogue:lesson', dependsOn: ['plan:lesson'], versions: { dialogue: 'dialogue-v1' }, outputHash: hash('dialogue') },
     { kind: 'timing-profile', logicalId: 'timing:lesson', dependsOn: ['dialogue:lesson'], versions: { timeline: 'timeline-v3' }, outputHash: hash('timing') },
-    { kind: 'audio-turn', logicalId: 'audio:turn-1', dependsOn: ['dialogue:lesson'], versions: { provider: 'tts-v1', voice: 'voice-a' }, outputHash: hash('audio') },
+    { kind: 'audio-turn', logicalId: 'audio:turn-1', dependsOn: ['dialogue:lesson', 'composition:lesson'], versions: { provider: 'tts-v1', voice: 'voice-a' }, outputHash: hash('audio') },
     { kind: 'caption-cue', logicalId: 'caption:turn-1', dependsOn: ['audio:turn-1', 'timing:lesson'], versions: { caption: 'caption-v1' }, outputHash: hash('caption') },
-    { kind: 'action-log', logicalId: 'actions:lesson', dependsOn: ['plan:lesson', 'timing:lesson'], versions: { action: 'action-v1' }, outputHash: hash('actions') },
+    { kind: 'action-log', logicalId: 'actions:lesson', dependsOn: ['composition:lesson', 'timing:lesson'], versions: { action: 'action-v1' }, outputHash: hash('actions') },
     {
       kind: 'frame-range',
       logicalId: 'frames:0-899',

@@ -1,13 +1,25 @@
 import { parseWorkspaceAddress } from '../schema/was.js';
 import { computeIntegrity } from '../schema/canonical-json.js';
 import { auditPresentationTimelineClaims } from './lesson-context.js';
+import {
+  PRESENTATION_CONTEXT_SNAPSHOT_SCHEMA_VERSION,
+  PRESENTATION_REPLAN_REQUEST_SCHEMA_VERSION,
+  PRESENTATION_REPLAN_RESULT_SCHEMA_VERSION,
+  auditPresentationCompositionPlan,
+  createLessonIntentHash,
+  normalizePresentationOutputSpec,
+  normalizePresentationTargetComposition,
+} from './presentation-output.js';
+
+export {
+  PRESENTATION_CONTEXT_SNAPSHOT_SCHEMA_VERSION,
+  PRESENTATION_REPLAN_REQUEST_SCHEMA_VERSION,
+  PRESENTATION_REPLAN_RESULT_SCHEMA_VERSION,
+} from './presentation-output.js';
 
 export const PRESENTATION_PROMPT_PROFILES = Object.freeze(['brief', 'full', 'data-grounded', 'task-specific', 'dialogue']);
 export const PRESENTATION_CONTRACT_VERSION = 'presentation-timeline-v2';
 export const PRESENTATION_LESSON_AUDIT_SCHEMA_VERSION = 'presentation-lesson-audit-v2';
-export const PRESENTATION_CONTEXT_SNAPSHOT_SCHEMA_VERSION = 'presentation-context-snapshot-v1';
-export const PRESENTATION_REPLAN_REQUEST_SCHEMA_VERSION = 'presentation-replan-request-v1';
-export const PRESENTATION_REPLAN_RESULT_SCHEMA_VERSION = 'presentation-replan-result-v1';
 export const PRESENTATION_LESSON_REVIEW_CODES = Object.freeze([
   'action-disallowed-target',
   'action-missing-name',
@@ -1558,6 +1570,7 @@ function snapshotTarget(target = {}) {
     webmcpToolNames: listValue(target.webmcpTools)
       .map(snapshotActionName)
       .filter(Boolean),
+    composition: normalizePresentationTargetComposition(target.composition || target.metadata?.composition || {}),
   });
 }
 
@@ -1577,7 +1590,8 @@ export function createPresentationContextSnapshot(context = {}, options = {}) {
   let generation = Number.isInteger(options.generation)
     ? options.generation
     : Number.isInteger(context.generation) ? context.generation : 0;
-  let viewport = normalizeSnapshotViewport(options.viewport || context.viewport || {});
+  let output = normalizePresentationOutputSpec(options.output || context.output || { viewport: options.viewport || context.viewport || {} });
+  let viewport = normalizeSnapshotViewport(output);
   let source = normalizeAuditSource(options.source || context.source || context.workspace || {});
   let targetRecords = [
     ...listValue(context.targets),
@@ -1614,6 +1628,10 @@ export function createPresentationContextSnapshot(context = {}, options = {}) {
     stability,
   };
   let identityHash = `${PRESENTATION_CONTEXT_SNAPSHOT_SCHEMA_VERSION}:${computeIntegrity(identity)}`;
+  let compositionHash = `${PRESENTATION_CONTEXT_SNAPSHOT_SCHEMA_VERSION}:composition:${computeIntegrity({
+    outputSpecHash: output.hash,
+    targets: targets.map((target) => ({ address: target.address, composition: target.composition })),
+  })}`;
   let dataHash = `${PRESENTATION_CONTEXT_SNAPSHOT_SCHEMA_VERSION}:data:${computeIntegrity(dataSources.map((item) => ({
     id: item.id,
     path: item.path,
@@ -1621,6 +1639,9 @@ export function createPresentationContextSnapshot(context = {}, options = {}) {
   })))}`;
   return {
     ...identity,
+    output,
+    outputSpecHash: output.hash,
+    compositionHash,
     generation,
     targets,
     dataSources,
@@ -1656,12 +1677,17 @@ export function createPresentationReplanRequest(input = {}) {
   let remainingRounds = Math.max(0, Math.min(1, Math.floor(Number(input.actionBudget?.remainingRounds ?? input.deepening?.remainingRounds ?? 1))));
   let remainingActions = Math.max(0, Math.min(3, Math.floor(Number(input.actionBudget?.remainingActions ?? input.deepening?.remainingActions ?? 3))));
   let prompt = normalizePresentationPrompt(input.request || input.prompt || {});
+  let output = normalizePresentationOutputSpec(input.output || targetSnapshot.output || { viewport: targetSnapshot.viewport });
   let request = {
     schemaVersion: PRESENTATION_REPLAN_REQUEST_SCHEMA_VERSION,
     sourceSnapshotHash: sourceSnapshot.identityHash,
     targetSnapshotHash: targetSnapshot.identityHash,
     generation: targetSnapshot.generation,
     viewport: targetSnapshot.viewport,
+    output,
+    outputSpecHash: output.hash,
+    sourceCompositionHash: cleanTimelineText(sourceSnapshot.compositionHash),
+    targetCompositionHash: cleanTimelineText(targetSnapshot.compositionHash),
     prompt: prompt.prompt,
     profile: prompt.profile,
     personaSpec: clonePortable(input.personaSpec || input.request?.personaSpec || {}),
@@ -1747,6 +1773,9 @@ export function finalizePresentationReplan(candidate = {}, request = {}, options
   if (request.lessonContextHash && cleanTimelineText(candidate.basis?.lessonContextHash) !== request.lessonContextHash) {
     throw presentationContractError('LESSON_CONTEXT_STALE', 'presentation planner result targets a stale lesson context');
   }
+  if (!request.outputSpecHash || cleanTimelineText(candidate.basis?.outputSpecHash) !== request.outputSpecHash) {
+    throw presentationContractError('OUTPUT_CONTEXT_STALE', 'presentation planner result targets a stale output spec');
+  }
   let snapshot = options.snapshot;
   if (!snapshot || snapshot.identityHash !== expectedHash) {
     throw presentationContractError('TARGET_CONTEXT_STALE', 'latest target snapshot is unavailable');
@@ -1762,10 +1791,33 @@ export function finalizePresentationReplan(candidate = {}, request = {}, options
     throw error;
   }
   let personaSpec = clonePortable(request.personaSpec || {});
+  let lessonIntentHash = request.lessonContext ? createLessonIntentHash(request.lessonContext, timeline) : '';
+  let compositionPlan = options.compositionPlan;
+  let compositionAudit = null;
+  if (options.requireComposition !== false) {
+    let requiredTargetIds = [...new Set([
+      ...listValue(request.lessonContext?.lesson?.requiredTargetIds),
+      ...timeline.turns.map((turn) => cleanTimelineText(turn?.cue?.targetId)).filter(Boolean),
+    ])];
+    compositionAudit = auditPresentationCompositionPlan(compositionPlan, {
+      outputSpecHash: request.outputSpecHash,
+      structuralHash: expectedHash,
+      timelineHash: timeline.hash,
+      lessonIntentHash,
+      requiredTargetIds,
+    });
+    if (compositionAudit.verdict !== 'accept') {
+      let error = presentationContractError('PRESENTATION_COMPOSITION_REJECTED', 'presentation composition failed target readiness review');
+      error.review = compositionAudit;
+      throw error;
+    }
+  }
   let cacheIdentity = computeIntegrity({
     snapshotHash: expectedHash,
+    compositionHash: compositionPlan?.hash || '',
     timelineHash: timeline.hash,
-    viewport: request.viewport,
+    outputSpecHash: request.outputSpecHash,
+    lessonIntentHash,
     personaSpec,
   });
   return {
@@ -1776,14 +1828,21 @@ export function finalizePresentationReplan(candidate = {}, request = {}, options
       targetSnapshotHash: expectedHash,
       generation: request.generation,
       requestHash: request.hash,
+      outputSpecHash: request.outputSpecHash,
     },
     snapshotChain: clonePortable(options.snapshotChain || []),
     timeline,
     timelineHash: timeline.hash,
+    output: clonePortable(request.output),
+    outputSpecHash: request.outputSpecHash,
+    lessonIntentHash,
+    compositionPlan: clonePortable(compositionPlan),
+    compositionHash: cleanTimelineText(compositionPlan?.hash),
+    compositionAudit,
     turns: timeline.turns,
     review,
     coverage: review.coverage,
-    renderSeedPatch: { timelineHash: timeline.hash, snapshotHash: expectedHash },
+    renderSeedPatch: { timelineHash: timeline.hash, snapshotHash: expectedHash, outputSpecHash: request.outputSpecHash, compositionHash: cleanTimelineText(compositionPlan?.hash) },
     cacheIdentity,
   };
 }

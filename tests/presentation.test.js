@@ -1132,7 +1132,7 @@ describe('presentation replan contracts', () => {
     assert.deepEqual(request.turnBudget, { minTurns: 1, maxTurns: 6 });
     let candidate = {
       status: 'ready',
-      basis: { targetSnapshotHash: snapshot.identityHash, generation: 2 },
+      basis: { targetSnapshotHash: snapshot.identityHash, outputSpecHash: request.outputSpecHash, generation: 2 },
       timeline: {
         title: 'Grounded queue',
         grounding: { sources: snapshot.dataSources },
@@ -1149,6 +1149,7 @@ describe('presentation replan contracts', () => {
     let result = finalizePresentationReplan(candidate, request, {
       snapshot,
       intent: { requireGrounding: true },
+      requireComposition: false,
     });
 
     assert.equal(result.status, 'ready');
@@ -1157,8 +1158,8 @@ describe('presentation replan contracts', () => {
     assert.throws(
       () => finalizePresentationReplan({
         ...candidate,
-        basis: { targetSnapshotHash: snapshot.identityHash, generation: 1 },
-      }, request, { snapshot }),
+        basis: { targetSnapshotHash: snapshot.identityHash, outputSpecHash: request.outputSpecHash, generation: 1 },
+      }, request, { snapshot, requireComposition: false }),
       (error) => error.code === 'TARGET_CONTEXT_STALE',
     );
     assert.equal(reviewPresentationTimelineAgainstSnapshot(result.timeline, snapshot).verdict, 'pass');

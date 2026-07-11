@@ -8,6 +8,39 @@ import {
   prepareWorkspacePresentation,
 } from '../browser.js';
 
+async function compositionFixture({ timeline, output, targetSnapshot }) {
+  return {
+    measuredViewport: { width: output.width, height: output.height, visualWidth: output.width, visualHeight: output.height, dpr: 1 },
+    baselineStructuralHash: targetSnapshot.identityHash,
+    restoredStructuralHash: targetSnapshot.identityHash,
+    simulationFrozen: true,
+    steps: timeline.turns.map((turn, index) => {
+      let y = 100 + index * 80;
+      return {
+        turnId: turn.id,
+        slotIndex: 0,
+        targetId: turn.cue.targetId,
+        stateActions: [],
+        scroll: [],
+        measurement: {
+          targetRect: { x: 80, y: y - 20, width: 600, height: 300 },
+          focusRect: { x: 100, y, width: 160, height: 40 },
+          visibleRect: { x: 100, y, width: 160, height: 40 },
+          visibleRatio: 1,
+          visible: true,
+          reachable: true,
+          hasText: true,
+          fontSizePx: 14,
+          textTruncated: false,
+          occluders: [],
+          pointerTransparentOccluders: [],
+        },
+        annotation: { placement: 'right', rect: { x: 280, y, width: 120, height: 40 } },
+      };
+    }),
+  };
+}
+
 it('prepares a presentation with one bounded WebMCP deepening round', async () => {
   let revealed = false;
   let planCalls = 0;
@@ -32,6 +65,7 @@ it('prepares a presentation with one bounded WebMCP deepening round', async () =
     request: { prompt: 'Explain the order detail', profile: 'data-grounded' },
     async rehydrate() {},
     async waitForSettlement() {},
+    inspectComposition: compositionFixture,
     collectContext,
     async executeSafeAction(action) {
       executed.push(action.tool);
@@ -48,7 +82,7 @@ it('prepares a presentation with one bounded WebMCP deepening round', async () =
       let source = snapshot.dataSources[0];
       return {
         status: 'ready',
-        basis: { targetSnapshotHash: request.targetSnapshotHash, generation: request.generation },
+        basis: { targetSnapshotHash: request.targetSnapshotHash, outputSpecHash: request.outputSpecHash, generation: request.generation },
         timeline: {
           title: 'Order detail',
           grounding: { sources: snapshot.dataSources },
@@ -125,6 +159,7 @@ function groundedDeepeningOptions(overrides = {}) {
     request: { prompt: 'Explain the approval task', profile: 'task-specific' },
     async rehydrate() {},
     async waitForSettlement() {},
+    inspectComposition: compositionFixture,
     collectContext,
     async executeSafeAction() {
       revealed = true;
@@ -149,6 +184,7 @@ function groundedDeepeningOptions(overrides = {}) {
         basis: {
           targetSnapshotHash: request.targetSnapshotHash,
           lessonContextHash: request.lessonContextHash,
+          outputSpecHash: request.outputSpecHash,
           generation: request.generation,
         },
         timeline: {
@@ -228,6 +264,7 @@ it('allows one review-guided repair on the same target snapshot', async () => {
     request: { prompt: 'Explain the API graph', profile: 'data-grounded' },
     async rehydrate() {},
     async waitForSettlement() {},
+    inspectComposition: compositionFixture,
     async executeSafeAction() {},
     collectContext() {
       return {
@@ -241,7 +278,7 @@ it('allows one review-guided repair on the same target snapshot', async () => {
       let source = snapshot.dataSources[0];
       return {
         status: 'ready',
-        basis: { targetSnapshotHash: request.targetSnapshotHash, generation: request.generation },
+        basis: { targetSnapshotHash: request.targetSnapshotHash, outputSpecHash: request.outputSpecHash, generation: request.generation },
         timeline: {
           profile: 'data-grounded',
           grounding: { sources: snapshot.dataSources },
@@ -269,6 +306,79 @@ it('allows one review-guided repair on the same target snapshot', async () => {
   assert.ok(events.includes('tour.replan.review-repair.done'));
 });
 
+it('reruns composition after one planner repair on the same output', async () => {
+  let planCalls = 0;
+  let inspectCalls = 0;
+  let events = [];
+  let result = await prepareWorkspacePresentation({
+    viewport: { width: 1080, height: 1080, fps: 30 },
+    source: { surface: 'orders', tabId: 'orders' },
+    request: { prompt: 'Explain the queue', profile: 'brief' },
+    async rehydrate() {},
+    async waitForSettlement() {},
+    async executeSafeAction() {},
+    collectContext() {
+      return { targets: [{ address: 'panel:orders:queue', tabId: 'orders', visible: true }] };
+    },
+    async plan(request) {
+      planCalls += 1;
+      return {
+        status: 'ready',
+        basis: { targetSnapshotHash: request.targetSnapshotHash, outputSpecHash: request.outputSpecHash, generation: request.generation },
+        timeline: {
+          turns: [{
+            id: 'queue',
+            persona: 'guide',
+            dialogueAct: 'explain',
+            text: planCalls === 1 ? 'Explain the queue.' : 'Explain the visible queue.',
+            cue: { targetId: 'panel:orders:queue', tabId: 'orders' },
+          }],
+        },
+      };
+    },
+    async inspectComposition(input) {
+      inspectCalls += 1;
+      let fixture = await compositionFixture(input);
+      if (inspectCalls === 1) fixture.steps[0].measurement.visible = false;
+      return fixture;
+    },
+    reviewRepairAttempts: 1,
+    onEvent(event) { events.push(event.type); },
+  });
+
+  assert.equal(planCalls, 2);
+  assert.equal(inspectCalls, 2);
+  assert.equal(result.output.orientation, 'square');
+  assert.equal(result.compositionAudit.verdict, 'accept');
+  assert.ok(events.includes('tour.composition.review-repair.done'));
+});
+
+it('rejects a composition repair that changes the lesson intent', async () => {
+  let options = groundedDeepeningOptions();
+  let originalPlan = options.plan;
+  let readyCalls = 0;
+  options.reviewRepairAttempts = 1;
+  options.plan = async (...args) => {
+    let candidate = await originalPlan(...args);
+    if (candidate.status !== 'ready') return candidate;
+    readyCalls += 1;
+    if (readyCalls === 2) candidate.timeline.turns[0].claims[0].kind = 'procedure';
+    return candidate;
+  };
+  let inspectCalls = 0;
+  options.inspectComposition = async (input) => {
+    inspectCalls += 1;
+    let fixture = await compositionFixture(input);
+    if (inspectCalls === 1) fixture.steps[0].measurement.visible = false;
+    return fixture;
+  };
+
+  await assert.rejects(prepareWorkspacePresentation(options), (error) => (
+    error?.code === 'PRESENTATION_COMPOSITION_REJECTED'
+      && error.review?.issueCodes?.includes('lesson-intent-mismatch')
+  ));
+});
+
 function deepeningFailureOptions({ plan, executeSafeAction = async () => {} } = {}) {
   return {
     viewport: { width: 1080, height: 1920, fps: 30 },
@@ -276,6 +386,7 @@ function deepeningFailureOptions({ plan, executeSafeAction = async () => {} } = 
     request: { prompt: 'Explain the order detail', profile: 'data-grounded' },
     async rehydrate() {},
     async waitForSettlement() {},
+    inspectComposition: compositionFixture,
     executeSafeAction,
     collectContext() {
       return {
@@ -343,7 +454,7 @@ it('does not permit a review repair to request another deepening round', async (
       let source = snapshot.dataSources[0];
       return {
         status: 'ready',
-        basis: { targetSnapshotHash: request.targetSnapshotHash, generation: request.generation },
+        basis: { targetSnapshotHash: request.targetSnapshotHash, outputSpecHash: request.outputSpecHash, generation: request.generation },
         timeline: {
           grounding: { sources: snapshot.dataSources },
           turns: [{

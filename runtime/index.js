@@ -138,6 +138,19 @@ export {
   validateLessonToolInput,
 } from './lesson-context.js';
 export {
+  PRESENTATION_COMPOSITION_ISSUE_CODES,
+  PRESENTATION_COMPOSITION_PLAN_SCHEMA_VERSION,
+  PRESENTATION_OUTPUT_SPEC_SCHEMA_VERSION,
+  auditPresentationCompositionPlan,
+  createLessonIntentHash,
+  createPresentationCompositionPlan,
+  normalizePresentationOutputSpec,
+  normalizePresentationRect,
+  normalizePresentationTargetComposition,
+  presentationOutputOrientation,
+  presentationRectsIntersect,
+} from './presentation-output.js';
+export {
   PRESENTATION_CONTRACT_VERSION,
   PRESENTATION_CONTEXT_SNAPSHOT_SCHEMA_VERSION,
   PRESENTATION_LESSON_AUDIT_SCHEMA_VERSION,

@@ -6,6 +6,7 @@ export const MEDIA_ARTIFACT_GRAPH_SCHEMA_VERSION = 'workspace-media-artifact-gra
 export const MEDIA_ARTIFACT_KINDS = Object.freeze([
   'context',
   'plan',
+  'composition-plan',
   'dialogue',
   'timing-profile',
   'audio-turn',
@@ -21,6 +22,7 @@ export const MEDIA_ARTIFACT_KINDS = Object.freeze([
 export const MEDIA_ARTIFACT_VERSION_INPUTS = Object.freeze({
   context: Object.freeze(['contract', 'schema', 'collector', 'webMcp', 'source']),
   plan: Object.freeze(['contract', 'schema', 'planner', 'model', 'prompt', 'lessonAudit']),
+  'composition-plan': Object.freeze(['contract', 'schema', 'renderer', 'browser', 'layout', 'presenter']),
   dialogue: Object.freeze(['contract', 'schema', 'planner', 'model', 'prompt', 'dialogue']),
   'timing-profile': Object.freeze(['contract', 'schema', 'timeline', 'alignment']),
   'audio-turn': Object.freeze(['contract', 'schema', 'provider', 'model', 'voice', 'audio']),
@@ -33,7 +35,7 @@ export const MEDIA_ARTIFACT_VERSION_INPUTS = Object.freeze({
   'proof-manifest': Object.freeze(['contract', 'schema', 'manifest', 'probe', 'thresholds']),
 });
 
-const HOST_SENSITIVE_KINDS = new Set(['frame-range', 'encode-segment', 'final-output']);
+const HOST_SENSITIVE_KINDS = new Set(['composition-plan', 'frame-range', 'encode-segment', 'final-output']);
 const NODE_KEYS = new Set([
   'kind', 'logicalId', 'dependsOn', 'inputHashes', 'versions', 'range',
   'hostFingerprint', 'outputHash', 'engineCacheKey', 'status', 'id', 'cacheKey',

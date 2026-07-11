@@ -3,6 +3,7 @@ import {
   createPresentationTimelineHash,
   presentationTimelineHasTurns,
 } from './presentation.js';
+import { presentationOutputOrientation } from './presentation-output.js';
 
 export const MEDIA_PROJECT_SCHEMA_VERSION = 'workspace-media-project-v1';
 export const MEDIA_PROJECT_ROUTE_PARAM = 'mediaProject';
@@ -17,7 +18,7 @@ export const MEDIA_PROJECT_ROUTE_JOB_PARAM = 'mediaProjectJob';
 export const MEDIA_PROJECT_ROUTE_SOURCE_URL_PARAM = 'mediaProjectSourceUrl';
 export const MEDIA_PROJECT_ROUTE_TIMELINE_CURSOR_PARAM = 'mediaProjectCursorMs';
 export const MEDIA_PROJECT_ROUTE_TIMELINE_PARAM = 'mediaProjectTimeline';
-export const MEDIA_RENDER_SETTINGS_SCHEMA_VERSION = 'workspace-media-render-settings-v1';
+export const MEDIA_RENDER_SETTINGS_SCHEMA_VERSION = 'workspace-media-render-settings-v2';
 export const MEDIA_RENDER_EVENT_SCHEMA_VERSION = 'workspace-media-render-event-v1';
 export const MEDIA_RENDER_READINESS_SCHEMA_VERSION = 'workspace-media-render-readiness-v1';
 
@@ -175,20 +176,21 @@ function normalizeCaptionStyle(input = {}) {
 
 export function normalizeMediaRenderSettings(input = {}) {
   let source = isObject(input) ? input : {};
-  let explicitVertical = source.vertical === true;
-  let vertical = explicitVertical ||
+  let requestedVertical = source.vertical === true ||
     source.orientation === 'vertical' ||
     source.aspectRatio === '9:16' ||
     source.aspectRatio === 'vertical';
+  let requestedSquare = source.orientation === 'square' || source.aspectRatio === '1:1' || source.aspectRatio === 'square';
   let resolution = isObject(source.resolution) ? source.resolution : {};
-  let width = positiveInteger(source.width ?? resolution.width, vertical ? 1080 : 1280);
-  let height = positiveInteger(source.height ?? resolution.height, vertical ? 1920 : 720);
+  let width = positiveInteger(source.width ?? resolution.width, requestedSquare ? 1080 : requestedVertical ? 1080 : 1920);
+  let height = positiveInteger(source.height ?? resolution.height, requestedSquare ? 1080 : requestedVertical ? 1920 : 1080);
+  let orientation = presentationOutputOrientation(width, height);
   let captionsMode = cleanString(source.captionsMode, source.captionsEnabled === false ? 'off' : 'karaoke');
   return compactObject({
     schemaVersion: cleanString(source.schemaVersion, MEDIA_RENDER_SETTINGS_SCHEMA_VERSION),
     autoRender: source.autoRender !== false,
-    orientation: explicitVertical ? 'vertical' : cleanString(source.orientation, vertical ? 'vertical' : 'horizontal'),
-    aspectRatio: explicitVertical ? '9:16' : cleanString(source.aspectRatio, vertical ? '9:16' : '16:9'),
+    orientation,
+    aspectRatio: orientation === 'square' ? '1:1' : orientation === 'vertical' ? '9:16' : '16:9',
     width,
     height,
     fps: positiveInteger(source.fps ?? source.frameRate, 30),
@@ -198,6 +200,12 @@ export function normalizeMediaRenderSettings(input = {}) {
     captionsEnabled: source.captionsEnabled !== undefined ? Boolean(source.captionsEnabled) : captionsMode !== 'off',
     captionsMode,
     captionStyle: normalizeCaptionStyle(source.captionStyle || source.captionsStyle),
+    safeArea: clonePortable(source.safeArea),
+    language: cleanString(source.language || source.locale),
+    durationMs: positiveInteger(source.durationMs || source.duration?.targetMs),
+    minDurationMs: positiveInteger(source.minDurationMs || source.duration?.minMs),
+    maxDurationMs: positiveInteger(source.maxDurationMs || source.duration?.maxMs),
+    outputSpecHash: cleanString(source.outputSpecHash),
     speakerMode: cleanString(source.speakerMode, 'single'),
     sequenceMode: cleanString(source.sequenceMode, 'sequential'),
     providerId: cleanString(source.providerId || source.audioProvider || source.provider),

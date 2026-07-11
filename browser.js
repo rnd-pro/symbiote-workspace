@@ -122,6 +122,20 @@ export {
 } from './runtime/lesson-context.js';
 
 export {
+  PRESENTATION_COMPOSITION_ISSUE_CODES,
+  PRESENTATION_COMPOSITION_PLAN_SCHEMA_VERSION,
+  PRESENTATION_OUTPUT_SPEC_SCHEMA_VERSION,
+  auditPresentationCompositionPlan,
+  createLessonIntentHash,
+  createPresentationCompositionPlan,
+  normalizePresentationOutputSpec,
+  normalizePresentationRect,
+  normalizePresentationTargetComposition,
+  presentationOutputOrientation,
+  presentationRectsIntersect,
+} from './runtime/presentation-output.js';
+
+export {
   PRESENTATION_CONTRACT_VERSION,
   PRESENTATION_CONTEXT_SNAPSHOT_SCHEMA_VERSION,
   PRESENTATION_LESSON_AUDIT_SCHEMA_VERSION,
@@ -223,6 +237,10 @@ import {
   lessonToolIsSafeForDeepening,
   validateLessonToolInput,
 } from './runtime/lesson-context.js';
+import {
+  createPresentationCompositionPlan,
+  normalizePresentationOutputSpec,
+} from './runtime/presentation-output.js';
 import { createWorkspaceState } from './runtime/workspace-state.js';
 
 function isObject(value) {
@@ -975,17 +993,19 @@ function assertLessonContextAudit(packet, { allowResolvableDepth = false } = {})
  * The host owns all effects; this function owns the bounded, fail-closed order.
  */
 export async function prepareWorkspacePresentation(options = {}) {
-  for (let name of ['rehydrate', 'collectContext', 'plan', 'executeSafeAction', 'waitForSettlement']) {
+  for (let name of ['rehydrate', 'collectContext', 'plan', 'executeSafeAction', 'waitForSettlement', 'inspectComposition']) {
     if (typeof options[name] !== 'function') {
       throw presentationPreparationError('TOUR_REPLAN_UNAVAILABLE', `prepareWorkspacePresentation requires ${name}()`);
     }
   }
+  let output = normalizePresentationOutputSpec(options.output || { viewport: options.viewport, ...options.renderSettings });
   let emit = async (type, detail = {}) => options.onEvent?.({ type, ...cloneJson(detail) });
   let collectSnapshot = async (generation) => {
-    let context = await options.collectContext({ generation });
+    let context = await options.collectContext({ generation, output: cloneJson(output) });
     let snapshot = createPresentationContextSnapshot(context, {
       generation,
-      viewport: options.viewport,
+      viewport: output,
+      output,
       source: options.source,
       stability: { settled: true, waitedFor: options.waitedFor || [] },
     });
@@ -994,8 +1014,8 @@ export async function prepareWorkspacePresentation(options = {}) {
 
   await emit('tour.context.rehydrate.started');
   try {
-    await options.rehydrate({ viewport: cloneJson(options.viewport), source: cloneJson(options.source) });
-    await options.waitForSettlement({ phase: 'rehydrate' });
+    await options.rehydrate({ viewport: cloneJson(output), output: cloneJson(output), source: cloneJson(options.source) });
+    await options.waitForSettlement({ phase: 'rehydrate', output: cloneJson(output) });
   } catch (cause) {
     if (cause?.code) throw cause;
     throw presentationPreparationError('TOUR_HYDRATION_TIMEOUT', 'target viewport did not finish rehydration', cause);
@@ -1010,6 +1030,7 @@ export async function prepareWorkspacePresentation(options = {}) {
     ? createPresentationLessonContext(sourceContext, {
       lesson: options.lesson || sourceContext.lesson || options.request,
       constraints: options.lessonConstraints || sourceContext.constraints,
+      output,
       sourceSnapshot,
       targetSnapshot: sourceSnapshot,
     })
@@ -1029,11 +1050,12 @@ export async function prepareWorkspacePresentation(options = {}) {
     personaSpec: options.personaSpec,
     turnBudget: options.turnBudget,
     actionBudget: options.actionBudget,
+    output,
     lessonContext,
   });
   let candidate;
   try {
-    candidate = await options.plan(request, sourceSnapshot, lessonContext);
+    candidate = await options.plan(request, sourceSnapshot, lessonContext, output);
   } catch (cause) {
     throw presentationPreparationError('TOUR_REPLAN_UNAVAILABLE', 'presentation planner is unavailable', cause);
   }
@@ -1076,7 +1098,7 @@ export async function prepareWorkspacePresentation(options = {}) {
       let result;
       try {
         result = await options.executeSafeAction(cloneJson(action), { snapshot: targetSnapshot, lessonContext, request });
-        await options.waitForSettlement({ phase: 'deepening', action: cloneJson(action) });
+        await options.waitForSettlement({ phase: 'deepening', action: cloneJson(action), output: cloneJson(output) });
       } catch (cause) {
         throw presentationPreparationError('DEEPENING_ACTION_FAILED', `presentation deepening action failed: ${action.tool}`, cause);
       }
@@ -1123,6 +1145,7 @@ export async function prepareWorkspacePresentation(options = {}) {
           lessonContext = createPresentationLessonContext(targetContext, {
             lesson: options.lesson || sourceContext.lesson || options.request,
             constraints: options.lessonConstraints || sourceContext.constraints,
+            output,
             sourceSnapshot,
             targetSnapshot,
             deepening: { remainingRounds: 0, remainingActions: actions.length - actionIndex - 1, requestedGaps, actions: deepeningRecords },
@@ -1142,10 +1165,11 @@ export async function prepareWorkspacePresentation(options = {}) {
       personaSpec: options.personaSpec,
       turnBudget: options.turnBudget,
       actionBudget: { remainingRounds: 0, remainingActions: 0 },
+      output,
       lessonContext,
     });
     try {
-      candidate = await options.plan(request, targetSnapshot, lessonContext);
+      candidate = await options.plan(request, targetSnapshot, lessonContext, output);
     } catch (cause) {
       throw presentationPreparationError('TOUR_REPLAN_UNAVAILABLE', 'final presentation planner call is unavailable', cause);
     }
@@ -1156,14 +1180,17 @@ export async function prepareWorkspacePresentation(options = {}) {
 
   if (lessonContext) assertLessonContextAudit(lessonContext);
 
-  let finalize = () => finalizePresentationReplan(candidate, request, {
+  let finalize = (compositionPlan, requireComposition = true) => finalizePresentationReplan(candidate, request, {
     snapshot: targetSnapshot,
     snapshotChain,
     intent: options.reviewIntent || {},
+    compositionPlan,
+    requireComposition,
   });
   let result;
+  let repairUsed = false;
   try {
-    result = finalize();
+    result = finalize(null, false);
   } catch (cause) {
     let repairLimit = Math.min(1, Math.max(0, Math.floor(Number(options.reviewRepairAttempts) || 0)));
     if (!repairLimit || cause?.code !== 'TOUR_REPLAN_REJECTED' || !cause?.review?.issues?.length) throw cause;
@@ -1179,9 +1206,10 @@ export async function prepareWorkspacePresentation(options = {}) {
         })),
       },
     };
+    repairUsed = true;
     await emit('tour.replan.review-repair.started', request.reviewFeedback);
     try {
-      candidate = await options.plan(request, targetSnapshot);
+      candidate = await options.plan(request, targetSnapshot, lessonContext, output);
     } catch (repairCause) {
       throw presentationPreparationError('TOUR_REPLAN_UNAVAILABLE', 'presentation review repair call is unavailable', repairCause);
     }
@@ -1191,8 +1219,60 @@ export async function prepareWorkspacePresentation(options = {}) {
         'presentation review repair did not return a ready timeline',
       );
     }
-    result = finalize();
+    result = finalize(null, false);
     await emit('tour.replan.review-repair.done', { timelineHash: result.timelineHash });
+  }
+  let compositionLessonIntentHash = result.lessonIntentHash;
+  let inspect = async () => {
+    await emit('tour.composition.review.started', { timelineHash: result.timelineHash, outputSpecHash: output.hash });
+    let raw;
+    try {
+      raw = await options.inspectComposition({
+        timeline: cloneJson(result.timeline),
+        output: cloneJson(output),
+        sourceSnapshot: cloneJson(sourceSnapshot),
+        targetSnapshot: cloneJson(targetSnapshot),
+        lessonContext: cloneJson(lessonContext),
+      });
+    } catch (cause) {
+      throw presentationPreparationError('PRESENTATION_COMPOSITION_REJECTED', 'presentation composition inspection failed', cause);
+    }
+    let compositionPlan = createPresentationCompositionPlan({
+      ...raw,
+      output,
+      structuralHash: targetSnapshot.identityHash,
+      sourceCompositionHash: sourceSnapshot.compositionHash,
+      targetCompositionHash: targetSnapshot.compositionHash,
+      timelineHash: result.timelineHash,
+      lessonIntentHash: compositionLessonIntentHash,
+    });
+    let finalized = finalize(compositionPlan, true);
+    await emit('tour.composition.review.done', { compositionHash: finalized.compositionHash, timelineHash: finalized.timelineHash });
+    return finalized;
+  };
+  try {
+    result = await inspect();
+  } catch (cause) {
+    let repairLimit = Math.min(1, Math.max(0, Math.floor(Number(options.reviewRepairAttempts) || 0)));
+    if (repairUsed || !repairLimit || cause?.code !== 'PRESENTATION_COMPOSITION_REJECTED' || !cause?.review?.issues?.length) throw cause;
+    request = {
+      ...request,
+      reviewFeedback: {
+        attempt: 1,
+        issues: cause.review.issues.map((issue) => ({ code: issue.code, path: issue.path, message: issue.message })),
+      },
+    };
+    repairUsed = true;
+    await emit('tour.composition.review-repair.started', request.reviewFeedback);
+    try {
+      candidate = await options.plan(request, targetSnapshot, lessonContext, output);
+    } catch (repairCause) {
+      throw presentationPreparationError('TOUR_REPLAN_UNAVAILABLE', 'presentation composition repair call is unavailable', repairCause);
+    }
+    if (candidate?.status !== 'ready') throw presentationPreparationError('TOUR_REPLAN_REJECTED', 'presentation composition repair did not return a ready timeline');
+    result = finalize(null, false);
+    result = await inspect();
+    await emit('tour.composition.review-repair.done', { timelineHash: result.timelineHash, compositionHash: result.compositionHash });
   }
   await emit('tour.replan.done', {
     generation: targetSnapshot.generation,
