@@ -21,6 +21,13 @@ import { reviewPresentationCues, primaryPresentationCue } from './presentation/c
 import { reviewPresentationDialogue } from './presentation/dialogue-review.js';
 
 export {
+  PRESENTATION_DIALOGUE_ISSUE_CODES,
+  PRESENTATION_DIALOGUE_QUALITY_PROFILE,
+  PRESENTATION_DIALOGUE_QUALITY_PROFILE_VERSION,
+  reviewPresentationDialogue,
+} from './presentation/dialogue-review.js';
+
+export {
   PRESENTATION_CONTRACT_VERSION,
   PRESENTATION_DIALOGUE_ACTS,
   PRESENTATION_CUE_KINDS,
@@ -60,8 +67,20 @@ export const PRESENTATION_LESSON_REVIEW_CODES = Object.freeze([
   'action-disallowed-target',
   'action-missing-name',
   'dialogue-clarification-missing',
+  'dialogue-act-invalid',
+  'dialogue-alternating-monologues',
+  'dialogue-delivery-discontinuity',
+  'dialogue-discourse-marker-repeated',
   'dialogue-grounding-disconnected',
+  'dialogue-persona-undeclared',
   'dialogue-question-missing',
+  'dialogue-question-punctuation-missing',
+  'dialogue-pronounceability-hazard',
+  'dialogue-reply-content-disconnected',
+  'dialogue-role-indistinct',
+  'dialogue-semantic-act-weak',
+  'dialogue-terminal-punctuation-missing',
+  'dialogue-turn-pacing',
   'spoken-speaker-label',
   'spoken-dom-token',
   'spoken-metadata-token',
@@ -507,10 +526,11 @@ function narrationFor(profile, target, index, total, refs, context, requestInfo 
   if (profile === 'dialogue') {
     let focus = listValue(requestInfo.keywords).slice(0, 6).join(', ');
     let suffix = focus ? ` for ${focus}` : '';
+    let previousTitle = cleanTimelineText(requestInfo.previousTargetTitle, 'the previous workspace signal');
     if (index === 0) return `Start with ${title}${suffix} so the viewer has the source context.`;
     if (index === 1) return `What does ${title} add to the result we just saw?`;
     if (index === total - 1) return `${title} closes the explanation by connecting the evidence to the requested outcome.`;
-    return `${title} answers that by showing the next concrete workspace signal.`;
+    return `That answer from ${title} continues ${previousTitle} with the next concrete workspace signal.`;
   }
   if (profile === 'data-grounded') {
     let sources = refs.map((ref) => ref.source).filter(Boolean).join(', ') || 'available';
@@ -1149,7 +1169,10 @@ export function createWorkspacePresentationTimeline(context = {}, request = {}) 
   let requestInfo = {
     keywords: keywordList(input.requestKeywords || input.keywords || input.prompt || input.taskText || input.goal),
   };
-  let turns = targets.map((target, index) => createTurn(target, index, targets.length, prompt.profile, refs, context, requestInfo));
+  let turns = targets.map((target, index) => createTurn(target, index, targets.length, prompt.profile, refs, context, {
+    ...requestInfo,
+    previousTargetTitle: index > 0 ? targetTitle(targets[index - 1]) : '',
+  }));
   let timeline = compactObject({
     contractVersion: PRESENTATION_CONTRACT_VERSION,
     id: portableId(input.id || `${prompt.profile}-presentation`),

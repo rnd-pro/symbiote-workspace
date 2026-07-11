@@ -488,7 +488,7 @@ describe('canonical presentation timeline contract', () => {
           persona: 'ops',
           dialogueAct: 'respond',
           replyTo: 'orders-open',
-          text: 'The asset panel confirms the feeder location and crew state.',
+          text: 'The work order asset panel confirms the feeder location and crew state.',
           cue: { targetId: 'panel:orders:asset', tabId: 'orders' },
         },
       ],
@@ -1004,7 +1004,7 @@ describe('canonical presentation timeline contract', () => {
       title: 'Audit tour',
       turns: [
         { id: 'audit-open', persona: 'guide', dialogueAct: 'open', text: 'Open the queue.', cue: { targetId: 'panel:orders:queue', tabId: 'orders' } },
-        { id: 'audit-answer', persona: 'ops', dialogueAct: 'respond', replyTo: 'audit-open', text: 'Right, the asset panel confirms the crew.', cue: { targetId: 'panel:orders:asset', tabId: 'orders' } },
+        { id: 'audit-answer', persona: 'ops', dialogueAct: 'respond', replyTo: 'audit-open', text: 'Right, the queue asset panel confirms the crew.', cue: { targetId: 'panel:orders:asset', tabId: 'orders' } },
       ],
     });
     let options = {

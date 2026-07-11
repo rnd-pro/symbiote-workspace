@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Added the frozen `presentation-dialogue-quality-v1` review profile with shared
+  EN/RU tokenization, distinct-role and reply-cohesion checks, turn pacing,
+  punctuation and pronounceability gates, delivery continuity, useful semantic
+  handoffs, stable issue codes, and public Node/browser exports.
 - Replaced the render-time lesson contract with strict
   `presentation-timeline-v3`: explicit provider-neutral personas, grounded
   dialogue turns, any-earlier replies, ordered focus/interaction/annotation/state
