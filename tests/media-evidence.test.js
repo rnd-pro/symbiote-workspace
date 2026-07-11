@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 
 import { computeIntegrity } from '../schema/index.js';
 import {
+  AUDIO_SYNTHESIS_RECEIPT_VERSION,
   MEDIA_ARTIFACT_GRAPH_SCHEMA_VERSION,
   MEDIA_EVIDENCE_MANIFEST_SCHEMA_VERSION,
+  MEDIA_SPEAKER_IDENTITY_CLAIMS,
   createMediaArtifactGraph,
   createMediaEvidenceManifest,
   invalidateMediaArtifactGraph,
@@ -13,6 +15,7 @@ import {
 } from '../index.js';
 
 const hash = (value) => computeIntegrity(value);
+const digest = (value) => Buffer.from(hash(value).slice('sha256-'.length), 'base64').toString('hex');
 
 function graphNodes() {
   let hostFingerprint = 'mac14,7:m2:macos-26.5.2:chrome-test';
@@ -138,6 +141,28 @@ function manifestInput() {
       voices: [{ persona: 'guide', voiceRef: 'voice-a', consent: 'recorded', license: 'project-approved' }],
       inputs: [{ kind: 'lesson', contentHash: hash('lesson'), relativePath: 'evidence/lesson.json' }],
     },
+    synthesisEvidence: {
+      identityClaim: 'provider-attested+acoustic-cluster',
+      turns: [{
+        turnId: 'turn-1',
+        persona: 'guide',
+        artifactRef: 'audio:turn-1',
+        receiptRef: digest('request-turn-1'),
+      }],
+      receipts: [{
+        receiptVersion: AUDIO_SYNTHESIS_RECEIPT_VERSION,
+        requestHash: digest('request-turn-1'),
+        requestedVoiceRef: 'voice-a',
+        resolvedVoiceRef: 'voice-a',
+        speakerAttestation: 'attestation-v1:opaque-public-value',
+        model: { family: 'qwen3-tts', versionToken: 'version-stable-1' },
+        language: 'en',
+        sampleRate: 24000,
+        durationMs: 1400,
+        artifactHash: digest('audio'),
+        receiptHmac: digest('receipt'),
+      }],
+    },
     publication: {
       verdict: 'pass',
       blockedBy: [],
@@ -226,8 +251,77 @@ describe('media evidence contract', () => {
 
     assert.equal(first.id, second.id);
     assert.equal(first.publication.verdict, 'pass');
+    assert.equal(first.schemaVersion, 'workspace-media-evidence-v2');
+    assert.deepEqual(MEDIA_SPEAKER_IDENTITY_CLAIMS, ['provider-attested+acoustic-cluster']);
     assert.equal(validateMediaEvidenceManifest(first).ok, true);
     assert.doesNotMatch(JSON.stringify(first), /\/Users\/|\/tmp\/|\?token=|renderSeed/);
+  });
+
+  it('requires exact per-turn receipt, artifact, persona, voice, and language coverage', () => {
+    let mutations = [
+      [input => { delete input.synthesisEvidence; }, /identityClaim is required/],
+      [input => { input.synthesisEvidence.turns = []; }, /cover every audio-turn artifact/],
+      [input => { input.synthesisEvidence.turns[0].receiptRef = digest('unknown'); }, /references unknown receipt/],
+      [input => { input.synthesisEvidence.receipts[0].artifactHash = digest('wrong-audio'); }, /does not match audio outputHash/],
+      [input => { input.synthesisEvidence.receipts[0].requestedVoiceRef = 'voice-b'; }, /does not match voice provenance/],
+      [input => {
+        let node = input.artifactGraph.nodes.find(candidate => candidate.kind === 'audio-turn');
+        node.versions.voice = 'voice-b';
+        delete node.cacheKey;
+        delete node.id;
+      }, /versions.voice does not match voice provenance/],
+      [input => { input.synthesisEvidence.turns[0].persona = 'expert'; }, /has no voice provenance/],
+      [input => { input.synthesisEvidence.receipts[0].language = 'ru'; }, /language does not match media settings/],
+    ];
+    for (let [mutate, expected] of mutations) {
+      let input = manifestInput();
+      mutate(input);
+      assert.match(validateMediaEvidenceManifest(input).errors[0], expected);
+    }
+  });
+
+  it('rejects audio-enabled evidence without audio-turn artifacts', () => {
+    let input = manifestInput();
+    input.artifactGraph = createMediaArtifactGraph({
+      nodes: graphNodes().filter((node) => !['audio-turn', 'caption-cue', 'encode-segment', 'final-output', 'quality-proof', 'proof-manifest'].includes(node.kind)),
+    });
+    input.metrics = [];
+    input.gates = [];
+    input.publication = { verdict: 'not-run', blockedBy: [], thresholdProfileHash: hash('locked-profile-v1') };
+    assert.match(validateMediaEvidenceManifest(input).errors[0], /requires at least one audio-turn artifact/);
+  });
+
+  it('rejects unknown or biometric identity labels and private provider fields', () => {
+    for (let identityClaim of [undefined, 'biometric-verified', 'proxyOnly', 'provider-attested']) {
+      let input = manifestInput();
+      input.synthesisEvidence.identityClaim = identityClaim;
+      assert.equal(validateMediaEvidenceManifest(input).ok, false, String(identityClaim));
+    }
+
+    for (let [field, value] of [
+      ['backendSpeaker', 'private-speaker-42'],
+      ['sourceVoiceRef', 'raw-provider-alias'],
+      ['samplePath', '/private/voice.wav'],
+      ['modelPath', '/private/model'],
+    ]) {
+      let input = manifestInput();
+      input.synthesisEvidence.receipts[0][field] = value;
+      assert.match(validateMediaEvidenceManifest(input).errors[0], /is not supported/, field);
+    }
+  });
+
+  it('rejects incomplete, shared, or extraneous voice provenance', () => {
+    let missing = manifestInput();
+    missing.provenance.voices = [];
+    assert.match(validateMediaEvidenceManifest(missing).errors[0], /has no voice provenance/);
+
+    let extra = manifestInput();
+    extra.provenance.voices.push({ persona: 'expert', voiceRef: 'voice-b', consent: 'recorded', license: 'project-approved' });
+    assert.match(validateMediaEvidenceManifest(extra).errors[0], /spoken personas must equal/);
+
+    let shared = manifestInput();
+    shared.provenance.voices.push({ persona: 'expert', voiceRef: 'voice-a', consent: 'recorded', license: 'project-approved' });
+    assert.match(validateMediaEvidenceManifest(shared).errors[0], /unique voiceRef/);
   });
 
   it('fails closed on private routes, paths, unknown fields, and false publication passes', () => {

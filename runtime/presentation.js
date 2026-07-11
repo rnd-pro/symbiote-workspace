@@ -77,6 +77,8 @@ export const PRESENTATION_LESSON_REVIEW_CODES = Object.freeze([
   'dialogue-question-punctuation-missing',
   'dialogue-pronounceability-hazard',
   'dialogue-reply-content-disconnected',
+  'dialogue-repetition-flood',
+  'dialogue-role-contribution-imbalanced',
   'dialogue-role-indistinct',
   'dialogue-semantic-act-weak',
   'dialogue-terminal-punctuation-missing',

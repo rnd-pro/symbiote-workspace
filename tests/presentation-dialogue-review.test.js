@@ -17,8 +17,8 @@ function timeline({ locale = 'en-US', roles, turns }) {
     locale,
     profile: 'dialogue',
     personas: {
-      guide: { name: 'Guide', role: roles?.guide || (locale.startsWith('ru') ? 'ведущий урока' : 'lesson guide'), delivery: { emotion: 'warm', pace: 'normal' } },
-      expert: { name: 'Expert', role: roles?.expert || (locale.startsWith('ru') ? 'технический эксперт' : 'technical expert'), delivery: { emotion: 'curious', pace: 'normal' } },
+      guide: { name: 'Guide', role: roles?.guide || (locale.startsWith('ru') ? 'ведущий урока' : locale.startsWith('es') ? 'guía de la lección' : 'lesson guide'), delivery: { emotion: 'warm', pace: 'normal' } },
+      expert: { name: 'Expert', role: roles?.expert || (locale.startsWith('ru') ? 'технический эксперт' : locale.startsWith('es') ? 'experto técnico' : 'technical expert'), delivery: { emotion: 'curious', pace: 'normal' } },
     },
     grounding: { sources: [{ id: 'lesson', contentHash: 'sha256-lesson' }] },
     turns: turns.map((turn, index) => ({
@@ -42,12 +42,14 @@ function codes(review) {
 
 describe('portable presentation dialogue quality profile', () => {
   it('exports frozen versioned thresholds and stable issue codes', () => {
-    assert.equal(PRESENTATION_DIALOGUE_QUALITY_PROFILE_VERSION, 'presentation-dialogue-quality-v1');
+    assert.equal(PRESENTATION_DIALOGUE_QUALITY_PROFILE_VERSION, 'presentation-dialogue-quality-v2');
     assert.equal(PRESENTATION_DIALOGUE_QUALITY_PROFILE.version, PRESENTATION_DIALOGUE_QUALITY_PROFILE_VERSION);
     assert.equal(Object.isFrozen(PRESENTATION_DIALOGUE_QUALITY_PROFILE), true);
     assert.equal(Object.isFrozen(PRESENTATION_DIALOGUE_ISSUE_CODES), true);
     assert.equal(PRESENTATION_DIALOGUE_ISSUE_CODES.invalidAct, 'dialogue-act-invalid');
     assert.equal(PRESENTATION_DIALOGUE_ISSUE_CODES.undeclaredPersona, 'dialogue-persona-undeclared');
+    assert.equal(PRESENTATION_DIALOGUE_QUALITY_PROFILE.repetitionNgramSize, 3);
+    assert.equal(PRESENTATION_DIALOGUE_QUALITY_PROFILE.minPersonaContributionRatio, 0.2);
   });
 
   it('passes cohesive, paced English dialogue with useful closure', () => {
@@ -75,6 +77,57 @@ describe('portable presentation dialogue quality profile', () => {
     }), { requireDialogue: true, strictDialogueQuality: true });
 
     assert.deepEqual(review.issues, []);
+  });
+
+  it('passes cohesive Spanish dialogue without locale-specific grading rules', () => {
+    let review = reviewPresentationDialogue(timeline({
+      locale: 'es-AR',
+      turns: [
+        { id: 'open', persona: 'guide', dialogueAct: 'ask', text: '¿Cómo dirige el adaptador cada solicitud?' },
+        { id: 'reply', persona: 'expert', dialogueAct: 'respond', replyTo: 'open', text: 'El adaptador dirige cada solicitud mediante el despachador.' },
+        { id: 'close', persona: 'guide', dialogueAct: 'conclude', replyTo: 'reply', text: 'En conclusión, el despachador mantiene la ruta seleccionada.' },
+      ],
+    }), { requireDialogue: true, strictDialogueQuality: true });
+
+    assert.deepEqual(review.issues, []);
+    assert.equal(review.dependencyMetrics.alternations, 2);
+    assert.equal(review.dependencyMetrics.dependentAlternations, 2);
+  });
+
+  it('rejects cross-turn repetition floods in English, Russian, and Spanish', () => {
+    for (let [locale, phrase] of [
+      ['en-US', 'The adapter repeats the same routing explanation now.'],
+      ['ru-RU', 'Адаптер повторяет одно и то же объяснение маршрута.'],
+      ['es-AR', 'El adaptador repite la misma explicación de la ruta.'],
+    ]) {
+      let review = reviewPresentationDialogue(timeline({
+        locale,
+        turns: [
+          { persona: 'guide', text: phrase },
+          { persona: 'expert', text: phrase },
+          { persona: 'guide', text: phrase },
+          { persona: 'expert', text: phrase },
+        ],
+      }), { requireDialogue: true, strictDialogueQuality: true });
+
+      assert.equal(codes(review).has(PRESENTATION_DIALOGUE_ISSUE_CODES.repetitionFlood), true, locale);
+      assert.equal(review.repetitionMetrics.repeatedNgrams.length > 0, true, locale);
+      assert.equal(review.repetitionMetrics.maxNgramTurnOccurrences, 4, locale);
+    }
+  });
+
+  it('rejects weak persona contribution and exposes deterministic contribution evidence', () => {
+    let review = reviewPresentationDialogue(timeline({
+      turns: [
+        { persona: 'guide', text: 'The guide introduces routing.' },
+        { persona: 'expert', text: 'The expert explains how dispatch validates each request, selects the portable handler, preserves source evidence, records the result, and returns a stable response for rendering.' },
+      ],
+    }), { requireDialogue: true, strictDialogueQuality: true });
+
+    assert.equal(codes(review).has(PRESENTATION_DIALOGUE_ISSUE_CODES.roleContributionImbalanced), true);
+    assert.equal(review.contributionMetrics.personas.guide.turnCount, 1);
+    assert.equal(review.contributionMetrics.personas.guide.ratio < PRESENTATION_DIALOGUE_QUALITY_PROFILE.minPersonaContributionRatio, true);
+    assert.equal(review.contributionMetrics.totalContentTokens, review.repetitionMetrics.totalContentTokens);
   });
 
   it('flags disconnected replies, indistinct roles, and alternating monologues', () => {

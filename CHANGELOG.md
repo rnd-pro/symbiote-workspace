@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Added deterministic `presentation-dialogue-quality-v2` pre-TTS gates for
+  cross-turn n-gram/content repetition and balanced per-persona contribution,
+  with portable dependency, repetition, and contribution metrics for EN/RU/ES.
+- Added strict `workspace-media-evidence-v2` synthesis receipt coverage. Audio
+  turns now bind provider-attested receipts to artifact hashes, personas,
+  unique voice provenance, locale, and `versions.voice`, while rejecting
+  biometric claims, missing coverage, and private provider fields.
+
 - Added the frozen `presentation-dialogue-quality-v1` review profile with shared
   EN/RU tokenization, distinct-role and reply-cohesion checks, turn pacing,
   punctuation and pronounceability gates, delivery continuity, useful semantic

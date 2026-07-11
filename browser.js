@@ -154,6 +154,9 @@ export {
   PRESENTATION_SYNC_ANCHORS,
   PRESENTATION_DELIVERY_EMOTIONS,
   PRESENTATION_DELIVERY_PACES,
+  PRESENTATION_DIALOGUE_ISSUE_CODES,
+  PRESENTATION_DIALOGUE_QUALITY_PROFILE,
+  PRESENTATION_DIALOGUE_QUALITY_PROFILE_VERSION,
   PRESENTATION_ALIGNED_SEQUENCE_VERSION,
   PRESENTATION_ALIGNMENT_RESOLUTIONS,
   PRESENTATION_CONTEXT_SNAPSHOT_SCHEMA_VERSION,
@@ -179,6 +182,7 @@ export {
   presentationTimelineHasTurns,
   validatePresentationAlignedSequence,
   reviewPresentationTimeline,
+  reviewPresentationDialogue,
   reviewPresentationTimelineAgainstLessonContext,
   reviewPresentationTimelineAgainstSnapshot,
   summarizePresentationTimeline,
@@ -223,16 +227,20 @@ export {
   updateMediaProjectRenderSettings,
 } from './runtime/media-projects.js';
 export {
+  AUDIO_SYNTHESIS_RECEIPT_VERSION,
   MEDIA_ARTIFACT_GRAPH_SCHEMA_VERSION,
   MEDIA_ARTIFACT_KINDS,
   MEDIA_ARTIFACT_VERSION_INPUTS,
   MEDIA_EVIDENCE_MANIFEST_SCHEMA_VERSION,
+  MEDIA_SPEAKER_IDENTITY_CLAIMS,
   createMediaArtifactCacheKey,
   createMediaArtifactGraph,
   createMediaEvidenceManifest,
+  createMediaSynthesisEvidence,
   invalidateMediaArtifactGraph,
   validateMediaArtifactGraph,
   validateMediaEvidenceManifest,
+  validateMediaSynthesisEvidence,
 } from './runtime/media-evidence.js';
 
 import {

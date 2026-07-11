@@ -4,7 +4,7 @@ import {
   normalizePresentationTimeline,
 } from './contract.js';
 
-export const PRESENTATION_DIALOGUE_QUALITY_PROFILE_VERSION = 'presentation-dialogue-quality-v1';
+export const PRESENTATION_DIALOGUE_QUALITY_PROFILE_VERSION = 'presentation-dialogue-quality-v2';
 export const PRESENTATION_DIALOGUE_QUALITY_PROFILE = Object.freeze({
   version: PRESENTATION_DIALOGUE_QUALITY_PROFILE_VERSION,
   closureWindow: 3,
@@ -14,6 +14,12 @@ export const PRESENTATION_DIALOGUE_QUALITY_PROFILE = Object.freeze({
   maxTurnWords: 36,
   maxRepeatedDiscourseMarker: 2,
   minAlternatingDependencyRatio: 0.5,
+  repetitionNgramSize: 3,
+  maxCrossTurnNgramOccurrences: 3,
+  maxCrossTurnContentTokenOccurrences: 3,
+  maxRepeatedContentTokenRatio: 0.5,
+  minPersonaContributionRatio: 0.2,
+  maxPersonaContributionRatio: 0.8,
 });
 export const PRESENTATION_DIALOGUE_ISSUE_CODES = Object.freeze({
   invalidAct: 'dialogue-act-invalid',
@@ -28,6 +34,8 @@ export const PRESENTATION_DIALOGUE_ISSUE_CODES = Object.freeze({
   pronounceabilityHazard: 'dialogue-pronounceability-hazard',
   deliveryDiscontinuity: 'dialogue-delivery-discontinuity',
   weakSemanticAct: 'dialogue-semantic-act-weak',
+  repetitionFlood: 'dialogue-repetition-flood',
+  roleContributionImbalanced: 'dialogue-role-contribution-imbalanced',
 });
 
 const ACT_SET = new Set(PRESENTATION_DIALOGUE_ACTS);
@@ -109,6 +117,55 @@ function roleSignature(persona, locale) {
   return [...new Set(contentTokens(persona?.role, locale))].sort().join(' ');
 }
 
+function contentNgrams(tokens, size) {
+  let ngrams = new Set();
+  for (let index = 0; index <= tokens.length - size; index += 1) {
+    ngrams.add(tokens.slice(index, index + size).join(' '));
+  }
+  return ngrams;
+}
+
+function dialogueRepetitionMetrics(turns, locale, ngramSize, maxNgramOccurrences, maxContentTokenOccurrences) {
+  let tokenTurnCounts = new Map();
+  let ngramTurnCounts = new Map();
+  let totalContentTokens = 0;
+  for (let turn of turns) {
+    let tokens = contentTokens(turn.text, locale);
+    totalContentTokens += tokens.length;
+    for (let token of new Set(tokens)) tokenTurnCounts.set(token, (tokenTurnCounts.get(token) || 0) + 1);
+    for (let ngram of contentNgrams(tokens, ngramSize)) ngramTurnCounts.set(ngram, (ngramTurnCounts.get(ngram) || 0) + 1);
+  }
+  let repeatedContentTokens = turns.reduce((count, turn) => count + contentTokens(turn.text, locale)
+    .filter((token) => (tokenTurnCounts.get(token) || 0) > maxContentTokenOccurrences).length, 0);
+  let repeatedNgrams = [...ngramTurnCounts.entries()]
+    .filter(([, occurrences]) => occurrences > maxNgramOccurrences)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([ngram, occurrences]) => ({ ngram, occurrences }));
+  return {
+    ngramSize,
+    maxNgramTurnOccurrences: Math.max(0, ...ngramTurnCounts.values()),
+    repeatedNgrams,
+    repeatedContentTokens,
+    totalContentTokens,
+    repeatedContentTokenRatio: totalContentTokens ? repeatedContentTokens / totalContentTokens : 0,
+  };
+}
+
+function dialogueContributionMetrics(turns, locale) {
+  let totalContentTokens = turns.reduce((count, turn) => count + contentTokens(turn.text, locale).length, 0);
+  let personas = {};
+  for (let persona of [...new Set(turns.map((turn) => turn.persona))].sort()) {
+    let personaTurns = turns.filter((turn) => turn.persona === persona);
+    let contentTokenCount = personaTurns.reduce((count, turn) => count + contentTokens(turn.text, locale).length, 0);
+    personas[persona] = {
+      turnCount: personaTurns.length,
+      contentTokenCount,
+      ratio: totalContentTokens ? contentTokenCount / totalContentTokens : 0,
+    };
+  }
+  return { totalContentTokens, personas };
+}
+
 export function reviewPresentationDialogue(input = {}, intent = {}) {
   let timeline = normalizePresentationTimeline(input);
   let turns = timeline.turns;
@@ -124,6 +181,12 @@ export function reviewPresentationDialogue(input = {}, intent = {}) {
     maxTurnWords,
     maxRepeatedDiscourseMarker,
     minAlternatingDependencyRatio,
+    repetitionNgramSize,
+    maxCrossTurnNgramOccurrences,
+    maxCrossTurnContentTokenOccurrences,
+    maxRepeatedContentTokenRatio,
+    minPersonaContributionRatio,
+    maxPersonaContributionRatio,
   } = PRESENTATION_DIALOGUE_QUALITY_PROFILE;
   let personaIds = new Set(Object.keys(timeline.personas));
   let spokenPersonas = new Set(turns.map((turn) => turn.persona));
@@ -272,6 +335,43 @@ export function reviewPresentationDialogue(input = {}, intent = {}) {
   if (qualityEnabled && turns.length >= 4 && alternations === turns.length - 1 && dependentAlternations / alternations < minAlternatingDependencyRatio) {
     issues.push({ code: PRESENTATION_DIALOGUE_ISSUE_CODES.alternatingMonologues, severity: strict ? 'error' : 'warning', message: 'Persona alternation lacks enough reply or lexical dependencies to form dialogue.', alternations, dependentAlternations });
   }
+  let repetitionMetrics = dialogueRepetitionMetrics(
+    turns,
+    timeline.locale,
+    repetitionNgramSize,
+    maxCrossTurnNgramOccurrences,
+    maxCrossTurnContentTokenOccurrences,
+  );
+  if (qualityEnabled && (
+    repetitionMetrics.repeatedNgrams.length > 0
+    || repetitionMetrics.repeatedContentTokenRatio > maxRepeatedContentTokenRatio
+  )) {
+    issues.push({
+      code: PRESENTATION_DIALOGUE_ISSUE_CODES.repetitionFlood,
+      severity: strict ? 'error' : 'warning',
+      message: 'Dialogue repeats broad phrases or content across too many turns.',
+      maxCrossTurnNgramOccurrences,
+      maxCrossTurnContentTokenOccurrences,
+      maxRepeatedContentTokenRatio,
+      repetitionMetrics,
+    });
+  }
+  let contributionMetrics = dialogueContributionMetrics(turns, timeline.locale);
+  if (qualityEnabled && spokenPersonas.size > 1) {
+    for (let [persona, contribution] of Object.entries(contributionMetrics.personas)) {
+      if (contribution.ratio < minPersonaContributionRatio || contribution.ratio > maxPersonaContributionRatio) {
+        issues.push({
+          code: PRESENTATION_DIALOGUE_ISSUE_CODES.roleContributionImbalanced,
+          severity: strict ? 'error' : 'warning',
+          message: `Persona "${persona}" contributes outside the authored content bounds.`,
+          persona,
+          contribution,
+          minPersonaContributionRatio,
+          maxPersonaContributionRatio,
+        });
+      }
+    }
+  }
   let minQuestions = Math.max(0, Math.floor(Number(intent.minQuestions || intent.dialogue?.minQuestions || 0)));
   let minClarifications = Math.max(0, Math.floor(Number(intent.minClarifications || intent.dialogue?.minClarifications || 0)));
   if (questionCount < minQuestions) issues.push({ code: 'dialogue-question-missing', severity: 'error', message: `Dialogue requires ${minQuestions} question turn(s); found ${questionCount}.` });
@@ -285,5 +385,12 @@ export function reviewPresentationDialogue(input = {}, intent = {}) {
     maxOverlapWords,
     questionCount,
     clarificationCount,
+    dependencyMetrics: {
+      alternations,
+      dependentAlternations,
+      ratio: alternations ? dependentAlternations / alternations : 0,
+    },
+    repetitionMetrics,
+    contributionMetrics,
   };
 }

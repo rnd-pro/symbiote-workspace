@@ -1,6 +1,14 @@
 import { computeIntegrity, isIntegrityString } from '../schema/canonical-json.js';
+import { createMediaSynthesisEvidence } from './media-evidence/synthesis-receipts.js';
 
-export const MEDIA_EVIDENCE_MANIFEST_SCHEMA_VERSION = 'workspace-media-evidence-v1';
+export {
+  AUDIO_SYNTHESIS_RECEIPT_VERSION,
+  MEDIA_SPEAKER_IDENTITY_CLAIMS,
+  createMediaSynthesisEvidence,
+  validateMediaSynthesisEvidence,
+} from './media-evidence/synthesis-receipts.js';
+
+export const MEDIA_EVIDENCE_MANIFEST_SCHEMA_VERSION = 'workspace-media-evidence-v2';
 export const MEDIA_ARTIFACT_GRAPH_SCHEMA_VERSION = 'workspace-media-artifact-graph-v1';
 
 export const MEDIA_ARTIFACT_KINDS = Object.freeze([
@@ -44,7 +52,8 @@ const NODE_KEYS = new Set([
 const GRAPH_KEYS = new Set(['schemaVersion', 'nodes']);
 const MANIFEST_KEYS = new Set([
   'schemaVersion', 'id', 'project', 'source', 'settings', 'renderer',
-  'artifactGraph', 'metrics', 'gates', 'provenance', 'publication', 'createdAt',
+  'artifactGraph', 'metrics', 'gates', 'provenance', 'synthesisEvidence',
+  'publication', 'createdAt',
 ]);
 const PROJECT_KEYS = new Set(['id', 'schemaVersion', 'timelineHash', 'lessonAuditHash']);
 const SOURCE_KEYS = new Set(['surface', 'tabId', 'projectId', 'routePath', 'contextHash']);
@@ -147,7 +156,7 @@ function plainValue(value, path) {
   if (isObject(value)) {
     let result = {};
     for (let [key, child] of Object.entries(value)) {
-      if (/(?:token|secret|password|credential|api[-_]?key|samplePath|sessionId)/i.test(key)) {
+      if (key !== 'versionToken' && /(?:token|secret|password|credential|api[-_]?key|samplePath|sessionId)/i.test(key)) {
         throw new TypeError(`${path}.${key} is private and not portable`);
       }
       result[key] = plainValue(child, `${path}.${key}`);
@@ -508,16 +517,29 @@ function buildMediaEvidenceManifest(input = {}) {
       if (!artifactIds.has(ref)) throw new TypeError(`manifest gate ${gate.id} references unknown evidence: ${ref}`);
     }
   }
+  let provenance = normalizeProvenance(input.provenance || {});
+  let settings = normalizeSettings(input.settings);
+  let synthesisEvidence = settings.includeAudio
+    ? createMediaSynthesisEvidence(input.synthesisEvidence, {
+      artifactGraph,
+      voices: provenance.voices,
+      language: settings.language,
+    })
+    : undefined;
+  if (!settings.includeAudio && input.synthesisEvidence !== undefined) {
+    throw new TypeError('manifest.synthesisEvidence is supported only when settings.includeAudio is true');
+  }
   let manifest = {
     schemaVersion,
     project: normalizeProject(input.project),
     source: normalizeSource(input.source),
-    settings: normalizeSettings(input.settings),
+    settings,
     renderer: normalizeRenderer(input.renderer),
     artifactGraph,
     metrics,
     gates,
-    provenance: normalizeProvenance(input.provenance || {}),
+    provenance,
+    ...(synthesisEvidence ? { synthesisEvidence } : {}),
     publication: normalizePublication(input.publication, gates),
     createdAt: requiredString(input.createdAt, 'manifest.createdAt'),
   };
@@ -532,6 +554,7 @@ function buildMediaEvidenceManifest(input = {}) {
     metrics,
     gates,
     provenance: manifest.provenance,
+    synthesisEvidence: manifest.synthesisEvidence,
     publication: manifest.publication,
   });
   let id = `media-evidence:${identity}`;
