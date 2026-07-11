@@ -186,3 +186,15 @@ export {
   selectMediaProjectTimeline,
   updateMediaProjectRenderSettings,
 } from './media-projects.js';
+export {
+  MEDIA_ARTIFACT_GRAPH_SCHEMA_VERSION,
+  MEDIA_ARTIFACT_KINDS,
+  MEDIA_ARTIFACT_VERSION_INPUTS,
+  MEDIA_EVIDENCE_MANIFEST_SCHEMA_VERSION,
+  createMediaArtifactCacheKey,
+  createMediaArtifactGraph,
+  createMediaEvidenceManifest,
+  invalidateMediaArtifactGraph,
+  validateMediaArtifactGraph,
+  validateMediaEvidenceManifest,
+} from './media-evidence.js';

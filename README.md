@@ -60,6 +60,9 @@ mode.
   required to relaunch the workspace.
 - **No-reload browser updates** — mounted workspaces can apply validated config
   updates and patches without replacing the browser runtime.
+- **Portable media evidence** — versioned media evidence manifests bind a
+  content-addressed artifact DAG to render metrics, provenance, quality gates,
+  and a fail-closed publication verdict without storing host paths or secrets.
 
 ### Unified Agent Tooling
 
@@ -156,6 +159,8 @@ smoke options and CI-friendly write-only mode.
 - [Plugins, Portability, and Templates](./docs/plugins-and-templates.md) —
   plugin format, module capabilities, portability rules, templates, and
   workspace packages.
+- [Media Evidence and Artifact Invalidation](./docs/media-evidence.md) — strict
+  evidence manifests, cache identity, DAG invalidation, and privacy rules.
 
 ## License
 

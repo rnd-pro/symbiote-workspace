@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Added strict browser-safe `workspace-media-evidence-v1` and
+  `workspace-media-artifact-graph-v1` contracts with canonical cache identity,
+  host-sensitive frame/encode keys, explicit timing artifacts, transitive
+  invalidation, early output-hash cutoff, provenance, metrics, publication
+  gates, and fail-closed privacy validation.
 - Upgraded render-time presentations to `presentation-timeline-v2` with
   source-grounded turns, explicit dialogue acts/replies, complete lesson-review
   codes, and fail-closed TTS projection. Added stable interface and volatile data
