@@ -353,7 +353,7 @@ it('reruns composition after one planner repair on the same output', async () =>
   assert.ok(events.includes('tour.composition.review-repair.done'));
 });
 
-it('rejects a composition repair that changes the lesson intent', async () => {
+it('allows a composition repair to revise claims without changing lesson requirements', async () => {
   let options = groundedDeepeningOptions();
   let originalPlan = options.plan;
   let readyCalls = 0;
@@ -373,10 +373,12 @@ it('rejects a composition repair that changes the lesson intent', async () => {
     return fixture;
   };
 
-  await assert.rejects(prepareWorkspacePresentation(options), (error) => (
-    error?.code === 'PRESENTATION_COMPOSITION_REJECTED'
-      && error.review?.issueCodes?.includes('lesson-intent-mismatch')
-  ));
+  let result = await prepareWorkspacePresentation(options);
+
+  assert.equal(readyCalls, 2);
+  assert.equal(inspectCalls, 2);
+  assert.equal(result.timeline.turns[0].claims[0].kind, 'procedure');
+  assert.equal(result.compositionAudit.verdict, 'accept');
 });
 
 function deepeningFailureOptions({ plan, executeSafeAction = async () => {} } = {}) {

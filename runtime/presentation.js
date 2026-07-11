@@ -1702,6 +1702,7 @@ export function createPresentationReplanRequest(input = {}) {
     grounding: { sources: clonePortable(targetSnapshot.dataSources || []) },
     lessonContextHash: cleanTimelineText(input.lessonContext?.hash),
     lessonContext: isObject(input.lessonContext) ? clonePortable(input.lessonContext) : undefined,
+    reviewFeedback: isObject(input.reviewFeedback) ? clonePortable(input.reviewFeedback) : undefined,
   };
   return {
     ...request,
@@ -1809,6 +1810,7 @@ export function finalizePresentationReplan(candidate = {}, request = {}, options
     if (compositionAudit.verdict !== 'accept') {
       let error = presentationContractError('PRESENTATION_COMPOSITION_REJECTED', 'presentation composition failed target readiness review');
       error.review = compositionAudit;
+      error.compositionPlan = compositionPlan;
       throw error;
     }
   }

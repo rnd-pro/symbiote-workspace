@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Added a bounded, privacy-checked planner projection for responsive model
+  replanning without duplicated source and target snapshots.
 - Added the browser-safe `workspace-lesson-context-v2` packet, typed lesson
   facts/claims/relations, normalized WebMCP descriptors and safety hints,
   deterministic EN/RU grounding and depth audits, lesson-context-bound replans,

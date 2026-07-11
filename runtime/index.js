@@ -151,6 +151,11 @@ export {
   presentationRectsIntersect,
 } from './presentation-output.js';
 export {
+  PRESENTATION_PLANNER_INPUT_MAX_BYTES,
+  PRESENTATION_PLANNER_INPUT_SCHEMA_VERSION,
+  createPresentationPlannerInput,
+} from './presentation-planner.js';
+export {
   PRESENTATION_CONTRACT_VERSION,
   PRESENTATION_CONTEXT_SNAPSHOT_SCHEMA_VERSION,
   PRESENTATION_LESSON_AUDIT_SCHEMA_VERSION,

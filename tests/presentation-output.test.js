@@ -111,7 +111,7 @@ describe('presentation output and composition contracts', () => {
     }
   });
 
-  it('keeps lesson intent invariant across wording and turn order but rejects changed objective or claim coverage', () => {
+  it('keeps lesson intent invariant across format-specific claim plans but rejects changed lesson requirements', () => {
     let context = {
       lesson: {
         type: 'data-analysis',
@@ -130,6 +130,11 @@ describe('presentation output and composition contracts', () => {
 
     assert.equal(createLessonIntentHash(context, first), createLessonIntentHash(context, second));
     assert.notEqual(createLessonIntentHash(context, first), createLessonIntentHash({ lesson: { ...context.lesson, objective: 'Explain queue only' } }, first));
-    assert.notEqual(createLessonIntentHash(context, first), createLessonIntentHash(context, { turns: [{ claims: [claims[0]] }] }));
+    assert.equal(createLessonIntentHash(context, first), createLessonIntentHash(context, { turns: [{ claims: [claims[0]] }] }));
+    assert.notEqual(createLessonIntentHash(context), createLessonIntentHash({ lesson: { ...context.lesson, requiredFactIds: ['queued'] } }));
+    assert.equal(
+      createLessonIntentHash({ lesson: { type: 'overview', objective: 'Explain queue' } }, { locale: 'ru-RU' }),
+      createLessonIntentHash({ lesson: { type: 'overview', objective: 'Explain queue', locale: 'ru-RU' } }),
+    );
   });
 });

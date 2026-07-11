@@ -253,17 +253,12 @@ function normalizeCompositionStep(input = {}, index = 0) {
 
 export function createLessonIntentHash(lessonContext = {}, timeline = {}) {
   let lesson = isObject(lessonContext.lesson) ? lessonContext.lesson : {};
-  let claimCoverage = (Array.isArray(timeline.turns) ? timeline.turns : [])
-    .flatMap((turn) => Array.isArray(turn?.claims) ? turn.claims : [])
-    .map((claim) => `${cleanText(claim?.kind)}:${uniqueSorted(claim?.factRefs).join(',')}`)
-    .filter((value) => value !== ':');
   let intent = {
     lessonType: cleanText(lesson.type),
     objective: cleanText(lesson.objective).toLowerCase(),
     locale: cleanText(lesson.locale || lessonContext.locale || timeline.locale).toLowerCase(),
     requiredFactIds: uniqueSorted(lesson.requiredFactIds),
     requiredTargetIds: uniqueSorted(lesson.requiredTargetIds),
-    claimCoverage: uniqueSorted(claimCoverage),
   };
   return `workspace-lesson-intent-v1:${computeIntegrity(intent)}`;
 }
