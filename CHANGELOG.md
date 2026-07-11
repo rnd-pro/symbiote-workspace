@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Added the browser-safe `workspace-lesson-context-v1` packet, typed lesson
+  facts/claims/relations, normalized WebMCP descriptors and safety hints,
+  deterministic EN/RU grounding and depth audits, lesson-context-bound replans,
+  and per-action safe deepening evidence before TTS.
 - Added strict browser-safe `workspace-media-evidence-v1` and
   `workspace-media-artifact-graph-v1` contracts with canonical cache identity,
   host-sensitive frame/encode keys, explicit timing artifacts, transitive

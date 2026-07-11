@@ -135,6 +135,16 @@ All CLI and MCP tools route through the same dispatch registry. The full tool
 list and CLI command naming rule live in [Getting Started and Preview](./docs/getting-started.md)
 and [Host Contracts and Construction Protocol](./docs/host-contracts.md).
 
+## Evidence-backed Lessons
+
+`symbiote-workspace/runtime` and the browser entrypoint export
+`createPresentationLessonContext()`, `auditPresentationLessonContext()`, and
+`reviewPresentationTimelineAgainstLessonContext()`. Hosts use these APIs to bind
+a lesson plan to live targets, portable WebMCP descriptors, domain facts,
+evidence, relations, prior actions, and bounded deepening results. Malformed,
+stale, unsafe, ungrounded, generic, duplicate, or under-depth lessons fail
+before a TTS projection is accepted.
+
 ## Visual Demo
 
 ```sh

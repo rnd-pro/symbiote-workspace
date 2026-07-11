@@ -107,6 +107,21 @@ export {
 export { subscribeDataChange } from './runtime/data-change-client.js';
 
 export {
+  LESSON_CLAIM_KINDS,
+  LESSON_CONTEXT_SCHEMA_VERSION,
+  LESSON_RELATION_KINDS,
+  LESSON_TEXT_RULES_VERSION,
+  LESSON_TYPES,
+  auditPresentationLessonContext,
+  auditPresentationTimelineClaims,
+  createPresentationLessonContext,
+  lessonTextTokens,
+  lessonToolIsSafeForDeepening,
+  normalizeLessonToolDescriptor,
+  validateLessonToolInput,
+} from './runtime/lesson-context.js';
+
+export {
   PRESENTATION_CONTRACT_VERSION,
   PRESENTATION_CONTEXT_SNAPSHOT_SCHEMA_VERSION,
   PRESENTATION_LESSON_AUDIT_SCHEMA_VERSION,
@@ -127,6 +142,7 @@ export {
   normalizePresentationTimeline,
   presentationTimelineHasTurns,
   reviewPresentationTimeline,
+  reviewPresentationTimelineAgainstLessonContext,
   reviewPresentationTimelineAgainstSnapshot,
   summarizePresentationTimeline,
 } from './runtime/presentation.js';
@@ -201,6 +217,12 @@ import {
   createWorkspacePresentationTimeline,
   finalizePresentationReplan,
 } from './runtime/presentation.js';
+import {
+  auditPresentationLessonContext,
+  createPresentationLessonContext,
+  lessonToolIsSafeForDeepening,
+  validateLessonToolInput,
+} from './runtime/lesson-context.js';
 import { createWorkspaceState } from './runtime/workspace-state.js';
 
 function isObject(value) {
@@ -924,6 +946,30 @@ function presentationPreparationError(code, message, cause) {
   return error;
 }
 
+function contextRecordMap(records = []) {
+  return new Map(records.map((record) => [record?.id || record?.address || record?.path, JSON.stringify(clonePortable(record))]));
+}
+
+function changedContextRefs(beforeContext = {}, afterContext = {}) {
+  let changed = [];
+  for (let key of ['facts', 'evidence', 'targets', 'relations']) {
+    let before = contextRecordMap(beforeContext[key]);
+    let after = contextRecordMap(afterContext[key]);
+    for (let [id, value] of after) if (id && before.get(id) !== value) changed.push(`${key}:${id}`);
+  }
+  return [...new Set(changed)].sort();
+}
+
+function assertLessonContextAudit(packet, { allowResolvableDepth = false } = {}) {
+  let audit = auditPresentationLessonContext(packet);
+  let allowed = allowResolvableDepth ? new Set(['lesson-depth-insufficient', 'required-fact-missing']) : new Set();
+  let blocking = audit.issues.filter((issue) => issue.severity === 'error' && !allowed.has(issue.code));
+  if (!blocking.length) return audit;
+  let error = presentationPreparationError('LESSON_CONTEXT_REJECTED', `lesson context rejected: ${blocking[0].code}`);
+  error.audit = { ...audit, issues: blocking, issueCodes: [...new Set(blocking.map((issue) => issue.code))] };
+  throw error;
+}
+
 /**
  * Prepare a presentation inside the target viewport before audio generation.
  * The host owns all effects; this function owns the bounded, fail-closed order.
@@ -937,12 +983,13 @@ export async function prepareWorkspacePresentation(options = {}) {
   let emit = async (type, detail = {}) => options.onEvent?.({ type, ...cloneJson(detail) });
   let collectSnapshot = async (generation) => {
     let context = await options.collectContext({ generation });
-    return createPresentationContextSnapshot(context, {
+    let snapshot = createPresentationContextSnapshot(context, {
       generation,
       viewport: options.viewport,
       source: options.source,
       stability: { settled: true, waitedFor: options.waitedFor || [] },
     });
+    return { context, snapshot };
   };
 
   await emit('tour.context.rehydrate.started');
@@ -955,7 +1002,19 @@ export async function prepareWorkspacePresentation(options = {}) {
   }
   await emit('tour.context.rehydrate.done');
 
-  let sourceSnapshot = await collectSnapshot(0);
+  let sourceState = await collectSnapshot(0);
+  let sourceContext = sourceState.context;
+  let sourceSnapshot = sourceState.snapshot;
+  let lessonEnabled = Boolean(options.lessonContext || options.lesson || sourceContext.lesson);
+  let lessonContext = lessonEnabled
+    ? createPresentationLessonContext(sourceContext, {
+      lesson: options.lesson || sourceContext.lesson || options.request,
+      constraints: options.lessonConstraints || sourceContext.constraints,
+      sourceSnapshot,
+      targetSnapshot: sourceSnapshot,
+    })
+    : null;
+  if (lessonContext) assertLessonContextAudit(lessonContext, { allowResolvableDepth: true });
   await emit('tour.context.collected', {
     generation: sourceSnapshot.generation,
     identityHash: sourceSnapshot.identityHash,
@@ -970,10 +1029,11 @@ export async function prepareWorkspacePresentation(options = {}) {
     personaSpec: options.personaSpec,
     turnBudget: options.turnBudget,
     actionBudget: options.actionBudget,
+    lessonContext,
   });
   let candidate;
   try {
-    candidate = await options.plan(request, sourceSnapshot);
+    candidate = await options.plan(request, sourceSnapshot, lessonContext);
   } catch (cause) {
     throw presentationPreparationError('TOUR_REPLAN_UNAVAILABLE', 'presentation planner is unavailable', cause);
   }
@@ -982,6 +1042,8 @@ export async function prepareWorkspacePresentation(options = {}) {
   }
 
   let targetSnapshot = sourceSnapshot;
+  let targetContext = sourceContext;
+  let deepeningRecords = [];
   let snapshotChain = [{ phase: 'source', generation: 0, identityHash: sourceSnapshot.identityHash, dataHash: sourceSnapshot.dataHash }];
   if (candidate.status === 'needs-context') {
     let actions = Array.isArray(candidate.requestedActions) ? candidate.requestedActions : [];
@@ -989,32 +1051,89 @@ export async function prepareWorkspacePresentation(options = {}) {
       throw presentationPreparationError('DEEPENING_BUDGET_EXHAUSTED', 'presentation deepening request exceeds its action budget');
     }
     let allowed = new Set(request.allowedActions.map((action) => `${action.source || 'webmcp'}:${action.tool}:${action.target}`));
-    for (let action of actions) {
+    for (let [actionIndex, action] of actions.entries()) {
       let source = String(action?.source || 'webmcp');
       let key = `${source}:${String(action?.tool || '')}:${String(action?.target || '')}`;
       if (!allowed.has(key)) {
         throw presentationPreparationError('DEEPENING_ACTION_UNSAFE', `presentation deepening action is not allowed: ${key}`);
       }
-      await emit('tour.deepening.action.started', { generation: 0, source, tool: action.tool, target: action.target });
+      let descriptor = lessonContext?.toolDescriptors?.find((item) => item.name === action.tool);
+      if (lessonContext) {
+        if (!descriptor || !lessonToolIsSafeForDeepening(descriptor)) {
+          throw presentationPreparationError('DEEPENING_ACTION_UNSAFE', `presentation deepening descriptor is unsafe: ${action.tool}`);
+        }
+        let inputIssues = validateLessonToolInput(descriptor.inputSchema, action.input || {});
+        if (inputIssues.length) {
+          let error = presentationPreparationError('DEEPENING_INPUT_INVALID', `presentation deepening input is invalid: ${action.tool}`);
+          error.issues = inputIssues;
+          throw error;
+        }
+        if (!Array.isArray(action.requestedGaps) || !action.requestedGaps.length) {
+          throw presentationPreparationError('DEEPENING_GAP_UNSPECIFIED', `presentation deepening action has no requested evidence gap: ${action.tool}`);
+        }
+      }
+      await emit('tour.deepening.action.started', { generation: targetSnapshot.generation, source, tool: action.tool, target: action.target });
+      let result;
       try {
-        await options.executeSafeAction(cloneJson(action), { snapshot: sourceSnapshot, request });
+        result = await options.executeSafeAction(cloneJson(action), { snapshot: targetSnapshot, lessonContext, request });
         await options.waitForSettlement({ phase: 'deepening', action: cloneJson(action) });
       } catch (cause) {
         throw presentationPreparationError('DEEPENING_ACTION_FAILED', `presentation deepening action failed: ${action.tool}`, cause);
       }
-      await emit('tour.deepening.action.done', { generation: 0, source, tool: action.tool, target: action.target });
+      let previousSnapshot = targetSnapshot;
+      let previousContext = targetContext;
+      let nextState = await collectSnapshot(actionIndex + 1);
+      targetSnapshot = nextState.snapshot;
+      targetContext = nextState.context;
+      let changedRefs = changedContextRefs(previousContext, targetContext);
+      let snapshotChanged = targetSnapshot.identityHash !== previousSnapshot.identityHash || targetSnapshot.dataHash !== previousSnapshot.dataHash;
+      if (!snapshotChanged || (lessonContext && !changedRefs.length)) {
+        throw presentationPreparationError('DEEPENING_NO_EFFECT', `presentation deepening action did not change attributable context: ${action.tool}`);
+      }
+      let requestedGaps = Array.isArray(action.requestedGaps) ? action.requestedGaps.map(String) : [];
+      let satisfiedGaps = requestedGaps.filter((gap) => changedRefs.some((ref) => ref === gap || ref.endsWith(`:${gap}`)));
+      if (lessonContext && satisfiedGaps.length !== requestedGaps.length) {
+        throw presentationPreparationError('DEEPENING_IRRELEVANT_CHANGE', `presentation deepening action did not satisfy its requested evidence gaps: ${action.tool}`);
+      }
+      let record = {
+        index: actionIndex,
+        source,
+        tool: action.tool,
+        target: action.target,
+        descriptorHash: descriptor?.hash,
+        input: clonePortable(action.input || {}),
+        safety: clonePortable(descriptor?.safety),
+        result: clonePortable(result),
+        sourceSnapshotHash: previousSnapshot.identityHash,
+        targetSnapshotHash: targetSnapshot.identityHash,
+        changedRefs,
+        requestedGaps,
+        satisfiedGaps,
+      };
+      deepeningRecords.push(record);
+      snapshotChain.push({
+        phase: 'deepening-action',
+        generation: targetSnapshot.generation,
+        identityHash: targetSnapshot.identityHash,
+        dataHash: targetSnapshot.dataHash,
+        action: record,
+      });
+      if (lessonContext) {
+        try {
+          lessonContext = createPresentationLessonContext(targetContext, {
+            lesson: options.lesson || sourceContext.lesson || options.request,
+            constraints: options.lessonConstraints || sourceContext.constraints,
+            sourceSnapshot,
+            targetSnapshot,
+            deepening: { remainingRounds: 0, remainingActions: actions.length - actionIndex - 1, requestedGaps, actions: deepeningRecords },
+          });
+        } catch (cause) {
+          throw presentationPreparationError('LESSON_CONTEXT_REJECTED', 'deepened lesson context is invalid', cause);
+        }
+        assertLessonContextAudit(lessonContext, { allowResolvableDepth: actionIndex < actions.length - 1 });
+      }
+      await emit('tour.deepening.action.done', { generation: targetSnapshot.generation, source, tool: action.tool, target: action.target, changedRefs });
     }
-    targetSnapshot = await collectSnapshot(1);
-    if (targetSnapshot.identityHash === sourceSnapshot.identityHash && targetSnapshot.dataHash === sourceSnapshot.dataHash) {
-      throw presentationPreparationError('DEEPENING_NO_EFFECT', 'presentation deepening actions did not change collected context');
-    }
-    snapshotChain.push({
-      phase: 'target',
-      generation: 1,
-      identityHash: targetSnapshot.identityHash,
-      dataHash: targetSnapshot.dataHash,
-      actions: actions.map((action) => ({ source: action.source || 'webmcp', tool: action.tool, target: action.target })),
-    });
     request = createPresentationReplanRequest({
       request: options.request,
       timeline: options.timeline,
@@ -1023,9 +1142,10 @@ export async function prepareWorkspacePresentation(options = {}) {
       personaSpec: options.personaSpec,
       turnBudget: options.turnBudget,
       actionBudget: { remainingRounds: 0, remainingActions: 0 },
+      lessonContext,
     });
     try {
-      candidate = await options.plan(request, targetSnapshot);
+      candidate = await options.plan(request, targetSnapshot, lessonContext);
     } catch (cause) {
       throw presentationPreparationError('TOUR_REPLAN_UNAVAILABLE', 'final presentation planner call is unavailable', cause);
     }
@@ -1033,6 +1153,8 @@ export async function prepareWorkspacePresentation(options = {}) {
       throw presentationPreparationError('DEEPENING_BUDGET_EXHAUSTED', 'presentation planner requested another deepening round');
     }
   }
+
+  if (lessonContext) assertLessonContextAudit(lessonContext);
 
   let finalize = () => finalizePresentationReplan(candidate, request, {
     snapshot: targetSnapshot,
@@ -1081,6 +1203,7 @@ export async function prepareWorkspacePresentation(options = {}) {
     ...result,
     sourceSnapshot,
     targetSnapshot,
+    lessonContext,
   };
 }
 
@@ -1218,6 +1341,12 @@ export function collectWorkspaceInterfaceContext(config, root = null, options = 
     runtimeTargets,
     targets,
     dataContext: collectPresentationDataContext(options, options.router),
+    lesson: clonePortable(options.lesson),
+    facts: clonePortable(options.facts || []),
+    evidence: clonePortable(options.evidence || []),
+    relations: clonePortable(options.relations || []),
+    priorActions: clonePortable(options.priorActions || []),
+    toolDescriptors: clonePortable(options.toolDescriptors || []),
     summary: {
       viewCount: viewRecords.length,
       stackCount: stacks.length,

@@ -75,6 +75,149 @@ it('prepares a presentation with one bounded WebMCP deepening round', async () =
   assert.ok(events.includes('tour.deepening.action.done'));
 });
 
+function groundedDeepeningOptions(overrides = {}) {
+  let revealed = false;
+  let ordersId = 'panel:orders:list';
+  let detailsId = 'panel:orders:detail';
+  let collectContext = () => {
+    let targets = [
+      { address: ordersId, id: ordersId, title: 'Orders', visible: true, rendered: true },
+      {
+        address: detailsId,
+        id: detailsId,
+        title: 'Details',
+        visible: revealed,
+        rendered: revealed,
+        webmcpTools: [{
+          name: 'orders.reveal-detail',
+          description: 'Reveal order details',
+          inputSchema: { type: 'object', additionalProperties: false },
+          annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+        }],
+      },
+    ];
+    let facts = [{ id: 'status', kind: 'enum', label: 'status', value: 'queued', evidenceRefs: ['e-status'], targetRefs: [ordersId] }];
+    let evidence = [{ id: 'e-status', source: 'fixture', path: 'order.status', value: 'queued', targetRefs: [ordersId] }];
+    if (revealed) {
+      facts.push({ id: 'detail', kind: 'enum', label: 'detail', value: 'approved', evidenceRefs: ['e-detail'], targetRefs: [detailsId] });
+      evidence.push({ id: 'e-detail', source: 'fixture', path: 'order.detail', value: 'approved', targetRefs: [detailsId] });
+    }
+    return {
+      targets,
+      facts,
+      evidence,
+      relations: [{ id: 'order-detail', kind: 'affects', from: ordersId, to: detailsId }],
+      dataContext: { liveData: { revealed } },
+    };
+  };
+  let calls = 0;
+  return {
+    viewport: { width: 1080, height: 1920, fps: 30 },
+    source: { surface: 'orders', tabId: 'orders' },
+    lesson: {
+      type: 'operational-task',
+      title: 'Approve an order',
+      objective: 'Explain the approval task',
+      locale: 'en-US',
+      requiredFactIds: ['status', 'detail'],
+      requiredTargetIds: [ordersId, detailsId],
+    },
+    request: { prompt: 'Explain the approval task', profile: 'task-specific' },
+    async rehydrate() {},
+    async waitForSettlement() {},
+    collectContext,
+    async executeSafeAction() {
+      revealed = true;
+      return { content: [{ type: 'text', text: 'Detail revealed' }] };
+    },
+    async plan(request) {
+      calls += 1;
+      if (calls === 1) {
+        return {
+          status: 'needs-context',
+          requestedActions: [{
+            source: 'webmcp',
+            tool: 'orders.reveal-detail',
+            target: detailsId,
+            input: {},
+            requestedGaps: ['detail'],
+          }],
+        };
+      }
+      return {
+        status: 'ready',
+        basis: {
+          targetSnapshotHash: request.targetSnapshotHash,
+          lessonContextHash: request.lessonContextHash,
+          generation: request.generation,
+        },
+        timeline: {
+          title: 'Approve an order',
+          turns: [
+            {
+              id: 'status',
+              persona: 'guide',
+              dialogueAct: 'explain',
+              text: 'Orders status queued',
+              cue: { targetId: ordersId },
+              claims: [{ id: 'c-status', kind: 'state', text: 'Orders status queued', factRefs: ['status'], evidenceRefs: ['e-status'], targetRefs: [ordersId] }],
+              actions: [{ source: 'webmcp', name: 'orders.reveal-detail', target: detailsId, input: {} }],
+            },
+            {
+              id: 'outcome',
+              persona: 'guide',
+              dialogueAct: 'explain',
+              text: 'Details outcome approved',
+              cue: { targetId: detailsId },
+              claims: [{ id: 'c-detail', kind: 'outcome', text: 'Details outcome approved', factRefs: ['detail'], evidenceRefs: ['e-detail'], targetRefs: [detailsId] }],
+            },
+          ],
+        },
+      };
+    },
+    ...overrides,
+  };
+}
+
+it('binds planning to a full lesson packet and records per-action deepening evidence', async () => {
+  let result = await prepareWorkspacePresentation(groundedDeepeningOptions());
+  assert.equal(result.status, 'ready');
+  assert.equal(result.lessonContext.lesson.type, 'operational-task');
+  assert.equal(result.lessonContext.deepening.actions.length, 1);
+  assert.deepEqual(result.lessonContext.deepening.actions[0].satisfiedGaps, ['detail']);
+  assert.ok(result.lessonContext.deepening.actions[0].changedRefs.includes('facts:detail'));
+  assert.equal(result.review.verdict, 'accept');
+});
+
+it('rejects invalid or irrelevant grounded deepening before final planning', async () => {
+  let invalid = groundedDeepeningOptions();
+  let originalPlan = invalid.plan;
+  invalid.plan = async (...args) => {
+    let result = await originalPlan(...args);
+    if (result.status === 'needs-context') result.requestedActions[0].input = { unexpected: true };
+    return result;
+  };
+  await assert.rejects(prepareWorkspacePresentation(invalid), { code: 'DEEPENING_INPUT_INVALID' });
+
+  let irrelevant = groundedDeepeningOptions();
+  let irrelevantPlan = irrelevant.plan;
+  irrelevant.plan = async (...args) => {
+    let result = await irrelevantPlan(...args);
+    if (result.status === 'needs-context') result.requestedActions[0].requestedGaps = ['missing-other-fact'];
+    return result;
+  };
+  await assert.rejects(prepareWorkspacePresentation(irrelevant), { code: 'DEEPENING_IRRELEVANT_CHANGE' });
+
+  let partial = groundedDeepeningOptions();
+  let partialPlan = partial.plan;
+  partial.plan = async (...args) => {
+    let result = await partialPlan(...args);
+    if (result.status === 'needs-context') result.requestedActions[0].requestedGaps = ['e'];
+    return result;
+  };
+  await assert.rejects(prepareWorkspacePresentation(partial), { code: 'DEEPENING_IRRELEVANT_CHANGE' });
+});
+
 it('allows one review-guided repair on the same target snapshot', async () => {
   let planCalls = 0;
   let requests = [];

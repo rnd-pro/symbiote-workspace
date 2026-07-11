@@ -1,5 +1,6 @@
 import { parseWorkspaceAddress } from '../schema/was.js';
 import { computeIntegrity } from '../schema/canonical-json.js';
+import { auditPresentationTimelineClaims } from './lesson-context.js';
 
 export const PRESENTATION_PROMPT_PROFILES = Object.freeze(['brief', 'full', 'data-grounded', 'task-specific', 'dialogue']);
 export const PRESENTATION_CONTRACT_VERSION = 'presentation-timeline-v2';
@@ -664,6 +665,7 @@ function normalizePresentationTurn(turn = {}, index = 0) {
     sourceRefs: listValue(turn.sourceRefs || turn.dataRefs)
       .map((ref) => normalizeSourceRef(ref))
       .filter(Boolean),
+    claims: listValue(turn.claims).map((claim) => clonePortable(claim)).filter(hasKeys),
     emotion: cleanTimelineText(turn.emotion || turn.style),
     pauseBeforeMs: nonNegativeNumber(turn.pauseBeforeMs ?? turn.gapMs),
     overlapMs: nonNegativeNumber(turn.overlapMs ?? turn.overlap),
@@ -697,6 +699,7 @@ function segmentToPresentationTurn(segment = {}, index = 0) {
       hash: ref?.contentHash || ref?.hash,
       targetId: ref?.targetId || ref?.target || segment.target,
     })),
+    claims: segment.claims,
     annotations: segment.annotations,
   }, index);
 }
@@ -748,6 +751,7 @@ function hashableTimelineProjection(timeline) {
       dialogueAct: turn.dialogueAct,
       replyTo: turn.replyTo,
       sourceRefs: listValue(turn.sourceRefs).length ? turn.sourceRefs : undefined,
+      claims: listValue(turn.claims).length ? turn.claims : undefined,
       pauseBeforeMs: turn.pauseBeforeMs,
       overlapMs: turn.overlapMs,
       webmcp: hasKeys(turn.webmcp) ? turn.webmcp : undefined,
@@ -1670,6 +1674,8 @@ export function createPresentationReplanRequest(input = {}) {
     actionBudget: { remainingRounds, remainingActions },
     priorTimelineHash: cleanTimelineText(input.timeline?.hash || input.priorTimelineHash),
     grounding: { sources: clonePortable(targetSnapshot.dataSources || []) },
+    lessonContextHash: cleanTimelineText(input.lessonContext?.hash),
+    lessonContext: isObject(input.lessonContext) ? clonePortable(input.lessonContext) : undefined,
   };
   return {
     ...request,
@@ -1698,6 +1704,37 @@ export function reviewPresentationTimelineAgainstSnapshot(input = {}, snapshot =
   });
 }
 
+export function reviewPresentationTimelineAgainstLessonContext(input = {}, lessonContext = {}, intent = {}) {
+  let descriptorNames = new Map(listValue(lessonContext.toolDescriptors).map((descriptor) => [descriptor.id, descriptor.name]));
+  let snapshot = {
+    ...(lessonContext.targetSnapshot || {}),
+    targets: listValue(lessonContext.targets).map((target) => ({
+      address: target.id || target.address,
+      tabId: target.tabId,
+      safeActionNames: target.revealRefs || [],
+      webmcpToolNames: listValue(target.toolRefs).map((id) => descriptorNames.get(id)).filter(Boolean),
+    })),
+  };
+  let structural = reviewPresentationTimelineAgainstSnapshot(input, snapshot, {
+    requestedSurfaceIds: lessonContext.lesson?.requiredTargetIds || [],
+    ...intent,
+  });
+  let timeline = createPresentationTimelineContract(input);
+  let grounding = auditPresentationTimelineClaims(timeline, lessonContext);
+  let issues = [...structural.issues, ...grounding.issues];
+  return {
+    ...structural,
+    verdict: issues.some((issue) => issue.severity === 'error') ? 'reject' : 'accept',
+    issueCodes: [...new Set(issues.map((issue) => issue.code))],
+    issues,
+    lessonContextHash: lessonContext.hash,
+    coverage: {
+      ...structural.coverage,
+      ...grounding.coverage,
+    },
+  };
+}
+
 export function finalizePresentationReplan(candidate = {}, request = {}, options = {}) {
   if (candidate.status !== 'ready' || !candidate.timeline) {
     throw presentationContractError('TOUR_REPLAN_REJECTED', 'presentation planner did not return a ready timeline');
@@ -1707,15 +1744,18 @@ export function finalizePresentationReplan(candidate = {}, request = {}, options
   if (!expectedHash || candidateHash !== expectedHash || Number(candidate.basis?.generation) !== Number(request.generation)) {
     throw presentationContractError('TARGET_CONTEXT_STALE', 'presentation planner result targets a stale snapshot');
   }
+  if (request.lessonContextHash && cleanTimelineText(candidate.basis?.lessonContextHash) !== request.lessonContextHash) {
+    throw presentationContractError('LESSON_CONTEXT_STALE', 'presentation planner result targets a stale lesson context');
+  }
   let snapshot = options.snapshot;
   if (!snapshot || snapshot.identityHash !== expectedHash) {
     throw presentationContractError('TARGET_CONTEXT_STALE', 'latest target snapshot is unavailable');
   }
   let timeline = createPresentationTimelineContract(candidate.timeline);
-  let review = reviewPresentationTimelineAgainstSnapshot(timeline, snapshot, {
-    turnBudget: request.turnBudget,
-    ...(options.intent || {}),
-  });
+  let reviewIntent = { turnBudget: request.turnBudget, ...(options.intent || {}) };
+  let review = request.lessonContext
+    ? reviewPresentationTimelineAgainstLessonContext(timeline, request.lessonContext, reviewIntent)
+    : reviewPresentationTimelineAgainstSnapshot(timeline, snapshot, reviewIntent);
   if (review.verdict === 'reject') {
     let error = presentationContractError('TOUR_REPLAN_REJECTED', 'presentation timeline failed target-snapshot review');
     error.review = review;

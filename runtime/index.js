@@ -124,6 +124,20 @@ export {
   buildConstructionPlan,
 } from './scripted-adapter.js';
 export {
+  LESSON_CLAIM_KINDS,
+  LESSON_CONTEXT_SCHEMA_VERSION,
+  LESSON_RELATION_KINDS,
+  LESSON_TEXT_RULES_VERSION,
+  LESSON_TYPES,
+  auditPresentationLessonContext,
+  auditPresentationTimelineClaims,
+  createPresentationLessonContext,
+  lessonTextTokens,
+  lessonToolIsSafeForDeepening,
+  normalizeLessonToolDescriptor,
+  validateLessonToolInput,
+} from './lesson-context.js';
+export {
   PRESENTATION_CONTRACT_VERSION,
   PRESENTATION_CONTEXT_SNAPSHOT_SCHEMA_VERSION,
   PRESENTATION_LESSON_AUDIT_SCHEMA_VERSION,
@@ -144,6 +158,7 @@ export {
   normalizePresentationTimeline,
   presentationTimelineHasTurns,
   reviewPresentationTimeline,
+  reviewPresentationTimelineAgainstLessonContext,
   reviewPresentationTimelineAgainstSnapshot,
   summarizePresentationTimeline,
 } from './presentation.js';
