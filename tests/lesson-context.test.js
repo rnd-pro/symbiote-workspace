@@ -72,7 +72,22 @@ function claim(id, kind, text, factRefs, targetRefs) {
 }
 
 function timeline(turns) {
-  return { turns: turns.map((item, index) => ({ id: `turn-${index + 1}`, persona: 'guide', dialogueAct: 'explain', ...item })) };
+  return {
+    turns: turns.map(({ actions = [], ...item }, index) => ({
+      id: `turn-${index + 1}`,
+      persona: 'guide',
+      dialogueAct: 'explain',
+      ...item,
+      cues: actions.map((action) => ({
+        kind: 'interaction',
+        targetId: item.claims?.[0]?.targetRefs?.[0],
+        interaction: {
+          type: 'click',
+          binding: { source: 'webmcp', tool: action.name, input: action.input || {} },
+        },
+      })),
+    })),
+  };
 }
 
 describe('lesson context contract', () => {
@@ -106,7 +121,7 @@ describe('lesson context contract', () => {
         type: 'operational-task',
         packet: packetFor('operational-task'),
         turns: [
-          { text: 'Orders status Approved', claims: [claim('c1', 'state', 'Orders status Approved', ['status'], ['orders'])], actions: [{ name: 'inspect_record' }] },
+          { text: 'Orders status Approved', claims: [claim('c1', 'state', 'Orders status Approved', ['status'], ['orders'])], actions: [{ name: 'inspect_record', input: { id: '1001' } }] },
           { text: 'Details outcome Morgan', claims: [claim('c2', 'outcome', 'Details outcome Morgan', ['owner'], ['details'])] },
         ],
       },
@@ -133,8 +148,8 @@ describe('lesson context contract', () => {
         type: 'workflow-process',
         packet: packetFor('workflow-process', { relations: [relation('r1', 'precedes', 'orders', 'details'), relation('r2', 'transitions-to', 'details', 'history')] }),
         turns: [
-          { text: 'Orders begin Approved', claims: [claim('c1', 'procedure', 'Orders begin Approved', ['status'], ['orders'])], actions: [{ name: 'inspect_record' }] },
-          { text: 'Details continue Morgan', claims: [claim('c2', 'procedure', 'Details continue Morgan', ['owner'], ['details'])], actions: [{ name: 'inspect_record' }] },
+          { text: 'Orders begin Approved', claims: [claim('c1', 'procedure', 'Orders begin Approved', ['status'], ['orders'])], actions: [{ name: 'inspect_record', input: { id: '1001' } }] },
+          { text: 'Details continue Morgan', claims: [claim('c2', 'procedure', 'Details continue Morgan', ['owner'], ['details'])], actions: [{ name: 'inspect_record', input: { id: '1001' } }] },
           { text: 'History outcome Approved', claims: [claim('c3', 'outcome', 'History outcome Approved', ['status'], ['history'])] },
         ],
       },

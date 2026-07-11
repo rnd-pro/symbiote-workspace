@@ -8,6 +8,54 @@ import {
   prepareWorkspacePresentation,
 } from '../browser.js';
 
+function timelineV3(input = {}) {
+  let turns = (input.turns || []).map((turn, index) => {
+    let cues = turn.cues || [];
+    if (turn.cue) {
+      cues.push({
+        kind: 'focus',
+        targetId: turn.cue.targetId,
+        ...(turn.cue.tabId ? { tabId: turn.cue.tabId } : {}),
+        at: { anchor: 'turn-start' },
+        until: { anchor: 'turn-end' },
+        focus: { mode: 'cursor' },
+      });
+    }
+    for (let action of turn.actions || []) {
+      cues.push({
+        kind: 'interaction',
+        targetId: action.target,
+        at: { anchor: 'turn-start' },
+        interaction: {
+          type: /reveal/i.test(action.name || '') ? 'panel-reveal' : 'click',
+          binding: { source: action.source || 'workspace', tool: action.name, input: action.input || {} },
+        },
+      });
+    }
+    return {
+      id: turn.id || `turn-${index + 1}`,
+      persona: turn.persona || 'guide',
+      dialogueAct: turn.dialogueAct || 'explain',
+      ...(turn.addressee ? { addressee: turn.addressee } : {}),
+      ...(turn.replyTo ? { replyTo: turn.replyTo } : {}),
+      text: turn.text,
+      sourceRefs: turn.sourceRefs || [],
+      claims: turn.claims || [],
+      cues,
+    };
+  });
+  let personaIds = [...new Set(turns.map((turn) => turn.persona))];
+  return {
+    contractVersion: 'presentation-timeline-v3',
+    title: input.title || 'Presentation',
+    locale: input.locale || 'en-US',
+    profile: input.profile || 'task-specific',
+    personas: Object.fromEntries(personaIds.map((id) => [id, { name: id, role: id === 'guide' ? 'lesson guide' : 'domain operator', locale: input.locale || 'en-US' }])),
+    grounding: input.grounding || { sources: [] },
+    turns,
+  };
+}
+
 async function compositionFixture({ timeline, output, targetSnapshot }) {
   return {
     measuredViewport: { width: output.width, height: output.height, visualWidth: output.width, visualHeight: output.height, dpr: 1 },
@@ -19,7 +67,7 @@ async function compositionFixture({ timeline, output, targetSnapshot }) {
       return {
         turnId: turn.id,
         slotIndex: 0,
-        targetId: turn.cue.targetId,
+        targetId: turn.cues.find((cue) => cue.targetId)?.targetId,
         stateActions: [],
         scroll: [],
         measurement: {
@@ -83,7 +131,7 @@ it('prepares a presentation with one bounded WebMCP deepening round', async () =
       return {
         status: 'ready',
         basis: { targetSnapshotHash: request.targetSnapshotHash, outputSpecHash: request.outputSpecHash, generation: request.generation },
-        timeline: {
+        timeline: timelineV3({
           title: 'Order detail',
           grounding: { sources: snapshot.dataSources },
           turns: [{
@@ -94,7 +142,7 @@ it('prepares a presentation with one bounded WebMCP deepening round', async () =
             cue: { targetId: 'panel:orders:detail', tabId: 'orders' },
             sourceRefs: [{ sourceId: source.id, targetId: 'panel:orders:detail', hash: source.contentHash }],
           }],
-        },
+        }),
       };
     },
     reviewIntent: { requireGrounding: true },
@@ -187,8 +235,14 @@ function groundedDeepeningOptions(overrides = {}) {
           outputSpecHash: request.outputSpecHash,
           generation: request.generation,
         },
-        timeline: {
+        timeline: timelineV3({
           title: 'Approve an order',
+          grounding: {
+            sources: [
+              { id: 'e-status', kind: 'fixture', path: 'order.status', targetId: ordersId },
+              { id: 'e-detail', kind: 'fixture', path: 'order.detail', targetId: detailsId },
+            ],
+          },
           turns: [
             {
               id: 'status',
@@ -196,6 +250,7 @@ function groundedDeepeningOptions(overrides = {}) {
               dialogueAct: 'explain',
               text: 'Orders status queued',
               cue: { targetId: ordersId },
+              sourceRefs: [{ sourceId: 'e-status', targetId: ordersId }],
               claims: [{ id: 'c-status', kind: 'state', text: 'Orders status queued', factRefs: ['status'], evidenceRefs: ['e-status'], targetRefs: [ordersId] }],
               actions: [{ source: 'webmcp', name: 'orders.reveal-detail', target: detailsId, input: {} }],
             },
@@ -205,10 +260,11 @@ function groundedDeepeningOptions(overrides = {}) {
               dialogueAct: 'explain',
               text: 'Details outcome approved',
               cue: { targetId: detailsId },
+              sourceRefs: [{ sourceId: 'e-detail', targetId: detailsId }],
               claims: [{ id: 'c-detail', kind: 'outcome', text: 'Details outcome approved', factRefs: ['detail'], evidenceRefs: ['e-detail'], targetRefs: [detailsId] }],
             },
           ],
-        },
+        }),
       };
     },
     ...overrides,
@@ -279,7 +335,7 @@ it('allows one review-guided repair on the same target snapshot', async () => {
       return {
         status: 'ready',
         basis: { targetSnapshotHash: request.targetSnapshotHash, outputSpecHash: request.outputSpecHash, generation: request.generation },
-        timeline: {
+        timeline: timelineV3({
           profile: 'data-grounded',
           grounding: { sources: snapshot.dataSources },
           turns: [{
@@ -290,7 +346,7 @@ it('allows one review-guided repair on the same target snapshot', async () => {
             cue: { targetId: 'panel:api:graph', tabId: 'tab-1' },
             sourceRefs: [{ sourceId: source.id, targetId: 'panel:api:graph', hash: source.contentHash }],
           }],
-        },
+        }),
       };
     },
     reviewIntent: { requireGrounding: true },
@@ -325,7 +381,7 @@ it('reruns composition after one planner repair on the same output', async () =>
       return {
         status: 'ready',
         basis: { targetSnapshotHash: request.targetSnapshotHash, outputSpecHash: request.outputSpecHash, generation: request.generation },
-        timeline: {
+        timeline: timelineV3({
           turns: [{
             id: 'queue',
             persona: 'guide',
@@ -333,7 +389,7 @@ it('reruns composition after one planner repair on the same output', async () =>
             text: planCalls === 1 ? 'Explain the queue.' : 'Explain the visible queue.',
             cue: { targetId: 'panel:orders:queue', tabId: 'orders' },
           }],
-        },
+        }),
       };
     },
     async inspectComposition(input) {
@@ -457,7 +513,7 @@ it('does not permit a review repair to request another deepening round', async (
       return {
         status: 'ready',
         basis: { targetSnapshotHash: request.targetSnapshotHash, outputSpecHash: request.outputSpecHash, generation: request.generation },
-        timeline: {
+        timeline: timelineV3({
           grounding: { sources: snapshot.dataSources },
           turns: [{
             id: 'unsafe-turn',
@@ -467,7 +523,7 @@ it('does not permit a review repair to request another deepening round', async (
             cue: { targetId: 'panel:orders:detail', tabId: 'orders' },
             sourceRefs: [{ sourceId: source.id, targetId: 'panel:orders:detail', hash: source.contentHash }],
           }],
-        },
+        }),
       };
     },
   }), { code: 'DEEPENING_BUDGET_EXHAUSTED' });
@@ -992,20 +1048,21 @@ describe('mountWorkspace', () => {
       prompt: 'сделай полную презентацию интерфейса',
       revision: 1,
     });
-    assert.equal(generated.summary.profile, 'full');
-    assert.ok(generated.summary.targetCoverage.includes('panel:detail:detail-node'));
+    assert.equal(generated.metadata.presentationSummary.profile, 'full');
+    assert.ok(generated.metadata.presentationSummary.targetCoverage.includes('panel:detail:detail-node'));
 
     let callbackOrder = [];
-    let events = await mounted.playPresentationTimeline({
-      id: 'detail-tour',
-      segments: [{
+    let events = await mounted.playPresentationTimeline(timelineV3({
+      title: 'Detail tour',
+      turns: [{
         id: 'show-detail',
-        target: 'panel:detail:detail-node',
-        narration: 'This is the detail panel.',
-        cues: [{ kind: 'highlight', target: 'panel:detail:detail-node' }],
+        persona: 'guide',
+        dialogueAct: 'explain',
+        text: 'This is the detail panel.',
+        cue: { targetId: 'panel:detail:detail-node' },
         actions: [{ source: 'webmcp', name: 'demo--detail_focus', target: 'panel:detail:detail-node' }],
       }],
-    }, {
+    }), {
       onFocus: async () => {
         callbackOrder.push('focus');
         assert.equal(mounted.router.getState('state:route.view'), 'detail');
@@ -1013,7 +1070,7 @@ describe('mountWorkspace', () => {
       onCue: async () => callbackOrder.push('cue'),
       executeAction: async (action) => {
         callbackOrder.push(`action:${action.source}`);
-        assert.equal(action.name, 'demo--detail_focus');
+        assert.equal(action.tool, 'demo--detail_focus');
       },
       onNarration: async () => {
         callbackOrder.push('narration');
@@ -1021,15 +1078,15 @@ describe('mountWorkspace', () => {
       },
     });
 
-    assert.deepEqual(events.map((event) => event.type), ['reveal', 'focus', 'cue', 'action', 'narration']);
-    assert.deepEqual(callbackOrder, ['focus', 'cue', 'action:webmcp', 'narration']);
+    assert.deepEqual(events.map((event) => event.type), ['reveal', 'focus', 'interaction', 'narration']);
+    assert.deepEqual(callbackOrder, ['focus', 'cue', 'action:webmcp', 'cue', 'narration']);
     assert.equal(mounted.router.getState('state:route.view'), 'detail');
 
     await assert.rejects(
       () => mounted.playPresentationTimeline({
-        segments: [{ id: 'bad-action', actions: [{ source: 'dom', name: 'click' }] }],
+        ...timelineV3({ turns: [{ id: 'bad-action', persona: 'guide', text: 'Bad action.', actions: [{ source: 'dom', name: 'click', target: 'panel:detail:detail-node' }] }] }),
       }, { executeAction: async () => {} }),
-      /Unsupported presentation action source/,
+      /unsupported value "dom"/,
     );
     mounted.destroy();
   });

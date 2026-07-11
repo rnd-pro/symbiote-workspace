@@ -558,7 +558,13 @@ export function auditPresentationTimelineClaims(timeline = {}, packet = {}) {
     }
   }
   let rule = DEPTH_RULES[packet.lesson?.type];
-  let actions = turns.flatMap((turn) => list(turn.actions).concat(turn.webmcp ? [turn.webmcp] : []));
+  let actions = turns.flatMap((turn) => list(turn.cues)
+    .filter((cue) => cue.kind === 'interaction' && cue.interaction?.binding)
+    .map((cue) => ({
+      ...cue.interaction.binding,
+      target: cue.targetId,
+      type: cue.interaction.type,
+    })));
   for (let [index, action] of actions.entries()) {
     let source = cleanText(action.source, action.tool ? 'webmcp' : 'workspace');
     if (source !== 'webmcp') continue;

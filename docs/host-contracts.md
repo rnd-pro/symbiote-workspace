@@ -336,7 +336,7 @@ interface context into a portable timeline draft. `request.prompt`,
 `request.profile`, or `request.depth` select the prompt profile: `brief` keeps a
 compact visible-target tour, `full` expands target coverage across hidden and
 visible panels, and `data-grounded` prioritizes data-bearing targets and attaches
-`dataRefs` from route data, selected records, retrieved context, mock/demo data,
+`sourceRefs` from route data, selected records, retrieved context, mock/demo data,
 live data, or document presentation sidecars. Mounted workspaces expose this as
 `mounted.createPresentationTimeline(request, contextOptions)`, so a host can
 construct the workspace first, read the live WebMCP/interface context, generate a
@@ -344,19 +344,28 @@ prompt-specific timeline, and then play or export that same artifact.
 
 `playWorkspacePresentationTimeline(timeline, mounted, options)` executes that
 artifact against a mounted workspace. It reads `mounted.getInterfaceContext()`,
-runs declared reveal actions before focus/cue/action/narration callbacks, uses
-the mounted router for `view.select`, and requires the host to provide
-`executeAction` for timeline actions so WebMCP/host/workspace actions stay in
-the declared safe-action layer. Mounted workspaces expose the same helper as
-`mounted.playPresentationTimeline(...)`.
+runs declared reveal actions before ordered cue and narration callbacks, uses
+the mounted router for navigation, and requires the host to provide an action
+executor for interaction cue bindings. WebMCP/host/workspace operations therefore
+stay in the declared safe-action layer. Mounted workspaces expose the same helper
+as `mounted.playPresentationTimeline(...)`.
 
-Render-time lesson generation uses the `presentation-timeline-v2` contract.
-Every turn has an explicit id and persona and can carry `dialogueAct`, `replyTo`,
-and `sourceRefs`; `grounding.sources[]` records compact source identity, content
-hashes, and sanitized summaries. The structural review rejects unknown or
-target-mismatched sources, unregistered tools, DOM or metadata tokens in spoken
-text, and disconnected two-person dialogue. A rejected review produces no TTS
-items.
+Render-time lesson generation uses the exact `presentation-timeline-v3`
+contract. Every turn declares a persona, dialogue act, narration text, optional
+earlier-turn reply, source/claim grounding, delivery/transition intent, and an
+ordered `cues[]` list. Focus, interaction, annotation, and state cues use semantic
+turn or speech anchors; authored timelines cannot contain absolute media timing
+or legacy `cue`, `actions`, `webmcp`, and `renderCue` fields. Personas carry
+provider-neutral roles and delivery intent. The structural review rejects
+unknown fields, target-mismatched sources, unregistered tools, unsafe spoken
+tokens, and disconnected dialogue before exposing TTS items.
+
+After synthesis/transcription, `createPresentationAlignedSequence()` produces a
+separate `workspace-aligned-sequence-v1` artifact bound to the exact timeline and
+media hashes. It contains complete turn spans and one deterministic event per cue
+with absolute times and resolution provenance (`exact`, `occurrence`, `fuzzy`, or
+`proportional`). Renderers consume this derived artifact; they never write timing
+back into the authored timeline.
 
 `createPresentationContextSnapshot()` separates stable interface identity from
 volatile live data. `identityHash` includes viewport, visible/rendered targets,

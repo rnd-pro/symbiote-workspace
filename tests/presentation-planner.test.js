@@ -102,11 +102,11 @@ describe('presentation planner input projection', () => {
   it('preserves repair feedback and only includes prior timeline identity for repair', () => {
     let { request, snapshot } = fixture({ request: {
       reviewFeedback: { attempt: 1, issues: [{ code: 'target-clipped', targetId: 'panel:orders' }] },
-      priorTimelineHash: 'presentation-timeline-v2:prior',
+      priorTimelineHash: 'presentation-timeline-v3:prior',
     } });
     let input = createPresentationPlannerInput(request, snapshot);
     assert.equal(input.projection.request.reviewFeedback.issues[0].code, 'target-clipped');
-    assert.equal(input.projection.request.priorTimelineHash, 'presentation-timeline-v2:prior');
+    assert.equal(input.projection.request.priorTimelineHash, 'presentation-timeline-v3:prior');
   });
 
   it('changes identity when responsive target composition changes', () => {

@@ -2,6 +2,7 @@ import {
   createPresentationTimelineContract,
   createPresentationTimelineHash,
   presentationTimelineHasTurns,
+  validatePresentationAlignedSequence,
 } from './presentation.js';
 import { presentationOutputOrientation } from './presentation-output.js';
 
@@ -333,14 +334,13 @@ function frameSequenceSamples(frames = [], frameCount = 0) {
   return samples;
 }
 
-function presentationActionTimelineClips(timeline = {}) {
+function presentationActionTimelineClips(timeline = {}, alignedSequence = null) {
   let turns = Array.isArray(timeline?.turns) ? timeline.turns : [];
   let cursorMs = 0;
   return turns.map((turn = {}, index) => {
-    let cue = isObject(turn.renderCue) ? turn.renderCue : {};
-    let explicitStart = cue.startMs ?? turn.startMs;
-    let durationMs = Math.max(1, finiteNumber(cue.durationMs ?? turn.durationMs, 1000) || 1000);
-    let startMs = explicitStart === undefined ? cursorMs : Math.max(0, finiteNumber(explicitStart, cursorMs) || cursorMs);
+    let aligned = alignedSequence?.turns?.[index];
+    let startMs = aligned ? aligned.startMs : cursorMs;
+    let durationMs = aligned ? Math.max(1, aligned.endMs - aligned.startMs) : 1000;
     cursorMs = Math.max(cursorMs, startMs + durationMs);
     return timelineMsClip({
       id: `action:${turn.id || turn.turnId || index + 1}`,
@@ -355,23 +355,21 @@ function presentationActionTimelineClips(timeline = {}) {
   });
 }
 
-function voiceItemTiming(item = {}, turn = {}, cursorMs = 0) {
-  let renderCue = isObject(turn.renderCue) ? turn.renderCue : {};
-  let cue = isObject(turn.cue) ? turn.cue : {};
-  let startMs = finiteNumber(item.startMs ?? renderCue.startMs ?? renderCue.start ?? cue.startMs ?? turn.startMs, cursorMs);
-  let durationMs = Math.max(1, finiteNumber(item.durationMs ?? renderCue.durationMs ?? cue.durationMs ?? turn.durationMs, 1000) || 1000);
-  let endMs = finiteNumber(item.endMs ?? renderCue.endMs ?? cue.endMs ?? turn.endMs, startMs + durationMs);
+function voiceItemTiming(item = {}, alignedTurn = null, cursorMs = 0) {
+  let startMs = finiteNumber(item.startMs ?? alignedTurn?.startMs, cursorMs);
+  let durationMs = Math.max(1, finiteNumber(item.durationMs ?? (alignedTurn ? alignedTurn.endMs - alignedTurn.startMs : undefined), 1000) || 1000);
+  let endMs = finiteNumber(item.endMs ?? alignedTurn?.endMs, startMs + durationMs);
   endMs = Math.max(startMs + 1, endMs);
   return { startMs, durationMs: endMs - startMs, endMs };
 }
 
-function voiceItemTimelineClips(renderJob = {}, timeline = {}) {
+function voiceItemTimelineClips(renderJob = {}, timeline = {}, alignedSequence = null) {
   let items = Array.isArray(renderJob.audio?.items) ? renderJob.audio.items : [];
   let turns = Array.isArray(timeline?.turns) ? timeline.turns : [];
   let cursorMs = 0;
   return items.map((item = {}, index) => {
     let turn = turns[index] || {};
-    let timing = voiceItemTiming(item, turn, cursorMs);
+    let timing = voiceItemTiming(item, alignedSequence?.turns?.[index], cursorMs);
     cursorMs = Math.max(cursorMs, timing.endMs);
     let persona = cleanString(item.persona || turn.persona || (index % 2 ? 'ops' : 'guide'), 'guide');
     let lane = `voice:${persona}`;
@@ -395,9 +393,9 @@ function voiceClipIndexKey(clip = {}, fallbackIndex = 0) {
   return Number.isFinite(itemIndex) ? Math.max(1, Math.round(itemIndex) + 1) : fallbackIndex + 1;
 }
 
-function voiceTimelineClips(renderJob = {}, timeline = {}) {
+function voiceTimelineClips(renderJob = {}, timeline = {}, alignedSequence = null) {
   let layers = Array.isArray(renderJob.audio?.speakerLayers) ? renderJob.audio.speakerLayers : [];
-  if (!layers.length) return voiceItemTimelineClips(renderJob, timeline);
+  if (!layers.length) return voiceItemTimelineClips(renderJob, timeline, alignedSequence);
   return layers.flatMap((layer = {}) => {
     let lane = `voice:${cleanString(layer.persona || layer.speaker, 'speaker')}`;
     return (Array.isArray(layer.clips) ? layer.clips : []).map((clip = {}, index) => timelineMsClip({
@@ -448,7 +446,7 @@ export function selectMediaProjectTimeline(projectInput = {}, options = {}) {
   let renderJob = project.renderJob || {};
   let fps = positiveInteger(options.fps ?? project.renderSettings?.fps, 30);
   let clips = [
-    ...presentationActionTimelineClips(project.timeline),
+    ...presentationActionTimelineClips(project.timeline, project.alignedSequence),
   ];
   let frameCount = positiveInteger(renderJob.frameCount, 0) || (Array.isArray(renderJob.frames) ? renderJob.frames.length : 0);
   if (frameCount > 0) {
@@ -467,7 +465,7 @@ export function selectMediaProjectTimeline(projectInput = {}, options = {}) {
       samples: frameSamples,
     }));
   }
-  clips.push(...voiceTimelineClips(renderJob, project.timeline));
+  clips.push(...voiceTimelineClips(renderJob, project.timeline, project.alignedSequence));
   clips.push(...captionTimelineClips(renderJob));
   let durationFrames = positiveInteger(options.durationFrames, 0) || clips.reduce((max, clip) => Math.max(max, timelineClipEndFrame(clip, fps)), 0);
   return {
@@ -996,6 +994,10 @@ export function normalizeMediaProject(input = {}, options = {}) {
   let timelineHash = timeline
     ? createPresentationTimelineHash(timeline)
     : cleanString(source.timelineHash || source.hash);
+  if (source.alignedSequence && !timeline) throw new Error('media project aligned sequence requires its authored timeline');
+  let alignedSequence = source.alignedSequence
+    ? validatePresentationAlignedSequence(source.alignedSequence, timeline)
+    : undefined;
   if (routeState && timeline?.id && !routeState.timelineId) {
     routeState = normalizeMediaRenderRouteState({ ...routeState, timelineId: timeline.id });
   }
@@ -1007,6 +1009,7 @@ export function normalizeMediaProject(input = {}, options = {}) {
     status: cleanString(source.status || renderJob.status, timeline ? 'draft' : 'empty'),
     timeline,
     timelineHash,
+    alignedSequence,
     renderSettings,
     renderJob: Object.keys(renderJob).length ? renderJob : undefined,
     renderRequest: clonePortable(source.renderRequest || source.request),

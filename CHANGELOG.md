@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Replaced the render-time lesson contract with strict
+  `presentation-timeline-v3`: explicit provider-neutral personas, grounded
+  dialogue turns, any-earlier replies, ordered focus/interaction/annotation/state
+  cues, and semantic speech anchors. Legacy single cues/actions and authored
+  media milliseconds now fail closed. Added `workspace-aligned-sequence-v1` as a
+  separately hashed post-audio artifact with complete turn/cue coverage and
+  alignment provenance, and migrated browser playback, lesson audits, media
+  projects, and public Node/browser exports to the new contract.
 - Added a bounded, privacy-checked planner projection for responsive model
   replanning without duplicated source and target snapshots.
 - Added the browser-safe `workspace-lesson-context-v2` packet, typed lesson
@@ -23,12 +31,6 @@ All notable changes to this project will be documented in this file.
   host-sensitive frame/encode keys, explicit timing artifacts, transitive
   invalidation, early output-hash cutoff, provenance, metrics, publication
   gates, and fail-closed privacy validation.
-- Upgraded render-time presentations to `presentation-timeline-v2` with
-  source-grounded turns, explicit dialogue acts/replies, complete lesson-review
-  codes, and fail-closed TTS projection. Added stable interface and volatile data
-  snapshot hashes plus a browser-owned target-viewport preparation loop with one
-  bounded safe WebMCP deepening round, one optional same-snapshot review repair,
-  and stale-result rejection.
 - Documented and covered portable cascade `themeVariant`, `tabShape`,
   `tabRadius`, and `cellRadius` params so library theme variants, tab geometry,
   and animated `cell-bg` circle sizing round-trip through `cascade-theme-change`

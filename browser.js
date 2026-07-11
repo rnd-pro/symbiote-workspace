@@ -143,13 +143,26 @@ export {
 
 export {
   PRESENTATION_CONTRACT_VERSION,
+  PRESENTATION_DIALOGUE_ACTS,
+  PRESENTATION_CUE_KINDS,
+  PRESENTATION_INTERACTION_TYPES,
+  PRESENTATION_ANNOTATION_INTENTS,
+  PRESENTATION_MARKERS,
+  PRESENTATION_SYMBOLS,
+  PRESENTATION_ANNOTATION_PLACEMENTS,
+  PRESENTATION_STATE_CONDITIONS,
+  PRESENTATION_SYNC_ANCHORS,
+  PRESENTATION_DELIVERY_EMOTIONS,
+  PRESENTATION_DELIVERY_PACES,
+  PRESENTATION_ALIGNED_SEQUENCE_VERSION,
+  PRESENTATION_ALIGNMENT_RESOLUTIONS,
   PRESENTATION_CONTEXT_SNAPSHOT_SCHEMA_VERSION,
   PRESENTATION_LESSON_AUDIT_SCHEMA_VERSION,
   PRESENTATION_LESSON_REVIEW_CODES,
   PRESENTATION_PROMPT_PROFILES,
   PRESENTATION_REPLAN_REQUEST_SCHEMA_VERSION,
   PRESENTATION_REPLAN_RESULT_SCHEMA_VERSION,
-  alignPresentationTimelineToAudio,
+  createPresentationAlignedSequence,
   createPresentationLessonAuditPacket,
   createPresentationContextSnapshot,
   createPresentationReplanRequest,
@@ -160,7 +173,11 @@ export {
   finalizePresentationReplan,
   normalizePresentationPrompt,
   normalizePresentationTimeline,
+  normalizePresentationCue,
+  normalizePresentationSyncAnchor,
+  presentationTimelineHashProjection,
   presentationTimelineHasTurns,
+  validatePresentationAlignedSequence,
   reviewPresentationTimeline,
   reviewPresentationTimelineAgainstLessonContext,
   reviewPresentationTimelineAgainstSnapshot,
@@ -236,6 +253,7 @@ import {
   createPresentationReplanRequest,
   createWorkspacePresentationTimeline,
   finalizePresentationReplan,
+  normalizePresentationTimeline,
 } from './runtime/presentation.js';
 import {
   auditPresentationLessonContext,
@@ -863,14 +881,12 @@ function collectPresentationDataContext(options, router) {
   });
 }
 
-function timelineSegments(timeline) {
-  if (Array.isArray(timeline?.segments)) return timeline.segments;
-  if (Array.isArray(timeline)) return timeline;
-  return [];
+function timelineTurns(timeline) {
+  return Array.isArray(timeline?.turns) ? timeline.turns : [];
 }
 
-function segmentTarget(segment) {
-  return segment?.target || segment?.focusTarget || segment?.cues?.find?.((cue) => cue?.target)?.target || '';
+function turnTarget(turn) {
+  return turn?.cues?.find?.((cue) => cue?.targetId)?.targetId || '';
 }
 
 function findContextTarget(context, address) {
@@ -906,7 +922,7 @@ async function executeTimelineAction(action, mounted, options, event) {
 /**
  * Execute a generated presentation timeline against a mounted workspace.
  *
- * The player deliberately uses the same interface context as agents: if a segment
+ * The player deliberately uses the same interface context as agents: if a cue
  * targets a hidden view/panel, declared reveal actions run before narration or
  * focus callbacks. Timeline actions are never executed directly; hosts must supply
  * an action executor for declared `webmcp`, `host`, or `workspace` safe actions.
@@ -920,6 +936,7 @@ export async function playWorkspacePresentationTimeline(timeline, mounted, optio
   if (!mounted || typeof mounted.getInterfaceContext !== 'function') {
     throw new Error('playWorkspacePresentationTimeline requires a mounted workspace with getInterfaceContext().');
   }
+  timeline = normalizePresentationTimeline(timeline);
   let events = [];
   let contextOptions = {
     targetCollector: options.targetCollector || options.collectComponentTargets,
@@ -929,36 +946,33 @@ export async function playWorkspacePresentationTimeline(timeline, mounted, optio
   };
   let context = mounted.getInterfaceContext(contextOptions);
 
-  for (let segment of timelineSegments(timeline)) {
-    let targetAddress = segmentTarget(segment);
+  for (let turn of timelineTurns(timeline)) {
+    let targetAddress = turnTarget(turn);
     let target = findContextTarget(context, targetAddress);
     for (let revealAction of target?.revealActions || []) {
-      let event = { type: 'reveal', segment, action: revealAction, target, context };
+      let event = { type: 'reveal', turn, action: revealAction, target, context };
       await executeRevealAction(revealAction, mounted, options, event);
-      events.push({ type: 'reveal', segmentId: segment.id || '', action: clonePortable(revealAction) });
+      events.push({ type: 'reveal', turnId: turn.id || '', action: clonePortable(revealAction) });
       context = mounted.getInterfaceContext(contextOptions);
       target = findContextTarget(context, targetAddress);
     }
 
-    if (targetAddress) {
-      let event = { type: 'focus', segment, target, context };
-      await options.onFocus?.(event);
-      events.push({ type: 'focus', segmentId: segment.id || '', target: targetAddress });
-    }
-    for (let cue of segment.cues || []) {
-      let event = { type: 'cue', segment, cue, context };
+    for (let cue of turn.cues || []) {
+      let cueTarget = findContextTarget(context, cue.targetId) || target;
+      let event = { type: cue.kind, turn, cue, target: cueTarget, context };
+      if (cue.kind === 'focus') await options.onFocus?.(event);
+      if (cue.kind === 'interaction') {
+        let binding = cue.interaction?.binding;
+        if (binding) await executeTimelineAction({ ...binding, target: cue.targetId, type: cue.interaction.type }, mounted, options, event);
+      }
+      if (cue.kind === 'state') await options.onState?.(event);
       await options.onCue?.(event);
-      events.push({ type: 'cue', segmentId: segment.id || '', cue: clonePortable(cue) });
+      events.push({ type: cue.kind, turnId: turn.id || '', cue: clonePortable(cue) });
     }
-    for (let action of segment.actions || []) {
-      let event = { type: 'action', segment, action, context };
-      await executeTimelineAction(action, mounted, options, event);
-      events.push({ type: 'action', segmentId: segment.id || '', action: clonePortable(action) });
-    }
-    if (segment.narration !== undefined) {
-      let event = { type: 'narration', segment, context };
+    if (turn.text !== undefined) {
+      let event = { type: 'narration', turn, context };
       await options.onNarration?.(event);
-      events.push({ type: 'narration', segmentId: segment.id || '', narration: clonePortable(segment.narration) });
+      events.push({ type: 'narration', turnId: turn.id || '', narration: clonePortable(turn.text) });
     }
   }
   return events;

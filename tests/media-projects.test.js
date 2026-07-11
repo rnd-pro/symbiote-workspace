@@ -12,6 +12,8 @@ import {
   MEDIA_RENDER_EVENT_SCHEMA_VERSION,
   MEDIA_RENDER_SETTINGS_SCHEMA_VERSION,
   applyMediaRenderEvent,
+  createPresentationAlignedSequence,
+  createPresentationTimelineContract,
   createMediaProject,
   createMediaRenderEvent,
   createMediaProjectRouteSearch,
@@ -24,25 +26,43 @@ import {
   normalizeMediaRenderReadiness,
   normalizeMediaRenderRouteState,
   normalizeMediaRenderSettings,
+  normalizeMediaProject,
   parseMediaProjectRouteSearch,
   selectMediaProjectTimeline,
   updateMediaProjectRenderSettings,
 } from '../index.js';
 
-function timeline() {
-  return {
+function timeline(turns) {
+  let source = {
+    contractVersion: 'presentation-timeline-v3',
     id: 'media-project-tour',
     title: 'Media project tour',
     locale: 'en-US',
     personas: {
-      guide: { name: 'Guide', lang: 'en-US' },
-      ops: { name: 'Operations', lang: 'en-US' },
+      guide: { name: 'Guide', role: 'lesson guide', locale: 'en-US' },
+      ops: { name: 'Operations', role: 'domain operator', locale: 'en-US' },
     },
-    turns: [
-      { persona: 'guide', text: 'Show the preview.', cue: { targetId: 'panel:media:preview' } },
-      { persona: 'ops', text: 'Confirm the timeline.', cue: { targetId: 'panel:media:timeline' } },
+    grounding: { sources: [] },
+    turns: turns || [
+      { id: 'turn-1', persona: 'guide', dialogueAct: 'open', text: 'Show the preview.', sourceRefs: [], claims: [], cues: [{ kind: 'focus', targetId: 'panel:media:preview', at: { anchor: 'turn-start' }, until: { anchor: 'turn-end' }, focus: { mode: 'cursor' } }] },
+      { id: 'turn-2', persona: 'ops', addressee: 'guide', dialogueAct: 'respond', replyTo: 'turn-1', text: 'Confirm the timeline.', sourceRefs: [], claims: [], cues: [{ kind: 'focus', targetId: 'panel:media:timeline', at: { anchor: 'turn-start' }, until: { anchor: 'turn-end' }, focus: { mode: 'cursor' } }] },
     ],
   };
+  return source;
+}
+
+function alignedSequence(source, durations) {
+  let contract = createPresentationTimelineContract(source);
+  let cursor = 0;
+  let turns = durations.map((durationMs) => {
+    let startMs = cursor;
+    cursor += durationMs;
+    return { startMs, endMs: cursor, transcript: '', words: [] };
+  });
+  return createPresentationAlignedSequence(contract, {
+    media: { hash: 'sha256-audio', durationMs: cursor, locale: contract.locale },
+    turns,
+  });
 }
 
 function memoryStorage() {
@@ -68,7 +88,7 @@ describe('media project contract', () => {
     assert.equal(project.id, 'project-a');
     assert.equal(project.surface, 'media-studio');
     assert.equal(project.timeline.turns.length, 2);
-    assert.match(project.timelineHash, /^presentation-timeline-v2:/);
+    assert.match(project.timelineHash, /^presentation-timeline-v3:/);
     assert.equal(project.renderSettings.includeAudio, true);
     assert.equal(project.renderSettings.autoRender, true);
     assert.equal(project.renderSettings.schemaVersion, MEDIA_RENDER_SETTINGS_SCHEMA_VERSION);
@@ -98,15 +118,11 @@ describe('media project contract', () => {
   });
 
   it('selects timeline skeleton clips without fabricating video before artifacts exist', () => {
+    let source = timeline();
     let project = createMediaProject({
       id: 'timeline-skeleton-project',
-      timeline: {
-        ...timeline(),
-        turns: [
-          { id: 'turn-1', persona: 'guide', text: 'Show the preview.', renderCue: { startMs: 0, durationMs: 1200 } },
-          { id: 'turn-2', persona: 'ops', text: 'Confirm the timeline.', renderCue: { startMs: 1200, durationMs: 900 } },
-        ],
-      },
+      timeline: source,
+      alignedSequence: alignedSequence(source, [1200, 900]),
       renderSettings: { fps: 30 },
     });
 
@@ -119,15 +135,20 @@ describe('media project contract', () => {
     assert.equal(selected.durationFrames, 63);
   });
 
+  it('rejects an aligned sequence without its authored timeline', () => {
+    let source = timeline();
+    assert.throws(
+      () => normalizeMediaProject({ alignedSequence: alignedSequence(source, [1200, 900]) }),
+      /requires its authored timeline/,
+    );
+  });
+
   it('selects frame, voice, caption, and action clips from folded project state', () => {
+    let source = timeline([timeline().turns[0]]);
     let project = createMediaProject({
       id: 'timeline-artifact-project',
-      timeline: {
-        ...timeline(),
-        turns: [
-          { id: 'turn-1', persona: 'guide', text: 'Show the preview.', renderCue: { startMs: 0, durationMs: 1000 } },
-        ],
-      },
+      timeline: source,
+      alignedSequence: alignedSequence(source, [1000]),
       renderSettings: { fps: 30 },
       renderJob: {
         id: 'job-1',
@@ -181,15 +202,14 @@ describe('media project contract', () => {
   });
 
   it('shows partial voice clips from generated audio items before final speaker layers exist', () => {
+    let source = timeline([
+      { ...timeline().turns[0], text: 'First generated line.' },
+      { ...timeline().turns[1], text: 'Second generated line.' },
+    ]);
     let project = createMediaProject({
       id: 'partial-audio-project',
-      timeline: {
-        ...timeline(),
-        turns: [
-          { id: 'turn-1', persona: 'guide', text: 'First generated line.', renderCue: { startMs: 0, durationMs: 1000 } },
-          { id: 'turn-2', persona: 'ops', text: 'Second generated line.', renderCue: { startMs: 1000, durationMs: 1500 } },
-        ],
-      },
+      timeline: source,
+      alignedSequence: alignedSequence(source, [1000, 1500]),
       renderSettings: { fps: 30 },
       renderJob: {
         id: 'partial-audio-job',
