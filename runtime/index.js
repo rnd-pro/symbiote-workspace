@@ -256,3 +256,17 @@ export {
   validateMediaEvidenceManifest,
   validateMediaSynthesisEvidence,
 } from './media-evidence.js';
+export {
+  VIRTUAL_SEQUENCE_EXECUTION_TIERS,
+  VIRTUAL_SEQUENCE_INVALIDATION_MODES,
+  VIRTUAL_SEQUENCE_LAYER_KINDS,
+  VIRTUAL_SEQUENCE_SCHEMA_VERSION,
+  createVirtualSequence,
+  invalidateVirtualSequence,
+  projectVirtualSequenceAt,
+  validateVirtualSequence,
+} from './media-sequence.js';
+export {
+  mediaToolFamily,
+  tools as mediaToolDefinitions,
+} from './tools/media-tools.js';

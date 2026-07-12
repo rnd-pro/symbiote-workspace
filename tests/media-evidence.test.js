@@ -9,6 +9,7 @@ import {
   MEDIA_SPEAKER_IDENTITY_CLAIMS,
   createMediaArtifactGraph,
   createMediaEvidenceManifest,
+  createVirtualSequence,
   invalidateMediaArtifactGraph,
   validateMediaArtifactGraph,
   validateMediaEvidenceManifest,
@@ -195,6 +196,72 @@ function manifestInput() {
   };
 }
 
+function virtualSequence() {
+  return {
+    schemaVersion: 'workspace-virtual-sequence-v1',
+    executionTier: 'sequential-realtime',
+    timebase: { num: 1, den: 30 },
+    frameRate: { num: 30, den: 1 },
+    duration: 30,
+    masters: [
+      { id: 'm0', path: 'masters/seg-0.mp4', contentHash: hash('m0'), codec: 'h264', container: 'mp4', range: { startTick: 0, endTick: 15 }, keyframes: [0] },
+      { id: 'm1', path: 'masters/seg-1.mp4', contentHash: hash('m1'), codec: 'h264', container: 'mp4', range: { startTick: 15, endTick: 30 }, keyframes: [15] },
+    ],
+    playbackProxy: { path: 'proxy/playback.mp4', contentHash: hash('proxy'), codec: 'h264', container: 'mp4' },
+    scrub: {
+      mode: 'chunks',
+      maxChunkDurationTicks: 15,
+      chunks: [
+        { id: 'c0', path: 'scrub/c0.mp4', contentHash: hash('c0'), codec: 'h264', container: 'mp4', range: { startTick: 0, endTick: 15 } },
+        { id: 'c1', path: 'scrub/c1.mp4', contentHash: hash('c1'), codec: 'h264', container: 'mp4', range: { startTick: 15, endTick: 30 } },
+      ],
+    },
+    sprites: [
+      { id: 's0', path: 'sprites/s0.webp', contentHash: hash('s0'), codec: 'webp', cues: [0, 15], tile: { width: 160, height: 90, columns: 4, rows: 4 } },
+    ],
+    index: { keyframes: [0, 15], timestamps: [0, 10, 20] },
+    audio: [
+      { id: 'a0', path: 'audio/a0.opus', contentHash: hash('a0'), range: { startTick: 0, endTick: 30 }, waveform: { path: 'audio/a0-wave.json', contentHash: hash('wave') } },
+    ],
+    layers: [
+      { id: 'base', kind: 'base', invalidation: 'opaque', range: { startTick: 0, endTick: 30 }, dependsOn: [], affectedRanges: [{ startTick: 0, endTick: 30 }] },
+      { id: 'overlay', kind: 'overlay', invalidation: 'partial', range: { startTick: 0, endTick: 30 }, dependsOn: ['base'], affectedRanges: [{ startTick: 5, endTick: 10 }] },
+      { id: 'captions', kind: 'caption', invalidation: 'partial', range: { startTick: 0, endTick: 30 }, dependsOn: [], affectedRanges: [{ startTick: 0, endTick: 5 }] },
+      { id: 'audio', kind: 'audio', invalidation: 'partial', range: { startTick: 0, endTick: 30 }, dependsOn: [], affectedRanges: [{ startTick: 0, endTick: 30 }] },
+    ],
+  };
+}
+
+function sequenceNode(outputHash, logicalId = 'sequence:main') {
+  return {
+    kind: 'virtual-sequence',
+    logicalId,
+    dependsOn: ['encode:0-899', 'audio:turn-1'],
+    versions: { contract: 'contract-v1', schema: 'workspace-virtual-sequence-v1', sequence: 'sequence-v1' },
+    outputHash,
+  };
+}
+
+function coherentManifest(options = {}) {
+  let sequence = createVirtualSequence(virtualSequence());
+  let outputHash = options.sequenceNodeOutputHash || sequence.contentHash;
+  let nodes = graphNodes();
+  if (options.duplicateSequenceNode) {
+    nodes.push(sequenceNode(outputHash, 'sequence:main-0'), sequenceNode(outputHash, 'sequence:main-1'));
+  } else if (!options.omitSequenceNode) {
+    nodes.push(sequenceNode(outputHash));
+    if (!options.detachProof) {
+      let quality = nodes.find((node) => node.logicalId === 'quality:locked-v1');
+      quality.dependsOn = [...quality.dependsOn, 'sequence:main'];
+    }
+  }
+  return {
+    ...manifestInput(),
+    virtualSequence: virtualSequence(),
+    artifactGraph: createMediaArtifactGraph({ nodes }),
+  };
+}
+
 describe('media evidence contract', () => {
   it('creates deterministic graph identities independent of node and object key order', () => {
     let first = graph();
@@ -274,7 +341,7 @@ describe('media evidence contract', () => {
 
     assert.equal(first.id, second.id);
     assert.equal(first.publication.verdict, 'pass');
-    assert.equal(first.schemaVersion, 'workspace-media-evidence-v2');
+    assert.equal(first.schemaVersion, 'workspace-media-evidence-v3');
     assert.equal(AUDIO_SYNTHESIS_RECEIPT_VERSION, 'symbiote-audio-synthesis-receipt-v2');
     assert.deepEqual(MEDIA_SPEAKER_IDENTITY_CLAIMS, ['provider-attested+acoustic-cluster']);
     assert.equal(validateMediaEvidenceManifest(first).ok, true);
@@ -452,5 +519,108 @@ describe('media evidence contract', () => {
     let withPassingBlocker = manifestInput();
     withPassingBlocker.publication.blockedBy = ['frames-complete'];
     assert.match(validateMediaEvidenceManifest(withPassingBlocker).errors[0], /only unpassed gates/);
+  });
+
+  it('binds a portable virtual sequence into the canonical identity with a proof-linked node', () => {
+    let withSequence = createMediaEvidenceManifest(coherentManifest());
+    let withoutSequence = createMediaEvidenceManifest(manifestInput());
+
+    assert.equal(withSequence.schemaVersion, 'workspace-media-evidence-v3');
+    assert.equal(withSequence.artifactGraph.schemaVersion, 'workspace-media-artifact-graph-v2');
+    assert.match(withSequence.virtualSequence.id, /^virtual-sequence:/);
+    let node = withSequence.artifactGraph.nodes.find((entry) => entry.kind === 'virtual-sequence');
+    assert.equal(node.outputHash, withSequence.virtualSequence.contentHash);
+    assert.notEqual(withSequence.id, withoutSequence.id);
+    assert.equal(withSequence.publication.verdict, 'pass');
+    assert.equal(validateMediaEvidenceManifest(withSequence).ok, true);
+    assert.doesNotMatch(JSON.stringify(withSequence.virtualSequence), /\/Users\/|https?:\/\/|\?token=/);
+  });
+
+  it('detects tampering of a bound virtual sequence through manifest identity', () => {
+    let manifest = createMediaEvidenceManifest(coherentManifest());
+    manifest.virtualSequence.masters[0].contentHash = hash('tampered-master');
+    assert.match(validateMediaEvidenceManifest(manifest).errors[0], /id does not match canonical identity/);
+  });
+
+  it('rejects a virtual sequence whose frameRate disagrees with settings.fps', () => {
+    let input = coherentManifest();
+    input.settings.fps = 60;
+    assert.match(validateMediaEvidenceManifest(input).errors[0], /frameRate does not match settings.fps/);
+  });
+
+  it('rejects sequence-declared audio when settings.includeAudio is false', () => {
+    let input = coherentManifest();
+    input.settings.includeAudio = false;
+    delete input.synthesisEvidence;
+    assert.match(validateMediaEvidenceManifest(input).errors[0], /includeAudio/);
+  });
+
+  it('rejects the superseded v2 manifest schema version outright', () => {
+    let input = { ...coherentManifest(), schemaVersion: 'workspace-media-evidence-v2' };
+    assert.match(validateMediaEvidenceManifest(input).errors[0], /must equal workspace-media-evidence-v3/);
+  });
+
+  it('rejects the superseded artifact graph v1 outright', () => {
+    let input = coherentManifest();
+    input.artifactGraph = { ...input.artifactGraph, schemaVersion: 'workspace-media-artifact-graph-v1' };
+    assert.match(validateMediaEvidenceManifest(input).errors[0], /must equal workspace-media-artifact-graph-v2/);
+  });
+
+  it('propagates virtual sequence contract rejections through the manifest', () => {
+    let input = coherentManifest();
+    input.virtualSequence.masters[0].codec = 'png';
+    assert.match(validateMediaEvidenceManifest(input).errors[0], /frame sequence/);
+  });
+
+  it('rejects a virtual-sequence artifact node whose outputHash is not the sequence hash', () => {
+    let input = coherentManifest({ sequenceNodeOutputHash: hash('some-other-sequence') });
+    assert.match(validateMediaEvidenceManifest(input).errors[0], /outputHash does not match the sequence content hash/);
+  });
+
+  it('rejects a manifest virtualSequence with no virtual-sequence artifact node', () => {
+    let input = coherentManifest({ omitSequenceNode: true });
+    assert.match(validateMediaEvidenceManifest(input).errors[0], /exactly one virtual-sequence artifact node/);
+  });
+
+  it('rejects duplicate virtual-sequence artifact nodes', () => {
+    let input = coherentManifest({ duplicateSequenceNode: true });
+    assert.match(validateMediaEvidenceManifest(input).errors[0], /exactly one virtual-sequence artifact node/);
+  });
+
+  it('rejects a passing publication whose proof does not depend on the virtual sequence', () => {
+    let input = coherentManifest({ detachProof: true });
+    assert.match(validateMediaEvidenceManifest(input).errors[0], /publication proof does not transitively depend on the virtual sequence/);
+  });
+
+  it('rejects a passing publication that cites the sequence itself as proof', () => {
+    let input = coherentManifest();
+    input.metrics[0].evidenceRefs = ['sequence:main'];
+    input.gates[0].evidenceRefs = ['sequence:main'];
+    assert.match(
+      validateMediaEvidenceManifest(input).errors[0],
+      /requires quality-proof or proof-manifest evidence/,
+    );
+  });
+
+  it('requires timeline and audio-index assets before a virtual sequence can publish pass', () => {
+    let cases = [
+      [input => { delete input.virtualSequence.playbackProxy; }, /requires a playback proxy/],
+      [input => { delete input.virtualSequence.scrub; }, /requires a scrub proxy or bounded chunks/],
+      [input => { delete input.virtualSequence.sprites; }, /requires sprites or thumbnails/],
+      [input => { delete input.virtualSequence.audio[0].waveform; }, /requires a waveform/],
+    ];
+    for (let [mutate, expected] of cases) {
+      let input = coherentManifest();
+      mutate(input);
+      assert.match(validateMediaEvidenceManifest(input).errors[0], expected);
+    }
+  });
+
+  it('rejects a virtual-sequence artifact node without a manifest virtualSequence', () => {
+    let sequence = createVirtualSequence(virtualSequence());
+    let nodes = graphNodes();
+    nodes.push(sequenceNode(sequence.contentHash));
+    let input = { ...manifestInput(), artifactGraph: createMediaArtifactGraph({ nodes }) };
+    assert.match(validateMediaEvidenceManifest(input).errors[0], /virtual-sequence artifact node requires a manifest virtualSequence/);
   });
 });

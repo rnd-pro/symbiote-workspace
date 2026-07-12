@@ -5,9 +5,38 @@ import { spawnSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
 
 import { TOOLS } from '../runtime/index.js';
+import { computeIntegrity } from '../schema/canonical-json.js';
 
 let ROOT = resolve(import.meta.dirname, '..');
 let CLI = resolve(ROOT, 'cli.js');
+
+function mediaSequenceFixture() {
+  return {
+    schemaVersion: 'workspace-virtual-sequence-v1',
+    executionTier: 'sequential-realtime',
+    timebase: { num: 1, den: 30 },
+    frameRate: { num: 30, den: 1 },
+    duration: 2,
+    masters: [{
+      id: 'm0',
+      path: 'masters/0.mp4',
+      contentHash: computeIntegrity('m0'),
+      codec: 'h264',
+      container: 'mp4',
+      range: { startTick: 0, endTick: 2 },
+      keyframes: [0],
+    }],
+    index: { keyframes: [0], timestamps: [0] },
+    layers: [{
+      id: 'base',
+      kind: 'base',
+      invalidation: 'opaque',
+      range: { startTick: 0, endTick: 2 },
+      dependsOn: [],
+      affectedRanges: [{ startTick: 0, endTick: 2 }],
+    }],
+  };
+}
 
 function runCli(args) {
   return spawnSync(process.execPath, [CLI, ...args], {
@@ -117,5 +146,15 @@ describe('CLI registry projection', () => {
     let body = parseJson(result.stdout);
     assert.equal(body.status, 'ok');
     assert.deepEqual(body.hits, []);
+  });
+
+  it('runs a read-only media tool from the live registry', () => {
+    let result = runCli(['media-sequence-validate', '--sequence', JSON.stringify(mediaSequenceFixture())]);
+
+    assert.equal(result.status, 0, result.stderr);
+    let body = parseJson(result.stdout);
+    assert.equal(body.status, 'ok');
+    assert.equal(body.valid, true);
+    assert.match(body.id, /^virtual-sequence:/);
   });
 });

@@ -1,5 +1,6 @@
 import { computeIntegrity, isIntegrityString } from '../schema/canonical-json.js';
 import { createMediaSynthesisEvidence } from './media-evidence/synthesis-receipts.js';
+import { createVirtualSequence } from './media-sequence.js';
 
 export {
   AUDIO_SYNTHESIS_RECEIPT_VERSION,
@@ -8,8 +9,8 @@ export {
   validateMediaSynthesisEvidence,
 } from './media-evidence/synthesis-receipts.js';
 
-export const MEDIA_EVIDENCE_MANIFEST_SCHEMA_VERSION = 'workspace-media-evidence-v2';
-export const MEDIA_ARTIFACT_GRAPH_SCHEMA_VERSION = 'workspace-media-artifact-graph-v1';
+export const MEDIA_EVIDENCE_MANIFEST_SCHEMA_VERSION = 'workspace-media-evidence-v3';
+export const MEDIA_ARTIFACT_GRAPH_SCHEMA_VERSION = 'workspace-media-artifact-graph-v2';
 
 export const MEDIA_ARTIFACT_KINDS = Object.freeze([
   'context',
@@ -23,6 +24,7 @@ export const MEDIA_ARTIFACT_KINDS = Object.freeze([
   'frame-range',
   'encode-segment',
   'final-output',
+  'virtual-sequence',
   'quality-proof',
   'proof-manifest',
 ]);
@@ -39,6 +41,7 @@ export const MEDIA_ARTIFACT_VERSION_INPUTS = Object.freeze({
   'frame-range': Object.freeze(['contract', 'schema', 'renderer', 'browser', 'presenter', 'assets', 'fonts', 'theme']),
   'encode-segment': Object.freeze(['contract', 'schema', 'encoder', 'codec', 'muxer']),
   'final-output': Object.freeze(['contract', 'schema', 'encoder', 'codec', 'muxer', 'container']),
+  'virtual-sequence': Object.freeze(['contract', 'schema', 'sequence']),
   'quality-proof': Object.freeze(['contract', 'schema', 'probe', 'thresholds']),
   'proof-manifest': Object.freeze(['contract', 'schema', 'manifest', 'probe', 'thresholds']),
 });
@@ -53,7 +56,7 @@ const GRAPH_KEYS = new Set(['schemaVersion', 'nodes']);
 const MANIFEST_KEYS = new Set([
   'schemaVersion', 'id', 'project', 'source', 'settings', 'renderer',
   'artifactGraph', 'metrics', 'gates', 'provenance', 'synthesisEvidence',
-  'publication', 'createdAt',
+  'virtualSequence', 'publication', 'createdAt',
 ]);
 const PROJECT_KEYS = new Set(['id', 'schemaVersion', 'timelineHash', 'lessonAuditHash']);
 const SOURCE_KEYS = new Set(['surface', 'tabId', 'projectId', 'routePath', 'contextHash']);
@@ -491,6 +494,80 @@ function assertUniqueIds(items, path) {
   return ids;
 }
 
+function transitiveDependencyClosure(nodes, roots) {
+  let byLogicalId = new Map(nodes.map((node) => [node.logicalId, node]));
+  let closure = new Set();
+  let queue = [...roots];
+  while (queue.length) {
+    let logicalId = queue.shift();
+    if (closure.has(logicalId)) continue;
+    closure.add(logicalId);
+    let node = byLogicalId.get(logicalId);
+    if (node) queue.push(...node.dependsOn);
+  }
+  return closure;
+}
+
+function assertSequenceProofCoherence(manifest, artifactGraph, virtualSequence, metrics, gates) {
+  let sequenceNodes = artifactGraph.nodes.filter((node) => node.kind === 'virtual-sequence');
+  if (!virtualSequence) {
+    if (sequenceNodes.length > 0) {
+      throw new TypeError('virtual-sequence artifact node requires a manifest virtualSequence');
+    }
+    return;
+  }
+  if (sequenceNodes.length !== 1) {
+    throw new TypeError('manifest with a virtualSequence requires exactly one virtual-sequence artifact node');
+  }
+  let sequenceNode = sequenceNodes[0];
+  if (manifest.publication.verdict === 'pass') {
+    if (!virtualSequence.playbackProxy) {
+      throw new TypeError('passing virtualSequence publication requires a playback proxy');
+    }
+    if (!virtualSequence.scrub) {
+      throw new TypeError('passing virtualSequence publication requires a scrub proxy or bounded chunks');
+    }
+    if (!virtualSequence.sprites?.length) {
+      throw new TypeError('passing virtualSequence publication requires sprites or thumbnails');
+    }
+    if (manifest.settings.includeAudio) {
+      if (!virtualSequence.audio?.length) {
+        throw new TypeError('passing audio publication requires virtualSequence audio references');
+      }
+      if (virtualSequence.audio.some((entry) => !entry.waveform)) {
+        throw new TypeError('passing audio publication requires a waveform for every audio reference');
+      }
+    }
+  }
+  if (sequenceNode.status !== 'ready') throw new TypeError('virtual-sequence artifact node must be ready');
+  if (sequenceNode.outputHash !== virtualSequence.contentHash) {
+    throw new TypeError('virtual-sequence artifact outputHash does not match the sequence content hash');
+  }
+  if (manifest.publication.verdict !== 'pass') return;
+  let metricsById = new Map(metrics.map((metric) => [metric.id, metric]));
+  let proofNodeIds = new Set(artifactGraph.nodes
+    .filter((node) => node.kind === 'quality-proof' || node.kind === 'proof-manifest')
+    .map((node) => node.logicalId));
+  let roots = new Set();
+  for (let gate of gates) {
+    for (let ref of gate.evidenceRefs) {
+      if (proofNodeIds.has(ref)) roots.add(ref);
+    }
+    for (let metricId of gate.metricIds) {
+      for (let ref of metricsById.get(metricId).evidenceRefs) {
+        if (proofNodeIds.has(ref)) roots.add(ref);
+      }
+    }
+  }
+  if (roots.size === 0) {
+    throw new TypeError('passing virtualSequence publication requires quality-proof or proof-manifest evidence');
+  }
+  let closure = transitiveDependencyClosure(artifactGraph.nodes, roots);
+  if (!closure.has(sequenceNode.logicalId)) {
+    throw new TypeError('publication proof does not transitively depend on the virtual sequence');
+  }
+}
+
 function buildMediaEvidenceManifest(input = {}) {
   assertKnownKeys(input, MANIFEST_KEYS, 'manifest');
   let schemaVersion = strictVersion(
@@ -529,6 +606,19 @@ function buildMediaEvidenceManifest(input = {}) {
   if (!settings.includeAudio && input.synthesisEvidence !== undefined) {
     throw new TypeError('manifest.synthesisEvidence is supported only when settings.includeAudio is true');
   }
+  let virtualSequence = input.virtualSequence === undefined
+    ? undefined
+    : createVirtualSequence(input.virtualSequence);
+  if (virtualSequence) {
+    if (virtualSequence.frameRate.num !== settings.fps * virtualSequence.frameRate.den) {
+      throw new TypeError('manifest.virtualSequence frameRate does not match settings.fps');
+    }
+    let declaresAudio = (virtualSequence.audio || []).length > 0
+      || virtualSequence.layers.some((layer) => layer.kind === 'audio');
+    if (declaresAudio && !settings.includeAudio) {
+      throw new TypeError('manifest.virtualSequence declares audio but settings.includeAudio is false');
+    }
+  }
   let manifest = {
     schemaVersion,
     project: normalizeProject(input.project),
@@ -540,9 +630,11 @@ function buildMediaEvidenceManifest(input = {}) {
     gates,
     provenance,
     ...(synthesisEvidence ? { synthesisEvidence } : {}),
+    ...(virtualSequence ? { virtualSequence } : {}),
     publication: normalizePublication(input.publication, gates),
     createdAt: requiredString(input.createdAt, 'manifest.createdAt'),
   };
+  assertSequenceProofCoherence(manifest, artifactGraph, virtualSequence, metrics, gates);
   plainValue(manifest, 'manifest');
   let identity = computeIntegrity({
     schemaVersion,
@@ -555,6 +647,7 @@ function buildMediaEvidenceManifest(input = {}) {
     gates,
     provenance: manifest.provenance,
     synthesisEvidence: manifest.synthesisEvidence,
+    virtualSequence: manifest.virtualSequence ?? null,
     publication: manifest.publication,
   });
   let id = `media-evidence:${identity}`;

@@ -343,6 +343,32 @@ describe('packed package consumer', () => {
         for (let spec of specs) await import(spec);
       `);
 
+      await runNode(consumerDir, `
+        import {
+          createVirtualSequence,
+          validateVirtualSequence,
+          VIRTUAL_SEQUENCE_SCHEMA_VERSION,
+          MEDIA_EVIDENCE_MANIFEST_SCHEMA_VERSION,
+        } from 'symbiote-workspace';
+        import { projectVirtualSequenceAt, mediaToolFamily } from 'symbiote-workspace/runtime';
+        import { invalidateVirtualSequence } from 'symbiote-workspace/browser';
+
+        if (VIRTUAL_SEQUENCE_SCHEMA_VERSION !== 'workspace-virtual-sequence-v1') {
+          throw new Error('virtual sequence schema version drift');
+        }
+        if (MEDIA_EVIDENCE_MANIFEST_SCHEMA_VERSION !== 'workspace-media-evidence-v3') {
+          throw new Error('media evidence schema version drift');
+        }
+        for (let fn of [createVirtualSequence, validateVirtualSequence, projectVirtualSequenceAt, invalidateVirtualSequence]) {
+          if (typeof fn !== 'function') throw new Error('virtual sequence export missing');
+        }
+        if (mediaToolFamily.name !== 'media' || mediaToolFamily.tools.length !== 4) {
+          throw new Error('media tool family missing from packed runtime');
+        }
+        let rejected = validateVirtualSequence({});
+        if (rejected.ok !== false) throw new Error('validateVirtualSequence should reject empty input');
+      `);
+
       let demoDir = join(consumerDir, 'visual-demo-preview');
       let demo = await run('node', [
         join(

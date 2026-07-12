@@ -124,6 +124,8 @@ describe('MCP registry projection', () => {
       assert.equal(names.has('document.commit'), true);
       assert.equal(names.has('workspace.session.snapshot.list'), true);
       assert.equal(names.has('execution_submit'), true);
+      assert.equal(names.has('media_sequence_validate'), true);
+      assert.equal(names.has('media_evidence_validate'), true);
       assert.equal(names.has('catalog_search'), true);
       assert.equal(names.has('register_panel_type'), false);
       assert.equal(listed.result.tools.every((tool) => tool.annotations), true);
@@ -216,6 +218,21 @@ describe('MCP registry projection', () => {
       assert.equal(response.result.isError, undefined);
       assert.equal(body.status, 'ok');
       assert.deepEqual(body.hits, []);
+    });
+  });
+
+  it('calls a read-only media tool through the public MCP registry', async () => {
+    await withMcp(async (client) => {
+      let response = await client.request('tools/call', {
+        name: 'media_sequence_validate',
+        arguments: { sequence: {} },
+      });
+      let body = parseToolResult(response);
+
+      assert.equal(response.result.isError, undefined);
+      assert.equal(body.status, 'ok');
+      assert.equal(body.valid, false);
+      assert.ok(Array.isArray(body.errors) && body.errors.length > 0);
     });
   });
 });

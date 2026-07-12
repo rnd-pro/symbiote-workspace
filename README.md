@@ -63,10 +63,21 @@ mode.
 - **Portable media evidence** — versioned media evidence manifests bind a
   content-addressed artifact DAG to render metrics, provenance, quality gates,
   and a fail-closed publication verdict without storing host paths or secrets.
+  The v3 identity binds an optional virtual sequence into the canonical manifest
+  id, backed by a `workspace-media-artifact-graph-v2` `virtual-sequence` node
+  that a passing publication proof must transitively depend on. See
+  [Media Evidence and Artifact Invalidation](./docs/media-evidence.md).
+- **Portable virtual media sequence** — an indexed playback model with a required
+  `executionTier`, carrying encoded master segments (video codecs only), playback
+  and scrub proxies, sparse sprites, keyframe/timestamp seek indexes,
+  audio/waveform references, and separately-invalidatable
+  `base`/`overlay`/`caption`/`audio` layers over a frame-aligned integer
+  timebase, with deterministic timeline projection, range-aware invalidation, and
+  a canonical content hash proof-linked into the v3 media-evidence identity.
 
 ### Unified Agent Tooling
 
-- **85 tools over CLI/MCP** — one `runtime/dispatch.js` registry drives CLI commands,
+- **89 tools over CLI/MCP** — one `runtime/dispatch.js` registry drives CLI commands,
   MCP JSON-RPC, tests, and package-consumer verification.
 - **Workflow kanban tool** — `module_workflow_kanban` registers portable workflow-board
   panels backed by provider-owned `symbiote-ui` board components.

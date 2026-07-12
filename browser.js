@@ -242,6 +242,16 @@ export {
   validateMediaEvidenceManifest,
   validateMediaSynthesisEvidence,
 } from './runtime/media-evidence.js';
+export {
+  VIRTUAL_SEQUENCE_EXECUTION_TIERS,
+  VIRTUAL_SEQUENCE_INVALIDATION_MODES,
+  VIRTUAL_SEQUENCE_LAYER_KINDS,
+  VIRTUAL_SEQUENCE_SCHEMA_VERSION,
+  createVirtualSequence,
+  invalidateVirtualSequence,
+  projectVirtualSequenceAt,
+  validateVirtualSequence,
+} from './runtime/media-sequence.js';
 
 import {
   extractThemeOverrides,

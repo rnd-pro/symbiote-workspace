@@ -244,4 +244,12 @@ export {
   validateMediaArtifactGraph,
   validateMediaEvidenceManifest,
   validateMediaSynthesisEvidence,
+  VIRTUAL_SEQUENCE_EXECUTION_TIERS,
+  VIRTUAL_SEQUENCE_INVALIDATION_MODES,
+  VIRTUAL_SEQUENCE_LAYER_KINDS,
+  VIRTUAL_SEQUENCE_SCHEMA_VERSION,
+  createVirtualSequence,
+  invalidateVirtualSequence,
+  projectVirtualSequenceAt,
+  validateVirtualSequence,
 } from './runtime/index.js';

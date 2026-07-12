@@ -108,6 +108,12 @@ node cli.js component-tags-list
 node cli.js catalog-search --query table
 node cli.js catalog-describe --ids '["symbiote-ui:data-table"]' --depth summary
 
+# Media evidence and virtual sequence (read-only)
+node cli.js media-sequence-validate --sequence '{...}'
+node cli.js media-sequence-project --sequence '{...}' --tick 900
+node cli.js media-sequence-invalidate --sequence '{...}' --changed-layers '["overlay"]'
+node cli.js media-evidence-validate --manifest '{...}'
+
 # Preview, server, and MCP mode
 node cli.js preview-start ws.json --output-dir .workspace-preview
 node cli.js serve --port 3100 --plugins-dir ./plugins
@@ -119,7 +125,7 @@ from the live registry.
 
 ## Tool Families
 
-The runtime registry currently exposes 85 tools through CLI and MCP:
+The runtime registry currently exposes 89 tools through CLI and MCP:
 
 | Family | Tools |
 |--------|-------|
@@ -135,6 +141,7 @@ The runtime registry currently exposes 85 tools through CLI and MCP:
 | Grant | `grant_list`, `grant_revoke` |
 | Execution | `execution_submit`, `execution_cancel`, `execution_reorder`, `execution_attach`, `execution_list` |
 | Catalog | `catalog_search`, `catalog_describe`, `catalog_proof` |
+| Media | `media_sequence_validate`, `media_sequence_project`, `media_sequence_invalidate`, `media_evidence_validate` |
 
 ## Browser Preview
 

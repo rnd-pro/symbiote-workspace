@@ -7,12 +7,62 @@ All notable changes to this project will be documented in this file.
 - Added deterministic `presentation-dialogue-quality-v2` pre-TTS gates for
   cross-turn n-gram/content repetition and balanced per-persona contribution,
   with portable dependency, repetition, and contribution metrics for EN/RU/ES.
-- Added strict `workspace-media-evidence-v2` synthesis receipt coverage. Audio
+- Added strict `workspace-media-evidence-v3` synthesis receipt coverage. Audio
   turns now bind provider-attested receipts to artifact hashes, personas,
   unique voice provenance, locale, and `versions.voice`, while rejecting
-  biometric claims, missing coverage, and private provider fields. Receipt v2
-  additionally requires bounded acoustic-cluster speaker-probe verdicts with
-  enforced thresholds and portable loudness/true-peak normalization evidence.
+  biometric claims, missing coverage, and private provider fields. Receipt
+  evidence additionally requires bounded acoustic-cluster speaker-probe verdicts
+  with enforced thresholds and portable loudness/true-peak normalization
+  evidence.
+- Added the portable `workspace-virtual-sequence-v1` contract
+  (`runtime/media-sequence.js`), exported from `symbiote-workspace`,
+  `symbiote-workspace/runtime`, and `symbiote-workspace/browser`. It is the
+  indexed playback/scrub/rerender model and declares a required `executionTier`,
+  exactly one of `sequential-realtime`, `replayable-segment`, or
+  `checkpointed-deterministic` (`VIRTUAL_SEQUENCE_EXECUTION_TIERS`). It carries
+  encoded master segments (video codecs/containers only), playback and scrub
+  proxies or bounded scrub chunks, sparse sprites/thumbnails, keyframe and
+  timestamp seek indexes, audio/waveform references, and separately-invalidatable
+  `base`/`overlay`/`caption`/`audio` layers with dependencies and affected ranges
+  over a rational integer timebase and frameRate. A sequence has exactly one
+  `base` layer covering the full duration; a `sequential-realtime` base must be
+  `opaque` and invalidates its full declared range, while the cooperative tiers
+  may declare a partial base range as an optimization declaration (no parallelism
+  is claimed for opaque surfaces). A derived integer `ticksPerFrame` aligns every
+  master range boundary, master keyframe, and encoded scrub-chunk boundary, while
+  caption/overlay/audio/layer ranges stay sub-frame-capable. `index.timestamps`
+  is a cheap PTS index (a complete one-entry-per-frame index is valid) that
+  rejects duplicate, non-monotonic, out-of-range, and off-grid values. Bounded
+  scrub chunks declare a positive `maxChunkDurationTicks` and reject any longer
+  chunk. Sprite cue counts may not exceed tile capacity (`columns * rows`), cue
+  ticks are globally unique, and the projection returns the selected `cueIndex`,
+  `column`, and `row`. The sequence exposes a canonical `contentHash` used by its
+  `id`, with layer/sprite/audio collections canonicalized so equivalent input
+  order yields one identity. `projectVirtualSequenceAt()` is a deterministic
+  projection at a media tick, and `invalidateVirtualSequence()` is range-aware,
+  returning merged affected ranges and per-layer recomputations with downstream
+  propagation stopping when a recomputation preserves a layer's output hash.
+  Strict validation rejects absolute paths, URLs, credentials, parent traversal,
+  unknown fields, duplicate identities/timestamps, non-monotonic seek indexes,
+  master-track gaps/overlaps, image-codec encoded segments, and incompatible
+  timebase/frameRate/duration data, while allowing repeated content hashes for
+  static scenes. When present on a manifest the sequence is validated and bound
+  into the `workspace-media-evidence-v3` canonical identity, with `frameRate`
+  matching `settings.fps` and audio requiring `settings.includeAudio`. Added the
+  four read-only media dispatch tools `media_sequence_validate`,
+  `media_sequence_project`, `media_sequence_invalidate`, and
+  `media_evidence_validate` over CLI and MCP.
+- Bumped the media artifact graph to `workspace-media-artifact-graph-v2`
+  (v1 is rejected outright) and added a `virtual-sequence` artifact kind. When a
+  media evidence manifest carries a `virtualSequence`, the graph must contain
+  exactly one ready `virtual-sequence` node whose `outputHash` equals the
+  sequence `contentHash`, and a passing publication's proof/evidence dependency
+  chain must transitively include that node — so a proof for one output cannot
+  publish a different sequence. Passing sequence publications also require
+  playback, scrub, sprite/thumbnail, and conditional audio/waveform assets, and
+  evidence must start from a `quality-proof` or `proof-manifest` node rather than
+  treating the sequence itself as proof. A `virtual-sequence` node with no
+  manifest `virtualSequence` is rejected.
 
 - Added the frozen `presentation-dialogue-quality-v1` review profile with shared
   EN/RU tokenization, distinct-role and reply-cohesion checks, turn pacing,
@@ -41,7 +91,7 @@ All notable changes to this project will be documented in this file.
   rejected composition evidence, and one bounded repair must preserve lesson
   intent.
 - Added strict browser-safe `workspace-media-evidence-v1` and
-  `workspace-media-artifact-graph-v1` contracts with canonical cache identity,
+  `workspace-media-artifact-graph-v2` contracts with canonical cache identity,
   host-sensitive frame/encode keys, explicit timing artifacts, transitive
   invalidation, early output-hash cutoff, provenance, metrics, publication
   gates, and fail-closed privacy validation.

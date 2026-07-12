@@ -52,7 +52,7 @@ Start as MCP server:
 node cli.js mcp
 ```
 
-The MCP transport exposes the same 85 tools as the CLI. Both are thin proxies
+The MCP transport exposes the same 89 tools as the CLI. Both are thin proxies
 to `dispatch(toolName, args, session)`.
 
 ## Tools Reference
@@ -71,6 +71,7 @@ to `dispatch(toolName, args, session)`.
 | Grant | `grant_list` `grant_revoke` |
 | Execution | `execution_submit` `execution_cancel` `execution_reorder` `execution_attach` `execution_list` |
 | Catalog | `catalog_search` `catalog_describe` `catalog_proof` |
+| Media | `media_sequence_validate` `media_sequence_project` `media_sequence_invalidate` `media_evidence_validate` |
 
 Mutating tools require `baseRevision`; dispatch rejects mutations that omit it
 or race the current session revision.
