@@ -718,8 +718,12 @@ describe('media project contract', () => {
         id: 'render-1',
         status: 'succeeded',
         progress: 1,
+        finalOutputStale: false,
         outputUrl: '/render-cache/jobs/render-1/render.mp4',
         manifestUrl: '/render-cache/jobs/render-1/manifest.json',
+        output: { url: '/render-cache/jobs/render-1/render.mp4', sha256: 'a'.repeat(64), bytes: 42 },
+        ffprobe: { format: { duration: '3.5' } },
+        avSync: { ok: true, driftsMs: { videoVsAudioMs: 0 } },
       },
     });
     let restored = store.load(project.id);
@@ -727,7 +731,11 @@ describe('media project contract', () => {
     assert.equal(updated.renderJob.id, 'render-1');
     assert.equal(restored.status, 'complete');
     assert.equal(restored.timeline.hash, project.timeline.hash);
+    assert.equal(restored.renderJob.finalOutputStale, false);
     assert.equal(restored.renderJob.outputUrl, '/render-cache/jobs/render-1/render.mp4');
+    assert.equal(restored.renderJob.output.sha256, 'a'.repeat(64));
+    assert.equal(restored.renderJob.ffprobe.format.duration, '3.5');
+    assert.equal(restored.renderJob.avSync.ok, true);
     assert.equal(restored.renderRequest.seed.url, '/workspace?surface=orders');
     assert.equal(restored.renderRequest.render.height, 1920);
     assert.deepEqual(store.list().map((item) => item.id), ['roundtrip-project']);
