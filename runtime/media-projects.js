@@ -19,7 +19,7 @@ export const MEDIA_PROJECT_ROUTE_JOB_PARAM = 'mediaProjectJob';
 export const MEDIA_PROJECT_ROUTE_SOURCE_URL_PARAM = 'mediaProjectSourceUrl';
 export const MEDIA_PROJECT_ROUTE_TIMELINE_CURSOR_PARAM = 'mediaProjectCursorMs';
 export const MEDIA_PROJECT_ROUTE_TIMELINE_PARAM = 'mediaProjectTimeline';
-export const MEDIA_RENDER_SETTINGS_SCHEMA_VERSION = 'workspace-media-render-settings-v2';
+export const MEDIA_RENDER_SETTINGS_SCHEMA_VERSION = 'workspace-media-render-settings-v3';
 export const MEDIA_RENDER_EVENT_SCHEMA_VERSION = 'workspace-media-render-event-v1';
 export const MEDIA_RENDER_READINESS_SCHEMA_VERSION = 'workspace-media-render-readiness-v1';
 
@@ -78,9 +78,17 @@ export const MEDIA_RENDER_DIRTY_SCOPES = Object.freeze([
   'final-output',
 ]);
 
+export const BROWSER_CHROME_VISIBILITIES = Object.freeze(['hidden', 'visible']);
+export const BROWSER_CHROME_THEMES = Object.freeze(['system', 'light', 'dark', 'tinted']);
+export const BROWSER_PAGE_COLOR_SCHEMES = Object.freeze(['system', 'light', 'dark']);
+
 const MEDIA_RENDER_EVENT_TYPE_SET = new Set(MEDIA_RENDER_EVENT_TYPES);
 const MEDIA_RENDER_DIRTY_SCOPE_SET = new Set(MEDIA_RENDER_DIRTY_SCOPES);
 const MEDIA_PROJECT_PREVIEW_MODE_SET = new Set(['sequence', 'output']);
+const BROWSER_CHROME_VISIBILITY_SET = new Set(BROWSER_CHROME_VISIBILITIES);
+const BROWSER_CHROME_THEME_SET = new Set(BROWSER_CHROME_THEMES);
+const BROWSER_PAGE_COLOR_SCHEME_SET = new Set(BROWSER_PAGE_COLOR_SCHEMES);
+const BROWSER_CHROME_TINT_PATTERN = /^#[0-9a-f]{6}$/i;
 
 function isObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -175,6 +183,45 @@ function normalizeCaptionStyle(input = {}) {
   });
 }
 
+export function normalizeBrowserAppearance(input = {}) {
+  let source = isObject(input) ? input : {};
+  let chromeSource = isObject(source.chrome) ? source.chrome : {};
+  let visibility = cleanString(chromeSource.visibility, 'hidden');
+  if (!BROWSER_CHROME_VISIBILITY_SET.has(visibility)) {
+    throw new Error(`invalid browser chrome visibility: ${visibility}; expected one of ${BROWSER_CHROME_VISIBILITIES.join(', ')}`);
+  }
+  let theme = cleanString(chromeSource.theme, 'system');
+  if (!BROWSER_CHROME_THEME_SET.has(theme)) {
+    throw new Error(`invalid browser chrome theme: ${theme}; expected one of ${BROWSER_CHROME_THEMES.join(', ')}`);
+  }
+  let hasTint = chromeSource.tint !== undefined && chromeSource.tint !== null && cleanString(chromeSource.tint) !== '';
+  if (theme === 'tinted' && !hasTint) {
+    throw new Error('browser chrome theme "tinted" requires a "#RRGGBB" tint');
+  }
+  if (theme !== 'tinted' && hasTint) {
+    throw new Error(`browser chrome tint is only valid with theme "tinted", not "${theme}"`);
+  }
+  let tint;
+  if (theme === 'tinted') {
+    let raw = cleanString(chromeSource.tint);
+    if (!BROWSER_CHROME_TINT_PATTERN.test(raw)) {
+      throw new Error(`invalid browser chrome tint: ${raw}; expected "#RRGGBB"`);
+    }
+    tint = raw.toLowerCase();
+  }
+  if (visibility === 'hidden' && theme !== 'system') {
+    throw new Error(`hidden browser chrome accepts only the "system" theme; "${theme}" cannot change hidden chrome pixels`);
+  }
+  let pageColorScheme = cleanString(source.pageColorScheme, 'system');
+  if (!BROWSER_PAGE_COLOR_SCHEME_SET.has(pageColorScheme)) {
+    throw new Error(`invalid page color scheme: ${pageColorScheme}; expected one of ${BROWSER_PAGE_COLOR_SCHEMES.join(', ')}`);
+  }
+  return {
+    chrome: compactObject({ visibility, theme, tint }),
+    pageColorScheme,
+  };
+}
+
 export function normalizeMediaRenderSettings(input = {}) {
   let source = isObject(input) ? input : {};
   let requestedVertical = source.vertical === true ||
@@ -188,7 +235,7 @@ export function normalizeMediaRenderSettings(input = {}) {
   let orientation = presentationOutputOrientation(width, height);
   let captionsMode = cleanString(source.captionsMode, source.captionsEnabled === false ? 'off' : 'karaoke');
   return compactObject({
-    schemaVersion: cleanString(source.schemaVersion, MEDIA_RENDER_SETTINGS_SCHEMA_VERSION),
+    schemaVersion: MEDIA_RENDER_SETTINGS_SCHEMA_VERSION,
     autoRender: source.autoRender !== false,
     orientation,
     aspectRatio: orientation === 'square' ? '1:1' : orientation === 'vertical' ? '9:16' : '16:9',
@@ -201,6 +248,7 @@ export function normalizeMediaRenderSettings(input = {}) {
     captionsEnabled: source.captionsEnabled !== undefined ? Boolean(source.captionsEnabled) : captionsMode !== 'off',
     captionsMode,
     captionStyle: normalizeCaptionStyle(source.captionStyle || source.captionsStyle),
+    browserAppearance: normalizeBrowserAppearance(source.browserAppearance),
     safeArea: clonePortable(source.safeArea),
     language: cleanString(source.language || source.locale),
     durationMs: positiveInteger(source.durationMs || source.duration?.targetMs),
@@ -769,7 +817,7 @@ export function invalidateMediaProjectArtifacts(projectInput = {}, reason = 'fin
   let scopes = new Set(project.renderState?.dirty || []);
   for (let item of reasons) {
     if (MEDIA_RENDER_DIRTY_SCOPE_SET.has(item)) scopes.add(item);
-    if (item === 'format' || item === 'resolution' || item === 'geometry') {
+    if (item === 'format' || item === 'resolution' || item === 'geometry' || item === 'appearance') {
       scopes.add('frame-cache');
       scopes.add('preview-sequence');
       scopes.add('final-output');
@@ -815,6 +863,7 @@ export function updateMediaProjectRenderSettings(projectInput = {}, settings = {
     previous.speakerMode !== next.speakerMode ||
     previous.providerId !== next.providerId ||
     !portableEqual(previous.voiceRefs || {}, next.voiceRefs || {});
+  let appearanceChanged = !portableEqual(previous.browserAppearance || {}, next.browserAppearance || {});
   let updated = normalizeMediaProject({
     ...project,
     renderSettings: next,
@@ -822,6 +871,7 @@ export function updateMediaProjectRenderSettings(projectInput = {}, settings = {
   });
   let dirtyReasons = [];
   if (geometryChanged) dirtyReasons.push('format');
+  if (appearanceChanged) dirtyReasons.push('appearance');
   if (audioChanged) dirtyReasons.push('audio');
   return dirtyReasons.length ? invalidateMediaProjectArtifacts(updated, dirtyReasons, options) : updated;
 }

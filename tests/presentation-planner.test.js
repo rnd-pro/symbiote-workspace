@@ -11,14 +11,16 @@ function fixture(overrides = {}) {
     identityHash: 'presentation-context-snapshot-v2:target',
     generation: 2,
     output: {
-      schemaVersion: 'workspace-presentation-output-v1',
+      schemaVersion: 'workspace-presentation-output-v2',
       format: 'horizontal',
       width: 1920,
       height: 1080,
       fps: 30,
       dpr: 1,
-      contentRect: { x: 96, y: 54, width: 1728, height: 778 },
-      captions: { enabled: true, rect: { x: 96, y: 832, width: 1728, height: 194 } },
+      frameInsets: { top: 0, right: 0, bottom: 0, left: 0 },
+      presentationViewport: { x: 0, y: 0, width: 1920, height: 1080 },
+      contentRect: { x: 54, y: 54, width: 1812, height: 778 },
+      captions: { enabled: true, rect: { x: 54, y: 832, width: 1812, height: 194 } },
       voice: { mode: 'dialogue', sequenceMode: 'sequential' },
       locale: 'ru-RU',
       duration: { targetMs: 60000, minMs: 48000, maxMs: 72000 },
@@ -37,7 +39,7 @@ function fixture(overrides = {}) {
   let request = {
     targetSnapshotHash: snapshot.identityHash,
     lessonContextHash: 'workspace-lesson-context-v2:lesson',
-    outputSpecHash: 'workspace-presentation-output-v1:horizontal',
+    outputSpecHash: 'workspace-presentation-output-v2:horizontal',
     generation: snapshot.generation,
     prompt: 'Explain the current orders.',
     profile: 'dialogue',
@@ -120,7 +122,7 @@ describe('presentation planner input projection', () => {
         hiddenReasons: ['mobile-dock'],
         composition: { visible: false, reachable: true, revealable: true, focusRect: { x: 54, y: 180, width: 972, height: 640 } },
       }],
-    }, request: { outputSpecHash: 'workspace-presentation-output-v1:vertical' } });
+    }, request: { outputSpecHash: 'workspace-presentation-output-v2:vertical' } });
     let left = createPresentationPlannerInput(horizontal.request, horizontal.snapshot);
     let right = createPresentationPlannerInput(vertical.request, vertical.snapshot);
     assert.notEqual(left.hash, right.hash);

@@ -11,7 +11,9 @@ import {
   MEDIA_PROJECT_SCHEMA_VERSION,
   MEDIA_RENDER_EVENT_SCHEMA_VERSION,
   MEDIA_RENDER_SETTINGS_SCHEMA_VERSION,
+  BROWSER_CHROME_THEMES,
   applyMediaRenderEvent,
+  normalizeBrowserAppearance,
   createPresentationAlignedSequence,
   createPresentationTimelineContract,
   createMediaProject,
@@ -246,6 +248,7 @@ describe('media project contract', () => {
 
   it('normalizes render settings for vertical video and captions by default', () => {
     let settings = normalizeMediaRenderSettings({
+      schemaVersion: 'workspace-media-render-settings-v2',
       vertical: true,
       captionsMode: 'karaoke',
       providerId: 'local-model-service',
@@ -253,6 +256,7 @@ describe('media project contract', () => {
     });
 
     assert.equal(settings.autoRender, true);
+    assert.equal(settings.schemaVersion, MEDIA_RENDER_SETTINGS_SCHEMA_VERSION);
     assert.equal(settings.orientation, 'vertical');
     assert.equal(settings.aspectRatio, '9:16');
     assert.equal(settings.width, 1080);
@@ -261,6 +265,86 @@ describe('media project contract', () => {
     assert.equal(settings.captionStyle.preset, 'tiktok');
     assert.equal(settings.providerId, 'local-model-service');
     assert.equal(settings.sequenceMode, 'overlap');
+    assert.deepEqual(settings.browserAppearance, { chrome: { visibility: 'hidden', theme: 'system' }, pageColorScheme: 'system' });
+  });
+
+  it('normalizes default and every valid visible browser appearance variant', () => {
+    assert.deepEqual(normalizeBrowserAppearance(), { chrome: { visibility: 'hidden', theme: 'system' }, pageColorScheme: 'system' });
+    assert.deepEqual(
+      normalizeBrowserAppearance({ chrome: { visibility: 'visible', theme: 'system' }, pageColorScheme: 'dark' }),
+      { chrome: { visibility: 'visible', theme: 'system' }, pageColorScheme: 'dark' },
+    );
+    assert.deepEqual(normalizeBrowserAppearance({ chrome: { visibility: 'visible', theme: 'light' } }).chrome, { visibility: 'visible', theme: 'light' });
+    assert.deepEqual(normalizeBrowserAppearance({ chrome: { visibility: 'visible', theme: 'dark' } }).chrome, { visibility: 'visible', theme: 'dark' });
+    assert.deepEqual(
+      normalizeBrowserAppearance({ chrome: { visibility: 'visible', theme: 'tinted', tint: '#1A2B3C' } }).chrome,
+      { visibility: 'visible', theme: 'tinted', tint: '#1a2b3c' },
+    );
+    for (let theme of BROWSER_CHROME_THEMES) {
+      assert.equal(normalizeBrowserAppearance({ chrome: { visibility: 'visible', theme, ...(theme === 'tinted' ? { tint: '#ffffff' } : {}) } }).chrome.theme, theme);
+    }
+  });
+
+  it('rejects invalid browser appearance combinations with actionable errors', () => {
+    assert.throws(() => normalizeBrowserAppearance({ chrome: { visibility: 'shown' } }), /invalid browser chrome visibility: shown/);
+    assert.throws(() => normalizeBrowserAppearance({ chrome: { visibility: 'visible', theme: 'sepia' } }), /invalid browser chrome theme: sepia/);
+    assert.throws(() => normalizeBrowserAppearance({ pageColorScheme: 'sunlight' }), /invalid page color scheme: sunlight/);
+    assert.throws(() => normalizeBrowserAppearance({ chrome: { visibility: 'visible', theme: 'tinted', tint: '1a2b3c' } }), /invalid browser chrome tint/);
+    assert.throws(() => normalizeBrowserAppearance({ chrome: { visibility: 'visible', theme: 'tinted', tint: '#12g' } }), /invalid browser chrome tint/);
+    assert.throws(() => normalizeBrowserAppearance({ chrome: { visibility: 'visible', theme: 'tinted' } }), /theme "tinted" requires a "#RRGGBB" tint/);
+    assert.throws(() => normalizeBrowserAppearance({ chrome: { visibility: 'visible', theme: 'dark', tint: '#101010' } }), /tint is only valid with theme "tinted"/);
+    assert.throws(() => normalizeBrowserAppearance({ chrome: { visibility: 'hidden', theme: 'dark' } }), /hidden browser chrome accepts only the "system" theme/);
+    assert.throws(() => normalizeBrowserAppearance({ chrome: { visibility: 'hidden', theme: 'tinted', tint: '#101010' } }), /hidden browser chrome accepts only the "system" theme/);
+  });
+
+  it('does not mutate the browser appearance input', () => {
+    let input = { chrome: { visibility: 'visible', theme: 'tinted', tint: '#ABCDEF' }, pageColorScheme: 'light' };
+    let snapshot = JSON.parse(JSON.stringify(input));
+    let normalized = normalizeBrowserAppearance(input);
+
+    assert.deepEqual(input, snapshot);
+    assert.equal(normalized.chrome.tint, '#abcdef');
+    assert.notEqual(normalized.chrome, input.chrome);
+  });
+
+  it('invalidates rendered pixels and identity when browser appearance changes', () => {
+    let project = createMediaProject({
+      id: 'appearance-project',
+      timeline: timeline(),
+      renderSettings: { browserAppearance: { chrome: { visibility: 'visible', theme: 'light' } } },
+      renderState: { status: 'ready', settled: true, autoRenderReady: true },
+      preview: { status: 'ready', currentFrame: '/frames/frame-0001.png' },
+    });
+
+    assert.deepEqual(project.renderSettings.browserAppearance.chrome, { visibility: 'visible', theme: 'light' });
+
+    let updated = updateMediaProjectRenderSettings(project, {
+      browserAppearance: { chrome: { visibility: 'visible', theme: 'tinted', tint: '#204060' }, pageColorScheme: 'dark' },
+    });
+
+    assert.deepEqual(updated.renderSettings.browserAppearance, { chrome: { visibility: 'visible', theme: 'tinted', tint: '#204060' }, pageColorScheme: 'dark' });
+    assert.equal(updated.renderState.autoRenderReady, false);
+    assert.deepEqual(updated.renderState.dirty.sort(), ['final-output', 'frame-cache', 'preview-sequence'].sort());
+    assert.equal(updated.preview.status, 'dirty');
+
+    let unchanged = updateMediaProjectRenderSettings(project, {
+      browserAppearance: { chrome: { visibility: 'visible', theme: 'light' } },
+    });
+    assert.equal(unchanged.renderState.autoRenderReady, true);
+  });
+
+  it('treats a browser appearance settings update as a full-object replacement', () => {
+    let project = createMediaProject({
+      id: 'appearance-replace-project',
+      timeline: timeline(),
+      renderSettings: { browserAppearance: { chrome: { visibility: 'visible', theme: 'tinted', tint: '#204060' }, pageColorScheme: 'dark' } },
+    });
+
+    let updated = updateMediaProjectRenderSettings(project, {
+      browserAppearance: { chrome: { visibility: 'visible' } },
+    });
+
+    assert.deepEqual(updated.renderSettings.browserAppearance, { chrome: { visibility: 'visible', theme: 'system' }, pageColorScheme: 'system' });
   });
 
   it('owns a strict media render event vocabulary', () => {

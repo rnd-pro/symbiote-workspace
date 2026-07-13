@@ -348,6 +348,24 @@ describe('media evidence contract', () => {
     assert.doesNotMatch(JSON.stringify(first), /\/Users\/|\/tmp\/|\?token=|renderSeed/);
   });
 
+  it('binds normalized browser appearance into manifest settings and identity', () => {
+    let omitted = createMediaEvidenceManifest(manifestInput());
+    assert.deepEqual(omitted.settings.browserAppearance, { chrome: { visibility: 'hidden', theme: 'system' }, pageColorScheme: 'system' });
+
+    let visibleInput = manifestInput();
+    visibleInput.settings.browserAppearance = { chrome: { visibility: 'visible', theme: 'tinted', tint: '#204060' }, pageColorScheme: 'dark' };
+    let visible = createMediaEvidenceManifest(visibleInput);
+
+    assert.deepEqual(visible.settings.browserAppearance, { chrome: { visibility: 'visible', theme: 'tinted', tint: '#204060' }, pageColorScheme: 'dark' });
+    assert.notEqual(visible.id, omitted.id);
+    assert.equal(validateMediaEvidenceManifest(visible).ok, true);
+
+    let invalidInput = manifestInput();
+    invalidInput.settings.browserAppearance = { chrome: { visibility: 'hidden', theme: 'dark' } };
+    assert.throws(() => createMediaEvidenceManifest(invalidInput), /hidden browser chrome accepts only the "system" theme/);
+    assert.match(validateMediaEvidenceManifest(invalidInput).errors[0], /hidden browser chrome accepts only the "system" theme/);
+  });
+
   it('requires strict receipt v2 speaker probe and normalization evidence', () => {
     let mutations = [
       [input => { delete input.synthesisEvidence.receipts[0].speakerProbe; }, /speakerProbe must be an object/],

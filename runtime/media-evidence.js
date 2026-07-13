@@ -1,6 +1,7 @@
 import { computeIntegrity, isIntegrityString } from '../schema/canonical-json.js';
 import { createMediaSynthesisEvidence } from './media-evidence/synthesis-receipts.js';
 import { createVirtualSequence } from './media-sequence.js';
+import { normalizeBrowserAppearance } from './media-projects.js';
 
 export {
   AUDIO_SYNTHESIS_RECEIPT_VERSION,
@@ -62,7 +63,7 @@ const PROJECT_KEYS = new Set(['id', 'schemaVersion', 'timelineHash', 'lessonAudi
 const SOURCE_KEYS = new Set(['surface', 'tabId', 'projectId', 'routePath', 'contextHash']);
 const SETTINGS_KEYS = new Set([
   'width', 'height', 'aspectRatio', 'fps', 'format', 'codec', 'includeAudio',
-  'language', 'speakerMode',
+  'language', 'speakerMode', 'browserAppearance',
 ]);
 const RENDERER_KEYS = new Set([
   'providerId', 'version', 'browserVersion', 'hostFingerprint',
@@ -383,6 +384,7 @@ function normalizeSettings(value = {}) {
     includeAudio: Boolean(value.includeAudio),
     language: requiredString(value.language, 'manifest.settings.language'),
     speakerMode: requiredString(value.speakerMode, 'manifest.settings.speakerMode'),
+    browserAppearance: normalizeBrowserAppearance(value.browserAppearance),
   });
 }
 

@@ -74,6 +74,129 @@ describe('presentation output and composition contracts', () => {
     assert.throws(() => normalizePresentationOutputSpec({ dpr: 2 }), /DPR 1/);
   });
 
+  it('preserves semantic output geometry when frame insets are zero', () => {
+    let base = normalizePresentationOutputSpec({ width: 1920, height: 1080, captionsMode: 'karaoke', locale: 'en-US' });
+    let explicitZero = normalizePresentationOutputSpec({ width: 1920, height: 1080, captionsMode: 'karaoke', locale: 'en-US', frameInsets: { top: 0, right: 0, bottom: 0, left: 0 } });
+
+    assert.deepEqual(base.frameInsets, { top: 0, right: 0, bottom: 0, left: 0 });
+    assert.deepEqual(base.presentationViewport, { x: 0, y: 0, width: 1920, height: 1080 });
+    assert.deepEqual(base.contentRect, { x: 54, y: 54, width: 1812, height: 778 });
+    assert.equal(base.captions.rect.y, 1080 - 54 - 194);
+    assert.equal(base.hash, explicitZero.hash);
+  });
+
+  it('derives a positive presentation viewport and inset-local geometry from horizontal and vertical insets', () => {
+    let horizontal = normalizePresentationOutputSpec({ width: 1920, height: 1080, captionsMode: 'karaoke', locale: 'en-US', frameInsets: { top: 200, left: 100 } });
+    let vertical = normalizePresentationOutputSpec({ width: 720, height: 1280, captionsMode: 'karaoke', locale: 'en-US', frameInsets: { top: 87 } });
+
+    assert.equal(horizontal.width, 1920);
+    assert.equal(horizontal.height, 1080);
+    assert.deepEqual(horizontal.presentationViewport, { x: 100, y: 200, width: 1820, height: 880 });
+    assert.ok(horizontal.contentRect.x >= horizontal.presentationViewport.x);
+    assert.ok(horizontal.contentRect.y >= horizontal.presentationViewport.y);
+    assert.ok(horizontal.contentRect.x + horizontal.contentRect.width <= horizontal.presentationViewport.x + horizontal.presentationViewport.width);
+    assert.ok(horizontal.captions.rect.y + horizontal.captions.rect.height <= horizontal.presentationViewport.y + horizontal.presentationViewport.height);
+    assert.ok(horizontal.captions.rect.x >= horizontal.presentationViewport.x);
+
+    assert.deepEqual(vertical.presentationViewport, { x: 0, y: 87, width: 720, height: 1193 });
+    assert.ok(vertical.contentRect.y >= 87);
+    assert.notEqual(horizontal.hash, vertical.hash);
+    assert.notEqual(horizontal.hash, normalizePresentationOutputSpec({ width: 1920, height: 1080, captionsMode: 'karaoke', locale: 'en-US' }).hash);
+  });
+
+  it('rejects excessive, negative, and non-finite frame insets', () => {
+    assert.throws(() => normalizePresentationOutputSpec({ width: 1920, height: 1080, frameInsets: { left: 1920 } }), /no positive presentation viewport/);
+    assert.throws(() => normalizePresentationOutputSpec({ width: 1920, height: 1080, frameInsets: { top: 700, bottom: 700 } }), /no positive presentation viewport/);
+    assert.throws(() => normalizePresentationOutputSpec({ width: 1920, height: 1080, frameInsets: { top: -1 } }), /must not be negative/);
+    assert.throws(() => normalizePresentationOutputSpec({ width: 1920, height: 1080, frameInsets: { right: Infinity } }), /must be a finite number/);
+    assert.throws(() => normalizePresentationOutputSpec({ width: 1920, height: 1080, frameInsets: { bottom: 'x' } }), /must be a finite number/);
+  });
+
+  it('measures composition against the presentation viewport and rejects full-output measurement under non-zero insets', () => {
+    let output = normalizePresentationOutputSpec({ width: 1920, height: 1080, captionsMode: 'karaoke', locale: 'en-US', frameInsets: { top: 200, left: 100 } });
+    let pageLocalStep = validStep({
+      measurement: { ...validStep().measurement, focusRect: { x: 44, y: 44, width: 200, height: 60 }, visibleRect: { x: 44, y: 44, width: 200, height: 60 } },
+      annotation: { placement: 'right', rect: { x: 300, y: 44, width: 120, height: 60 } },
+    });
+    let accepted = createPresentationCompositionPlan({
+      output,
+      structuralHash: 'snapshot-v2:structural',
+      timelineHash: 'timeline-v2:ready',
+      lessonIntentHash: 'workspace-lesson-intent-v1:stable',
+      measuredViewport: { width: 1820, height: 880, visualWidth: 1820, visualHeight: 880, dpr: 1 },
+      baselineStructuralHash: 'snapshot-v2:structural',
+      restoredStructuralHash: 'snapshot-v2:structural',
+      simulationFrozen: true,
+      steps: [pageLocalStep],
+    });
+    let acceptAudit = auditPresentationCompositionPlan(accepted, { requiredTargetIds: ['panel:orders'] });
+    assert.equal(acceptAudit.verdict, 'accept', acceptAudit.issueCodes.join(', '));
+
+    let fullOutputMeasure = createPresentationCompositionPlan({
+      output,
+      measuredViewport: { width: 1920, height: 1080, visualWidth: 1920, visualHeight: 1080, dpr: 1 },
+      baselineStructuralHash: 'snapshot-v2:structural',
+      restoredStructuralHash: 'snapshot-v2:structural',
+      simulationFrozen: true,
+      steps: [pageLocalStep],
+    });
+    let rejectAudit = auditPresentationCompositionPlan(fullOutputMeasure, { requiredTargetIds: ['panel:orders'] });
+    assert.equal(rejectAudit.verdict, 'reject');
+    assert.ok(rejectAudit.issueCodes.includes('output-viewport-mismatch'));
+  });
+
+  it('translates page-local rectangles into final-frame coordinates before containment checks', () => {
+    let output = normalizePresentationOutputSpec({ width: 1920, height: 1080, captionsMode: 'karaoke', locale: 'en-US', frameInsets: { top: 200, left: 100 } });
+    // A page-local focus at the page origin only fits final-frame content once translated by the viewport offset.
+    let untranslatedWouldClip = createPresentationCompositionPlan({
+      output,
+      measuredViewport: { width: 1820, height: 880, visualWidth: 1820, visualHeight: 880, dpr: 1 },
+      baselineStructuralHash: 'snapshot-v2:structural',
+      restoredStructuralHash: 'snapshot-v2:structural',
+      simulationFrozen: true,
+      steps: [validStep({
+        measurement: { ...validStep().measurement, focusRect: { x: 44, y: 44, width: 200, height: 60 }, visibleRect: { x: 44, y: 44, width: 200, height: 60 } },
+        annotation: { placement: 'right', rect: { x: 300, y: 44, width: 120, height: 60 } },
+      })],
+    });
+    assert.equal(auditPresentationCompositionPlan(untranslatedWouldClip, { requiredTargetIds: ['panel:orders'] }).verdict, 'accept');
+
+    // A page-local focus near the bottom of the page falls outside final-frame content after translation.
+    let translatedClips = createPresentationCompositionPlan({
+      output,
+      measuredViewport: { width: 1820, height: 880, visualWidth: 1820, visualHeight: 880, dpr: 1 },
+      baselineStructuralHash: 'snapshot-v2:structural',
+      restoredStructuralHash: 'snapshot-v2:structural',
+      simulationFrozen: true,
+      steps: [validStep({
+        measurement: { ...validStep().measurement, focusRect: { x: 44, y: 860, width: 200, height: 60 }, visibleRect: { x: 44, y: 860, width: 200, height: 60 } },
+      })],
+    });
+    let clippedAudit = auditPresentationCompositionPlan(translatedClips, { requiredTargetIds: ['panel:orders'] });
+    assert.equal(clippedAudit.verdict, 'reject');
+    assert.ok(clippedAudit.issueCodes.includes('target-clipped'));
+  });
+
+  it('translates page-local annotation rectangles before final-frame placement checks', () => {
+    let output = normalizePresentationOutputSpec({ width: 1920, height: 1080, captionsMode: 'karaoke', locale: 'en-US', frameInsets: { top: 200, left: 100 } });
+    // Focus stays valid after translation; only the annotation, once translated, overruns final-frame content.
+    let plan = createPresentationCompositionPlan({
+      output,
+      measuredViewport: { width: 1820, height: 880, visualWidth: 1820, visualHeight: 880, dpr: 1 },
+      baselineStructuralHash: 'snapshot-v2:structural',
+      restoredStructuralHash: 'snapshot-v2:structural',
+      simulationFrozen: true,
+      steps: [validStep({
+        measurement: { ...validStep().measurement, focusRect: { x: 44, y: 44, width: 200, height: 60 }, visibleRect: { x: 44, y: 44, width: 200, height: 60 } },
+        annotation: { placement: 'below', rect: { x: 44, y: 860, width: 120, height: 60 } },
+      })],
+    });
+    let audit = auditPresentationCompositionPlan(plan, { requiredTargetIds: ['panel:orders'] });
+    assert.equal(audit.verdict, 'reject');
+    assert.ok(audit.issueCodes.includes('annotation-placement-unavailable'));
+    assert.ok(!audit.issueCodes.includes('target-clipped'), audit.issueCodes.join(', '));
+  });
+
   it('accepts a restored, readable and collision-free per-turn composition plan', () => {
     let plan = validPlan();
     let audit = auditPresentationCompositionPlan(plan, {
@@ -86,7 +209,7 @@ describe('presentation output and composition contracts', () => {
 
     assert.equal(audit.verdict, 'accept');
     assert.equal(audit.coverage.coveredTargetCount, 1);
-    assert.match(plan.hash, /^workspace-presentation-composition-v1:/);
+    assert.match(plan.hash, /^workspace-presentation-composition-v2:/);
   });
 
   it('rejects every output and target composition failure with stable issue codes', () => {

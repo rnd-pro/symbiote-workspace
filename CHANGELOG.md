@@ -4,6 +4,38 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Moved media render settings to `workspace-media-render-settings-v3` with a
+  normalized, portable `browserAppearance`. It independently controls browser
+  `chrome.visibility` (`hidden` default), `chrome.theme`
+  (`system`/`light`/`dark`/`tinted`), an optional `chrome.tint` that is required
+  only for `tinted` and rejected otherwise, and an independent page
+  `pageColorScheme` (`system`/`light`/`dark`). Defaults are hidden/system/system.
+  Hidden chrome accepts only the `system` theme; any explicit non-system theme,
+  malformed `#RRGGBB` tint, tint outside `tinted`, or unknown enum fails with an
+  actionable error and no silent alias. Appearance is exported as
+  `normalizeBrowserAppearance`, `BROWSER_CHROME_VISIBILITIES`,
+  `BROWSER_CHROME_THEMES`, and `BROWSER_PAGE_COLOR_SCHEMES`; any appearance change
+  invalidates the frame cache, preview sequence, and final output so render/cache
+  identity tracks it. The `workspace-media-evidence-v3` manifest settings contract
+  now normalizes and retains `browserAppearance` through the same normalizer, so an
+  omitted value canonicalizes to hidden/system/system, invalid appearance fails
+  manifest validation, and changing appearance changes the canonical manifest
+  identity. Provider, Chromium, native-chrome, and product concerns stay out of the
+  package.
+- Moved the presentation output and composition contracts to
+  `workspace-presentation-output-v2` and `workspace-presentation-composition-v2`.
+  The output spec adds neutral, finite, non-negative final-frame `frameInsets`
+  (zero defaults) and derives a positive `presentationViewport {x,y,width,height}`;
+  frame insets that leave no positive viewport are rejected. Safe area, content
+  rectangle, and captions are now derived inside the presentation viewport rather
+  than the full output frame, so a zero-inset plan preserves the previous semantic
+  geometry exactly while the spec hash changes when insets change. Composition
+  `measuredViewport` must equal the presentation viewport (with the existing DPR
+  rules), so a non-zero-inset plan measured at full output fails closed. The
+  composition audit keeps browser DOM focus/annotation rectangles page-local and
+  explicitly translates them by the presentation viewport origin before
+  final-frame containment and caption-collision checks; output remains the final
+  video coordinate system.
 - Presentation review now proves responsive dialogue handoffs primarily from
   structured turn relationships: after a speaker change, a valid `replyTo` must
   resolve to an earlier turn by the other persona. The existing lexical signal

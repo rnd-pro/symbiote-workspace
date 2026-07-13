@@ -74,6 +74,20 @@ mode.
   `base`/`overlay`/`caption`/`audio` layers over a frame-aligned integer
   timebase, with deterministic timeline projection, range-aware invalidation, and
   a canonical content hash proof-linked into the v3 media-evidence identity.
+- **Portable browser appearance** — `workspace-media-render-settings-v3` carries a
+  normalized `browserAppearance` that independently controls browser chrome
+  visibility (`hidden` default), chrome theme (`system`/`light`/`dark`/`tinted`
+  with a required `#RRGGBB` tint only when tinted), and page `pageColorScheme`.
+  Hidden chrome accepts only the `system` theme, invalid combinations fail with
+  actionable errors, and any appearance change invalidates cached frames, the
+  preview sequence, and the final output. Host-native chrome mechanics stay in the
+  product layer.
+- **Presentation viewport geometry** — `workspace-presentation-output-v2` adds
+  neutral final-frame `frameInsets` and derives a positive `presentationViewport`.
+  Content and captions are laid out inside that viewport, while
+  `workspace-presentation-composition-v2` measurement is checked against the
+  presentation viewport and translates page-local focus/annotation rectangles into
+  final-frame coordinates before containment and collision checks.
 
 ### Unified Agent Tooling
 

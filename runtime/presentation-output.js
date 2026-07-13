@@ -1,7 +1,7 @@
 import { computeIntegrity } from '../schema/canonical-json.js';
 
-export const PRESENTATION_OUTPUT_SPEC_SCHEMA_VERSION = 'workspace-presentation-output-v1';
-export const PRESENTATION_COMPOSITION_PLAN_SCHEMA_VERSION = 'workspace-presentation-composition-v1';
+export const PRESENTATION_OUTPUT_SPEC_SCHEMA_VERSION = 'workspace-presentation-output-v2';
+export const PRESENTATION_COMPOSITION_PLAN_SCHEMA_VERSION = 'workspace-presentation-composition-v2';
 export const PRESENTATION_CONTEXT_SNAPSHOT_SCHEMA_VERSION = 'presentation-context-snapshot-v2';
 export const PRESENTATION_REPLAN_REQUEST_SCHEMA_VERSION = 'presentation-replan-request-v2';
 export const PRESENTATION_REPLAN_RESULT_SCHEMA_VERSION = 'presentation-replan-result-v2';
@@ -101,6 +101,24 @@ function rect(x, y, width, height) {
   };
 }
 
+function translateRect(input, dx, dy) {
+  let source = isObject(input) ? input : {};
+  return rect(finiteNumber(source.x) + dx, finiteNumber(source.y) + dy, source.width, source.height);
+}
+
+function normalizeFrameInsets(input) {
+  let source = isObject(input) ? input : {};
+  let result = {};
+  for (let side of ['top', 'right', 'bottom', 'left']) {
+    let raw = source[side];
+    let number = raw === undefined || raw === null || raw === '' ? 0 : Number(raw);
+    if (!Number.isFinite(number)) throw new TypeError(`presentation output frame inset ${side} must be a finite number`);
+    if (number < 0) throw new TypeError(`presentation output frame inset ${side} must not be negative`);
+    result[side] = Math.round(number);
+  }
+  return result;
+}
+
 function rectRight(value) {
   return finiteNumber(value?.x) + finiteNumber(value?.width);
 }
@@ -144,7 +162,12 @@ export function normalizePresentationOutputSpec(input = {}) {
   if (dpr !== 1) throw new TypeError('presentation output proof requires DPR 1');
   let orientation = presentationOutputOrientation(width, height);
   let aspectRatio = normalizedAspectRatio(width, height);
-  let edgeInset = Math.round(Math.min(width, height) * 0.05);
+  let frameInsets = normalizeFrameInsets(source.frameInsets);
+  let viewportWidth = width - frameInsets.left - frameInsets.right;
+  let viewportHeight = height - frameInsets.top - frameInsets.bottom;
+  if (viewportWidth <= 0 || viewportHeight <= 0) throw new TypeError('presentation output frame insets leave no positive presentation viewport');
+  let presentationViewport = rect(frameInsets.left, frameInsets.top, viewportWidth, viewportHeight);
+  let edgeInset = Math.round(Math.min(viewportWidth, viewportHeight) * 0.05);
   let safeArea = normalizeInsets(source.safeArea, edgeInset);
   let captionsSource = isObject(source.captions) ? source.captions : {};
   let captionsMode = cleanText(captionsSource.mode ?? source.captionsMode, source.captionsEnabled === false ? 'off' : 'karaoke');
@@ -153,18 +176,20 @@ export function normalizePresentationOutputSpec(input = {}) {
     : captionsSource.enabled !== false;
   if (!captionsEnabled) captionsMode = 'off';
   let captionPlacement = cleanText(captionsSource.placement ?? source.captionPlacement, 'bottom') === 'top' ? 'top' : 'bottom';
-  let captionReserve = captionsEnabled ? Math.round(height * 0.18) : 0;
+  let captionReserve = captionsEnabled ? Math.round(viewportHeight * 0.18) : 0;
   let captionRect = captionsEnabled
     ? rect(
-      safeArea.left,
-      captionPlacement === 'top' ? safeArea.top : height - safeArea.bottom - captionReserve,
-      width - safeArea.left - safeArea.right,
+      presentationViewport.x + safeArea.left,
+      captionPlacement === 'top'
+        ? presentationViewport.y + safeArea.top
+        : presentationViewport.y + viewportHeight - safeArea.bottom - captionReserve,
+      viewportWidth - safeArea.left - safeArea.right,
       captionReserve,
     )
     : null;
-  let contentTop = safeArea.top + (captionsEnabled && captionPlacement === 'top' ? captionReserve : 0);
-  let contentBottom = height - safeArea.bottom - (captionsEnabled && captionPlacement === 'bottom' ? captionReserve : 0);
-  let contentRect = rect(safeArea.left, contentTop, width - safeArea.left - safeArea.right, contentBottom - contentTop);
+  let contentTop = presentationViewport.y + safeArea.top + (captionsEnabled && captionPlacement === 'top' ? captionReserve : 0);
+  let contentBottom = presentationViewport.y + viewportHeight - safeArea.bottom - (captionsEnabled && captionPlacement === 'bottom' ? captionReserve : 0);
+  let contentRect = rect(presentationViewport.x + safeArea.left, contentTop, viewportWidth - safeArea.left - safeArea.right, contentBottom - contentTop);
   if (contentRect.width < 24 || contentRect.height < 16) throw new TypeError('presentation output safe area leaves no readable content rectangle');
   let voiceSource = isObject(source.voice) ? source.voice : {};
   let speakerMode = cleanText(voiceSource.mode ?? source.speakerMode ?? source.voiceMode, 'dialogue');
@@ -185,6 +210,8 @@ export function normalizePresentationOutputSpec(input = {}) {
     height,
     fps,
     dpr,
+    frameInsets,
+    presentationViewport,
     safeArea,
     contentRect,
     captions: {
@@ -316,14 +343,15 @@ export function auditPresentationCompositionPlan(plan = {}, expectations = {}) {
   if (expectations.structuralHash && plan.structuralHash !== expectations.structuralHash) add('output-context-stale', 'structuralHash', 'composition targets a stale structural snapshot');
   if (expectations.timelineHash && plan.timelineHash !== expectations.timelineHash) add('composition-repair-stale', 'timelineHash', 'composition targets a stale or unrepaired timeline');
   if (expectations.lessonIntentHash && plan.lessonIntentHash !== expectations.lessonIntentHash) add('lesson-intent-mismatch', 'lessonIntentHash', 'composition changed the lesson intent');
+  let presentationViewport = output.presentationViewport;
   let measured = plan.measuredViewport || {};
   if (
-    measured.width !== output.width
-    || measured.height !== output.height
-    || measured.visualWidth !== output.width
-    || measured.visualHeight !== output.height
+    measured.width !== presentationViewport.width
+    || measured.height !== presentationViewport.height
+    || measured.visualWidth !== presentationViewport.width
+    || measured.visualHeight !== presentationViewport.height
     || measured.dpr !== output.dpr
-  ) add('output-viewport-mismatch', 'measuredViewport', 'measured browser viewport does not match output dimensions and DPR');
+  ) add('output-viewport-mismatch', 'measuredViewport', 'measured browser viewport does not match the presentation viewport and DPR');
   if (!plan.simulationFrozen) add('composition-simulation-active', 'simulationFrozen', 'live simulation was active during composition measurement');
   if (!plan.baselineStructuralHash || plan.baselineStructuralHash !== plan.restoredStructuralHash) add('composition-restore-mismatch', 'restoredStructuralHash', 'workspace state was not restored after composition preflight');
   let stepByTarget = new Map();
@@ -336,20 +364,22 @@ export function auditPresentationCompositionPlan(plan = {}, expectations = {}) {
     if (step.targetId && !stepByTarget.has(step.targetId)) stepByTarget.set(step.targetId, []);
     if (step.targetId) stepByTarget.get(step.targetId).push(step);
     let measurement = normalizePresentationTargetComposition(step.measurement || {});
+    let focusRect = translateRect(measurement.focusRect, presentationViewport.x, presentationViewport.y);
+    let annotationRect = step.annotation?.rect ? translateRect(step.annotation.rect, presentationViewport.x, presentationViewport.y) : null;
     if (!measurement.reachable) add('target-unreachable', path, 'target cannot be reached by declared reversible actions');
     if (!measurement.visible) add('target-hidden', path, 'target remains hidden after composition actions');
     if (
-      measurement.focusRect.width < 24
-      || measurement.focusRect.height < 16
+      focusRect.width < 24
+      || focusRect.height < 16
       || measurement.visibleRatio < 0.995
-      || !rectContains(output.contentRect, measurement.focusRect, 1)
+      || !rectContains(output.contentRect, focusRect, 1)
     ) add('target-clipped', path, 'target focus rectangle is clipped or outside usable content');
     if (measurement.occluders.length || measurement.pointerTransparentOccluders.length) add('target-occluded', path, 'target focus rectangle is occluded');
     if (measurement.hasText && (measurement.fontSizePx < 12 || measurement.textTruncated)) add('target-unreadable', path, 'target text is too small or truncated');
     if ((Array.isArray(step.scroll) ? step.scroll : []).some((scroll) => scroll.changed && !scroll.applied)) add('composition-scroll-failed', `${path}.scroll`, 'absolute scroll projection was not applied');
-    if (!step.annotation?.placement || !step.annotation?.rect || !rectContains(output.contentRect, step.annotation.rect, 1)
-      || rectIntersects(step.annotation.rect, measurement.focusRect)
-      || (output.captions.rect && rectIntersects(step.annotation.rect, output.captions.rect))) {
+    if (!step.annotation?.placement || !annotationRect || !rectContains(output.contentRect, annotationRect, 1)
+      || rectIntersects(annotationRect, focusRect)
+      || (output.captions.rect && rectIntersects(annotationRect, output.captions.rect))) {
       add('annotation-placement-unavailable', `${path}.annotation`, 'no collision-free annotation placement is available');
     }
   }
