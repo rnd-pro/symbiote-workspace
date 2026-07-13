@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Presentation review now proves responsive dialogue handoffs primarily from
+  structured turn relationships: after a speaker change, a valid `replyTo` must
+  resolve to an earlier turn by the other persona. The existing lexical signal
+  remains supplementary and is Unicode-aware for localized copy; malformed,
+  forward, self, and same-persona references still fail closed.
 - Added deterministic `presentation-dialogue-quality-v2` pre-TTS gates for
   cross-turn n-gram/content repetition and balanced per-persona contribution,
   with portable dependency, repetition, and contribution metrics for EN/RU/ES.

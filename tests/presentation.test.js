@@ -1241,3 +1241,184 @@ describe('presentation replan contracts', () => {
     assert.deepEqual(projection.items, []);
   });
 });
+
+describe('presentation dialogue handoff detection', () => {
+  const localizedExchanges = {
+    'en-US': [
+      'Start with the work order queue so the viewer sees the source records.',
+      'The queue shows three open orders waiting on parts.',
+      'The detail panel then explains why those parts are delayed.',
+      'The audit log confirms the delay came from a late shipment.',
+    ],
+    'ru-RU': [
+      'Начнём с очереди рабочих заданий, чтобы зритель увидел исходные записи.',
+      'В очереди три открытых задания ожидают поступления деталей.',
+      'Панель деталей объясняет, почему поставка этих деталей задержалась.',
+      'Журнал аудита подтверждает задержку из-за позднего отгруза.',
+    ],
+    'es-ES': [
+      'Empezamos con la cola de órdenes para que el espectador vea los registros.',
+      'La cola muestra tres órdenes abiertas que esperan repuestos.',
+      'El panel de detalle explica por qué se retrasaron esos repuestos.',
+      'El registro de auditoría confirma el retraso por un envío tardío.',
+    ],
+  };
+
+  function structuredExchange(locale, texts) {
+    return createPresentationTimelineContract({
+      id: `handoff-${locale.toLowerCase()}`,
+      title: `Localized handoff ${locale}`,
+      locale,
+      turns: texts.map((text, index) => ({
+        id: `turn-${index + 1}`,
+        persona: index % 2 ? 'analyst' : 'guide',
+        dialogueAct: index === 0 ? 'open' : 'respond',
+        ...(index > 0 ? { replyTo: `turn-${index}` } : {}),
+        text,
+        cue: { targetId: 'panel:home:queue', tabId: 'home' },
+      })),
+    });
+  }
+
+  for (let [locale, texts] of Object.entries(localizedExchanges)) {
+    it(`counts structured handoffs for ${locale} without lexical markers`, () => {
+      let review = reviewPresentationTimeline(structuredExchange(locale, texts), {
+        requireDialogueHandoffs: true,
+      });
+
+      assert.equal(review.verdict, 'pass', `${locale}: ${JSON.stringify(review.issues)}`);
+      assert.equal(review.coverage.handoffCount, 3, locale);
+      assert.equal(review.issues.some((issue) => issue.code === 'missing-dialogue-handoff'), false, locale);
+    });
+  }
+
+  const lexicalExchanges = {
+    'en-US': [
+      'Start with the open work order queue.',
+      'Yes, the queue contains three delayed orders.',
+      'Then inspect the asset detail for each order.',
+      'Correct, the detail confirms the late shipment.',
+    ],
+    'ru-RU': [
+      'Начнем с очереди открытых рабочих заданий.',
+      'Да, в очереди три задержанных задания.',
+      'Тогда проверим карточку актива для каждого задания.',
+      'Верно, карточка подтверждает задержку поставки.',
+    ],
+    'es-ES': [
+      'Empecemos con la cola de órdenes abiertas.',
+      'Sí, la cola contiene tres órdenes retrasadas.',
+      'Entonces revisemos el detalle del activo para cada orden.',
+      'Correcto, el detalle confirma el retraso del envío.',
+    ],
+  };
+
+  for (let [locale, texts] of Object.entries(lexicalExchanges)) {
+    it(`retains the supplementary lexical handoff signal for ${locale}`, () => {
+      let timeline = createPresentationTimelineContract({
+        id: `lexical-handoff-${locale.toLowerCase()}`,
+        title: `Lexical handoff ${locale}`,
+        locale,
+        turns: texts.map((text, index) => ({
+          id: `turn-${index + 1}`,
+          persona: index % 2 ? 'analyst' : 'guide',
+          dialogueAct: index === 0 ? 'open' : 'explain',
+          text,
+          cue: { targetId: 'panel:home:queue', tabId: 'home' },
+        })),
+      });
+      let review = reviewPresentationTimeline(timeline, { requireDialogueHandoffs: true });
+
+      assert.equal(review.verdict, 'pass', `${locale}: ${JSON.stringify(review.issues)}`);
+      assert.equal(review.coverage.handoffCount, 3, locale);
+    });
+  }
+
+  it('flags an alternating monologue that omits structured reply links', () => {
+    let timeline = createPresentationTimelineContract({
+      id: 'monologue-handoff',
+      title: 'Alternating monologue',
+      turns: [
+        { id: 'turn-1', persona: 'guide', dialogueAct: 'explain', text: 'The queue lists the open work orders for today.', cue: { targetId: 'panel:home:queue', tabId: 'home' } },
+        { id: 'turn-2', persona: 'analyst', dialogueAct: 'explain', text: 'The detail panel shows the parts each order needs.', cue: { targetId: 'panel:home:detail', tabId: 'home' } },
+        { id: 'turn-3', persona: 'guide', dialogueAct: 'explain', text: 'The map places every crew near its assigned site.', cue: { targetId: 'panel:home:map', tabId: 'home' } },
+        { id: 'turn-4', persona: 'analyst', dialogueAct: 'explain', text: 'The audit log records who approved each dispatch.', cue: { targetId: 'panel:home:audit', tabId: 'home' } },
+      ],
+    });
+
+    let review = reviewPresentationTimeline(timeline, { requireDialogueHandoffs: true });
+
+    assert.equal(review.coverage.handoffCount, 0);
+    assert.ok(review.issues.some((issue) => issue.code === 'missing-dialogue-handoff'));
+  });
+
+  it('does not count a reply that resolves to the same persona', () => {
+    let timeline = createPresentationTimelineContract({
+      id: 'same-persona-reply',
+      title: 'Same persona reply',
+      turns: [
+        { id: 'turn-1', persona: 'guide', dialogueAct: 'open', text: 'The queue lists the open work orders for today.', cue: { targetId: 'panel:home:queue', tabId: 'home' } },
+        { id: 'turn-2', persona: 'analyst', dialogueAct: 'explain', text: 'The detail panel shows the parts each order needs.', cue: { targetId: 'panel:home:detail', tabId: 'home' } },
+        { id: 'turn-3', persona: 'guide', dialogueAct: 'respond', replyTo: 'turn-1', text: 'The map places every crew near its assigned site.', cue: { targetId: 'panel:home:map', tabId: 'home' } },
+        { id: 'turn-4', persona: 'analyst', dialogueAct: 'respond', replyTo: 'turn-2', text: 'The audit log records who approved each dispatch.', cue: { targetId: 'panel:home:audit', tabId: 'home' } },
+      ],
+    });
+
+    let review = reviewPresentationTimeline(timeline, { requireDialogueHandoffs: true });
+
+    assert.equal(review.coverage.handoffCount, 0);
+    assert.ok(review.issues.some((issue) => issue.code === 'missing-dialogue-handoff'));
+  });
+
+  it('does not count an opposite-persona reply when the speaker did not change', () => {
+    let timeline = createPresentationTimelineContract({
+      id: 'reply-without-speaker-change',
+      title: 'Reply without speaker change',
+      turns: [
+        { id: 'turn-1', persona: 'analyst', dialogueAct: 'open', text: 'The queue lists the delayed work orders for today.', cue: { targetId: 'panel:home:queue', tabId: 'home' } },
+        { id: 'turn-2', persona: 'guide', dialogueAct: 'explain', text: 'The asset detail contains the shipment record.', cue: { targetId: 'panel:home:detail', tabId: 'home' } },
+        { id: 'turn-3', persona: 'guide', dialogueAct: 'respond', replyTo: 'turn-1', text: 'The shipment record names the delayed supplier.', cue: { targetId: 'panel:home:detail', tabId: 'home' } },
+        { id: 'turn-4', persona: 'guide', dialogueAct: 'explain', text: 'The audit log records the approval date.', cue: { targetId: 'panel:home:audit', tabId: 'home' } },
+      ],
+    });
+
+    let review = reviewPresentationTimeline(timeline, { requireDialogueHandoffs: true });
+
+    assert.equal(review.coverage.handoffCount, 0);
+    assert.ok(review.issues.some((issue) => issue.code === 'missing-dialogue-handoff'));
+  });
+
+  it('rejects an unknown replyTo reference at the contract boundary', () => {
+    assert.throws(() => reviewPresentationTimeline(timelineV3({
+      id: 'unknown-reply',
+      title: 'Unknown reply',
+      turns: [
+        { id: 'turn-1', persona: 'guide', dialogueAct: 'open', text: 'The queue lists the open work orders for today.', cue: { targetId: 'panel:home:queue', tabId: 'home' } },
+        { id: 'turn-2', persona: 'analyst', dialogueAct: 'respond', replyTo: 'turn-missing', text: 'The detail panel shows the parts each order needs.', cue: { targetId: 'panel:home:detail', tabId: 'home' } },
+      ],
+    }), { requireDialogueHandoffs: true }), /replyTo must name an earlier turn/);
+  });
+
+  it('rejects a forward replyTo reference at the contract boundary', () => {
+    assert.throws(() => reviewPresentationTimeline(timelineV3({
+      id: 'forward-reply',
+      title: 'Forward reply',
+      turns: [
+        { id: 'turn-1', persona: 'guide', dialogueAct: 'open', text: 'The queue lists the open work orders for today.', cue: { targetId: 'panel:home:queue', tabId: 'home' } },
+        { id: 'turn-2', persona: 'analyst', dialogueAct: 'respond', replyTo: 'turn-3', text: 'The detail panel shows the parts each order needs.', cue: { targetId: 'panel:home:detail', tabId: 'home' } },
+        { id: 'turn-3', persona: 'guide', dialogueAct: 'respond', replyTo: 'turn-2', text: 'The map places every crew near its assigned site.', cue: { targetId: 'panel:home:map', tabId: 'home' } },
+      ],
+    }), { requireDialogueHandoffs: true }), /replyTo must name an earlier turn/);
+  });
+
+  it('rejects a self replyTo reference at the contract boundary', () => {
+    assert.throws(() => reviewPresentationTimeline(timelineV3({
+      id: 'self-reply',
+      title: 'Self reply',
+      turns: [
+        { id: 'turn-1', persona: 'guide', dialogueAct: 'open', text: 'The queue lists the open work orders for today.', cue: { targetId: 'panel:home:queue', tabId: 'home' } },
+        { id: 'turn-2', persona: 'analyst', dialogueAct: 'respond', replyTo: 'turn-2', text: 'The detail panel shows the parts each order needs.', cue: { targetId: 'panel:home:detail', tabId: 'home' } },
+      ],
+    }), { requireDialogueHandoffs: true }), /replyTo must name an earlier turn/);
+  });
+});

@@ -643,9 +643,18 @@ function hasSerializedMetadataToken(text) {
     .test(String(text || ''));
 }
 
+const DIALOGUE_HANDOFF_MARKERS = new Set([
+  'yes', 'right', 'exactly', 'also', 'and', 'but', 'so', 'then', 'now', 'that',
+  'this', 'those', 'because', 'while', 'here', 'notice', 'you', 'correct', 'agreed',
+  'да', 'верно', 'точно', 'также', 'но', 'поэтому', 'тогда', 'сейчас', 'это', 'здесь',
+  'sí', 'correcto', 'exacto', 'también', 'pero', 'entonces', 'ahora', 'esto', 'aquí',
+  'porque', 'mientras',
+]);
+
 function hasDialogueHandoff(text) {
-  return /\b(?:yes|right|exactly|also|and|but|so|then|now|that|this|those|because|while|here|notice|you|i see|correct|agreed|да|верно|точно|также|но|поэтому|тогда|сейчас|это|здесь)\b/i
-    .test(String(text || ''));
+  let tokens = String(text || '').toLowerCase().match(/[\p{L}\p{N}]+/gu) || [];
+  return tokens.some((token) => DIALOGUE_HANDOFF_MARKERS.has(token))
+    || tokens.some((token, index) => token === 'i' && tokens[index + 1] === 'see');
 }
 
 function normalizeTurnBudget(intent = {}) {
@@ -723,6 +732,7 @@ export function reviewPresentationTimeline(input = {}, intent = {}) {
   let normalizedTexts = new Map();
   let boilerplateCounts = new Map();
   let handoffCount = 0;
+  let personaByTurnId = new Map();
   let previousPersona = '';
   let personaRunLength = 0;
   let longestPersonaRun = 0;
@@ -877,7 +887,11 @@ export function reviewPresentationTimeline(input = {}, intent = {}) {
         });
       }
     }
-    if (index > 0 && turn?.persona !== turns[index - 1]?.persona && hasDialogueHandoff(turn?.text)) {
+    let priorPersona = index > 0 ? cleanTimelineText(turns[index - 1]?.persona) : '';
+    let personaChanged = Boolean(persona && priorPersona && persona !== priorPersona);
+    let repliedPersona = turn?.replyTo ? personaByTurnId.get(turn.replyTo) : undefined;
+    let structuredHandoff = repliedPersona !== undefined && repliedPersona !== persona;
+    if (personaChanged && (structuredHandoff || hasDialogueHandoff(turn?.text))) {
       handoffCount += 1;
     }
     let overlapMs = nonNegativeNumber(turn?.transition?.overlapMs, 0);
@@ -894,6 +908,7 @@ export function reviewPresentationTimeline(input = {}, intent = {}) {
         turnIndex: index,
       });
     }
+    if (turn?.id) personaByTurnId.set(turn.id, persona);
   }
 
   for (let targetId of requestedSurfaceIds) {
