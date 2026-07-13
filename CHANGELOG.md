@@ -35,7 +35,9 @@ All notable changes to this project will be documented in this file.
   composition audit keeps browser DOM focus/annotation rectangles page-local and
   explicitly translates them by the presentation viewport origin before
   final-frame containment and caption-collision checks; output remains the final
-  video coordinate system.
+  video coordinate system. Presentation preparation, rehydration, settlement, and
+  context snapshots receive the page-local presentation viewport while retaining
+  the full output spec as the final-video identity.
 - Presentation review now proves responsive dialogue handoffs primarily from
   structured turn relationships: after a speaker change, a valid `replyTo` must
   resolve to an earlier turn by the other persona. The existing lexical signal

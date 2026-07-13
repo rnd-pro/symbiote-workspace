@@ -5,6 +5,7 @@ import {
   applyWorkspaceTheme,
   collectWorkspaceInterfaceContext,
   mountWorkspace,
+  normalizePresentationOutputSpec,
   prepareWorkspacePresentation,
 } from '../browser.js';
 
@@ -57,8 +58,9 @@ function timelineV3(input = {}) {
 }
 
 async function compositionFixture({ timeline, output, targetSnapshot }) {
+  let viewport = output.presentationViewport;
   return {
-    measuredViewport: { width: output.width, height: output.height, visualWidth: output.width, visualHeight: output.height, dpr: 1 },
+    measuredViewport: { width: viewport.width, height: viewport.height, visualWidth: viewport.width, visualHeight: viewport.height, dpr: 1 },
     baselineStructuralHash: targetSnapshot.identityHash,
     restoredStructuralHash: targetSnapshot.identityHash,
     simulationFrozen: true,
@@ -155,6 +157,45 @@ it('prepares a presentation with one bounded WebMCP deepening round', async () =
   assert.equal(result.targetSnapshot.generation, 1);
   assert.equal(result.status, 'ready');
   assert.ok(events.includes('tour.deepening.action.done'));
+});
+
+it('prepares and snapshots against the inset page viewport while retaining final output geometry', async () => {
+  let rehydrateInput;
+  let settlementInput;
+  let output = normalizePresentationOutputSpec({ width: 1280, height: 720, fps: 30, frameInsets: { top: 87 } });
+  let result = await prepareWorkspacePresentation({
+    output,
+    source: { surface: 'orders', tabId: 'orders' },
+    request: { prompt: 'Explain the queue', profile: 'brief' },
+    async rehydrate(input) { rehydrateInput = input; },
+    async waitForSettlement(input) { settlementInput = input; },
+    async executeSafeAction() {},
+    collectContext() {
+      return { targets: [{ address: 'panel:orders:queue', tabId: 'orders', visible: true }] };
+    },
+    async plan(request) {
+      return {
+        status: 'ready',
+        basis: { targetSnapshotHash: request.targetSnapshotHash, outputSpecHash: request.outputSpecHash, generation: request.generation },
+        timeline: timelineV3({
+          turns: [{
+            id: 'queue',
+            persona: 'guide',
+            dialogueAct: 'explain',
+            text: 'The visible queue contains the current work.',
+            cue: { targetId: 'panel:orders:queue', tabId: 'orders' },
+          }],
+        }),
+      };
+    },
+    inspectComposition: compositionFixture,
+  });
+
+  assert.deepEqual(rehydrateInput.viewport, { x: 0, y: 87, width: 1280, height: 633, fps: 30, dpr: 1, orientation: 'horizontal' });
+  assert.deepEqual(settlementInput.viewport, rehydrateInput.viewport);
+  assert.deepEqual(result.targetSnapshot.viewport, { width: 1280, height: 633, fps: 30, orientation: 'horizontal', aspectRatio: '1280:633' });
+  assert.equal(result.output.width, 1280);
+  assert.equal(result.output.height, 720);
 });
 
 function groundedDeepeningOptions(overrides = {}) {

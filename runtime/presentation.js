@@ -1271,7 +1271,8 @@ export function createPresentationContextSnapshot(context = {}, options = {}) {
     ? options.generation
     : Number.isInteger(context.generation) ? context.generation : 0;
   let output = normalizePresentationOutputSpec(options.output || context.output || { viewport: options.viewport || context.viewport || {} });
-  let viewport = normalizeSnapshotViewport(output);
+  let viewportSource = options.viewport || context.viewport || output.presentationViewport;
+  let viewport = normalizeSnapshotViewport({ ...viewportSource, fps: viewportSource.fps ?? output.fps });
   let source = normalizeAuditSource(options.source || context.source || context.workspace || {});
   let targetRecords = [
     ...listValue(context.targets),

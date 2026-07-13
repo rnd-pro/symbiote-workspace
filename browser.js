@@ -1041,12 +1041,18 @@ export async function prepareWorkspacePresentation(options = {}) {
     }
   }
   let output = normalizePresentationOutputSpec(options.output || { viewport: options.viewport, ...options.renderSettings });
+  let viewport = {
+    ...output.presentationViewport,
+    fps: output.fps,
+    dpr: output.dpr,
+    orientation: output.presentationViewport.width < output.presentationViewport.height ? 'vertical' : 'horizontal',
+  };
   let emit = async (type, detail = {}) => options.onEvent?.({ type, ...cloneJson(detail) });
   let collectSnapshot = async (generation) => {
     let context = await options.collectContext({ generation, output: cloneJson(output) });
     let snapshot = createPresentationContextSnapshot(context, {
       generation,
-      viewport: output,
+      viewport,
       output,
       source: options.source,
       stability: { settled: true, waitedFor: options.waitedFor || [] },
@@ -1056,8 +1062,8 @@ export async function prepareWorkspacePresentation(options = {}) {
 
   await emit('tour.context.rehydrate.started');
   try {
-    await options.rehydrate({ viewport: cloneJson(output), output: cloneJson(output), source: cloneJson(options.source) });
-    await options.waitForSettlement({ phase: 'rehydrate', output: cloneJson(output) });
+    await options.rehydrate({ viewport: cloneJson(viewport), output: cloneJson(output), source: cloneJson(options.source) });
+    await options.waitForSettlement({ phase: 'rehydrate', viewport: cloneJson(viewport), output: cloneJson(output) });
   } catch (cause) {
     if (cause?.code) throw cause;
     throw presentationPreparationError('TOUR_HYDRATION_TIMEOUT', 'target viewport did not finish rehydration', cause);
@@ -1140,7 +1146,7 @@ export async function prepareWorkspacePresentation(options = {}) {
       let result;
       try {
         result = await options.executeSafeAction(cloneJson(action), { snapshot: targetSnapshot, lessonContext, request });
-        await options.waitForSettlement({ phase: 'deepening', action: cloneJson(action), output: cloneJson(output) });
+        await options.waitForSettlement({ phase: 'deepening', action: cloneJson(action), viewport: cloneJson(viewport), output: cloneJson(output) });
       } catch (cause) {
         throw presentationPreparationError('DEEPENING_ACTION_FAILED', `presentation deepening action failed: ${action.tool}`, cause);
       }

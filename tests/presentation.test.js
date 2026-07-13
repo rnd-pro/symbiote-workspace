@@ -14,6 +14,7 @@ import {
   createPresentationTtsProjection,
   createWorkspacePresentationTimeline,
   finalizePresentationReplan,
+  normalizePresentationOutputSpec,
   normalizePresentationPrompt,
   normalizePresentationTimeline as normalizePresentationTimelineV3,
   presentationTimelineHasTurns,
@@ -1177,6 +1178,31 @@ describe('presentation replan contracts', () => {
     assert.notEqual(first.dataHash, changedData.dataHash);
     assert.notEqual(first.identityHash, vertical.identityHash);
     assert.equal(first.source.url, 'https://demo.test/workbench');
+  });
+
+  it('keeps final output identity while snapshotting the inset page viewport', () => {
+    let output = normalizePresentationOutputSpec({
+      width: 1280,
+      height: 720,
+      fps: 30,
+      frameInsets: { top: 87 },
+    });
+    let snapshot = createPresentationContextSnapshot(context(), {
+      output,
+      viewport: output.presentationViewport,
+      stability: { settled: true },
+    });
+
+    assert.deepEqual(snapshot.viewport, {
+      width: 1280,
+      height: 633,
+      fps: 30,
+      orientation: 'horizontal',
+      aspectRatio: '1280:633',
+    });
+    assert.equal(snapshot.output.width, 1280);
+    assert.equal(snapshot.output.height, 720);
+    assert.deepEqual(snapshot.output.presentationViewport, { x: 0, y: 87, width: 1280, height: 633 });
   });
 
   it('finalizes only a current, grounded planner result', () => {
