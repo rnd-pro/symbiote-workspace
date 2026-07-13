@@ -271,6 +271,14 @@ export {
   validateVirtualSequence,
 } from './media-sequence.js';
 export {
+  PRESENTATION_JOURNEY_SCHEMA_VERSION,
+  PRESENTATION_JOURNEY_OUTCOMES,
+  PRESENTATION_JOURNEY_PROVENANCE,
+  createPresentationJourney,
+  presentationJourneyReplayProjection,
+  validatePresentationJourney,
+} from './presentation-journey.js';
+export {
   mediaToolFamily,
   tools as mediaToolDefinitions,
 } from './tools/media-tools.js';

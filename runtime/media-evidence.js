@@ -1,7 +1,17 @@
 import { computeIntegrity, isIntegrityString } from '../schema/canonical-json.js';
+import { assertPortableValue, assertPortableRoutePath } from './portable-value.js';
 import { createMediaSynthesisEvidence } from './media-evidence/synthesis-receipts.js';
 import { createVirtualSequence } from './media-sequence.js';
 import { normalizeBrowserAppearance } from './media-projects.js';
+
+const PORTABLE_VALUE_OPTIONS = Object.freeze({
+  exemptKeys: new Set(['versionToken', 'probeVersionToken']),
+  allowPathAt: (path) => path === 'manifest.source.routePath',
+});
+
+function plainValue(value, path) {
+  return assertPortableValue(value, path, PORTABLE_VALUE_OPTIONS);
+}
 
 export {
   AUDIO_SYNTHESIS_RECEIPT_VERSION,
@@ -137,45 +147,6 @@ function strictVersion(value, expected, path) {
   let version = requiredString(value, path);
   if (version !== expected) throw new TypeError(`${path} must equal ${expected}`);
   return version;
-}
-
-function plainValue(value, path) {
-  if (value === null || typeof value === 'boolean' || typeof value === 'number') {
-    if (typeof value === 'number' && !Number.isFinite(value)) throw new TypeError(`${path} must be finite`);
-    return value;
-  }
-  if (typeof value === 'string') {
-    let text = value.trim();
-    let routeField = path === 'manifest.source.routePath';
-    if (!routeField && /(?:^|[\s"'(])(?:[A-Za-z]:[\\/]|\\\\|\/[A-Za-z0-9._-]+(?:\/|$))/.test(text)) {
-      throw new TypeError(`${path} must not contain an absolute local path`);
-    }
-    if (/[a-z][a-z0-9+.-]*:\/\//i.test(text)) throw new TypeError(`${path} must not contain a URL`);
-    if (/[#?&](?:token|access_token|auth|api_key|key|secret)=/i.test(text) || /\bBearer\s+\S+/i.test(text)) {
-      throw new TypeError(`${path} must not contain credentials`);
-    }
-    return value;
-  }
-  if (Array.isArray(value)) return value.map((item, index) => plainValue(item, `${path}[${index}]`));
-  if (isObject(value)) {
-    let result = {};
-    for (let [key, child] of Object.entries(value)) {
-      if (!['versionToken', 'probeVersionToken'].includes(key) && /(?:token|secret|password|credential|api[-_]?key|samplePath|sessionId)/i.test(key)) {
-        throw new TypeError(`${path}.${key} is private and not portable`);
-      }
-      result[key] = plainValue(child, `${path}.${key}`);
-    }
-    return result;
-  }
-  throw new TypeError(`${path} must be JSON-compatible`);
-}
-
-function routePath(value) {
-  let path = requiredString(value, 'manifest.source.routePath');
-  if (!path.startsWith('/') || path.includes('?') || path.includes('#') || path.includes('://')) {
-    throw new TypeError('manifest.source.routePath must be a path without URL search or hash');
-  }
-  return path;
 }
 
 function relativePath(value, path) {
@@ -367,7 +338,7 @@ function normalizeSource(value = {}) {
     surface: requiredString(value.surface, 'manifest.source.surface'),
     tabId: optionalString(value.tabId),
     projectId: optionalString(value.projectId),
-    routePath: value.routePath === undefined ? undefined : routePath(value.routePath),
+    routePath: value.routePath === undefined ? undefined : assertPortableRoutePath(value.routePath, 'manifest.source.routePath'),
     contextHash: integrity(value.contextHash, 'manifest.source.contextHash', true),
   });
 }

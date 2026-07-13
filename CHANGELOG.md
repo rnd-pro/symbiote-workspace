@@ -4,6 +4,36 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Added the exact-version `workspace-presentation-journey-v1` contract in
+  `runtime/presentation-journey.js`, exported from `symbiote-workspace`,
+  `symbiote-workspace/runtime`, and `symbiote-workspace/browser` as
+  `createPresentationJourney`, `validatePresentationJourney`,
+  `presentationJourneyReplayProjection`, `PRESENTATION_JOURNEY_SCHEMA_VERSION`,
+  `PRESENTATION_JOURNEY_OUTCOMES`, and `PRESENTATION_JOURNEY_PROVENANCE`. A
+  journey is the portable record of one live source execution: a portable source
+  binding (surface id, path-only route, locale, context hash), one ordered event
+  timeline that distinguishes operator-authored input (submitted text, relative
+  typing cadence, submit offset), observed tool/action progress, content-addressed
+  resource results, and gated assistant text, a terminal outcome
+  (`completed`/`soft-timeout`/`hard-timeout`/`error`/`canceled`), and an explicit
+  monotonic time map. Each event records observed `sourceOffsetMs` and
+  independently declares `presentationOffsetMs`; the time-map segments may compress
+  idle waits but never stretch, `presentationDurationMs` never exceeds
+  `sourceDurationMs`, and every event offset must equal the time-map projection of
+  its source offset, so any retiming is proven. Semantic action names are supplied
+  by the consumer as an allowlist, keeping host tool vocabularies out of the
+  package. The canonical `contentHash` is a `sha256-<base64>` integrity over the
+  replay projection and its `id` is `presentation-journey:<contentHash>`, so the
+  hash binds directly into the existing media-evidence `action-log` node without a
+  second evidence graph, and a tampered `id`/`contentHash` fails validation.
+- Extracted the portable-value scan shared by the evidence and journey contracts
+  into `runtime/portable-value.js` (`assertPortableValue`,
+  `assertPortableRoutePath`, `PORTABLE_SECRET_KEY_PATTERN`).
+  `runtime/media-evidence.js` now consumes it instead of a private copy, so there
+  is one implementation of the credential, URL, absolute-path, and private-key
+  rejection. The journey contract layers a stricter private-key pattern (cookie,
+  bearer, authorization, session id, reasoning/chain-of-thought, selector, xpath,
+  element id) over the same scan.
 - Moved media render settings to `workspace-media-render-settings-v3` with a
   normalized, portable `browserAppearance`. It independently controls browser
   `chrome.visibility` (`hidden` default), `chrome.theme`

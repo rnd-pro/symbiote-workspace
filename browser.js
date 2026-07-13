@@ -256,6 +256,14 @@ export {
   projectVirtualSequenceAt,
   validateVirtualSequence,
 } from './runtime/media-sequence.js';
+export {
+  PRESENTATION_JOURNEY_SCHEMA_VERSION,
+  PRESENTATION_JOURNEY_OUTCOMES,
+  PRESENTATION_JOURNEY_PROVENANCE,
+  createPresentationJourney,
+  presentationJourneyReplayProjection,
+  validatePresentationJourney,
+} from './runtime/presentation-journey.js';
 
 import {
   extractThemeOverrides,

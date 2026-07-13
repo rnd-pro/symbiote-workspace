@@ -256,4 +256,10 @@ export {
   invalidateVirtualSequence,
   projectVirtualSequenceAt,
   validateVirtualSequence,
+  PRESENTATION_JOURNEY_SCHEMA_VERSION,
+  PRESENTATION_JOURNEY_OUTCOMES,
+  PRESENTATION_JOURNEY_PROVENANCE,
+  createPresentationJourney,
+  presentationJourneyReplayProjection,
+  validatePresentationJourney,
 } from './runtime/index.js';
