@@ -39,7 +39,7 @@ export const PRESENTATION_ANNOTATION_INTENTS = Object.freeze([
   'affinity',
   'flourish',
 ]);
-export const PRESENTATION_MARKERS = Object.freeze(['circle', 'underline', 'box', 'bracket', 'slash']);
+export const PRESENTATION_MARKERS = Object.freeze(['box', 'circle', 'oval', 'underline', 'freehand', 'bracket', 'slash']);
 export const PRESENTATION_SYMBOLS = Object.freeze(['question', 'cross', 'check', 'heart', 'flourish']);
 export const PRESENTATION_ANNOTATION_PLACEMENTS = Object.freeze(['over', 'after', 'before', 'corner', 'below']);
 export const PRESENTATION_STATE_CONDITIONS = Object.freeze([

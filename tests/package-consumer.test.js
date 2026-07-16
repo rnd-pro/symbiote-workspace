@@ -14,6 +14,10 @@ let ROOT = resolve(import.meta.dirname, '..');
 let TMP_ROOT = resolve(ROOT, 'tmp');
 let PACKAGE_META = JSON.parse(readFileSync(resolve(ROOT, 'package.json'), 'utf8'));
 
+it('requires the published engine release that owns caption presentation APIs', () => {
+  assert.equal(PACKAGE_META.peerDependencies['symbiote-engine'], '>=0.3.0-alpha.12');
+});
+
 async function withTempConsumer(run) {
   await mkdir(TMP_ROOT, { recursive: true });
   let dir = await mkdtemp(join(TMP_ROOT, 'package-consumer-'));
@@ -23,6 +27,7 @@ async function withTempConsumer(run) {
       consumerDir: join(dir, 'consumer'),
       npmEnv: {
         ...process.env,
+        npm_config_legacy_peer_deps: 'false',
         HOME: join(dir, 'npm-home'),
         XDG_CACHE_HOME: join(dir, 'xdg-cache'),
         npm_config_cache: join(dir, 'npm-cache'),
@@ -39,8 +44,9 @@ async function packageRoot(specifier) {
   let dir = dirname(fileURLToPath(entryUrl));
   while (dir !== dirname(dir)) {
     try {
-      JSON.parse(await readFile(join(dir, 'package.json'), 'utf8'));
-      return dir;
+      let meta = JSON.parse(await readFile(join(dir, 'package.json'), 'utf8'));
+      if (meta.name && meta.version) return dir;
+      dir = dirname(dir);
     } catch {
       dir = dirname(dir);
     }
@@ -76,6 +82,23 @@ async function packPackage(packagePath, artifactsDir, npmEnv) {
     pack,
     tarball: join(artifactsDir, pack.filename),
   };
+}
+
+async function packDependencyClosure(specifiers, artifactsDir, npmEnv) {
+  let pending = [...specifiers];
+  let packed = [];
+  let seen = new Set();
+  while (pending.length) {
+    let specifier = pending.shift();
+    let root = await packageRoot(specifier);
+    let meta = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
+    let identity = `${meta.name}@${meta.version}`;
+    if (seen.has(identity)) continue;
+    seen.add(identity);
+    packed.push(await packPackage(root, artifactsDir, npmEnv));
+    pending.push(...Object.keys(meta.dependencies || {}));
+  }
+  return packed;
 }
 
 function packedPaths(pack) {
@@ -301,6 +324,11 @@ describe('packed package consumer', () => {
         artifactsDir,
         npmEnv,
       );
+      let symbioteCoreClosure = await packDependencyClosure(
+        ['@symbiotejs/symbiote'],
+        artifactsDir,
+        npmEnv,
+      );
       let wsPack = await packPackage(
         await packageRoot('ws'),
         artifactsDir,
@@ -315,14 +343,14 @@ describe('packed package consumer', () => {
       await run('npm', [
         'install',
         symbioteEngineTarball,
+        ...symbioteCoreClosure.map((item) => item.tarball),
         symbioteUiTarball,
         wsTarball,
         workspaceTarball,
         '--ignore-scripts',
         '--no-audit',
         '--no-fund',
-        '--legacy-peer-deps',
-        '--offline',
+        '--prefer-offline',
       ], withNpmEnv({ cwd: consumerDir }, npmEnv));
 
       await runNode(consumerDir, `
@@ -395,6 +423,7 @@ describe('packed package consumer', () => {
         'symbiote-ui/ui',
         'symbiote-engine',
         'symbiote-engine/contracts',
+        'symbiote-engine/',
       ]);
       assert.equal(previewContract.browser.themeAdapterModule, 'symbiote-ui/ui');
       assert.equal(previewContract.browser.themeAdapterExport, 'applyCascadeTheme');

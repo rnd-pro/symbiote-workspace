@@ -155,7 +155,7 @@ describe('presentation timeline v3 contract', () => {
   });
 });
 
-describe('workspace aligned sequence v1', () => {
+describe('workspace aligned sequence v2', () => {
   it('resolves every turn and cue against one media identity with provenance', () => {
     let timeline = createPresentationTimelineContract(fixture());
     let sequence = createPresentationAlignedSequence(timeline, {
@@ -164,6 +164,7 @@ describe('workspace aligned sequence v1', () => {
         {
           startMs: 0,
           endMs: 1800,
+          speaker: timeline.turns[0].persona,
           transcript: timeline.turns[0].text,
           words: [
             { text: 'Где', startMs: 0, endMs: 250 },
@@ -175,6 +176,7 @@ describe('workspace aligned sequence v1', () => {
         {
           startMs: 1900,
           endMs: 4200,
+          speaker: timeline.turns[1].persona,
           transcript: timeline.turns[1].text,
           words: [
             { text: 'Поток', startMs: 1900, endMs: 2200 },
@@ -190,6 +192,7 @@ describe('workspace aligned sequence v1', () => {
       ],
     });
 
+    assert.equal(PRESENTATION_ALIGNED_SEQUENCE_VERSION, 'workspace-aligned-sequence-v2');
     assert.equal(sequence.contractVersion, PRESENTATION_ALIGNED_SEQUENCE_VERSION);
     assert.equal(sequence.timelineHash, timeline.hash);
     assert.equal(sequence.turns.length, timeline.turns.length);
@@ -197,6 +200,10 @@ describe('workspace aligned sequence v1', () => {
     assert.equal(sequence.events[0].cueId, '0.0');
     assert.equal(sequence.events.every((event) => ['exact', 'occurrence', 'fuzzy', 'proportional'].includes(event.resolution)), true);
     assert.equal(validatePresentationAlignedSequence(sequence, timeline), sequence);
+    assert.throws(
+      () => validatePresentationAlignedSequence({ ...sequence, contractVersion: 'workspace-aligned-sequence-v1' }, timeline),
+      /unsupported aligned sequence version/,
+    );
     assert.throws(() => validatePresentationAlignedSequence({ ...sequence, timelineHash: 'stale' }, timeline), /timelineHash/);
     assert.throws(
       () => validatePresentationAlignedSequence({ ...sequence, events: [{ ...sequence.events[0], cueId: '9.9' }, ...sequence.events.slice(1)] }, timeline),
@@ -205,6 +212,26 @@ describe('workspace aligned sequence v1', () => {
     assert.throws(
       () => validatePresentationAlignedSequence({ ...sequence, turns: [{ ...sequence.turns[0], extra: true }, ...sequence.turns.slice(1)] }, timeline),
       /extra is not supported/,
+    );
+    assert.throws(
+      () => createPresentationAlignedSequence(timeline, {
+        media: { hash: 'sha256-audio', durationMs: 4200, locale: 'ru-RU' },
+        turns: [
+          { startMs: 0, endMs: 1800, speaker: '', transcript: timeline.turns[0].text, words: [] },
+          { startMs: 1900, endMs: 4200, speaker: timeline.turns[1].persona, transcript: timeline.turns[1].text, words: [] },
+        ],
+      }),
+      /speaker must be nonempty/,
+    );
+    assert.throws(
+      () => createPresentationAlignedSequence(timeline, {
+        media: { hash: 'sha256-audio', durationMs: 4200, locale: 'ru-RU' },
+        turns: [
+          { startMs: 0, endMs: 1800, speaker: timeline.turns[0].persona, transcript: 'Подменённый текст.', words: [] },
+          { startMs: 1900, endMs: 4200, speaker: timeline.turns[1].persona, transcript: timeline.turns[1].text, words: [] },
+        ],
+      }),
+      /transcript does not match the authored turn/,
     );
   });
 });

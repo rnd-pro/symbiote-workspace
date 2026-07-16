@@ -45,6 +45,7 @@ export {
   WORKSPACE_PACKAGE_SCHEMA_VERSION,
   BROWSER_ENGINE_CONTRACTS_IMPORT,
   BROWSER_ENGINE_IMPORT,
+  BROWSER_ENGINE_PREFIX_IMPORT,
   BROWSER_REQUIRED_IMPORTS,
   BROWSER_THEME_IMPORT,
   exportConfig,
@@ -122,17 +123,24 @@ export {
 } from './runtime/lesson-context.js';
 
 export {
+  PRESENTATION_CAPTION_COMPOSITION_SCHEMA_VERSION,
+  PRESENTATION_CAPTION_TIMING_TOLERANCE_MS,
+  PRESENTATION_COMPOSITION_CUE_KINDS,
   PRESENTATION_COMPOSITION_ISSUE_CODES,
   PRESENTATION_COMPOSITION_PLAN_SCHEMA_VERSION,
   PRESENTATION_OUTPUT_SPEC_SCHEMA_VERSION,
   auditPresentationCompositionPlan,
+  bindCaptionCuesToAlignedSequence,
   createLessonIntentHash,
   createPresentationCompositionPlan,
+  listPresentationCompositionCueSlots,
   normalizePresentationOutputSpec,
   normalizePresentationRect,
   normalizePresentationTargetComposition,
   presentationOutputOrientation,
+  presentationReplanRequestHash,
   presentationRectsIntersect,
+  planCaptionPlacements,
 } from './runtime/presentation-output.js';
 
 export {
@@ -260,9 +268,12 @@ export {
   PRESENTATION_JOURNEY_SCHEMA_VERSION,
   PRESENTATION_JOURNEY_OUTCOMES,
   PRESENTATION_JOURNEY_PROVENANCE,
+  PORTABLE_READINESS_RECEIPT_VERSION,
   createPresentationJourney,
+  createPortableReadinessReceipt,
   presentationJourneyReplayProjection,
   validatePresentationJourney,
+  validatePortableReadinessReceipt,
 } from './runtime/presentation-journey.js';
 
 import {
@@ -281,6 +292,7 @@ import { createRouter } from './runtime/router-lane.js';
 import {
   createPresentationContextSnapshot,
   createPresentationReplanRequest,
+  createPresentationTimelineHash,
   createWorkspacePresentationTimeline,
   finalizePresentationReplan,
   normalizePresentationTimeline,
@@ -1014,6 +1026,17 @@ function presentationPreparationError(code, message, cause) {
   return error;
 }
 
+function resolveCurrentLessonDefinition(explicitLesson, contextLesson, fallback) {
+  let explicit = isObject(explicitLesson) ? clonePortable(explicitLesson) : {};
+  let current = isObject(contextLesson) ? clonePortable(contextLesson) : {};
+  if (!hasKeys(explicit) && !hasKeys(current)) return fallback;
+  let lesson = { ...current, ...explicit };
+  for (let key of ['requiredFactIds', 'requiredTargetIds']) {
+    if (Array.isArray(current[key])) lesson[key] = current[key];
+  }
+  return lesson;
+}
+
 function contextRecordMap(records = []) {
   return new Map(records.map((record) => [record?.id || record?.address || record?.path, JSON.stringify(clonePortable(record))]));
 }
@@ -1084,7 +1107,7 @@ export async function prepareWorkspacePresentation(options = {}) {
   let lessonEnabled = Boolean(options.lessonContext || options.lesson || sourceContext.lesson);
   let lessonContext = lessonEnabled
     ? createPresentationLessonContext(sourceContext, {
-      lesson: options.lesson || sourceContext.lesson || options.request,
+      lesson: resolveCurrentLessonDefinition(options.lesson, sourceContext.lesson, options.request),
       constraints: options.lessonConstraints || sourceContext.constraints,
       output,
       sourceSnapshot,
@@ -1199,8 +1222,8 @@ export async function prepareWorkspacePresentation(options = {}) {
       if (lessonContext) {
         try {
           lessonContext = createPresentationLessonContext(targetContext, {
-            lesson: options.lesson || sourceContext.lesson || options.request,
-            constraints: options.lessonConstraints || sourceContext.constraints,
+            lesson: resolveCurrentLessonDefinition(options.lesson, targetContext.lesson || sourceContext.lesson, options.request),
+            constraints: options.lessonConstraints || targetContext.constraints || sourceContext.constraints,
             output,
             sourceSnapshot,
             targetSnapshot,
@@ -1243,6 +1266,19 @@ export async function prepareWorkspacePresentation(options = {}) {
     compositionPlan,
     requireComposition,
   });
+  let withReviewFeedback = (reviewFeedback) => createPresentationReplanRequest({
+    request: { prompt: request.prompt, profile: request.profile },
+    sourceSnapshot,
+    targetSnapshot,
+    personaSpec: request.personaSpec,
+    turnBudget: request.turnBudget,
+    allowedActions: request.allowedActions,
+    actionBudget: { remainingRounds: 0, remainingActions: 0 },
+    output: request.output,
+    priorTimelineHash: createPresentationTimelineHash(candidate.timeline),
+    lessonContext: request.lessonContext,
+    reviewFeedback,
+  });
   let result;
   let repairUsed = false;
   try {
@@ -1250,18 +1286,10 @@ export async function prepareWorkspacePresentation(options = {}) {
   } catch (cause) {
     let repairLimit = Math.min(1, Math.max(0, Math.floor(Number(options.reviewRepairAttempts) || 0)));
     if (!repairLimit || cause?.code !== 'TOUR_REPLAN_REJECTED' || !cause?.review?.issues?.length) throw cause;
-    request = {
-      ...request,
-      reviewFeedback: {
-        attempt: 1,
-        issues: cause.review.issues.map((issue) => ({
-          code: issue.code,
-          turnIndex: issue.turnIndex,
-          turnId: issue.turnId,
-          message: issue.message,
-        })),
-      },
-    };
+    request = withReviewFeedback({
+      attempt: 1,
+      issues: cause.review.issues.map((issue) => clonePortable(issue)),
+    });
     repairUsed = true;
     await emit('tour.replan.review-repair.started', request.reviewFeedback);
     try {
@@ -1311,13 +1339,14 @@ export async function prepareWorkspacePresentation(options = {}) {
   } catch (cause) {
     let repairLimit = Math.min(1, Math.max(0, Math.floor(Number(options.reviewRepairAttempts) || 0)));
     if (repairUsed || !repairLimit || cause?.code !== 'PRESENTATION_COMPOSITION_REJECTED' || !cause?.review?.issues?.length) throw cause;
-    request = {
-      ...request,
-      reviewFeedback: {
-        attempt: 1,
-        issues: cause.review.issues.map((issue) => ({ code: issue.code, path: issue.path, message: issue.message })),
-      },
-    };
+    request = withReviewFeedback({
+      attempt: 1,
+      issues: cause.review.issues.map((issue) => {
+        let stepIndex = Number(/^steps\[(\d+)\]/.exec(String(issue.path || ''))?.[1]);
+        let targetId = Number.isInteger(stepIndex) ? cause.compositionPlan?.steps?.[stepIndex]?.targetId : '';
+        return { ...clonePortable(issue), ...(targetId ? { targetId } : {}) };
+      }),
+    });
     repairUsed = true;
     await emit('tour.composition.review-repair.started', request.reviewFeedback);
     try {

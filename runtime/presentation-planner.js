@@ -1,6 +1,10 @@
 import { canonicalize, computeIntegrity } from '../schema/canonical-json.js';
+import {
+  PRESENTATION_REPLAN_REQUEST_SCHEMA_VERSION,
+  presentationReplanRequestHash,
+} from './presentation-output.js';
 
-export const PRESENTATION_PLANNER_INPUT_SCHEMA_VERSION = 'presentation-planner-input-v1';
+export const PRESENTATION_PLANNER_INPUT_SCHEMA_VERSION = 'presentation-planner-input-v2';
 export const PRESENTATION_PLANNER_INPUT_MAX_BYTES = 96 * 1024;
 
 const PRIVATE_KEY = /(?:authorization|cookie|credential|password|secret|session(?:id)?|access[_-]?token|api[_-]?key)/i;
@@ -160,6 +164,10 @@ function projectEvidence(lessonContext = {}) {
 export function createPresentationPlannerInput(request = {}, snapshot = {}, options = {}) {
   if (!request.targetSnapshotHash || !snapshot.identityHash) throw new TypeError('presentation planner input requires a target snapshot basis');
   if (request.targetSnapshotHash !== snapshot.identityHash) throw new TypeError('presentation planner input snapshot basis is stale');
+  if (request.schemaVersion !== PRESENTATION_REPLAN_REQUEST_SCHEMA_VERSION
+    || request.hash !== presentationReplanRequestHash(request)) {
+    throw new TypeError('presentation planner input requires an exact current replan request hash');
+  }
   let lessonContext = isObject(request.lessonContext) ? request.lessonContext : {};
   let output = request.output || snapshot.output || {};
   let targets = projectTargets(request, lessonContext, snapshot);
@@ -168,6 +176,7 @@ export function createPresentationPlannerInput(request = {}, snapshot = {}, opti
   let projection = {
     schemaVersion: PRESENTATION_PLANNER_INPUT_SCHEMA_VERSION,
     basis: compact({
+      requestHash: text(request.hash),
       targetSnapshotHash: text(request.targetSnapshotHash),
       lessonContextHash: text(request.lessonContextHash),
       outputSpecHash: text(request.outputSpecHash),

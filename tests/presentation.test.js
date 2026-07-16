@@ -19,6 +19,7 @@ import {
   normalizePresentationTimeline as normalizePresentationTimelineV3,
   presentationTimelineHasTurns,
   reviewPresentationTimeline,
+  reviewPresentationTimelineAgainstLessonContext,
   reviewPresentationTimelineAgainstSnapshot,
 } from '../index.js';
 import {
@@ -29,6 +30,84 @@ import {
 import behaviorSection from '../schema/sections/behavior.js';
 
 const VERSION = '1.0.0';
+
+it('uses current lesson targets, arc, and output voice mode during review', () => {
+  let targetId = 'panel:req-2:dispatcher-board';
+  let sources = {
+    subject: 'Review the dispatcher board lesson.',
+    outcome: 'The verified dispatch result is ready.',
+    fact: 'Crew queue status is ready for dispatch.',
+  };
+  let sourceRefs = (...ids) => ids.map((sourceId) => ({ sourceId, targetId }));
+  let focus = {
+    kind: 'focus',
+    targetId,
+    tabId: 'req-2',
+    at: { anchor: 'turn-start' },
+    until: { anchor: 'turn-end' },
+    focus: { mode: 'cursor' },
+  };
+  let factClaim = (id, text) => ({
+    id,
+    kind: 'state',
+    text,
+    factRefs: ['fact'],
+    evidenceRefs: ['fact'],
+    targetRefs: [targetId],
+  });
+  let timeline = timelineV3({
+    profile: 'task-specific',
+    grounding: {
+      sources: Object.entries(sources).map(([id, summary]) => ({ id, summary, targetId })),
+    },
+    turns: [{
+      id: 'open', persona: 'guide', dialogueAct: 'open',
+      text: 'The dispatcher board lesson leads to a verified dispatch result.',
+      sourceRefs: sourceRefs('subject', 'outcome'), cues: [focus],
+    }, {
+      id: 'body', persona: 'guide', dialogueAct: 'explain',
+      text: sources.fact, sourceRefs: sourceRefs('fact'), claims: [factClaim('body-claim', sources.fact)], cues: [focus],
+    }, {
+      id: 'summary', persona: 'guide', dialogueAct: 'summarize',
+      text: 'Crew queue status supports the verified dispatch result.',
+      sourceRefs: sourceRefs('outcome', 'fact'),
+      claims: [factClaim('summary-claim', 'Crew queue status is ready for dispatch.')], cues: [focus],
+    }, {
+      id: 'close', persona: 'guide', dialogueAct: 'close',
+      text: sources.outcome, sourceRefs: sourceRefs('outcome'), cues: [focus],
+    }],
+  });
+  let currentArc = {
+    subjectSourceIds: ['subject'],
+    outcomeSourceIds: ['outcome'],
+    requiredFactIds: ['fact'],
+    requiredTargetIds: [targetId],
+    orderedTargetIds: [targetId],
+  };
+  let lessonContext = {
+    hash: 'lesson-current',
+    lesson: { locale: 'en-US', requiredTargetIds: [targetId] },
+    output: { voice: { mode: 'single' } },
+    constraints: { lessonArc: currentArc },
+    targetSnapshot: {},
+    targets: [{ id: targetId, tabId: 'req-2', toolRefs: [] }],
+    toolDescriptors: [],
+    facts: [{ id: 'fact', label: 'Crew queue status', value: sources.fact, evidenceRefs: ['fact'] }],
+    evidence: Object.entries(sources).map(([id, summary]) => ({ id, summary, targetRefs: [targetId] })),
+  };
+  let staleArc = { ...currentArc, requiredTargetIds: ['panel:req-1:stale'], orderedTargetIds: ['panel:req-1:stale'] };
+
+  let review = reviewPresentationTimelineAgainstLessonContext(timeline, lessonContext, {
+    strictLessonArc: true,
+    speakerMode: 'dialogue',
+    selectedTabIds: ['req-1'],
+    lessonArc: staleArc,
+  });
+
+  assert.equal(review.issues.some((issue) => issue.code === 'missing-requested-tab'), false);
+  assert.equal(review.issues.some((issue) => issue.code === 'dialogue-role-count'), false);
+  assert.equal(review.issues.some((issue) => issue.code.startsWith('lesson-arc-')), false, JSON.stringify(review.issues));
+});
 
 function timelineV3(input = {}) {
   if (input.contractVersion === PRESENTATION_CONTRACT_VERSION) return input;
@@ -972,6 +1051,38 @@ describe('canonical presentation timeline contract', () => {
     assert.ok(review.issues.some((issue) => issue.code === 'missing-dialogue-handoff'));
   });
 
+  it('allows natural target words while rejecting serialized target and tool identifiers', () => {
+    let natural = createPresentationTimelineContract({
+      id: 'natural-chat-tour',
+      turns: [{
+        id: 'chat-turn',
+        persona: 'guide',
+        dialogueAct: 'explain',
+        text: 'The request enters chat before the workspace appears.',
+        cue: { targetId: 'chat' },
+      }],
+    });
+    let naturalReview = reviewPresentationTimelineAgainstSnapshot(natural, {
+      targets: [{ address: 'chat', webmcpToolNames: [] }],
+    });
+    assert.equal(naturalReview.issues.some((issue) => issue.code === 'spoken-metadata-token'), false);
+
+    let serialized = createPresentationTimelineContract({
+      id: 'serialized-target-tour',
+      turns: [{
+        id: 'serialized-turn',
+        persona: 'guide',
+        dialogueAct: 'explain',
+        text: 'Open panel:req-2:dispatcher-board with select_work_order.',
+        cue: { targetId: 'panel:req-2:dispatcher-board' },
+      }],
+    });
+    let serializedReview = reviewPresentationTimelineAgainstSnapshot(serialized, {
+      targets: [{ address: 'panel:req-2:dispatcher-board', webmcpToolNames: ['select_work_order'] }],
+    });
+    assert.ok(serializedReview.issues.some((issue) => issue.code === 'spoken-metadata-token'));
+  });
+
   it('rejects same-persona overlap and keeps overlap turns short', () => {
     let timeline = createPresentationTimelineContract({
       id: 'bad-overlap-tour',
@@ -1114,16 +1225,16 @@ describe('canonical presentation timeline contract', () => {
     let sequential = createPresentationAlignedSequence(timeline, {
       media: { hash: 'sha256-audio', durationMs: 2100, locale: 'en-US' },
       turns: [
-        { startMs: 0, endMs: 1200, transcript: 'First turn.', words: [] },
-        { startMs: 1200, endMs: 2100, transcript: 'Second turn.', words: [] },
+        { startMs: 0, endMs: 1200, speaker: 'guide', transcript: 'First turn.', words: [] },
+        { startMs: 1200, endMs: 2100, speaker: 'ops', transcript: 'Second turn.', words: [] },
       ],
     });
 
     assert.deepEqual(
       sequential.turns,
       [
-        { turnIndex: 0, startMs: 0, endMs: 1200 },
-        { turnIndex: 1, startMs: 1200, endMs: 2100 },
+        { turnIndex: 0, speaker: 'guide', transcript: 'First turn.', startMs: 0, endMs: 1200 },
+        { turnIndex: 1, speaker: 'ops', transcript: 'Second turn.', startMs: 1200, endMs: 2100 },
       ],
     );
     assert.deepEqual(sequential.events.map((event) => event.cueId), ['0.0', '1.0']);
@@ -1132,8 +1243,8 @@ describe('canonical presentation timeline contract', () => {
       () => createPresentationAlignedSequence(timeline, {
         media: { hash: 'sha256-audio', durationMs: 2100 },
         turns: [
-          { startMs: 1200, endMs: 1500, transcript: 'First turn.', words: [] },
-          { startMs: 500, endMs: 2100, transcript: 'Second turn.', words: [] },
+          { startMs: 1200, endMs: 1500, speaker: 'guide', transcript: 'First turn.', words: [] },
+          { startMs: 500, endMs: 2100, speaker: 'ops', transcript: 'Second turn.', words: [] },
         ],
       }),
       /turn spans must be monotonic/,
@@ -1221,7 +1332,7 @@ describe('presentation replan contracts', () => {
     assert.deepEqual(request.turnBudget, { minTurns: 1, maxTurns: 6 });
     let candidate = {
       status: 'ready',
-      basis: { targetSnapshotHash: snapshot.identityHash, outputSpecHash: request.outputSpecHash, generation: 2 },
+      basis: { requestHash: request.hash, targetSnapshotHash: snapshot.identityHash, outputSpecHash: request.outputSpecHash, generation: 2 },
       timeline: timelineV3({
         title: 'Grounded queue',
         grounding: { sources: snapshot.dataSources },
@@ -1245,9 +1356,24 @@ describe('presentation replan contracts', () => {
     assert.equal(result.timelineHash, result.timeline.hash);
     assert.equal(result.review.verdict, 'pass');
     assert.throws(
+      () => finalizePresentationReplan(candidate, {
+        ...request,
+        sourceCompositionHash: 'forged-source-composition',
+        targetCompositionHash: 'forged-target-composition',
+      }, { snapshot, requireComposition: false }),
+      (error) => error.code === 'REPLAN_REQUEST_STALE',
+    );
+    assert.throws(
       () => finalizePresentationReplan({
         ...candidate,
-        basis: { targetSnapshotHash: snapshot.identityHash, outputSpecHash: request.outputSpecHash, generation: 1 },
+        basis: { ...candidate.basis, requestHash: `${request.hash}:other` },
+      }, request, { snapshot, requireComposition: false }),
+      (error) => error.code === 'REPLAN_REQUEST_STALE',
+    );
+    assert.throws(
+      () => finalizePresentationReplan({
+        ...candidate,
+        basis: { requestHash: request.hash, targetSnapshotHash: snapshot.identityHash, outputSpecHash: request.outputSpecHash, generation: 1 },
       }, request, { snapshot, requireComposition: false }),
       (error) => error.code === 'TARGET_CONTEXT_STALE',
     );

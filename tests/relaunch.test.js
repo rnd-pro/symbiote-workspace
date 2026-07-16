@@ -780,6 +780,7 @@ describe('host integration contract', () => {
       'symbiote-ui/ui',
       'symbiote-engine',
       'symbiote-engine/contracts',
+      'symbiote-engine/',
     ]);
     assert.equal(result.contract.browser.importMap.required, true);
     assert.equal(result.contract.browser.importMap.scriptType, 'importmap');

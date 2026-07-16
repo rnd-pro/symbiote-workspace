@@ -2,9 +2,13 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import {
+  PRESENTATION_COMPOSITION_CUE_KINDS,
+  PRESENTATION_COMPOSITION_PLAN_SCHEMA_VERSION,
+  PRESENTATION_OUTPUT_SPEC_SCHEMA_VERSION,
   auditPresentationCompositionPlan,
   createLessonIntentHash,
   createPresentationCompositionPlan,
+  listPresentationCompositionCueSlots,
   normalizePresentationOutputSpec,
 } from '../runtime/presentation-output.js';
 
@@ -51,27 +55,111 @@ function validPlan(overrides = {}) {
   });
 }
 
+function compositionExpectations(plan, overrides = {}) {
+  return {
+    sourceCompositionHash: plan.sourceCompositionHash,
+    targetCompositionHash: plan.targetCompositionHash,
+    ...overrides,
+  };
+}
+
 describe('presentation output and composition contracts', () => {
+  it('uses one composition cue taxonomy for focus, interaction, and annotation evidence', () => {
+    let slots = listPresentationCompositionCueSlots({
+      turns: [{
+        id: 'turn-1',
+        cues: [
+          { kind: 'state', targetId: 'state-only' },
+          { kind: 'focus', targetId: 'panel:orders' },
+          { kind: 'interaction', targetId: 'button:approve' },
+          { kind: 'annotation', targetId: 'field:status' },
+        ],
+      }],
+    });
+
+    assert.deepEqual(PRESENTATION_COMPOSITION_CUE_KINDS, ['focus', 'interaction', 'annotation']);
+    assert.deepEqual(slots.map(({ kind, targetId, slotIndex, cueIndex }) => ({ kind, targetId, slotIndex, cueIndex })), [
+      { kind: 'focus', targetId: 'panel:orders', slotIndex: 0, cueIndex: 1 },
+      { kind: 'interaction', targetId: 'button:approve', slotIndex: 1, cueIndex: 2 },
+      { kind: 'annotation', targetId: 'field:status', slotIndex: 2, cueIndex: 3 },
+    ]);
+  });
+
+  it('rejects obsolete output and composition identities instead of silently migrating them', () => {
+    assert.equal(PRESENTATION_OUTPUT_SPEC_SCHEMA_VERSION, 'workspace-presentation-output-v3');
+    assert.equal(PRESENTATION_COMPOSITION_PLAN_SCHEMA_VERSION, 'workspace-presentation-composition-v3');
+    assert.throws(
+      () => normalizePresentationOutputSpec({ schemaVersion: 'workspace-presentation-output-v2' }),
+      /unsupported presentation output schema version/,
+    );
+    assert.throws(
+      () => createPresentationCompositionPlan({ schemaVersion: 'workspace-presentation-composition-v2' }),
+      /unsupported presentation composition schema version/,
+    );
+  });
+
+  it('rejects post-signature measurement mutation and stale composition identity', () => {
+    let mutated = validPlan();
+    mutated.steps[0].measurement.focusRect.x += 1;
+    let mutationAudit = auditPresentationCompositionPlan(mutated, compositionExpectations(mutated, {
+      targetCompositionHash: 'composition:target',
+    }));
+    assert.equal(mutationAudit.verdict, 'reject');
+    assert.ok(mutationAudit.issueCodes.includes('composition-repair-stale'));
+
+    let stalePlan = validPlan();
+    let staleTargetAudit = auditPresentationCompositionPlan(stalePlan, compositionExpectations(stalePlan, {
+      targetCompositionHash: 'composition:new-target',
+    }));
+    assert.equal(staleTargetAudit.verdict, 'reject');
+    assert.ok(staleTargetAudit.issueCodes.includes('output-context-stale'));
+
+    let unboundAudit = auditPresentationCompositionPlan(validPlan());
+    assert.equal(unboundAudit.verdict, 'reject');
+    assert.ok(unboundAudit.issueCodes.includes('output-context-stale'));
+  });
+
   it('normalizes all mandatory formats with explicit safe, caption, voice, language, and duration inputs', () => {
     let horizontal = normalizePresentationOutputSpec({ width: 1920, height: 1080, speakerMode: 'dialogue', locale: 'en-US', durationMs: 60000 });
-    let vertical = normalizePresentationOutputSpec({ width: 1080, height: 1920, speakerMode: 'single', locale: 'ru-RU', durationMs: 30000 });
+    let vertical = normalizePresentationOutputSpec({ width: 1080, height: 1920, speakerMode: 'single', speakerId: 'guide', locale: 'ru-RU', durationMs: 30000 });
     let square = normalizePresentationOutputSpec({ width: 1080, height: 1080, captionsMode: 'off', durationMs: 90000 });
 
     assert.equal(horizontal.orientation, 'horizontal');
     assert.equal(horizontal.aspectRatio, '16:9');
     assert.equal(horizontal.safeArea.top, 54);
-    assert.equal(horizontal.captions.reservePx, 194);
+    assert.equal(horizontal.captions.profile.preset, 'youtube');
+    assert.ok(horizontal.captions.profile.fontSize >= 30);
+    assert.deepEqual(horizontal.captions.profile.preferredZones, ['bottom', 'top']);
     assert.equal(vertical.orientation, 'vertical');
     assert.equal(vertical.aspectRatio, '9:16');
+    assert.equal(vertical.captions.profile.preset, 'tiktok');
+    assert.deepEqual(vertical.captions.profile.preferredZones, ['bottom', 'top', 'middle']);
     assert.equal(vertical.voice.mode, 'single');
     assert.equal(vertical.locale, 'ru-RU');
     assert.equal(square.orientation, 'square');
     assert.equal(square.aspectRatio, '1:1');
-    assert.equal(square.captions.rect, null);
+    assert.equal(square.captions.enabled, false);
+    assert.equal(square.captions.profile.preset, 'square');
     assert.notEqual(horizontal.hash, vertical.hash);
     assert.notEqual(vertical.hash, square.hash);
     assert.throws(() => normalizePresentationOutputSpec({ fps: 24 }), /constant 30 fps/);
     assert.throws(() => normalizePresentationOutputSpec({ dpr: 2 }), /DPR 1/);
+  });
+
+  it('overrides preset caption zones only when placement is explicit', () => {
+    let top = normalizePresentationOutputSpec({
+      width: 1080,
+      height: 1920,
+      captions: { placement: 'top' },
+    });
+    let explicit = normalizePresentationOutputSpec({
+      width: 1080,
+      height: 1920,
+      captions: { preferredZones: ['middle', 'top'] },
+    });
+
+    assert.deepEqual(top.captions.profile.preferredZones, ['top', 'bottom']);
+    assert.deepEqual(explicit.captions.profile.preferredZones, ['middle', 'top']);
   });
 
   it('preserves semantic output geometry when frame insets are zero', () => {
@@ -80,8 +168,7 @@ describe('presentation output and composition contracts', () => {
 
     assert.deepEqual(base.frameInsets, { top: 0, right: 0, bottom: 0, left: 0 });
     assert.deepEqual(base.presentationViewport, { x: 0, y: 0, width: 1920, height: 1080 });
-    assert.deepEqual(base.contentRect, { x: 54, y: 54, width: 1812, height: 778 });
-    assert.equal(base.captions.rect.y, 1080 - 54 - 194);
+    assert.deepEqual(base.contentRect, { x: 54, y: 54, width: 1812, height: 972 });
     assert.equal(base.hash, explicitZero.hash);
   });
 
@@ -95,8 +182,8 @@ describe('presentation output and composition contracts', () => {
     assert.ok(horizontal.contentRect.x >= horizontal.presentationViewport.x);
     assert.ok(horizontal.contentRect.y >= horizontal.presentationViewport.y);
     assert.ok(horizontal.contentRect.x + horizontal.contentRect.width <= horizontal.presentationViewport.x + horizontal.presentationViewport.width);
-    assert.ok(horizontal.captions.rect.y + horizontal.captions.rect.height <= horizontal.presentationViewport.y + horizontal.presentationViewport.height);
-    assert.ok(horizontal.captions.rect.x >= horizontal.presentationViewport.x);
+    assert.equal(horizontal.captions.profile.width, 1920);
+    assert.equal(horizontal.captions.profile.height, 1080);
 
     assert.deepEqual(vertical.presentationViewport, { x: 0, y: 87, width: 720, height: 1193 });
     assert.ok(vertical.contentRect.y >= 87);
@@ -120,6 +207,8 @@ describe('presentation output and composition contracts', () => {
     });
     let accepted = createPresentationCompositionPlan({
       output,
+      sourceCompositionHash: 'composition:source',
+      targetCompositionHash: 'composition:target',
       structuralHash: 'snapshot-v2:structural',
       timelineHash: 'timeline-v2:ready',
       lessonIntentHash: 'workspace-lesson-intent-v1:stable',
@@ -129,18 +218,20 @@ describe('presentation output and composition contracts', () => {
       simulationFrozen: true,
       steps: [pageLocalStep],
     });
-    let acceptAudit = auditPresentationCompositionPlan(accepted, { requiredTargetIds: ['panel:orders'] });
+    let acceptAudit = auditPresentationCompositionPlan(accepted, compositionExpectations(accepted, { requiredTargetIds: ['panel:orders'] }));
     assert.equal(acceptAudit.verdict, 'accept', acceptAudit.issueCodes.join(', '));
 
     let fullOutputMeasure = createPresentationCompositionPlan({
       output,
+      sourceCompositionHash: 'composition:source',
+      targetCompositionHash: 'composition:target',
       measuredViewport: { width: 1920, height: 1080, visualWidth: 1920, visualHeight: 1080, dpr: 1 },
       baselineStructuralHash: 'snapshot-v2:structural',
       restoredStructuralHash: 'snapshot-v2:structural',
       simulationFrozen: true,
       steps: [pageLocalStep],
     });
-    let rejectAudit = auditPresentationCompositionPlan(fullOutputMeasure, { requiredTargetIds: ['panel:orders'] });
+    let rejectAudit = auditPresentationCompositionPlan(fullOutputMeasure, compositionExpectations(fullOutputMeasure, { requiredTargetIds: ['panel:orders'] }));
     assert.equal(rejectAudit.verdict, 'reject');
     assert.ok(rejectAudit.issueCodes.includes('output-viewport-mismatch'));
   });
@@ -150,6 +241,8 @@ describe('presentation output and composition contracts', () => {
     // A page-local focus at the page origin only fits final-frame content once translated by the viewport offset.
     let untranslatedWouldClip = createPresentationCompositionPlan({
       output,
+      sourceCompositionHash: 'composition:source',
+      targetCompositionHash: 'composition:target',
       measuredViewport: { width: 1820, height: 880, visualWidth: 1820, visualHeight: 880, dpr: 1 },
       baselineStructuralHash: 'snapshot-v2:structural',
       restoredStructuralHash: 'snapshot-v2:structural',
@@ -159,11 +252,13 @@ describe('presentation output and composition contracts', () => {
         annotation: { placement: 'right', rect: { x: 300, y: 44, width: 120, height: 60 } },
       })],
     });
-    assert.equal(auditPresentationCompositionPlan(untranslatedWouldClip, { requiredTargetIds: ['panel:orders'] }).verdict, 'accept');
+    assert.equal(auditPresentationCompositionPlan(untranslatedWouldClip, compositionExpectations(untranslatedWouldClip, { requiredTargetIds: ['panel:orders'] })).verdict, 'accept');
 
     // A page-local focus near the bottom of the page falls outside final-frame content after translation.
     let translatedClips = createPresentationCompositionPlan({
       output,
+      sourceCompositionHash: 'composition:source',
+      targetCompositionHash: 'composition:target',
       measuredViewport: { width: 1820, height: 880, visualWidth: 1820, visualHeight: 880, dpr: 1 },
       baselineStructuralHash: 'snapshot-v2:structural',
       restoredStructuralHash: 'snapshot-v2:structural',
@@ -172,7 +267,7 @@ describe('presentation output and composition contracts', () => {
         measurement: { ...validStep().measurement, focusRect: { x: 44, y: 860, width: 200, height: 60 }, visibleRect: { x: 44, y: 860, width: 200, height: 60 } },
       })],
     });
-    let clippedAudit = auditPresentationCompositionPlan(translatedClips, { requiredTargetIds: ['panel:orders'] });
+    let clippedAudit = auditPresentationCompositionPlan(translatedClips, compositionExpectations(translatedClips, { requiredTargetIds: ['panel:orders'] }));
     assert.equal(clippedAudit.verdict, 'reject');
     assert.ok(clippedAudit.issueCodes.includes('target-clipped'));
   });
@@ -182,6 +277,8 @@ describe('presentation output and composition contracts', () => {
     // Focus stays valid after translation; only the annotation, once translated, overruns final-frame content.
     let plan = createPresentationCompositionPlan({
       output,
+      sourceCompositionHash: 'composition:source',
+      targetCompositionHash: 'composition:target',
       measuredViewport: { width: 1820, height: 880, visualWidth: 1820, visualHeight: 880, dpr: 1 },
       baselineStructuralHash: 'snapshot-v2:structural',
       restoredStructuralHash: 'snapshot-v2:structural',
@@ -191,7 +288,7 @@ describe('presentation output and composition contracts', () => {
         annotation: { placement: 'below', rect: { x: 44, y: 860, width: 120, height: 60 } },
       })],
     });
-    let audit = auditPresentationCompositionPlan(plan, { requiredTargetIds: ['panel:orders'] });
+    let audit = auditPresentationCompositionPlan(plan, compositionExpectations(plan, { requiredTargetIds: ['panel:orders'] }));
     assert.equal(audit.verdict, 'reject');
     assert.ok(audit.issueCodes.includes('annotation-placement-unavailable'));
     assert.ok(!audit.issueCodes.includes('target-clipped'), audit.issueCodes.join(', '));
@@ -199,17 +296,17 @@ describe('presentation output and composition contracts', () => {
 
   it('accepts a restored, readable and collision-free per-turn composition plan', () => {
     let plan = validPlan();
-    let audit = auditPresentationCompositionPlan(plan, {
+    let audit = auditPresentationCompositionPlan(plan, compositionExpectations(plan, {
       outputSpecHash: plan.outputSpecHash,
       structuralHash: plan.structuralHash,
       timelineHash: plan.timelineHash,
       lessonIntentHash: plan.lessonIntentHash,
       requiredTargetIds: ['panel:orders'],
-    });
+    }));
 
     assert.equal(audit.verdict, 'accept');
     assert.equal(audit.coverage.coveredTargetCount, 1);
-    assert.match(plan.hash, /^workspace-presentation-composition-v2:/);
+    assert.match(plan.hash, /^workspace-presentation-composition-v3:/);
   });
 
   it('rejects every output and target composition failure with stable issue codes', () => {
@@ -228,7 +325,7 @@ describe('presentation output and composition contracts', () => {
 
     for (let [expectedCode, overrides] of cases) {
       let plan = validPlan(overrides);
-      let audit = auditPresentationCompositionPlan(plan, { requiredTargetIds: ['panel:orders'] });
+      let audit = auditPresentationCompositionPlan(plan, compositionExpectations(plan, { requiredTargetIds: ['panel:orders'] }));
       assert.equal(audit.verdict, 'reject', expectedCode);
       assert.ok(audit.issueCodes.includes(expectedCode), `${expectedCode}: ${audit.issueCodes.join(', ')}`);
     }

@@ -332,7 +332,7 @@ export function reviewPresentationDialogue(input = {}, intent = {}) {
   if (requireDialogue && longestPersonaRun > maxSamePersonaRun) {
     issues.push({ code: 'dialogue-monologue-run', severity: strict ? 'error' : 'warning', message: `Dialogue has ${longestPersonaRun} consecutive turns from one persona; max is ${maxSamePersonaRun}.`, longestPersonaRun, maxSamePersonaRun });
   }
-  if (qualityEnabled && turns.length >= 4 && alternations === turns.length - 1 && dependentAlternations / alternations < minAlternatingDependencyRatio) {
+  if (qualityEnabled && turns.length >= 4 && alternations > 0 && dependentAlternations / alternations < minAlternatingDependencyRatio) {
     issues.push({ code: PRESENTATION_DIALOGUE_ISSUE_CODES.alternatingMonologues, severity: strict ? 'error' : 'warning', message: 'Persona alternation lacks enough reply or lexical dependencies to form dialogue.', alternations, dependentAlternations });
   }
   let repetitionMetrics = dialogueRepetitionMetrics(

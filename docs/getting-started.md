@@ -159,6 +159,7 @@ await startPreview(config, {
     'symbiote-workspace/browser': './mock-workspace-browser.js',
     'symbiote-ui/ui': './mock-symbiote-ui.js',
     'symbiote-engine': './mock-symbiote-engine.js',
+    'symbiote-engine/': './mock-symbiote-engine/',
     'symbiote-engine/contracts': './mock-symbiote-engine-contracts.js',
   },
 });
@@ -170,7 +171,8 @@ copied into preview runtime state.
 
 When `imports` is omitted, preview defaults to local package specifiers and the
 returned `hint` identifies the serve root for `symbiote-workspace/browser`,
-`symbiote-ui/ui`, `symbiote-engine`, and `symbiote-engine/contracts`.
+`symbiote-ui/ui`, `symbiote-engine`, `symbiote-engine/`, and
+`symbiote-engine/contracts`.
 
 The generated runtime imports `applyCascadeTheme` and
 `applyCascadeGeometryRegister` from `symbiote-ui/ui`, passes them as

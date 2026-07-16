@@ -138,17 +138,24 @@ export {
   validateLessonToolInput,
 } from './lesson-context.js';
 export {
+  PRESENTATION_CAPTION_COMPOSITION_SCHEMA_VERSION,
+  PRESENTATION_CAPTION_TIMING_TOLERANCE_MS,
+  PRESENTATION_COMPOSITION_CUE_KINDS,
   PRESENTATION_COMPOSITION_ISSUE_CODES,
   PRESENTATION_COMPOSITION_PLAN_SCHEMA_VERSION,
   PRESENTATION_OUTPUT_SPEC_SCHEMA_VERSION,
   auditPresentationCompositionPlan,
+  bindCaptionCuesToAlignedSequence,
   createLessonIntentHash,
   createPresentationCompositionPlan,
+  listPresentationCompositionCueSlots,
   normalizePresentationOutputSpec,
   normalizePresentationRect,
   normalizePresentationTargetComposition,
   presentationOutputOrientation,
+  presentationReplanRequestHash,
   presentationRectsIntersect,
+  planCaptionPlacements,
 } from './presentation-output.js';
 export {
   PRESENTATION_PLANNER_INPUT_MAX_BYTES,
@@ -274,9 +281,12 @@ export {
   PRESENTATION_JOURNEY_SCHEMA_VERSION,
   PRESENTATION_JOURNEY_OUTCOMES,
   PRESENTATION_JOURNEY_PROVENANCE,
+  PORTABLE_READINESS_RECEIPT_VERSION,
   createPresentationJourney,
   presentationJourneyReplayProjection,
   validatePresentationJourney,
+  createPortableReadinessReceipt,
+  validatePortableReadinessReceipt,
 } from './presentation-journey.js';
 export {
   mediaToolFamily,

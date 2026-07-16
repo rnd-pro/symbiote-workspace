@@ -34,8 +34,8 @@ portable config:
   `construction_plan`, `construction_construct`, `config_patch_validate`,
   `config_patch_apply`, `config_export`, and `config_import`;
 - standalone browser requirements: import-map entries for
-  `symbiote-workspace/browser`, `symbiote-ui/ui`, `symbiote-engine`, and
-  `symbiote-engine/contracts`, plus `mountWorkspace()` and
+  `symbiote-workspace/browser`, `symbiote-ui/ui`, `symbiote-engine`,
+  `symbiote-engine/`, and `symbiote-engine/contracts`, plus `mountWorkspace()` and
   `symbiote-ui/ui.applyCascadeTheme`;
 - persistence requirements from `requires.hostServices`;
 - module, runtime-slot, and package requirements from `modules[]` and
@@ -362,11 +362,33 @@ unknown fields, target-mismatched sources, unregistered tools, unsafe spoken
 tokens, and disconnected dialogue before exposing TTS items.
 
 After synthesis/transcription, `createPresentationAlignedSequence()` produces a
-separate `workspace-aligned-sequence-v1` artifact bound to the exact timeline and
+separate `workspace-aligned-sequence-v2` artifact bound to the exact timeline and
 media hashes. It contains complete turn spans and one deterministic event per cue
 with absolute times and resolution provenance (`exact`, `occurrence`, `fuzzy`, or
-`proportional`). Renderers consume this derived artifact; they never write timing
-back into the authored timeline.
+`proportional`). Every aligned turn also carries the exact authored transcript and
+speaker identity; missing or mismatched values fail before the sequence is signed.
+Renderers consume this derived artifact; they never write timing back into the
+authored timeline.
+
+Caption composition reconstructs every authored turn and covers its complete
+aligned span. Segment boundaries may differ by at most the exported
+`PRESENTATION_CAPTION_TIMING_TOLERANCE_MS` (`50` ms), measured in integer
+microseconds so the inclusive boundary is deterministic. A single-speaker output
+must declare `voice.speakerId`; every caption cue must use that identity.
+`planCaptionPlacements()` requires the public `symbiote-engine >=0.3.0-alpha.12`
+peer and does not estimate around missing layout evidence. Before signing a
+caption track it runs the complete composition audit against the exact output,
+timeline, source layout, target layout, and every focus, interaction, and
+annotation target returned by `listPresentationCompositionCueSlots()`. Hidden,
+unreachable, clipped, occluded, or unreadable targets, failed scroll projection,
+missing annotation placement, active simulation, stale restoration, viewport
+drift, or missing cue coverage reject the plan.
+
+The current layout identities are `workspace-presentation-output-v3` and
+`workspace-presentation-composition-v3`. Explicit older schema identities are a
+migration boundary and fail closed. Hosts must rebuild output-specific planning
+after viewport, frame inset, caption, voice, locale, duration, target snapshot,
+or lesson intent changes; they must not rewrite an old artifact's version field.
 
 `createPresentationContextSnapshot()` separates stable interface identity from
 volatile live data. `identityHash` includes viewport, visible/rendered targets,
@@ -382,8 +404,12 @@ may request at most one deepening round with at most three actions; the host
 must execute only allowlisted safe actions, settle and recollect, then replan.
 Hosts may set `reviewRepairAttempts: 1` to permit one review-guided planner
 correction on the same target snapshot. That correction cannot request another
-deepening round; a missing, non-ready, stale, or still-rejected result fails the
-preflight.
-The finalizer rejects stale generations or snapshot hashes and returns one
-atomic timeline/cache identity. Rendering and TTS must consume that finalized
-packet rather than constructing a fallback timeline server-side.
+deepening round, carries a zero action budget, and names the rejected timeline as
+`priorTimelineHash`; a missing, non-ready, stale, or still-rejected result fails
+the preflight. `presentation-planner-input-v2` exposes the signed request hash in
+its basis, and a ready planner result must copy it to `basis.requestHash`.
+The finalizer verifies the complete signed replan request and exact planner
+request binding, then rejects stale generations, snapshot hashes, or
+source/target composition identities and returns one atomic timeline/cache
+identity. Rendering and TTS must consume that finalized packet rather than
+constructing a fallback timeline server-side.

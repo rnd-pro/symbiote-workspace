@@ -1,12 +1,14 @@
 export const BROWSER_THEME_IMPORT = 'symbiote-ui/ui';
 export const BROWSER_ENGINE_IMPORT = 'symbiote-engine';
 export const BROWSER_ENGINE_CONTRACTS_IMPORT = 'symbiote-engine/contracts';
+export const BROWSER_ENGINE_PREFIX_IMPORT = 'symbiote-engine/';
 
 export const BROWSER_REQUIRED_IMPORTS = Object.freeze([
   'symbiote-workspace/browser',
   BROWSER_THEME_IMPORT,
   BROWSER_ENGINE_IMPORT,
   BROWSER_ENGINE_CONTRACTS_IMPORT,
+  BROWSER_ENGINE_PREFIX_IMPORT,
 ]);
 
 const BROWSER_IMPORT_MAP_CONTRACT = Object.freeze({

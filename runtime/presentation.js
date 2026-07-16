@@ -7,8 +7,11 @@ import {
   PRESENTATION_REPLAN_RESULT_SCHEMA_VERSION,
   auditPresentationCompositionPlan,
   createLessonIntentHash,
+  listPresentationCompositionCueSlots,
   normalizePresentationOutputSpec,
   normalizePresentationTargetComposition,
+  planCaptionPlacements,
+  presentationReplanRequestHash,
 } from './presentation-output.js';
 import {
   PRESENTATION_CONTRACT_VERSION,
@@ -18,7 +21,7 @@ import {
   presentationTimelineHasTurns,
 } from './presentation/contract.js';
 import { reviewPresentationCues, primaryPresentationCue } from './presentation/cue-review.js';
-import { reviewPresentationDialogue } from './presentation/dialogue-review.js';
+import { reviewPresentationDialogue, PRESENTATION_DIALOGUE_QUALITY_PROFILE } from './presentation/dialogue-review.js';
 
 export {
   PRESENTATION_DIALOGUE_ISSUE_CODES,
@@ -56,9 +59,11 @@ export {
 } from './presentation/align.js';
 
 export {
+  PRESENTATION_CAPTION_TIMING_TOLERANCE_MS,
   PRESENTATION_CONTEXT_SNAPSHOT_SCHEMA_VERSION,
   PRESENTATION_REPLAN_REQUEST_SCHEMA_VERSION,
   PRESENTATION_REPLAN_RESULT_SCHEMA_VERSION,
+  planCaptionPlacements,
 } from './presentation-output.js';
 
 export const PRESENTATION_PROMPT_PROFILES = Object.freeze(['brief', 'full', 'data-grounded', 'task-specific', 'dialogue']);
@@ -112,6 +117,11 @@ export const PRESENTATION_LESSON_REVIEW_CODES = Object.freeze([
   'dialogue-monologue-run',
   'self-overlap',
   'overlong-overlap-turn',
+  'lesson-arc-contract-invalid',
+  'lesson-arc-start-invalid',
+  'lesson-arc-body-invalid',
+  'lesson-arc-closure-invalid',
+  'lesson-arc-final-invalid',
 ]);
 
 const PROFILE_ALIASES = Object.freeze({
@@ -189,6 +199,33 @@ const PRESENTATION_REQUEST_STOPWORDS = new Set([
   'тур',
   'что',
  ]);
+
+const PRESENTATION_LESSON_SEMANTIC_STOPWORDS = Object.freeze({
+  en: new Set([
+    'a', 'an', 'and', 'are', 'as', 'at', 'be', 'been', 'before', 'by', 'for',
+    'from', 'has', 'have', 'here', 'in', 'into', 'is', 'it', 'of', 'on', 'or',
+    'that', 'the', 'their', 'then', 'this', 'to', 'was', 'we', 'will', 'with',
+  ]),
+  ru: new Set([
+    'а', 'без', 'был', 'была', 'были', 'в', 'во', 'для', 'до', 'и', 'из', 'или',
+    'к', 'как', 'мы', 'на', 'не', 'о', 'об', 'он', 'она', 'они', 'от', 'по', 'при',
+    'с', 'со', 'то', 'у', 'что', 'это', 'этот', 'эта', 'эти',
+  ]),
+  es: new Set([
+    'a', 'al', 'antes', 'como', 'con', 'de', 'del', 'el', 'en', 'es', 'esta',
+    'este', 'estos', 'la', 'las', 'lo', 'los', 'para', 'por', 'que', 'se', 'su',
+    'sus', 'un', 'una', 'y', 'ya',
+  ]),
+});
+const PRESENTATION_LESSON_SEMANTIC_PLACEHOLDERS = new Set([
+  'available', 'false', 'none', 'null', 'omitted', 'true', 'undefined', 'unknown',
+]);
+const PRESENTATION_LESSON_SEMANTIC_LIMITS = Object.freeze({
+  fragments: 16,
+  fragmentLength: 500,
+  nodes: 32,
+  tokens: 96,
+});
 
 function isObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -579,6 +616,116 @@ function keywordList(value) {
     .filter((item) => item.length > 2 && !PRESENTATION_REQUEST_STOPWORDS.has(item)))];
 }
 
+function presentationLessonLanguage(locale) {
+  let language = cleanTimelineText(locale, 'en-US').toLowerCase().split(/[-_]/)[0];
+  return ['ru', 'es'].includes(language) ? language : 'en';
+}
+
+function presentationLessonSemanticFragments(value) {
+  let limits = PRESENTATION_LESSON_SEMANTIC_LIMITS;
+  let queue = [{ value, depth: 0 }];
+  let seen = new WeakSet();
+  let fragments = [];
+  let visited = 0;
+  while (queue.length && fragments.length < limits.fragments && visited < limits.nodes) {
+    let current = queue.shift();
+    let item = current.value;
+    visited += 1;
+    if (item === undefined || item === null || typeof item === 'function' || typeof item === 'symbol') continue;
+    if (typeof item !== 'object') {
+      let text = cleanTimelineText(item).slice(0, limits.fragmentLength);
+      if (text && !PRESENTATION_LESSON_SEMANTIC_PLACEHOLDERS.has(text.toLowerCase())) fragments.push(text);
+      continue;
+    }
+    if (seen.has(item) || current.depth >= 3) continue;
+    seen.add(item);
+    let entries = Array.isArray(item)
+      ? item.slice(0, 8).map((child) => ['', child])
+      : Object.entries(item).slice(0, 8);
+    for (let [key, child] of entries) {
+      if (key) queue.push({ value: key, depth: current.depth + 1 });
+      queue.push({ value: child, depth: current.depth + 1 });
+    }
+  }
+  return fragments;
+}
+
+function presentationLessonSemanticStem(token, language) {
+  let suffixes = language === 'ru'
+    ? ['иями', 'ями', 'ами', 'ого', 'ему', 'ому', 'ыми', 'ими', 'ать', 'ять', 'ить', 'ая', 'яя', 'ое', 'ее', 'ые', 'ие', 'ой', 'ей', 'ам', 'ям', 'ах', 'ях', 'ом', 'ем', 'ов', 'ев', 'ы', 'и', 'а', 'я', 'у', 'ю', 'е', 'о']
+    : language === 'es'
+      ? ['amientos', 'imientos', 'aciones', 'adores', 'adoras', 'ando', 'iendo', 'ados', 'adas', 'idos', 'idas', 'es', 'os', 'as', 'o', 'a', 's']
+      : ['ingly', 'edly', 'ations', 'ation', 'ments', 'ment', 'ing', 'ied', 'ies', 'ed', 'es', 's'];
+  for (let suffix of suffixes) {
+    if (token.endsWith(suffix) && token.length - suffix.length >= 4) {
+      token = token.slice(0, -suffix.length);
+      break;
+    }
+  }
+  if (language === 'en' && token.endsWith('e') && token.length > 5) token = token.slice(0, -1);
+  return token;
+}
+
+function presentationLessonSemanticTokens(value, locale) {
+  let language = presentationLessonLanguage(locale);
+  let stopwords = PRESENTATION_LESSON_SEMANTIC_STOPWORDS[language];
+  let tokens = [];
+  let seen = new Set();
+  for (let fragment of presentationLessonSemanticFragments(value)) {
+    let normalized = fragment
+      .normalize('NFKD')
+      .toLocaleLowerCase(language)
+      .replace(/\p{M}/gu, '');
+    for (let token of normalized.match(/[\p{L}\p{N}]+/gu) || []) {
+      if ((!/\d/u.test(token) && token.length < 3) || stopwords.has(token)) continue;
+      let stem = presentationLessonSemanticStem(token, language);
+      if (!stem || seen.has(stem)) continue;
+      seen.add(stem);
+      tokens.push(stem);
+      if (tokens.length >= PRESENTATION_LESSON_SEMANTIC_LIMITS.tokens) return tokens;
+    }
+  }
+  return tokens;
+}
+
+function presentationLessonTokensMatch(left, right) {
+  if (left === right) return true;
+  if (/\d/u.test(left) || /\d/u.test(right)) return false;
+  let common = 0;
+  let limit = Math.min(left.length, right.length);
+  while (common < limit && left[common] === right[common]) common += 1;
+  return limit >= 5 && common >= Math.min(6, limit);
+}
+
+function presentationLessonSemanticOverlap(spokenText, declaredContent, locale) {
+  // This bounded lexical gate handles common inflection, not translation or synonym inference.
+  // Content without shared words therefore fails closed instead of trusting metadata alone.
+  let spokenTokens = presentationLessonSemanticTokens(spokenText, locale);
+  let declaredTokens = presentationLessonSemanticTokens(declaredContent, locale);
+  if (!spokenTokens.length || !declaredTokens.length) return false;
+  let usedSpoken = new Set();
+  let matches = [];
+  for (let declared of declaredTokens) {
+    let spokenIndex = spokenTokens.findIndex((spoken, index) => (
+      !usedSpoken.has(index) && presentationLessonTokensMatch(spoken, declared)
+    ));
+    if (spokenIndex === -1) continue;
+    usedSpoken.add(spokenIndex);
+    matches.push(declared);
+  }
+  if (matches.length >= 2) return true;
+  if (matches.length !== 1) return false;
+  return /\d/u.test(matches[0]) || declaredTokens.length === 1;
+}
+
+function presentationLessonHasSemanticContent(values, locale) {
+  return listValue(values).some((value) => presentationLessonSemanticTokens(value, locale).length > 0);
+}
+
+function presentationLessonCoheresWithAny(spokenText, values, locale) {
+  return listValue(values).some((value) => presentationLessonSemanticOverlap(spokenText, value, locale));
+}
+
 function requestKeywords(intent = {}) {
   let explicit = keywordList(intent.requestKeywords || intent.keywords);
   if (explicit.length) return explicit;
@@ -629,7 +776,8 @@ function spokenRegistryToken(text, tokens = []) {
   let spoken = String(text || '').toLowerCase();
   return tokens.find((token) => {
     let value = cleanTimelineText(token).toLowerCase();
-    return value.length >= 3 && spoken.includes(value);
+    let serialized = /\d|[:._/#\[\]-]/u.test(value);
+    return value.length >= 3 && serialized && spoken.includes(value);
   }) || '';
 }
 
@@ -721,8 +869,24 @@ export function reviewPresentationTimeline(input = {}, intent = {}) {
   let maxWordsPerTurn = Math.max(1, Math.floor(Number(intent.maxWordsPerTurn || intent.tts?.maxWordsPerTurn || 24)));
   let maxOverlapWords = Math.max(1, Math.floor(Number(intent.maxOverlapWords || intent.dialogue?.maxOverlapWords || 5)));
   let maxSamePersonaRun = Math.max(1, Math.floor(Number(intent.maxSamePersonaRun || intent.dialogue?.maxSamePersonaRun || 2)));
-  let strictDialogueQuality = intent.strictDialogueQuality === true || intent.hardGate === true;
-  let groundingRequired = intent.requireGrounding === true || strictDialogueQuality;
+  let strictLessonArc = intent.strictLessonArc === true || intent.requireLessonArc === true;
+  let requestedSpeakerMode = cleanTimelineText(
+    intent.speakerMode
+      || intent.renderSettings?.speakerMode
+      || intent.output?.voice?.mode
+      || intent.outputSpec?.voice?.mode,
+  );
+  let singleSpeakerRequested = ['single', 'single-narrator'].includes(requestedSpeakerMode);
+  let strictLessonDialogue = strictLessonArc && !singleSpeakerRequested;
+  let dialogueIntent = strictLessonDialogue ? {
+    ...intent,
+    requireDialogue: true,
+    requireDialogueHandoffs: true,
+    strictDialogueQuality: true,
+    requireGrounding: true,
+  } : intent;
+  let strictDialogueQuality = dialogueIntent.strictDialogueQuality === true || dialogueIntent.hardGate === true;
+  let groundingRequired = intent.requireGrounding === true || strictDialogueQuality || strictLessonArc;
   let groundingSources = new Map(listValue(timeline.grounding?.sources).map((source) => [source.id, source]));
   let speechRegistryTokens = [
     ...allowedTargetIds,
@@ -736,8 +900,8 @@ export function reviewPresentationTimeline(input = {}, intent = {}) {
   let previousPersona = '';
   let personaRunLength = 0;
   let longestPersonaRun = 0;
-  let handoffRequired = intent.requireDialogueHandoffs === true ||
-    (intent.requireDialogue === true && turns.length >= 4);
+  let handoffRequired = dialogueIntent.requireDialogueHandoffs === true ||
+    (dialogueIntent.requireDialogue === true && turns.length >= 4);
   let timelineText = [
     timeline.title,
     timeline.profile,
@@ -857,7 +1021,7 @@ export function reviewPresentationTimeline(input = {}, intent = {}) {
       }
     }
     let refs = listValue(turn.sourceRefs);
-    if (groundingRequired && ['explain', 'respond', 'confirm', 'disagree', 'summarize', 'conclude'].includes(turn.dialogueAct) && !refs.length) {
+    if (groundingRequired && ['explain', 'respond', 'confirm', 'disagree', 'summarize', 'conclude', 'close'].includes(turn.dialogueAct) && !refs.length) {
       addIssue('grounding-required', `Turn ${index + 1} requires source grounding.`, {
         severity: 'error',
         turnIndex: index,
@@ -931,7 +1095,7 @@ export function reviewPresentationTimeline(input = {}, intent = {}) {
   if (budget.maxTurns !== undefined && turns.length > budget.maxTurns) {
     addIssue('turn-budget-overflow', `Timeline has ${turns.length} turns; maximum is ${budget.maxTurns}.`, { severity: 'error' });
   }
-  let dialogueReview = reviewPresentationDialogue(timeline, intent);
+  let dialogueReview = reviewPresentationDialogue(timeline, dialogueIntent);
   for (let issue of dialogueReview.issues) addIssue(issue.code, issue.message, issue);
   longestPersonaRun = dialogueReview.longestPersonaRun;
   maxSamePersonaRun = dialogueReview.maxSamePersonaRun;
@@ -950,6 +1114,213 @@ export function reviewPresentationTimeline(input = {}, intent = {}) {
         severity: strictDialogueQuality ? 'error' : 'warning',
         handoffCount,
         requiredHandoffs,
+      });
+    }
+  }
+
+  if (strictLessonArc && turns.length > 0) {
+    let arc = isObject(intent.lessonArc) ? intent.lessonArc : null;
+    let lessonContext = isObject(intent.lessonContext) ? intent.lessonContext : {};
+    let lesson = isObject(lessonContext.lesson) ? lessonContext.lesson : {};
+    let locale = cleanTimelineText(lesson.locale || timeline.locale, 'en-US');
+    let facts = listValue(lessonContext.facts).filter(isObject);
+    let evidence = listValue(lessonContext.evidence).filter(isObject);
+    let factById = new Map(facts.map((fact) => [cleanTimelineText(fact.id), fact]).filter(([id]) => id));
+    let evidenceById = new Map(evidence.map((item) => [cleanTimelineText(item.id), item]).filter(([id]) => id));
+    let requiredFields = ['subjectSourceIds', 'outcomeSourceIds', 'requiredFactIds', 'requiredTargetIds', 'orderedTargetIds'];
+    let missingFields = requiredFields.filter((field) => !Array.isArray(arc?.[field]));
+    let subjectSourceIds = idList(arc?.subjectSourceIds);
+    let outcomeSourceIds = idList(arc?.outcomeSourceIds);
+    let requiredFactIds = idList(arc?.requiredFactIds);
+    let requiredTargetIds = idList(arc?.requiredTargetIds);
+    let orderedTargetIds = idList(arc?.orderedTargetIds);
+    let emptyFields = [
+      ['subjectSourceIds', subjectSourceIds],
+      ['outcomeSourceIds', outcomeSourceIds],
+      ['requiredFactIds', requiredFactIds],
+      ['requiredTargetIds', requiredTargetIds],
+      ['orderedTargetIds', orderedTargetIds],
+    ].filter(([, values]) => values.length === 0).map(([field]) => field);
+
+    let semanticContentCache = new Map();
+    let semanticContentFor = (id) => {
+      if (semanticContentCache.has(id)) return semanticContentCache.get(id);
+      let values = [];
+      let add = (value) => {
+        if (values.length >= PRESENTATION_LESSON_SEMANTIC_LIMITS.fragments
+          || value === undefined || value === null || value === '') return;
+        if (typeof value === 'string' && cleanTimelineText(value).toLowerCase() === id.toLowerCase()) return;
+        values.push(value);
+      };
+      let source = groundingSources.get(id);
+      let fact = factById.get(id);
+      let evidenceItem = evidenceById.get(id);
+      add(source?.summary);
+      add(evidenceItem?.summary);
+      add(evidenceItem?.value);
+      if (fact) {
+        add(fact.label);
+        add(fact.value);
+        for (let evidenceId of idList(fact.evidenceRefs)) {
+          let linkedEvidence = evidenceById.get(evidenceId);
+          add(groundingSources.get(evidenceId)?.summary);
+          add(linkedEvidence?.summary);
+          add(linkedEvidence?.value);
+        }
+      }
+      for (let linkedFact of facts) {
+        if (!idList(linkedFact.evidenceRefs).includes(id)) continue;
+        add(linkedFact.label);
+        add(linkedFact.value);
+      }
+      semanticContentCache.set(id, values);
+      return values;
+    };
+
+    let sourceIdsFor = (turn) => new Set(listValue(turn?.sourceRefs).map((ref) => ref.sourceId).filter(Boolean));
+    let claimsFor = (turn) => listValue(turn?.claims).filter(isObject);
+    let factIdsFor = (turn) => new Set([
+      ...sourceIdsFor(turn),
+      ...claimsFor(turn).flatMap((claim) => idList(claim.factRefs)),
+    ]);
+    let includesAll = (set, required) => required.every((value) => set.has(value));
+    let turnSupportsSource = (turn, sourceId) => (
+      sourceIdsFor(turn).has(sourceId)
+      && presentationLessonCoheresWithAny(turn.text, semanticContentFor(sourceId), locale)
+    );
+    let claimSupportsFact = (turn, claim, factId) => {
+      if (!idList(claim.factRefs).includes(factId)) return false;
+      let turnSourceIds = sourceIdsFor(turn);
+      let linkedEvidenceIds = idList(claim.evidenceRefs).filter((evidenceId) => turnSourceIds.has(evidenceId));
+      let factContent = semanticContentFor(factId);
+      if (!linkedEvidenceIds.length
+        || !presentationLessonCoheresWithAny(turn.text, factContent, locale)
+        || !presentationLessonSemanticOverlap(turn.text, claim.text, locale)
+        || !presentationLessonCoheresWithAny(claim.text, factContent, locale)) return false;
+      return linkedEvidenceIds.some((evidenceId) => {
+        let evidenceContent = semanticContentFor(evidenceId);
+        return presentationLessonHasSemanticContent(evidenceContent, locale)
+          && presentationLessonCoheresWithAny(claim.text, evidenceContent, locale);
+      });
+    };
+    let turnSupportsFact = (turn, factId) => (
+      (sourceIdsFor(turn).has(factId)
+        && presentationLessonCoheresWithAny(turn.text, semanticContentFor(factId), locale))
+      || claimsFor(turn).some((claim) => claimSupportsFact(turn, claim, factId))
+    );
+
+    let unknownSourceIds = [...new Set([...subjectSourceIds, ...outcomeSourceIds])]
+      .filter((sourceId) => !groundingSources.has(sourceId));
+    let unknownFactIds = requiredFactIds.filter((factId) => (
+      !groundingSources.has(factId) && !factById.has(factId) && !evidenceById.has(factId)
+    ));
+    let unknownOrderedTargetIds = orderedTargetIds.filter((targetId) => !requiredTargetIds.includes(targetId));
+    let unverifiableSourceIds = [...new Set([...subjectSourceIds, ...outcomeSourceIds])]
+      .filter((sourceId) => !presentationLessonHasSemanticContent(semanticContentFor(sourceId), locale));
+    let unverifiableFactIds = requiredFactIds
+      .filter((factId) => !presentationLessonHasSemanticContent(semanticContentFor(factId), locale));
+    if (missingFields.length || emptyFields.length || unknownSourceIds.length || unknownFactIds.length
+      || unknownOrderedTargetIds.length
+      || unverifiableSourceIds.length || unverifiableFactIds.length) {
+      addIssue('lesson-arc-contract-invalid', 'Strict lesson review requires explicit, grounded lesson-arc identities.', {
+        severity: 'error',
+        missingFields,
+        emptyFields,
+        unknownSourceIds,
+        unknownFactIds,
+        unknownOrderedTargetIds,
+        unverifiableSourceIds,
+        unverifiableFactIds,
+      });
+    }
+
+    let openingRefs = sourceIdsFor(turns[0]);
+    let missingSubjectRefs = subjectSourceIds.filter((sourceId) => !openingRefs.has(sourceId));
+    let missingOutcomeRefs = outcomeSourceIds.filter((sourceId) => !openingRefs.has(sourceId));
+    let incoherentSubjectSourceIds = subjectSourceIds
+      .filter((sourceId) => openingRefs.has(sourceId) && !turnSupportsSource(turns[0], sourceId));
+    let incoherentOutcomeSourceIds = outcomeSourceIds
+      .filter((sourceId) => openingRefs.has(sourceId) && !turnSupportsSource(turns[0], sourceId));
+    if (turns[0].dialogueAct !== 'open'
+      || missingSubjectRefs.length
+      || missingOutcomeRefs.length
+      || incoherentSubjectSourceIds.length
+      || incoherentOutcomeSourceIds.length) {
+      addIssue('lesson-arc-start-invalid', 'The first turn must be an opening grounded in the declared subject and expected outcome.', {
+        severity: 'error',
+        turnIndex: 0,
+        missingSubjectRefs,
+        missingOutcomeRefs,
+        incoherentSubjectSourceIds,
+        incoherentOutcomeSourceIds,
+      });
+    }
+
+    let bodyTurns = turns.slice(1).filter((turn) => !['summarize', 'conclude', 'close'].includes(turn.dialogueAct));
+    let bodyFactIds = new Set(bodyTurns.flatMap((turn) => [...factIdsFor(turn)]));
+    let missingFacts = requiredFactIds.filter((factId) => !bodyFactIds.has(factId));
+    let incoherentFacts = requiredFactIds.filter((factId) => (
+      bodyFactIds.has(factId) && !bodyTurns.some((turn) => turnSupportsFact(turn, factId))
+    ));
+    let firstTargetIndex = new Map();
+    for (let [turnIndex, turn] of bodyTurns.entries()) {
+      for (let cue of listValue(turn.cues)) {
+        if (cue.kind === 'focus' && cue.targetId && !firstTargetIndex.has(cue.targetId)) {
+          firstTargetIndex.set(cue.targetId, turnIndex);
+        }
+      }
+    }
+    let missingTargets = requiredTargetIds.filter((targetId) => !firstTargetIndex.has(targetId));
+    let priorOrderedIndex = -1;
+    let outOfOrderTargets = [];
+    for (let targetId of orderedTargetIds) {
+      let index = firstTargetIndex.get(targetId);
+      if (index !== undefined && index < priorOrderedIndex) outOfOrderTargets.push(targetId);
+      if (index !== undefined) priorOrderedIndex = index;
+    }
+    if (missingFacts.length || incoherentFacts.length || missingTargets.length || outOfOrderTargets.length) {
+      addIssue('lesson-arc-body-invalid', 'The lesson body does not cover the declared facts and target sequence.', {
+        severity: 'error',
+        missingFactIds: missingFacts,
+        incoherentFactIds: incoherentFacts,
+        missingTargetIds: missingTargets,
+        outOfOrderTargetIds: outOfOrderTargets,
+      });
+    }
+
+    let closureWindowSize = PRESENTATION_DIALOGUE_QUALITY_PROFILE.closureWindow || 3;
+    let closureTurns = turns.slice(-closureWindowSize).filter((turn) => ['summarize', 'conclude', 'close'].includes(turn.dialogueAct));
+    let closureSourceIds = new Set(closureTurns.flatMap((turn) => [...sourceIdsFor(turn)]));
+    let closureFactIds = new Set(closureTurns.flatMap((turn) => [...factIdsFor(turn)]));
+    let incoherentClosureOutcomeSourceIds = outcomeSourceIds.filter((sourceId) => (
+      closureSourceIds.has(sourceId) && !closureTurns.some((turn) => turnSupportsSource(turn, sourceId))
+    ));
+    let coherentClosureFactIds = requiredFactIds
+      .filter((factId) => closureFactIds.has(factId) && closureTurns.some((turn) => turnSupportsFact(turn, factId)));
+    let closureGrounded = closureTurns.length > 0
+      && includesAll(closureSourceIds, outcomeSourceIds)
+      && incoherentClosureOutcomeSourceIds.length === 0
+      && coherentClosureFactIds.length > 0;
+    if (!closureGrounded) {
+      addIssue('lesson-arc-closure-invalid', `The closing window of ${closureWindowSize} turns must summarize a demonstrated fact and the declared outcome.`, {
+        severity: 'error',
+        incoherentOutcomeSourceIds: incoherentClosureOutcomeSourceIds,
+        coherentFactIds: coherentClosureFactIds,
+      });
+    }
+
+    let finalTurn = turns[turns.length - 1];
+    let finalRefs = sourceIdsFor(finalTurn);
+    let incoherentFinalOutcomeSourceIds = outcomeSourceIds.filter((sourceId) => (
+      finalRefs.has(sourceId) && !turnSupportsSource(finalTurn, sourceId)
+    ));
+    if (!['conclude', 'close'].includes(finalTurn.dialogueAct)
+      || !includesAll(finalRefs, outcomeSourceIds)
+      || incoherentFinalOutcomeSourceIds.length) {
+      addIssue('lesson-arc-final-invalid', 'The final turn must close the lesson and cite the declared outcome.', {
+        severity: 'error',
+        turnIndex: turns.length - 1,
+        incoherentOutcomeSourceIds: incoherentFinalOutcomeSourceIds,
       });
     }
   }
@@ -978,6 +1349,8 @@ export function reviewPresentationTimeline(input = {}, intent = {}) {
       longestPersonaRun,
       handoffCount,
       handoffRequired,
+      requestedSpeakerMode: requestedSpeakerMode || (strictLessonDialogue ? 'dialogue' : ''),
+      strictLessonDialogue,
       actionCount,
     },
   };
@@ -1385,10 +1758,7 @@ export function createPresentationReplanRequest(input = {}) {
     lessonContext: isObject(input.lessonContext) ? clonePortable(input.lessonContext) : undefined,
     reviewFeedback: isObject(input.reviewFeedback) ? clonePortable(input.reviewFeedback) : undefined,
   };
-  return {
-    ...request,
-    hash: `${PRESENTATION_REPLAN_REQUEST_SCHEMA_VERSION}:${computeIntegrity(request)}`,
-  };
+  return { ...request, hash: presentationReplanRequestHash(request) };
 }
 
 export function reviewPresentationTimelineAgainstSnapshot(input = {}, snapshot = {}, intent = {}) {
@@ -1414,6 +1784,7 @@ export function reviewPresentationTimelineAgainstSnapshot(input = {}, snapshot =
 
 export function reviewPresentationTimelineAgainstLessonContext(input = {}, lessonContext = {}, intent = {}) {
   let descriptorNames = new Map(listValue(lessonContext.toolDescriptors).map((descriptor) => [descriptor.id, descriptor.name]));
+  let requiredTargetIds = idList(lessonContext.lesson?.requiredTargetIds);
   let snapshot = {
     ...(lessonContext.targetSnapshot || {}),
     targets: listValue(lessonContext.targets).map((target) => ({
@@ -1423,9 +1794,21 @@ export function reviewPresentationTimelineAgainstLessonContext(input = {}, lesso
       webmcpToolNames: listValue(target.toolRefs).map((id) => descriptorNames.get(id)).filter(Boolean),
     })),
   };
+  let requiredTargetSet = new Set(requiredTargetIds);
+  let selectedTabIds = idList(snapshot.targets
+    .filter((target) => requiredTargetSet.has(target.address))
+    .map((target) => target.tabId));
+  let lessonArc = isObject(lessonContext.constraints?.lessonArc)
+    ? lessonContext.constraints.lessonArc
+    : intent.lessonArc;
+  let speakerMode = cleanTimelineText(lessonContext.output?.voice?.mode || intent.speakerMode);
   let structural = reviewPresentationTimelineAgainstSnapshot(input, snapshot, {
-    requestedSurfaceIds: lessonContext.lesson?.requiredTargetIds || [],
     ...intent,
+    requestedSurfaceIds: requiredTargetIds,
+    selectedTabIds: selectedTabIds.length ? selectedTabIds : idList(intent.selectedTabIds),
+    lessonArc,
+    lessonContext,
+    ...(speakerMode ? { speakerMode } : {}),
   });
   let timeline = createPresentationTimelineContract(input);
   let grounding = auditPresentationTimelineClaims(timeline, lessonContext);
@@ -1444,8 +1827,15 @@ export function reviewPresentationTimelineAgainstLessonContext(input = {}, lesso
 }
 
 export function finalizePresentationReplan(candidate = {}, request = {}, options = {}) {
+  let expectedRequestHash = presentationReplanRequestHash(request);
+  if (request.schemaVersion !== PRESENTATION_REPLAN_REQUEST_SCHEMA_VERSION || request.hash !== expectedRequestHash) {
+    throw presentationContractError('REPLAN_REQUEST_STALE', 'presentation replan request hash does not match its content');
+  }
   if (candidate.status !== 'ready' || !candidate.timeline) {
     throw presentationContractError('TOUR_REPLAN_REJECTED', 'presentation planner did not return a ready timeline');
+  }
+  if (cleanTimelineText(candidate.basis?.requestHash) !== request.hash) {
+    throw presentationContractError('REPLAN_REQUEST_STALE', 'presentation planner result does not match the exact replan request');
   }
   let expectedHash = cleanTimelineText(request.targetSnapshotHash);
   let candidateHash = cleanTimelineText(candidate.basis?.targetSnapshotHash || candidate.snapshotHash);
@@ -1479,13 +1869,13 @@ export function finalizePresentationReplan(candidate = {}, request = {}, options
   if (options.requireComposition !== false) {
     let requiredTargetIds = [...new Set([
       ...listValue(request.lessonContext?.lesson?.requiredTargetIds),
-      ...timeline.turns.flatMap((turn) => listValue(turn.cues)
-        .filter((cue) => cue.kind === 'focus')
-        .map((cue) => cleanTimelineText(cue.targetId))).filter(Boolean),
+      ...listPresentationCompositionCueSlots(timeline).map((slot) => slot.targetId),
     ])];
     compositionAudit = auditPresentationCompositionPlan(compositionPlan, {
       outputSpecHash: request.outputSpecHash,
       structuralHash: expectedHash,
+      sourceCompositionHash: request.sourceCompositionHash,
+      targetCompositionHash: request.targetCompositionHash,
       timelineHash: timeline.hash,
       lessonIntentHash,
       requiredTargetIds,

@@ -1,10 +1,24 @@
 import { computeIntegrity } from '../schema/canonical-json.js';
+import { buildCaptionPlacementTrack, resolveCaptionProfile } from 'symbiote-engine/render-captions';
+import { validatePresentationAlignedSequence } from './presentation/align.js';
+import { createPresentationTimelineContract } from './presentation/contract.js';
 
-export const PRESENTATION_OUTPUT_SPEC_SCHEMA_VERSION = 'workspace-presentation-output-v2';
-export const PRESENTATION_COMPOSITION_PLAN_SCHEMA_VERSION = 'workspace-presentation-composition-v2';
+export const PRESENTATION_OUTPUT_SPEC_SCHEMA_VERSION = 'workspace-presentation-output-v3';
+export const PRESENTATION_COMPOSITION_PLAN_SCHEMA_VERSION = 'workspace-presentation-composition-v3';
 export const PRESENTATION_CONTEXT_SNAPSHOT_SCHEMA_VERSION = 'presentation-context-snapshot-v2';
 export const PRESENTATION_REPLAN_REQUEST_SCHEMA_VERSION = 'presentation-replan-request-v2';
 export const PRESENTATION_REPLAN_RESULT_SCHEMA_VERSION = 'presentation-replan-result-v2';
+export const PRESENTATION_CAPTION_COMPOSITION_SCHEMA_VERSION = 'workspace-presentation-caption-composition-v1';
+export const PRESENTATION_CAPTION_TIMING_TOLERANCE_MS = 50;
+export const PRESENTATION_COMPOSITION_CUE_KINDS = Object.freeze(['focus', 'interaction', 'annotation']);
+
+const PRESENTATION_COMPOSITION_CUE_KIND_SET = new Set(PRESENTATION_COMPOSITION_CUE_KINDS);
+
+export function presentationReplanRequestHash(request = {}) {
+  let projection = { ...request };
+  delete projection.hash;
+  return `${PRESENTATION_REPLAN_REQUEST_SCHEMA_VERSION}:${computeIntegrity(projection)}`;
+}
 
 export const PRESENTATION_COMPOSITION_ISSUE_CODES = Object.freeze([
   'output-viewport-mismatch',
@@ -45,6 +59,27 @@ function clonePortable(value, depth = 0) {
 function cleanText(value, fallback = '') {
   let text = String(value ?? fallback ?? '').replace(/\s+/g, ' ').trim();
   return text && text !== 'undefined' && text !== 'null' ? text : String(fallback || '').trim();
+}
+
+export function listPresentationCompositionCueSlots(timeline = {}) {
+  return (Array.isArray(timeline?.turns) ? timeline.turns : []).flatMap((turn, turnIndex) => {
+    let slotIndex = 0;
+    return (Array.isArray(turn?.cues) ? turn.cues : []).flatMap((cue, cueIndex) => {
+      if (!PRESENTATION_COMPOSITION_CUE_KIND_SET.has(cue?.kind)) return [];
+      let targetId = cleanText(cue.targetId);
+      if (!targetId) return [];
+      let slot = {
+        turnId: cleanText(turn.id, `turn-${turnIndex + 1}`),
+        turnIndex,
+        slotIndex,
+        cueIndex,
+        kind: cue.kind,
+        targetId,
+      };
+      slotIndex += 1;
+      return [slot];
+    });
+  });
 }
 
 function positiveInteger(value, fallback) {
@@ -152,6 +187,9 @@ export function normalizePresentationRect(input = {}) {
 
 export function normalizePresentationOutputSpec(input = {}) {
   let source = isObject(input) ? input : {};
+  if (source.schemaVersion !== undefined && source.schemaVersion !== PRESENTATION_OUTPUT_SPEC_SCHEMA_VERSION) {
+    throw new TypeError(`unsupported presentation output schema version: ${source.schemaVersion}`);
+  }
   let viewport = isObject(source.viewport) ? source.viewport : {};
   let resolution = isObject(source.resolution) ? source.resolution : {};
   let width = positiveInteger(source.width ?? resolution.width ?? viewport.width, 1920);
@@ -175,25 +213,38 @@ export function normalizePresentationOutputSpec(input = {}) {
     ? source.captionsEnabled === undefined ? captionsMode !== 'off' : source.captionsEnabled !== false
     : captionsSource.enabled !== false;
   if (!captionsEnabled) captionsMode = 'off';
-  let captionPlacement = cleanText(captionsSource.placement ?? source.captionPlacement, 'bottom') === 'top' ? 'top' : 'bottom';
-  let captionReserve = captionsEnabled ? Math.round(viewportHeight * 0.18) : 0;
-  let captionRect = captionsEnabled
-    ? rect(
-      presentationViewport.x + safeArea.left,
-      captionPlacement === 'top'
-        ? presentationViewport.y + safeArea.top
-        : presentationViewport.y + viewportHeight - safeArea.bottom - captionReserve,
-      viewportWidth - safeArea.left - safeArea.right,
-      captionReserve,
-    )
-    : null;
-  let contentTop = presentationViewport.y + safeArea.top + (captionsEnabled && captionPlacement === 'top' ? captionReserve : 0);
-  let contentBottom = presentationViewport.y + viewportHeight - safeArea.bottom - (captionsEnabled && captionPlacement === 'bottom' ? captionReserve : 0);
+  let defaultCaptionPreset = orientation === 'vertical' ? 'tiktok' : orientation === 'square' ? 'square' : 'youtube';
+  let captionPreset = cleanText(captionsSource.stylePreset || captionsSource.preset, defaultCaptionPreset);
+  let requestedPlacement = cleanText(captionsSource.placement ?? source.captionPlacement);
+  let preferredZones = Array.isArray(captionsSource.preferredZones)
+    ? captionsSource.preferredZones
+    : requestedPlacement === 'top' ? ['top', 'bottom']
+      : requestedPlacement === 'middle' ? ['middle', 'bottom', 'top']
+        : requestedPlacement === 'bottom' ? ['bottom', 'top']
+          : null;
+  let captionProfile = resolveCaptionProfile({
+    ...(isObject(captionsSource.style) ? captionsSource.style : {}),
+    preset: captionPreset,
+    fontName: captionsSource.fontName ?? captionsSource.font,
+    fontSize: captionsSource.fontSize,
+    maxLines: captionsSource.maxLines,
+    maxLineWidthPct: captionsSource.maxLineWidthPct,
+    primaryColor: captionsSource.color ?? captionsSource.primaryColor,
+    highlightColor: captionsSource.highlightColor,
+    outlineColor: captionsSource.outlineColor,
+    backColor: captionsSource.backgroundColor ?? captionsSource.backColor,
+    speakerTreatment: captionsSource.speakerTreatment,
+    ...(preferredZones ? { preferredZones } : {}),
+  }, width, height);
+  let contentTop = presentationViewport.y + safeArea.top;
+  let contentBottom = presentationViewport.y + viewportHeight - safeArea.bottom;
   let contentRect = rect(presentationViewport.x + safeArea.left, contentTop, viewportWidth - safeArea.left - safeArea.right, contentBottom - contentTop);
   if (contentRect.width < 24 || contentRect.height < 16) throw new TypeError('presentation output safe area leaves no readable content rectangle');
   let voiceSource = isObject(source.voice) ? source.voice : {};
   let speakerMode = cleanText(voiceSource.mode ?? source.speakerMode ?? source.voiceMode, 'dialogue');
   speakerMode = speakerMode === 'single' || speakerMode === 'single-narrator' ? 'single' : 'dialogue';
+  let speakerId = cleanText(voiceSource.speakerId ?? source.speakerId ?? source.narratorId);
+  if (speakerMode === 'single' && !speakerId) throw new TypeError('single-speaker presentation output requires voice.speakerId');
   let sequenceMode = cleanText(voiceSource.sequenceMode ?? source.sequenceMode, 'sequential') === 'overlap' ? 'overlap' : 'sequential';
   let locale = cleanText(source.locale ?? source.language ?? voiceSource.language, 'en-US');
   let durationSource = isObject(source.duration) ? source.duration : {};
@@ -217,11 +268,14 @@ export function normalizePresentationOutputSpec(input = {}) {
     captions: {
       enabled: captionsEnabled,
       mode: captionsMode,
-      placement: captionPlacement,
-      reservePx: captionReserve,
-      rect: captionRect,
+      profile: captionProfile,
     },
-    voice: { mode: speakerMode, sequenceMode, language: locale },
+    voice: {
+      mode: speakerMode,
+      sequenceMode,
+      language: locale,
+      ...(speakerMode === 'single' ? { speakerId } : {}),
+    },
     locale,
     duration: { targetMs, minMs, maxMs },
   };
@@ -291,6 +345,9 @@ export function createLessonIntentHash(lessonContext = {}, timeline = {}) {
 }
 
 export function createPresentationCompositionPlan(input = {}) {
+  if (input.schemaVersion !== undefined && input.schemaVersion !== PRESENTATION_COMPOSITION_PLAN_SCHEMA_VERSION) {
+    throw new TypeError(`unsupported presentation composition schema version: ${input.schemaVersion}`);
+  }
   let output = normalizePresentationOutputSpec(input.output || input.outputSpec || {});
   let steps = (Array.isArray(input.steps) ? input.steps : []).map(normalizeCompositionStep);
   let plan = {
@@ -330,6 +387,11 @@ export function auditPresentationCompositionPlan(plan = {}, expectations = {}) {
     add('composition-required', 'schemaVersion', 'a current presentation composition plan is required');
     return { verdict: 'reject', issueCodes: issues.map((issue) => issue.code), issues, coverage: {} };
   }
+  let normalizedPlan = createPresentationCompositionPlan(plan);
+  if (plan.hash !== normalizedPlan.hash) {
+    add('composition-repair-stale', 'hash', 'composition measurements changed after the plan was signed');
+  }
+  plan = normalizedPlan;
   let output;
   try {
     output = normalizePresentationOutputSpec(plan.output || {});
@@ -341,6 +403,18 @@ export function auditPresentationCompositionPlan(plan = {}, expectations = {}) {
     add('output-context-stale', 'outputSpecHash', 'composition output does not match the selected output spec');
   }
   if (expectations.structuralHash && plan.structuralHash !== expectations.structuralHash) add('output-context-stale', 'structuralHash', 'composition targets a stale structural snapshot');
+  let expectedSourceCompositionHash = cleanText(expectations.sourceCompositionHash);
+  let expectedTargetCompositionHash = cleanText(expectations.targetCompositionHash);
+  if (!expectedSourceCompositionHash) {
+    add('output-context-stale', 'sourceCompositionHash', 'an external source composition identity is required');
+  } else if (plan.sourceCompositionHash !== expectedSourceCompositionHash) {
+    add('output-context-stale', 'sourceCompositionHash', 'composition targets a stale source layout');
+  }
+  if (!expectedTargetCompositionHash) {
+    add('output-context-stale', 'targetCompositionHash', 'an external target composition identity is required');
+  } else if (plan.targetCompositionHash !== expectedTargetCompositionHash) {
+    add('output-context-stale', 'targetCompositionHash', 'composition targets a stale output layout');
+  }
   if (expectations.timelineHash && plan.timelineHash !== expectations.timelineHash) add('composition-repair-stale', 'timelineHash', 'composition targets a stale or unrepaired timeline');
   if (expectations.lessonIntentHash && plan.lessonIntentHash !== expectations.lessonIntentHash) add('lesson-intent-mismatch', 'lessonIntentHash', 'composition changed the lesson intent');
   let presentationViewport = output.presentationViewport;
@@ -378,8 +452,7 @@ export function auditPresentationCompositionPlan(plan = {}, expectations = {}) {
     if (measurement.hasText && (measurement.fontSizePx < 12 || measurement.textTruncated)) add('target-unreadable', path, 'target text is too small or truncated');
     if ((Array.isArray(step.scroll) ? step.scroll : []).some((scroll) => scroll.changed && !scroll.applied)) add('composition-scroll-failed', `${path}.scroll`, 'absolute scroll projection was not applied');
     if (!step.annotation?.placement || !annotationRect || !rectContains(output.contentRect, annotationRect, 1)
-      || rectIntersects(annotationRect, focusRect)
-      || (output.captions.rect && rectIntersects(annotationRect, output.captions.rect))) {
+      || rectIntersects(annotationRect, focusRect)) {
       add('annotation-placement-unavailable', `${path}.annotation`, 'no collision-free annotation placement is available');
     }
   }
@@ -400,4 +473,306 @@ export function auditPresentationCompositionPlan(plan = {}, expectations = {}) {
 
 export function presentationRectsIntersect(left, right) {
   return rectIntersects(normalizePresentationRect(left), normalizePresentationRect(right));
+}
+
+function timedAvoidRegion(id, kind, value, startMs, endMs, offsetX, offsetY) {
+  let region = normalizePresentationRect(value);
+  if (region.width <= 0 || region.height <= 0 || endMs <= startMs) return null;
+  return {
+    id,
+    kind,
+    ...translateRect(region, offsetX, offsetY),
+    startSec: startMs / 1000,
+    endSec: endMs / 1000,
+  };
+}
+
+function compositionAvoidRegions(timeline, alignedSequence, compositionPlan, presentationViewport) {
+  let turnIndexById = new Map((timeline.turns || []).map((turn, index) => [turn.id, index]));
+  let regions = [];
+  for (let [stepIndex, step] of (compositionPlan.steps || []).entries()) {
+    let turnIndex = turnIndexById.get(step.turnId);
+    let span = alignedSequence.turns?.[turnIndex];
+    if (turnIndex === undefined || !span) throw new TypeError(`composition step ${stepIndex} has no aligned turn span`);
+    let measurement = normalizePresentationTargetComposition(step.measurement || {});
+    let focus = timedAvoidRegion(
+      `focus:${step.id || stepIndex}`,
+      'focus',
+      measurement.focusRect,
+      span.startMs,
+      span.endMs,
+      presentationViewport.x,
+      presentationViewport.y,
+    );
+    if (focus) regions.push(focus);
+    let annotation = timedAvoidRegion(
+      `annotation:${step.id || stepIndex}`,
+      'annotation',
+      step.annotation?.rect,
+      span.startMs,
+      span.endMs,
+      presentationViewport.x,
+      presentationViewport.y,
+    );
+    if (annotation) regions.push(annotation);
+    let hasAction = (timeline.turns[turnIndex]?.cues || []).some((cue) => cue.kind === 'interaction');
+    if (hasAction && focus) regions.push({ ...focus, id: `action:${step.id || stepIndex}`, kind: 'action' });
+  }
+  return regions;
+}
+
+function captionCueText(cue) {
+  if (cleanText(cue?.text)) return cleanText(cue.text);
+  return cleanText((Array.isArray(cue?.words) ? cue.words : []).map((word) => (
+    typeof word === 'string' ? word : word?.text || word?.word
+  )).join(' '));
+}
+
+function captionCueTurnIndex(cue, turnCount) {
+  for (let value of [cue?.turnIndex, cue?.cueIndex]) {
+    let index = Number(value);
+    if (Number.isInteger(index) && index >= 0 && index < turnCount) return index;
+  }
+  if (turnCount === 1) return 0;
+  return -1;
+}
+
+export function bindCaptionCuesToAlignedSequence(cues = [], alignedSequence = {}) {
+  if (!Array.isArray(cues)) throw new TypeError('caption timing binding requires caption cues');
+  let spans = Array.isArray(alignedSequence?.turns) ? alignedSequence.turns : [];
+  if (!spans.length) throw new TypeError('caption timing binding requires aligned turn spans');
+  let bound = cues.map((cue) => ({ ...cue }));
+  let byTurn = new Map();
+  for (let [cueIndex, cue] of bound.entries()) {
+    let turnIndex = captionCueTurnIndex(cue, spans.length);
+    if (turnIndex < 0) throw new TypeError(`caption cue ${cueIndex} is not bound to an aligned turn`);
+    let startSec = Number(cue.startSec);
+    let endSec = Number(cue.endSec);
+    if (!Number.isFinite(startSec) || !Number.isFinite(endSec) || endSec <= startSec) {
+      throw new TypeError(`caption cue ${cueIndex} has invalid timing`);
+    }
+    if (!byTurn.has(turnIndex)) byTurn.set(turnIndex, []);
+    byTurn.get(turnIndex).push({ cue, cueIndex, startSec, endSec });
+  }
+  for (let [turnIndex, span] of spans.entries()) {
+    let turnCues = (byTurn.get(turnIndex) || [])
+      .sort((left, right) => left.startSec - right.startSec || left.cueIndex - right.cueIndex);
+    if (!turnCues.length) throw new TypeError(`caption timing binding has no cue for turn ${turnIndex}`);
+    let spanStartSec = Number(span.startMs) / 1000;
+    let spanEndSec = Number(span.endMs) / 1000;
+    if (!Number.isFinite(spanStartSec) || !Number.isFinite(spanEndSec) || spanEndSec <= spanStartSec) {
+      throw new TypeError(`caption timing binding has an invalid span for turn ${turnIndex}`);
+    }
+    turnCues[0].cue.startSec = spanStartSec;
+    turnCues.at(-1).cue.endSec = spanEndSec;
+    for (let index = 1; index < turnCues.length; index += 1) {
+      let previous = turnCues[index - 1].cue;
+      let current = turnCues[index].cue;
+      let lower = Number(previous.startSec) + 0.001;
+      let upper = Number(current.endSec) - 0.001;
+      let boundary = Math.min(
+        upper,
+        Math.max(lower, (Number(previous.endSec) + Number(current.startSec)) / 2),
+      );
+      if (!Number.isFinite(boundary) || boundary <= lower - 0.001 || boundary >= upper + 0.001) {
+        throw new TypeError(`caption timing binding cannot join cues in turn ${turnIndex}`);
+      }
+      previous.endSec = boundary;
+      current.startSec = boundary;
+    }
+  }
+  return bound;
+}
+
+function captionTimingDeltaMicros(leftSec, rightSec) {
+  return Math.round(Math.abs(Number(leftSec) - Number(rightSec)) * 1000000);
+}
+
+function captionTimingOutsideTolerance(leftSec, rightSec) {
+  return captionTimingDeltaMicros(leftSec, rightSec) > PRESENTATION_CAPTION_TIMING_TOLERANCE_MS * 1000;
+}
+
+function assertCaptionCueBinding(cues, timeline, alignedSequence, { speakerMode = 'dialogue', speakerId = '' } = {}) {
+  let byTurn = new Map();
+  let speakerIdentities = new Set();
+  for (let [cueIndex, cue] of cues.entries()) {
+    let turnIndex = captionCueTurnIndex(cue, timeline.turns.length);
+    if (turnIndex < 0) throw new TypeError(`caption cue ${cueIndex} is not bound to an authored turn`);
+    let span = alignedSequence.turns[turnIndex];
+    let startSec = Number(cue?.startSec);
+    let endSec = Number(cue?.endSec);
+    if (!Number.isFinite(startSec) || !Number.isFinite(endSec) || startSec < 0 || endSec <= startSec) {
+      throw new TypeError(`caption cue ${cueIndex} has invalid timing`);
+    }
+    let spanStartSec = span.startMs / 1000;
+    let spanEndSec = span.endMs / 1000;
+    if (
+      (startSec < spanStartSec && captionTimingOutsideTolerance(startSec, spanStartSec))
+      || (endSec > spanEndSec && captionTimingOutsideTolerance(endSec, spanEndSec))
+    ) {
+      throw new TypeError(`caption cue ${cueIndex} falls outside authored turn ${turnIndex}`);
+    }
+    let text = captionCueText(cue);
+    if (!text) throw new TypeError(`caption cue ${cueIndex} has no text`);
+    let speaker = cleanText(cue?.speaker);
+    if (!speaker) throw new TypeError(`caption cue ${cueIndex} has no speaker identity`);
+    speakerIdentities.add(speaker);
+    if (speakerMode === 'dialogue' && speaker !== timeline.turns[turnIndex].persona) {
+      throw new TypeError(`caption cue ${cueIndex} speaker does not match authored turn ${turnIndex}`);
+    }
+    if (speakerMode === 'single' && speaker !== speakerId) {
+      throw new TypeError(`caption cue ${cueIndex} speaker does not match the declared single speaker`);
+    }
+    if (!byTurn.has(turnIndex)) byTurn.set(turnIndex, []);
+    byTurn.get(turnIndex).push({ startSec, endSec, text });
+  }
+  if (speakerMode === 'single' && speakerIdentities.size !== 1) {
+    throw new TypeError('single narrator captions require one consistent speaker identity');
+  }
+  for (let [turnIndex, turn] of timeline.turns.entries()) {
+    let authoredCues = (byTurn.get(turnIndex) || [])
+      .sort((left, right) => left.startSec - right.startSec);
+    let reconstructed = cleanText(authoredCues
+      .map((cue) => cue.text)
+      .join(' '));
+    if (reconstructed !== cleanText(turn.text)) {
+      throw new TypeError(`caption cues do not reproduce authored turn ${turnIndex}`);
+    }
+    let span = alignedSequence.turns[turnIndex];
+    let expectedStartSec = span.startMs / 1000;
+    let expectedEndSec = span.endMs / 1000;
+    if (
+      !authoredCues.length
+      || captionTimingOutsideTolerance(authoredCues[0].startSec, expectedStartSec)
+      || captionTimingOutsideTolerance(authoredCues.at(-1).endSec, expectedEndSec)
+    ) {
+      throw new TypeError(`caption cues do not cover the authored timing of turn ${turnIndex}`);
+    }
+    for (let index = 1; index < authoredCues.length; index += 1) {
+      if (captionTimingOutsideTolerance(authoredCues[index].startSec, authoredCues[index - 1].endSec)) {
+        throw new TypeError(`caption cues have a timing gap or overlap in authored turn ${turnIndex}`);
+      }
+    }
+  }
+}
+
+export function planCaptionPlacements(input = {}) {
+  let timeline = createPresentationTimelineContract(isObject(input.timeline) ? input.timeline : {});
+  let alignedSequence = isObject(input.alignedSequence) ? input.alignedSequence : {};
+  let compositionPlan = isObject(input.compositionPlan) ? input.compositionPlan : {};
+  if (!Array.isArray(timeline.turns) || timeline.turns.length === 0) {
+    throw new TypeError('caption composition requires an authored timeline');
+  }
+  if (!Array.isArray(alignedSequence.turns) || alignedSequence.turns.length !== timeline.turns.length) {
+    throw new TypeError('caption composition requires one aligned span for every timeline turn');
+  }
+  if (!Array.isArray(input.cues)) throw new TypeError('caption composition requires timed caption cues');
+  validatePresentationAlignedSequence(alignedSequence, timeline);
+  if (compositionPlan.schemaVersion !== PRESENTATION_COMPOSITION_PLAN_SCHEMA_VERSION) {
+    throw new TypeError('caption composition requires a current presentation composition plan');
+  }
+  let normalizedPlan = createPresentationCompositionPlan(compositionPlan);
+  if (compositionPlan.hash !== normalizedPlan.hash) throw new TypeError('caption composition plan hash is stale');
+  let sourceCompositionHash = cleanText(input.sourceCompositionHash);
+  let targetCompositionHash = cleanText(input.targetCompositionHash);
+  if (!sourceCompositionHash || !targetCompositionHash) {
+    throw new TypeError('caption composition requires external source and target composition identities');
+  }
+  if (
+    normalizedPlan.sourceCompositionHash !== sourceCompositionHash
+    || normalizedPlan.targetCompositionHash !== targetCompositionHash
+  ) {
+    throw new TypeError('caption composition plan targets stale source or target layout evidence');
+  }
+  let output = normalizePresentationOutputSpec(input.output || input.outputSpec || compositionPlan.output || {});
+  if (
+    alignedSequence.voice?.mode !== output.voice.mode
+    || (output.voice.mode === 'single' && alignedSequence.voice?.speakerId !== output.voice.speakerId)
+  ) {
+    throw new TypeError('caption alignment voice identity does not match the presentation output');
+  }
+  assertCaptionCueBinding(input.cues, timeline, alignedSequence, {
+    speakerMode: output.voice.mode,
+    speakerId: output.voice.speakerId,
+  });
+  if (normalizedPlan.timelineHash !== timeline.hash) {
+    throw new TypeError('caption composition plan targets a stale authored timeline');
+  }
+  if (normalizedPlan.outputSpecHash !== output.hash) {
+    throw new TypeError('caption composition output does not match the composition plan');
+  }
+  let requiredTargetIds = listPresentationCompositionCueSlots(timeline).map((slot) => slot.targetId);
+  let compositionAudit = auditPresentationCompositionPlan(normalizedPlan, {
+    sourceCompositionHash,
+    targetCompositionHash,
+    outputSpecHash: output.hash,
+    timelineHash: timeline.hash,
+    requiredTargetIds,
+  });
+  if (compositionAudit.verdict !== 'accept') {
+    let error = new TypeError(`caption composition rejected layout evidence: ${compositionAudit.issueCodes.join(', ')}`);
+    error.code = 'PRESENTATION_COMPOSITION_REJECTED';
+    error.review = compositionAudit;
+    throw error;
+  }
+  let stepsByTurnAndTarget = new Map();
+  for (let step of normalizedPlan.steps) {
+    let key = `${step.turnId}\u0000${step.targetId}`;
+    if (!stepsByTurnAndTarget.has(key)) stepsByTurnAndTarget.set(key, []);
+    stepsByTurnAndTarget.get(key).push(step);
+  }
+  for (let [turnIndex, turn] of timeline.turns.entries()) {
+    for (let [cueIndex, cue] of turn.cues.entries()) {
+      if (!['focus', 'interaction', 'annotation'].includes(cue.kind)) continue;
+      let key = `${turn.id}\u0000${cue.targetId}`;
+      let steps = stepsByTurnAndTarget.get(key) || [];
+      let covered = steps.some((step) => {
+        if (cue.kind === 'annotation') {
+          let annotationRect = normalizePresentationRect(step.annotation?.rect);
+          return Boolean(step.annotation?.placement && annotationRect.width > 0 && annotationRect.height > 0);
+        }
+        let focusRect = normalizePresentationTargetComposition(step.measurement).focusRect;
+        return focusRect.width > 0 && focusRect.height > 0;
+      });
+      if (!covered) {
+        throw new TypeError(
+          `caption composition is missing measured coverage for ${cue.kind} cue ${turnIndex}.${cueIndex}`,
+        );
+      }
+    }
+  }
+  let presentationViewport = output.presentationViewport;
+  let avoidRegions = [
+    ...compositionAvoidRegions(timeline, alignedSequence, normalizedPlan, presentationViewport),
+    ...(Array.isArray(input.reservedRegions) ? input.reservedRegions : []),
+    ...(Array.isArray(input.avoidRegions) ? input.avoidRegions : []),
+  ];
+  let safeInsets = {
+    top: presentationViewport.y + output.safeArea.top,
+    right: output.width - presentationViewport.x - presentationViewport.width + output.safeArea.right,
+    bottom: output.height - presentationViewport.y - presentationViewport.height + output.safeArea.bottom,
+    left: presentationViewport.x + output.safeArea.left,
+  };
+  let track = output.captions.enabled
+    ? buildCaptionPlacementTrack(input.cues, {
+        width: output.width,
+        height: output.height,
+        captionStyle: output.captions.profile,
+        safeInsets,
+        avoidRegions,
+      })
+    : null;
+  let composition = {
+    schemaVersion: PRESENTATION_CAPTION_COMPOSITION_SCHEMA_VERSION,
+    outputSpecHash: output.hash,
+    timelineHash: timeline.hash,
+    alignedSequenceHash: cleanText(alignedSequence.hash),
+    compositionPlanHash: normalizedPlan.hash,
+    output,
+    track,
+  };
+  return {
+    ...composition,
+    hash: `${PRESENTATION_CAPTION_COMPOSITION_SCHEMA_VERSION}:${computeIntegrity(composition)}`,
+  };
 }

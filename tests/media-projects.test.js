@@ -56,10 +56,16 @@ function timeline(turns) {
 function alignedSequence(source, durations) {
   let contract = createPresentationTimelineContract(source);
   let cursor = 0;
-  let turns = durations.map((durationMs) => {
+  let turns = durations.map((durationMs, index) => {
     let startMs = cursor;
     cursor += durationMs;
-    return { startMs, endMs: cursor, transcript: '', words: [] };
+    return {
+      startMs,
+      endMs: cursor,
+      speaker: contract.turns[index].persona,
+      transcript: contract.turns[index].text,
+      words: [],
+    };
   });
   return createPresentationAlignedSequence(contract, {
     media: { hash: 'sha256-audio', durationMs: cursor, locale: contract.locale },

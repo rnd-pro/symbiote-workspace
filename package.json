@@ -138,9 +138,6 @@
     },
     "linkedom": {
       "optional": true
-    },
-    "symbiote-engine": {
-      "optional": true
     }
   },
   "devDependencies": {

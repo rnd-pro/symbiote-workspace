@@ -371,3 +371,344 @@ export function validatePresentationJourney(input = {}) {
     return { ok: false, errors: [error?.message || String(error)] };
   }
 }
+
+export const PORTABLE_READINESS_RECEIPT_VERSION = 'workspace-presentation-readiness-v2';
+
+const READINESS_RECEIPT_KEYS = new Set([
+  'receiptVersion',
+  'journeyHash',
+  'terminalOutcome',
+  'expectations',
+  'observations',
+  'barriers',
+  'hash',
+]);
+const READINESS_EXPECTATION_KEYS = new Set(['resources', 'surfaces', 'capabilities', 'embeds']);
+const READINESS_OBSERVATION_KEYS = new Set(['admittedResources', 'mountedSurfaces', 'registeredCapabilities']);
+const READINESS_BARRIER_KEYS = new Set(['route', 'fonts', 'layout', 'theme', 'pendingWork', 'embeds', 'stablePaint']);
+const READINESS_SURFACE_ID_PATTERN = /^(?:surface|window|workspace|panel|view|region):[a-z0-9]+(?:[-_.:/][a-z0-9]+)*$/i;
+const READINESS_EMBED_ID_PATTERN = /^embed:[a-z0-9]+(?:[-_.:/][a-z0-9]+)*$/i;
+const CUSTOM_ELEMENT_SELECTOR_TAG = '(?:[a-z][\\w]*-[\\w-]+)';
+const BARE_ELEMENT_SELECTOR = '(?:[a-z][a-z0-9]*)';
+const BARE_DOM_ELEMENT_TAGS = new Set(`
+  a abbr acronym address animate animatemotion animatetransform annotation applet area article aside audio
+  b base basefont bdi bdo bgsound big blink blockquote body br button canvas caption center circle cite clippath
+  code col colgroup content data datalist dd defs del desc details dfn dialog dir div dl dt ellipse em embed
+  feblend fecolormatrix fecomponenttransfer fecomposite feconvolvematrix fediffuselighting fedisplacementmap
+  fedistantlight fedropshadow feflood fefunca fefuncb fefuncg fefuncr fegaussianblur feimage femerge femergenode
+  femorphology feoffset fepointlight fespecularlighting fespotlight fetile feturbulence fieldset figcaption figure
+  filter font footer foreignobject form frame frameset g h1 h2 h3 h4 h5 h6 head header hgroup hr html i iframe image
+  img input ins kbd keygen label legend li line lineargradient link main map mark marker marquee mask math menu
+  menuitem meta metadata meter mi mn mo mpath ms mtext nav nobr noembed noframes noscript object ol optgroup option
+  output p param path pattern picture plaintext polygon polyline portal pre progress q radialgradient rb rect rp rt rtc
+  ruby s samp script search section select set shadow slot small source spacer span stop strike strong style sub summary
+  sup svg switch symbol table tbody td template text textarea textpath tfoot th thead time title tr track tspan tt u ul
+  use var video view wbr xmp
+`.trim().split(/\s+/));
+const DOM_SELECTOR_PATTERN = new RegExp(
+  `(?:^|[\\s,>+~])(?:[#.][a-z_][\\w-]*|\\[[^\\]]+\\]|${CUSTOM_ELEMENT_SELECTOR_TAG}(?:[#.:][a-z_][\\w-]*|\\[[^\\]]+\\]))|(?:queryselector|dataset|classname|innerhtml|xpath)\\b`,
+  'i',
+);
+const ELEMENT_SELECTOR_TOKEN_PATTERN = /(?:^|[\s,>+~])([a-z][a-z0-9]*)(?=[#.:]|\[)/gi;
+
+function hasKnownElementSelector(value) {
+  ELEMENT_SELECTOR_TOKEN_PATTERN.lastIndex = 0;
+  for (let match = ELEMENT_SELECTOR_TOKEN_PATTERN.exec(value); match; match = ELEMENT_SELECTOR_TOKEN_PATTERN.exec(value)) {
+    if (BARE_DOM_ELEMENT_TAGS.has(match[1].toLowerCase())) return true;
+  }
+  return false;
+}
+
+function findDomSelector(value) {
+  if (typeof value === 'string') {
+    return DOM_SELECTOR_PATTERN.test(value) ? value : '';
+  }
+  if (Array.isArray(value)) {
+    for (let item of value) {
+      let selector = findDomSelector(item);
+      if (selector) return selector;
+    }
+    return '';
+  }
+  if (value && typeof value === 'object') {
+    for (let item of Object.values(value)) {
+      let selector = findDomSelector(item);
+      if (selector) return selector;
+    }
+  }
+  return '';
+}
+
+function normalizeReadinessTokens(value, path, { requireNonempty = false } = {}) {
+  if (!Array.isArray(value)) throw new TypeError(`${path} must be an array`);
+  let result = value.map((item, index) => portableToken(item, RESOURCE_ID_PATTERN, `${path}[${index}]`));
+  result = [...new Set(result)].sort();
+  if (requireNonempty && result.length === 0) throw new TypeError(`${path} must not be empty`);
+  return result;
+}
+
+function normalizeReadinessSemanticTokens(value, path, pattern, kind, options = {}) {
+  let result = normalizeReadinessTokens(value, path, options);
+  for (let token of result) {
+    if (!pattern.test(token)) throw new TypeError(`${path} must contain structured semantic ${kind} addresses`);
+  }
+  return result;
+}
+
+function journeyReadinessSurfaceId(journey) {
+  let surfaceId = journey.source.surfaceId;
+  return surfaceId.startsWith('surface:') ? surfaceId : `surface:${surfaceId}`;
+}
+
+function normalizeReadinessResources(value, path, { requireNonempty = false } = {}) {
+  if (!Array.isArray(value)) throw new TypeError(`${path} must be an array`);
+  let byId = new Map();
+  for (let [index, raw] of value.entries()) {
+    let itemPath = `${path}[${index}]`;
+    let source = assertObject(raw, itemPath);
+    assertKnownKeys(source, new Set(['id', 'hash']), itemPath);
+    let resource = {
+      id: portableToken(source.id, RESOURCE_ID_PATTERN, `${itemPath}.id`),
+      hash: integrity(source.hash, `${itemPath}.hash`),
+    };
+    if (byId.has(resource.id) && byId.get(resource.id).hash !== resource.hash) {
+      throw new TypeError(`${path} has conflicting hashes for resource "${resource.id}"`);
+    }
+    byId.set(resource.id, resource);
+  }
+  let result = [...byId.values()].sort((left, right) => left.id.localeCompare(right.id));
+  if (requireNonempty && result.length === 0) throw new TypeError(`${path} must not be empty`);
+  return result;
+}
+
+function normalizeReadinessExpectations(value, path = 'receipt.expectations') {
+  let source = assertObject(value, path);
+  assertKnownKeys(source, READINESS_EXPECTATION_KEYS, path);
+  return {
+    resources: normalizeReadinessResources(source.resources, `${path}.resources`, { requireNonempty: true }),
+    surfaces: normalizeReadinessSemanticTokens(
+      source.surfaces,
+      `${path}.surfaces`,
+      READINESS_SURFACE_ID_PATTERN,
+      'surface',
+      { requireNonempty: true },
+    ),
+    capabilities: normalizeReadinessTokens(source.capabilities, `${path}.capabilities`, { requireNonempty: true }),
+    embeds: normalizeReadinessSemanticTokens(source.embeds, `${path}.embeds`, READINESS_EMBED_ID_PATTERN, 'embed'),
+  };
+}
+
+function normalizeReadinessObservations(value, path = 'receipt.observations') {
+  let source = assertObject(value, path);
+  assertKnownKeys(source, READINESS_OBSERVATION_KEYS, path);
+  return {
+    admittedResources: normalizeReadinessResources(source.admittedResources, `${path}.admittedResources`),
+    mountedSurfaces: normalizeReadinessSemanticTokens(
+      source.mountedSurfaces,
+      `${path}.mountedSurfaces`,
+      READINESS_SURFACE_ID_PATTERN,
+      'surface',
+    ),
+    registeredCapabilities: normalizeReadinessTokens(source.registeredCapabilities, `${path}.registeredCapabilities`),
+  };
+}
+
+function booleanBarrier(source, key, path) {
+  if (source[key] !== true) throw new TypeError(`${path}.${key} must be true`);
+  return true;
+}
+
+function normalizeReadinessBarriers(value, expectations, journey) {
+  let path = 'receipt.barriers';
+  let source = assertObject(value, path);
+  assertKnownKeys(source, READINESS_BARRIER_KEYS, path);
+
+  let routeSource = assertObject(source.route, `${path}.route`);
+  assertKnownKeys(routeSource, new Set(['path', 'settled']), `${path}.route`);
+  let routePath = singleLineText(routeSource.path, `${path}.route.path`);
+  if (routePath !== journey.source.routePath) throw new TypeError('receipt.barriers.route.path must match journey.source.routePath');
+
+  let fontsSource = assertObject(source.fonts, `${path}.fonts`);
+  assertKnownKeys(fontsSource, new Set(['ready']), `${path}.fonts`);
+  let layoutSource = assertObject(source.layout, `${path}.layout`);
+  assertKnownKeys(layoutSource, new Set(['ready', 'fingerprint']), `${path}.layout`);
+  let themeSource = assertObject(source.theme, `${path}.theme`);
+  assertKnownKeys(themeSource, new Set(['ready', 'name']), `${path}.theme`);
+  let pendingSource = assertObject(source.pendingWork, `${path}.pendingWork`);
+  assertKnownKeys(pendingSource, new Set(['count', 'drained']), `${path}.pendingWork`);
+  let embedsSource = assertObject(source.embeds, `${path}.embeds`);
+  assertKnownKeys(embedsSource, new Set(['expectedIds', 'mountedIds', 'readyIds']), `${path}.embeds`);
+  let paintSource = assertObject(source.stablePaint, `${path}.stablePaint`);
+  assertKnownKeys(paintSource, new Set(['samples', 'fingerprint', 'consecutive']), `${path}.stablePaint`);
+
+  let count = integer(pendingSource.count, `${path}.pendingWork.count`);
+  if (count !== 0) throw new TypeError('receipt.barriers.pendingWork.count must be zero');
+  let samples = integer(paintSource.samples, `${path}.stablePaint.samples`, { min: 2 });
+  let expectedIds = normalizeReadinessTokens(embedsSource.expectedIds, `${path}.embeds.expectedIds`);
+  if (expectedIds.length !== expectations.embeds.length
+    || expectedIds.some((id, index) => id !== expectations.embeds[index])) {
+    throw new TypeError('receipt.barriers.embeds.expectedIds must equal receipt.expectations.embeds');
+  }
+
+  return {
+    route: { path: routePath, settled: booleanBarrier(routeSource, 'settled', `${path}.route`) },
+    fonts: { ready: booleanBarrier(fontsSource, 'ready', `${path}.fonts`) },
+    layout: {
+      ready: booleanBarrier(layoutSource, 'ready', `${path}.layout`),
+      fingerprint: integrity(layoutSource.fingerprint, `${path}.layout.fingerprint`),
+    },
+    theme: {
+      ready: booleanBarrier(themeSource, 'ready', `${path}.theme`),
+      name: portableToken(themeSource.name, RESOURCE_ID_PATTERN, `${path}.theme.name`),
+    },
+    pendingWork: { count, drained: booleanBarrier(pendingSource, 'drained', `${path}.pendingWork`) },
+    embeds: {
+      expectedIds,
+      mountedIds: normalizeReadinessSemanticTokens(
+        embedsSource.mountedIds,
+        `${path}.embeds.mountedIds`,
+        READINESS_EMBED_ID_PATTERN,
+        'embed',
+      ),
+      readyIds: normalizeReadinessSemanticTokens(
+        embedsSource.readyIds,
+        `${path}.embeds.readyIds`,
+        READINESS_EMBED_ID_PATTERN,
+        'embed',
+      ),
+    },
+    stablePaint: {
+      samples,
+      fingerprint: integrity(paintSource.fingerprint, `${path}.stablePaint.fingerprint`),
+      consecutive: booleanBarrier(paintSource, 'consecutive', `${path}.stablePaint`),
+    },
+  };
+}
+
+function journeyReadinessResources(journey) {
+  return normalizeReadinessResources(
+    journey.events
+      .filter((event) => event.provenance === 'resource-result')
+      .map((event) => ({ id: event.resource.id, hash: event.resource.resultHash })),
+    'journey resource evidence',
+    { requireNonempty: true },
+  );
+}
+
+function missingResourceEvidence(expected, observed) {
+  let observedById = new Map(observed.map((item) => [item.id, item.hash]));
+  return expected
+    .filter((item) => observedById.get(item.id) !== item.hash)
+    .map((item) => item.id);
+}
+
+function missingTokens(expected, observed) {
+  let observedSet = new Set(observed);
+  return expected.filter((item) => !observedSet.has(item));
+}
+
+function assertReadinessCoverage(expectations, observations, barriers) {
+  let missing = {
+    resources: missingResourceEvidence(expectations.resources, observations.admittedResources),
+    surfaces: missingTokens(expectations.surfaces, observations.mountedSurfaces),
+    capabilities: missingTokens(expectations.capabilities, observations.registeredCapabilities),
+    mountedEmbeds: missingTokens(expectations.embeds, barriers.embeds.mountedIds),
+    readyEmbeds: missingTokens(expectations.embeds, barriers.embeds.readyIds),
+  };
+  let failures = Object.entries(missing).filter(([, values]) => values.length > 0);
+  if (failures.length) {
+    let error = new TypeError(`readiness evidence is incomplete: ${failures.map(([key, values]) => `${key}=[${values.join(', ')}]`).join('; ')}`);
+    error.missingEvidence = missing;
+    throw error;
+  }
+}
+
+function normalizeReadinessReceipt(input, journey) {
+  let receipt = assertObject(input, 'receipt');
+  assertKnownKeys(receipt, READINESS_RECEIPT_KEYS, 'receipt');
+  let rawSurfaceIds = [
+    ...(Array.isArray(receipt.expectations?.surfaces) ? receipt.expectations.surfaces : []),
+    ...(Array.isArray(receipt.observations?.mountedSurfaces) ? receipt.observations.mountedSurfaces : []),
+  ].filter((value) => typeof value === 'string');
+  let rawSelector = findDomSelector(receipt)
+    || rawSurfaceIds.find((id) => BARE_DOM_ELEMENT_TAGS.has(id.toLowerCase()) || hasKnownElementSelector(id));
+  if (rawSelector) throw new TypeError(`receipt must not contain DOM selectors: ${rawSelector}`);
+  let receiptVersion = singleLineText(receipt.receiptVersion, 'receipt.receiptVersion');
+  if (receiptVersion !== PORTABLE_READINESS_RECEIPT_VERSION) {
+    throw new TypeError(`receipt.receiptVersion must equal ${PORTABLE_READINESS_RECEIPT_VERSION}`);
+  }
+  let journeyHash = integrity(receipt.journeyHash, 'receipt.journeyHash');
+  if (journeyHash !== journey.contentHash) throw new TypeError('receipt.journeyHash must match the validated journey');
+  let terminalOutcome = singleLineText(receipt.terminalOutcome, 'receipt.terminalOutcome');
+  if (terminalOutcome !== 'completed' || journey.outcome !== 'completed') {
+    throw new TypeError('receipt and journey terminal outcomes must be completed');
+  }
+
+  let expectations = normalizeReadinessExpectations(receipt.expectations);
+  let sourceSurfaceId = journeyReadinessSurfaceId(journey);
+  if (!expectations.surfaces.includes(sourceSurfaceId)) {
+    throw new TypeError(`receipt.expectations.surfaces must include journey surface ${sourceSurfaceId}`);
+  }
+  let journeyResources = journeyReadinessResources(journey);
+  if (computeIntegrity(expectations.resources) !== computeIntegrity(journeyResources)) {
+    throw new TypeError('receipt.expectations.resources must exactly match journey resource-result evidence');
+  }
+  let observations = normalizeReadinessObservations(receipt.observations);
+  let barriers = normalizeReadinessBarriers(receipt.barriers, expectations, journey);
+  assertReadinessCoverage(expectations, observations, barriers);
+
+  let normalized = { receiptVersion, journeyHash, terminalOutcome, expectations, observations, barriers };
+  let surfaceIds = [...expectations.surfaces, ...observations.mountedSurfaces];
+  let selector = findDomSelector(normalized)
+    || surfaceIds.find((id) => BARE_DOM_ELEMENT_TAGS.has(id.toLowerCase()) || hasKnownElementSelector(id));
+  if (selector) {
+    throw new TypeError(`receipt must not contain DOM selectors: ${selector}`);
+  }
+  assertPortableValue(normalized, 'receipt', {
+    allowPathAt: (path) => path === 'receipt.barriers.route.path',
+    secretKeyPattern: JOURNEY_SECRET_KEY_PATTERN,
+  });
+  return normalized;
+}
+
+export function validatePortableReadinessReceipt(input = {}, options = {}) {
+  try {
+    if (!options.journey) throw new TypeError('readiness receipt validation requires its presentation journey');
+    let journey = buildJourney(options.journey);
+    let normalized = normalizeReadinessReceipt(input, journey);
+    let hash = integrity(input.hash, 'receipt.hash');
+    if (hash !== computeIntegrity(normalized)) throw new TypeError('receipt.hash does not match computed integrity');
+    return { ok: true, errors: [], missingEvidence: null };
+  } catch (error) {
+    return {
+      ok: false,
+      errors: [error?.message || String(error)],
+      missingEvidence: error?.missingEvidence || null,
+    };
+  }
+}
+
+export function createPortableReadinessReceipt(input = {}) {
+  let journey = buildJourney(input.journey);
+  let journeyResources = journeyReadinessResources(journey);
+  let receiptInput = {
+    receiptVersion: PORTABLE_READINESS_RECEIPT_VERSION,
+    journeyHash: journey.contentHash,
+    terminalOutcome: journey.outcome,
+    expectations: {
+      ...(input.expectations || {}),
+      resources: input.expectations?.resources ?? journeyResources,
+    },
+    observations: {
+      admittedResources: input.observations?.admittedResources,
+      mountedSurfaces: input.observations?.mountedSurfaces,
+      registeredCapabilities: input.observations?.registeredCapabilities,
+    },
+    barriers: input.observations?.barriers ?? input.barriers,
+  };
+  let normalized = normalizeReadinessReceipt(receiptInput, journey);
+  let receipt = { ...normalized, hash: computeIntegrity(normalized) };
+  let validation = validatePortableReadinessReceipt(receipt, { journey });
+  if (!validation.ok) throw new TypeError(validation.errors[0]);
+  return receipt;
+}

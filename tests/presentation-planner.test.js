@@ -5,13 +5,17 @@ import {
   PRESENTATION_PLANNER_INPUT_SCHEMA_VERSION,
   createPresentationPlannerInput,
 } from '../runtime/presentation-planner.js';
+import {
+  PRESENTATION_REPLAN_REQUEST_SCHEMA_VERSION,
+  presentationReplanRequestHash,
+} from '../runtime/presentation-output.js';
 
 function fixture(overrides = {}) {
   let snapshot = {
     identityHash: 'presentation-context-snapshot-v2:target',
     generation: 2,
     output: {
-      schemaVersion: 'workspace-presentation-output-v2',
+      schemaVersion: 'workspace-presentation-output-v3',
       format: 'horizontal',
       width: 1920,
       height: 1080,
@@ -37,9 +41,10 @@ function fixture(overrides = {}) {
     ...overrides.snapshot,
   };
   let request = {
+    schemaVersion: PRESENTATION_REPLAN_REQUEST_SCHEMA_VERSION,
     targetSnapshotHash: snapshot.identityHash,
     lessonContextHash: 'workspace-lesson-context-v2:lesson',
-    outputSpecHash: 'workspace-presentation-output-v2:horizontal',
+    outputSpecHash: 'workspace-presentation-output-v3:horizontal',
     generation: snapshot.generation,
     prompt: 'Explain the current orders.',
     profile: 'dialogue',
@@ -78,6 +83,7 @@ function fixture(overrides = {}) {
     },
     ...overrides.request,
   };
+  request.hash = presentationReplanRequestHash(request);
   return { request, snapshot };
 }
 
@@ -88,6 +94,8 @@ describe('presentation planner input projection', () => {
     let second = createPresentationPlannerInput(structuredClone(request), structuredClone(snapshot));
 
     assert.equal(first.projection.schemaVersion, PRESENTATION_PLANNER_INPUT_SCHEMA_VERSION);
+    assert.equal(PRESENTATION_PLANNER_INPUT_SCHEMA_VERSION, 'presentation-planner-input-v2');
+    assert.equal(first.projection.basis.requestHash, request.hash);
     assert.equal(first.hash, second.hash);
     assert.equal(first.json, second.json);
     assert.equal(first.projection.allowedActions.length, 1);
@@ -122,7 +130,7 @@ describe('presentation planner input projection', () => {
         hiddenReasons: ['mobile-dock'],
         composition: { visible: false, reachable: true, revealable: true, focusRect: { x: 54, y: 180, width: 972, height: 640 } },
       }],
-    }, request: { outputSpecHash: 'workspace-presentation-output-v2:vertical' } });
+    }, request: { outputSpecHash: 'workspace-presentation-output-v3:vertical' } });
     let left = createPresentationPlannerInput(horizontal.request, horizontal.snapshot);
     let right = createPresentationPlannerInput(vertical.request, vertical.snapshot);
     assert.notEqual(left.hash, right.hash);
@@ -138,6 +146,15 @@ describe('presentation planner input projection', () => {
     assert.throws(
       () => createPresentationPlannerInput({ ...request, targetSnapshotHash: 'presentation-context-snapshot-v2:stale' }, snapshot),
       /snapshot basis is stale/,
+    );
+  });
+
+  it('rejects request mutation after signing before provider submission', () => {
+    let { request, snapshot } = fixture();
+    request.prompt = 'A different lesson after signing.';
+    assert.throws(
+      () => createPresentationPlannerInput(request, snapshot),
+      /exact current replan request hash/,
     );
   });
 

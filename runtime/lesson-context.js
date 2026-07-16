@@ -161,6 +161,10 @@ export function lessonTextTokens(value, locale = 'en-US', { contentOnly = false 
     .toLocaleLowerCase(language)
     .replace(/([+-]?\d[\d\s\u00a0\u202f.,]*\d|\d)/g, (token) => ` ${normalizeDecimalToken(token)} `);
   let tokens = normalized.match(/[\p{L}\p{N}]+(?:[._:-][\p{L}\p{N}]+)*/gu) || [];
+  tokens = [...new Set(tokens.flatMap((token) => [
+    token,
+    ...(/\p{L}/u.test(token) ? token.split(/[._:-]+/u).filter((part) => part && part !== token) : []),
+  ]))];
   tokens.push(...dates);
   if (!contentOnly) return tokens;
   return tokens.filter((token) => !STOPWORDS[language].has(token));

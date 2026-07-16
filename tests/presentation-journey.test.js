@@ -5,9 +5,12 @@ import {
   PRESENTATION_JOURNEY_SCHEMA_VERSION,
   PRESENTATION_JOURNEY_OUTCOMES,
   PRESENTATION_JOURNEY_PROVENANCE,
+  PORTABLE_READINESS_RECEIPT_VERSION,
   createPresentationJourney,
   presentationJourneyReplayProjection,
   validatePresentationJourney,
+  createPortableReadinessReceipt,
+  validatePortableReadinessReceipt,
 } from '../runtime/presentation-journey.js';
 import { createPresentationJourney as createFromRoot } from '../index.js';
 
@@ -244,5 +247,151 @@ describe('presentation journey contract', () => {
     let badResourceHash = baseJourney();
     badResourceHash.events[2].resource.resultHash = 'nope';
     assert.match(validatePresentationJourney(badResourceHash).errors[0], /must be a sha256 integrity string/);
+  });
+
+  describe('portable readiness receipt', () => {
+    function readinessInput() {
+      let journey = createPresentationJourney(baseJourney());
+      let result = journey.events.find((event) => event.provenance === 'resource-result').resource;
+      return {
+        journey,
+        expectations: {
+          surfaces: ['surface:workbench', 'panel:details'],
+          capabilities: ['surface.focus', 'action.trigger'],
+          embeds: ['embed:preview'],
+        },
+        observations: {
+          admittedResources: [{ id: result.id, hash: result.resultHash }],
+          mountedSurfaces: ['panel:details', 'surface:workbench'],
+          registeredCapabilities: ['action.trigger', 'surface.focus'],
+          barriers: {
+            route: { path: '/workspace/new', settled: true },
+            fonts: { ready: true },
+            layout: { ready: true, fingerprint: hash('layout') },
+            theme: { ready: true, name: 'dark' },
+            pendingWork: { count: 0, drained: true },
+            embeds: {
+              expectedIds: ['embed:preview'],
+              mountedIds: ['embed:preview'],
+              readyIds: ['embed:preview'],
+            },
+            stablePaint: { samples: 2, fingerprint: hash('paint'), consecutive: true },
+          },
+        },
+      };
+    }
+
+    it('creates a canonical receipt bound to the completed journey', () => {
+      let input = readinessInput();
+      let receipt = createPortableReadinessReceipt(input);
+      assert.equal(receipt.receiptVersion, PORTABLE_READINESS_RECEIPT_VERSION);
+      assert.equal(receipt.journeyHash, input.journey.contentHash);
+      assert.ok(isIntegrityString(receipt.hash));
+      assert.deepEqual(validatePortableReadinessReceipt(receipt, { journey: input.journey }), {
+        ok: true,
+        errors: [],
+        missingEvidence: null,
+      });
+      assert.deepEqual(receipt.expectations.resources, [
+        { id: 'module.map', hash: hash('module-map') },
+      ]);
+    });
+
+    it('rejects obsolete readiness receipt identities instead of silently migrating them', () => {
+      let input = readinessInput();
+      let receipt = createPortableReadinessReceipt(input);
+      receipt.receiptVersion = 'workspace-presentation-readiness-v1';
+      assert.match(
+        validatePortableReadinessReceipt(receipt, { journey: input.journey }).errors[0],
+        /must equal workspace-presentation-readiness-v2/,
+      );
+    });
+
+    it('fails closed on missing resources, capabilities, embeds, and stable barriers', () => {
+      let missing = readinessInput();
+      missing.observations.admittedResources = [];
+      missing.observations.registeredCapabilities = [];
+      missing.observations.barriers.embeds.readyIds = [];
+      assert.throws(
+        () => createPortableReadinessReceipt(missing),
+        /resources=\[module.map\].*capabilities=.*readyEmbeds=/,
+      );
+
+      let pending = readinessInput();
+      pending.observations.barriers.pendingWork.count = 1;
+      assert.throws(() => createPortableReadinessReceipt(pending), /must be zero/);
+
+      let unstable = readinessInput();
+      unstable.observations.barriers.stablePaint.samples = 1;
+      assert.throws(() => createPortableReadinessReceipt(unstable), /between 2/);
+    });
+
+    it('requires the journey during validation and rejects stale or tampered receipts', () => {
+      let input = readinessInput();
+      let receipt = createPortableReadinessReceipt(input);
+      assert.match(validatePortableReadinessReceipt(receipt).errors[0], /requires its presentation journey/);
+
+      let tampered = structuredClone(receipt);
+      tampered.barriers.theme.name = 'light';
+      assert.match(validatePortableReadinessReceipt(tampered, { journey: input.journey }).errors[0], /hash does not match/);
+
+      let other = baseJourney();
+      other.source.contextHash = hash('other-context');
+      assert.match(
+        validatePortableReadinessReceipt(receipt, { journey: createPresentationJourney(other) }).errors[0],
+        /journeyHash must match/,
+      );
+    });
+
+    it('rejects DOM selectors and non-portable expectation identities', () => {
+      let selector = readinessInput();
+      selector.expectations.surfaces = ['.class-name'];
+      assert.throws(() => createPortableReadinessReceipt(selector), /must not contain DOM selectors/);
+
+      let compoundSelector = readinessInput();
+      compoundSelector.expectations.surfaces = ['div.panel'];
+      compoundSelector.observations.mountedSurfaces = ['div.panel'];
+      assert.throws(() => createPortableReadinessReceipt(compoundSelector), /must not contain DOM selectors/);
+
+      let customElementSelector = readinessInput();
+      customElementSelector.expectations.surfaces = ['sn-panel.active'];
+      customElementSelector.observations.mountedSurfaces = ['sn-panel.active'];
+      assert.throws(() => createPortableReadinessReceipt(customElementSelector), /must not contain DOM selectors/);
+
+      let bareCustomElementSelector = readinessInput();
+      bareCustomElementSelector.expectations.surfaces = ['sn-panel'];
+      bareCustomElementSelector.observations.mountedSurfaces = ['sn-panel'];
+      assert.throws(
+        () => createPortableReadinessReceipt(bareCustomElementSelector),
+        /structured semantic surface addresses/,
+      );
+
+      let bareHtmlSelector = readinessInput();
+      bareHtmlSelector.expectations.surfaces = ['div'];
+      bareHtmlSelector.observations.mountedSurfaces = ['div'];
+      assert.throws(() => createPortableReadinessReceipt(bareHtmlSelector), /must not contain DOM selectors/);
+
+      for (let tag of ['figure', 'img', 'svg', 'details', 'summary']) {
+        let unlistedHtmlOrSvgSelector = readinessInput();
+        unlistedHtmlOrSvgSelector.expectations.surfaces = [tag];
+        unlistedHtmlOrSvgSelector.observations.mountedSurfaces = [tag];
+        assert.throws(
+          () => createPortableReadinessReceipt(unlistedHtmlOrSvgSelector),
+          /must not contain DOM selectors/,
+        );
+      }
+
+      let mismatchedResources = readinessInput();
+      mismatchedResources.expectations.resources = [{ id: 'other.resource', hash: hash('other') }];
+      assert.throws(() => createPortableReadinessReceipt(mismatchedResources), /must exactly match journey/);
+
+      let mismatchedJourneySurface = readinessInput();
+      mismatchedJourneySurface.expectations.surfaces = ['surface:other', 'panel:details'];
+      mismatchedJourneySurface.observations.mountedSurfaces = ['surface:other', 'panel:details'];
+      assert.throws(
+        () => createPortableReadinessReceipt(mismatchedJourneySurface),
+        /must include journey surface surface:workbench/,
+      );
+    });
   });
 });

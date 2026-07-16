@@ -13,6 +13,23 @@ The contract carries portable identity and observed timing only. Event
 collection, tool execution, HTTP streaming, and frame rendering stay owned by the
 host that produced the session.
 
+## Portable readiness
+
+`createPortableReadinessReceipt()` signs the separate exact-version
+`workspace-presentation-readiness-v2` proof used before capture and terminal
+replay. It binds to the validated completed journey, requires resource-result
+evidence to match exactly, and requires the journey source surface plus every
+declared surface, capability, and embed to be observed. Surface and embed IDs are
+structured semantic addresses such as `surface:workbench`, `panel:details`, and
+`embed:preview`; DOM selectors and bare custom-element names are not portable.
+
+The receipt also proves the settled route, ready fonts/layout/theme, zero pending
+work, ready embeds, and at least two consecutive identical stable-paint samples.
+Validation always requires the corresponding journey and rejects stale hashes,
+incomplete coverage, non-completed outcomes, and obsolete v1 receipts. A host
+must issue a new receipt after the source journey or any readiness evidence
+changes; version rewriting is not migration.
+
 ## One execution, two timelines
 
 Every event records the observed `sourceOffsetMs` and independently declares a

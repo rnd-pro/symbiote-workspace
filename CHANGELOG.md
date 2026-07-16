@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Hardened presentation identity across planning, audio alignment, and captions:
+  replan requests are rehashed after bounded review feedback and rejected when
+  their content is stale, and `presentation-planner-input-v2` plus planner
+  results bind to the exact request hash.
+  `workspace-aligned-sequence-v2` retains exact speaker and transcript identity
+  with an explicit migration boundary from v1; single-speaker output declares
+  one `speakerId`; caption timing uses
+  a public inclusive 50 ms integer tolerance; and journey validation rejects
+  bare standard HTML tag selectors while retaining portable custom-element and
+  semantic target addresses.
+- Added a strict opt-in lesson-arc review/policy in the presentation layer (`reviewPresentationTimeline` inside `runtime/presentation.js`) with issue codes `lesson-arc-start-invalid`, `lesson-arc-body-invalid`, `lesson-arc-closure-invalid`, and `lesson-arc-final-invalid` to verify the lesson subject introduction, fact coverage, transition ordering, and grounded closing turns.
+- Added versioned portable readiness receipt validator and constructor (`createPortableReadinessReceipt` / `validatePortableReadinessReceipt` / `PORTABLE_READINESS_RECEIPT_VERSION`) to bind journeys to completed terminal outcomes, admitted resources, mounted surfaces, registered capabilities, and theme/layout/fonts/embed barriers without DOM selectors or product code dependencies.
+- Portable readiness is now `workspace-presentation-readiness-v2`: every receipt
+  must include the journey source as a structured semantic surface address, bare
+  custom-element names and DOM selectors are rejected, and obsolete v1 receipts
+  cannot be silently migrated.
+- Added composition orchestration caption placement planner (`planCaptionPlacements`) integrating timing calculations and focus/annotation rectangle avoid regions using the public, required `symbiote-engine >=0.3.0-alpha.12` peer. Caption plans are signed only after the complete composition audit accepts visibility, reachability, clipping, occlusion, readability, viewport, restored state, frozen simulation, scroll application, annotation placement, and required target coverage.
+- Centralized composition cue coverage in `listPresentationCompositionCueSlots()` so preflight, finalization, and caption placement require matching layout evidence for focus, interaction, and annotation targets.
 - Added the exact-version `workspace-presentation-journey-v1` contract in
   `runtime/presentation-journey.js`, exported from `symbiote-workspace`,
   `symbiote-workspace/runtime`, and `symbiote-workspace/browser` as
@@ -53,7 +71,7 @@ All notable changes to this project will be documented in this file.
   identity. Provider, Chromium, native-chrome, and product concerns stay out of the
   package.
 - Moved the presentation output and composition contracts to
-  `workspace-presentation-output-v2` and `workspace-presentation-composition-v2`.
+  `workspace-presentation-output-v3` and `workspace-presentation-composition-v3`.
   The output spec adds neutral, finite, non-negative final-frame `frameInsets`
   (zero defaults) and derives a positive `presentationViewport {x,y,width,height}`;
   frame insets that leave no positive viewport are rejected. Safe area, content
@@ -65,7 +83,8 @@ All notable changes to this project will be documented in this file.
   composition audit keeps browser DOM focus/annotation rectangles page-local and
   explicitly translates them by the presentation viewport origin before
   final-frame containment and caption-collision checks; output remains the final
-  video coordinate system. Presentation preparation, rehydration, settlement, and
+  video coordinate system. Explicit obsolete schema versions are rejected instead
+  of being normalized and re-signed as current artifacts. Presentation preparation, rehydration, settlement, and
   context snapshots receive the page-local presentation viewport while retaining
   the full output spec as the final-video identity.
 - Presentation review now proves responsive dialogue handoffs primarily from
@@ -141,7 +160,7 @@ All notable changes to this project will be documented in this file.
   `presentation-timeline-v3`: explicit provider-neutral personas, grounded
   dialogue turns, any-earlier replies, ordered focus/interaction/annotation/state
   cues, and semantic speech anchors. Legacy single cues/actions and authored
-  media milliseconds now fail closed. Added `workspace-aligned-sequence-v1` as a
+  media milliseconds now fail closed. Added `workspace-aligned-sequence-v2` as a
   separately hashed post-audio artifact with complete turn/cue coverage and
   alignment provenance, and migrated browser playback, lesson audits, media
   projects, and public Node/browser exports to the new contract.
