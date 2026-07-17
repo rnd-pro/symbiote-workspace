@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   PRESENTATION_ALIGNED_SEQUENCE_VERSION,
+  PRESENTATION_ANNOTATION_PLACEMENTS,
   PRESENTATION_CONTRACT_VERSION,
   PRESENTATION_DIALOGUE_ACTS,
   PRESENTATION_INTERACTION_TYPES,
@@ -88,8 +89,36 @@ describe('presentation timeline v3 contract', () => {
     ]);
     assert.deepEqual(PRESENTATION_INTERACTION_TYPES, [
       'click', 'double-click', 'hover', 'drag', 'scroll', 'zoom', 'input',
-      'select', 'panel-reveal', 'navigate',
+      'select', 'text-select', 'panel-reveal', 'navigate',
     ]);
+    assert.deepEqual(PRESENTATION_ANNOTATION_PLACEMENTS, [
+      'over', 'after', 'before', 'corner', 'below', 'above',
+    ]);
+  });
+
+  it('normalizes annotations placed above crowded controls', () => {
+    let input = fixture();
+    input.turns[1].cues[0].annotation.placement = 'above';
+
+    let timeline = createPresentationTimelineContract(input);
+
+    assert.equal(timeline.turns[1].cues[0].annotation.placement, 'above');
+  });
+
+  it('normalizes native text selection separately from semantic selection', () => {
+    let input = fixture();
+    input.turns[1].cues[1].interaction = {
+      type: 'text-select',
+      parameters: { quote: 'через адаптер', occurrence: 1 },
+      reversible: true,
+    };
+    let timeline = createPresentationTimelineContract(input);
+
+    assert.deepEqual(timeline.turns[1].cues[1].interaction, {
+      type: 'text-select',
+      parameters: { quote: 'через адаптер', occurrence: 1 },
+      reversible: true,
+    });
   });
 
   it('normalizes multilingual quote anchors and hashes every cue mutation', () => {

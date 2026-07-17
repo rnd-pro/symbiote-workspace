@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Added the final-clock presentation solver `solvePresentationClock` inside `runtime/presentation/solver.js` (exported from `runtime/presentation.js` and `runtime/index.js`). The solver consumes an immutable `presentation-timeline-v3` timeline contract, TTS speech turn durations with Whisper word timings, source replay events, and hard causality constraints (`not-before`, `coincident`, `min-gap`), and produces a deterministic clock projection (`presentation-clock-projection-v1`) that schedules all turns, source events, and cue events using longest-path constraint propagation. Cue intervals participate in the same graph and final duration, so late UI actions extend the frame clock, short spoken spans gain elastic dwell, and contradictory cue ranges fail closed instead of being clipped. Speech and real UI motion are never compressed to fit a preset duration.
+
+- Added the portable `text-select` presentation interaction for real browser
+  text-range emphasis. Planner inference distinguishes text/range selection
+  actions from existing semantic record and control `select` actions while
+  retaining portable quote/range parameters and reversible execution metadata.
+- Added the portable `above` annotation placement so renderers can keep marker
+  ink and its cursor clear of controls immediately below the annotated target.
 - Hardened presentation identity across planning, audio alignment, and captions:
   replan requests are rehashed after bounded review feedback and rejected when
   their content is stale, and `presentation-planner-input-v2` plus planner

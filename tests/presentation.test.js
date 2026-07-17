@@ -366,6 +366,33 @@ describe('presentation timeline generation', () => {
     assert.deepEqual(review.coverage.missingRequestKeywords, []);
   });
 
+  it('infers native text selection without changing semantic select actions', () => {
+    let timeline = createWorkspacePresentationTimeline({
+      workspace: { name: 'Selection lesson' },
+      activeViewId: 'lesson',
+      panels: [{
+        address: 'panel:lesson:article',
+        kind: 'panel',
+        title: 'Article excerpt',
+        visible: true,
+        safeActions: [
+          { id: 'article.text-select', input: { quote: 'verified outcome' } },
+          { id: 'article.select-row', input: { id: 'row-1' } },
+        ],
+      }],
+      targets: [{ address: 'panel:lesson:article', kind: 'panel', visible: true }],
+    }, {
+      prompt: 'full detailed presentation',
+      maxSegments: 1,
+      revision: 1,
+    });
+    let interactions = timeline.turns[0].cues
+      .filter((cue) => cue.kind === 'interaction')
+      .map((cue) => cue.interaction.type);
+
+    assert.deepEqual(interactions, ['text-select', 'select']);
+  });
+
   it('generates dialogue-profile lessons with alternating personas and responsive handoffs', () => {
     let timeline = createWorkspacePresentationTimeline(context(), {
       prompt: 'two voice podcast walkthrough for work order data',

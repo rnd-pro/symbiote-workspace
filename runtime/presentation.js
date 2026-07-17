@@ -57,6 +57,8 @@ export {
   createPresentationAlignedSequence,
   validatePresentationAlignedSequence,
 } from './presentation/align.js';
+export { solvePresentationClock } from './presentation/solver.js';
+
 
 export {
   PRESENTATION_CAPTION_TIMING_TOLERANCE_MS,
@@ -513,6 +515,7 @@ function actionName(action) {
 }
 
 function interactionType(name, target) {
+  if (/(?:text|range)[._:\s-]*(?:select|selection)|(?:select|selection)[._:\s-]*(?:text|range)/i.test(name)) return 'text-select';
   if (/double/i.test(name)) return 'double-click';
   if (/hover/i.test(name)) return 'hover';
   if (/drag/i.test(name)) return 'drag';
@@ -1120,6 +1123,8 @@ export function reviewPresentationTimeline(input = {}, intent = {}) {
 
   if (strictLessonArc && turns.length > 0) {
     let arc = isObject(intent.lessonArc) ? intent.lessonArc : null;
+    let openingRequired = arc?.openingRequired === true;
+    let closureRequired = arc?.closureRequired === true;
     let lessonContext = isObject(intent.lessonContext) ? intent.lessonContext : {};
     let lesson = isObject(lessonContext.lesson) ? lessonContext.lesson : {};
     let locale = cleanTimelineText(lesson.locale || timeline.locale, 'en-US');
@@ -1241,11 +1246,14 @@ export function reviewPresentationTimeline(input = {}, intent = {}) {
       .filter((sourceId) => openingRefs.has(sourceId) && !turnSupportsSource(turns[0], sourceId));
     let incoherentOutcomeSourceIds = outcomeSourceIds
       .filter((sourceId) => openingRefs.has(sourceId) && !turnSupportsSource(turns[0], sourceId));
-    if (turns[0].dialogueAct !== 'open'
+    let hasOpening = turns[0].dialogueAct === 'open';
+    if ((openingRequired || hasOpening) && (
+      !hasOpening
       || missingSubjectRefs.length
       || missingOutcomeRefs.length
       || incoherentSubjectSourceIds.length
-      || incoherentOutcomeSourceIds.length) {
+      || incoherentOutcomeSourceIds.length
+    )) {
       addIssue('lesson-arc-start-invalid', 'The first turn must be an opening grounded in the declared subject and expected outcome.', {
         severity: 'error',
         turnIndex: 0,
@@ -1256,7 +1264,8 @@ export function reviewPresentationTimeline(input = {}, intent = {}) {
       });
     }
 
-    let bodyTurns = turns.slice(1).filter((turn) => !['summarize', 'conclude', 'close'].includes(turn.dialogueAct));
+    let bodyTurns = turns.slice(hasOpening ? 1 : 0)
+      .filter((turn) => !['summarize', 'conclude', 'close'].includes(turn.dialogueAct));
     let bodyFactIds = new Set(bodyTurns.flatMap((turn) => [...factIdsFor(turn)]));
     let missingFacts = requiredFactIds.filter((factId) => !bodyFactIds.has(factId));
     let incoherentFacts = requiredFactIds.filter((factId) => (
@@ -1301,7 +1310,7 @@ export function reviewPresentationTimeline(input = {}, intent = {}) {
       && includesAll(closureSourceIds, outcomeSourceIds)
       && incoherentClosureOutcomeSourceIds.length === 0
       && coherentClosureFactIds.length > 0;
-    if (!closureGrounded) {
+    if (closureRequired && !closureGrounded) {
       addIssue('lesson-arc-closure-invalid', `The closing window of ${closureWindowSize} turns must summarize a demonstrated fact and the declared outcome.`, {
         severity: 'error',
         incoherentOutcomeSourceIds: incoherentClosureOutcomeSourceIds,
@@ -1314,9 +1323,11 @@ export function reviewPresentationTimeline(input = {}, intent = {}) {
     let incoherentFinalOutcomeSourceIds = outcomeSourceIds.filter((sourceId) => (
       finalRefs.has(sourceId) && !turnSupportsSource(finalTurn, sourceId)
     ));
-    if (!['conclude', 'close'].includes(finalTurn.dialogueAct)
+    if (closureRequired && (
+      !['conclude', 'close'].includes(finalTurn.dialogueAct)
       || !includesAll(finalRefs, outcomeSourceIds)
-      || incoherentFinalOutcomeSourceIds.length) {
+      || incoherentFinalOutcomeSourceIds.length
+    )) {
       addIssue('lesson-arc-final-invalid', 'The final turn must close the lesson and cite the declared outcome.', {
         severity: 'error',
         turnIndex: turns.length - 1,

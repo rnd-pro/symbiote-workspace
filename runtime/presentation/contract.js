@@ -26,6 +26,7 @@ export const PRESENTATION_INTERACTION_TYPES = Object.freeze([
   'zoom',
   'input',
   'select',
+  'text-select',
   'panel-reveal',
   'navigate',
 ]);
@@ -41,7 +42,7 @@ export const PRESENTATION_ANNOTATION_INTENTS = Object.freeze([
 ]);
 export const PRESENTATION_MARKERS = Object.freeze(['box', 'circle', 'oval', 'underline', 'freehand', 'bracket', 'slash']);
 export const PRESENTATION_SYMBOLS = Object.freeze(['question', 'cross', 'check', 'heart', 'flourish']);
-export const PRESENTATION_ANNOTATION_PLACEMENTS = Object.freeze(['over', 'after', 'before', 'corner', 'below']);
+export const PRESENTATION_ANNOTATION_PLACEMENTS = Object.freeze(['over', 'after', 'before', 'corner', 'below', 'above']);
 export const PRESENTATION_STATE_CONDITIONS = Object.freeze([
   'visible',
   'hidden',

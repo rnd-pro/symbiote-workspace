@@ -202,6 +202,7 @@ export {
   presentationTimelineHashProjection,
   presentationTimelineHasTurns,
   validatePresentationAlignedSequence,
+  solvePresentationClock,
   reviewPresentationTimeline,
   reviewPresentationDialogue,
   reviewPresentationTimelineAgainstLessonContext,
