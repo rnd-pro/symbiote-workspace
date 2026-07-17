@@ -4,15 +4,36 @@ import { createServer } from 'node:net';
 import { createConnection } from 'node:net';
 import { request } from 'node:http';
 import { randomBytes, createHash } from 'node:crypto';
-import { access, mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { access, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
+
+import { writeRealtimeChatStateDemo } from './realtime-builder-runtime.js';
+import { startStaticServer } from './server-utils.js';
 
 let DEFAULT_TIMEOUT = 15000;
 let POLL_INTERVAL = 100;
+
+const REALTIME_BROWSER_PACKAGES = [
+  {
+    name: 'symbiote-ui',
+    rootKey: 'uiRoot',
+    urlPrefix: '/__symbiote_ui__/',
+  },
+  {
+    name: 'symbiote-engine',
+    rootKey: 'engineRoot',
+    urlPrefix: '/__symbiote_engine__/',
+  },
+  {
+    name: '@symbiotejs/symbiote',
+    rootKey: 'symbioteRoot',
+    urlPrefix: '/__symbiote__/',
+  },
+];
 
 function readArg(name, fallback) {
   let index = process.argv.indexOf(name);
@@ -58,6 +79,192 @@ function delay(ms) {
 
 function scriptDir() {
   return dirname(fileURLToPath(import.meta.url));
+}
+
+function browserExportTarget(value) {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) {
+    for (let candidate of value) {
+      let target = browserExportTarget(candidate);
+      if (target) return target;
+    }
+    return null;
+  }
+  if (!value || typeof value !== 'object') return null;
+  for (let condition of ['browser', 'import', 'default']) {
+    let target = browserExportTarget(value[condition]);
+    if (target) return target;
+  }
+  return null;
+}
+
+function packageExportEntries(meta) {
+  if (!meta.exports) {
+    return [['.', meta.module || meta.main || './index.js']];
+  }
+  if (typeof meta.exports === 'string' || Array.isArray(meta.exports)) {
+    return [['.', meta.exports]];
+  }
+  let keys = Object.keys(meta.exports);
+  if (keys.some((key) => key.startsWith('.'))) return Object.entries(meta.exports);
+  return [['.', meta.exports]];
+}
+
+function packageImportKey(packageName, exportKey) {
+  if (exportKey === '.') return packageName;
+  if (!exportKey.startsWith('./')) {
+    throw new Error(`Invalid export key "${exportKey}" in installed package "${packageName}".`);
+  }
+  return `${packageName}/${exportKey.slice(2)}`;
+}
+
+function packageImportUrl(packageName, urlPrefix, exportTarget) {
+  if (!exportTarget.startsWith('./')) {
+    throw new Error(
+      `Installed package "${packageName}" has a non-local browser export: ${exportTarget}`
+    );
+  }
+  let path = exportTarget.slice(2);
+  if (path === '..' || path.startsWith('../') || path.includes('/../')) {
+    throw new Error(
+      `Installed package "${packageName}" has an out-of-root browser export: ${exportTarget}`
+    );
+  }
+  return `${urlPrefix}${path}`;
+}
+
+export function browserPackageImports(meta, urlPrefix) {
+  if (!meta?.name || !urlPrefix?.startsWith('/') || !urlPrefix.endsWith('/')) {
+    throw new Error('Browser package imports require a package name and an absolute URL prefix.');
+  }
+  let imports = {
+    [`${meta.name}/`]: urlPrefix,
+  };
+  for (let [exportKey, value] of packageExportEntries(meta)) {
+    let exportTarget = browserExportTarget(value);
+    if (!exportTarget) continue;
+    let importKey = packageImportKey(meta.name, exportKey);
+    let importUrl = packageImportUrl(meta.name, urlPrefix, exportTarget);
+    let keyWildcard = importKey.endsWith('*');
+    let urlWildcard = importUrl.endsWith('*');
+    if (keyWildcard !== urlWildcard) {
+      throw new Error(
+        `Installed package "${meta.name}" has an unsupported browser export pattern: ${exportKey}`
+      );
+    }
+    if (keyWildcard) {
+      importKey = importKey.slice(0, -1);
+      importUrl = importUrl.slice(0, -1);
+    } else if (importKey.includes('*') || importUrl.includes('*')) {
+      throw new Error(
+        `Installed package "${meta.name}" has an unsupported browser export pattern: ${exportKey}`
+      );
+    }
+    imports[importKey] = importUrl;
+  }
+  return imports;
+}
+
+export async function resolveInstalledPackage(packageName) {
+  let entryUrl;
+  try {
+    entryUrl = import.meta.resolve(packageName);
+  } catch (error) {
+    throw new Error(
+      `Unable to resolve installed browser package "${packageName}" from symbiote-workspace.`,
+      { cause: error }
+    );
+  }
+
+  let dir = dirname(fileURLToPath(entryUrl));
+  while (true) {
+    let metaPath = join(dir, 'package.json');
+    try {
+      let meta = JSON.parse(await readFile(metaPath, 'utf8'));
+      if (meta.name === packageName) return { meta, root: dir };
+    } catch (error) {
+      if (error.code !== 'ENOENT') {
+        throw new Error(`Unable to read installed package metadata for "${packageName}".`, {
+          cause: error,
+        });
+      }
+    }
+    let parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  throw new Error(`Unable to locate the installed package root for "${packageName}".`);
+}
+
+export async function resolveRealtimeBrowserHost() {
+  let workspaceRoot = resolve(scriptDir(), '../..');
+  let resolvedPackages = await Promise.all(
+    REALTIME_BROWSER_PACKAGES.map(({ name }) => resolveInstalledPackage(name))
+  );
+  let host = {
+    imports: {
+      'symbiote-workspace/browser': '/__workspace__/browser.js',
+    },
+    packages: {},
+    workspaceRoot,
+  };
+  for (let [index, descriptor] of REALTIME_BROWSER_PACKAGES.entries()) {
+    let resolvedPackage = resolvedPackages[index];
+    host[descriptor.rootKey] = resolvedPackage.root;
+    host.packages[descriptor.name] = {
+      root: resolvedPackage.root,
+      version: resolvedPackage.meta.version,
+    };
+    Object.assign(
+      host.imports,
+      browserPackageImports(resolvedPackage.meta, descriptor.urlPrefix)
+    );
+  }
+  return host;
+}
+
+export function replaceBrowserImportMap(html, imports) {
+  let marker = '<script type="importmap">';
+  let start = html.indexOf(marker);
+  if (start === -1) {
+    throw new Error('Realtime builder output is missing its browser import map.');
+  }
+  let contentStart = start + marker.length;
+  let end = html.indexOf('</script>', contentStart);
+  if (end === -1) {
+    throw new Error('Realtime builder output has an unterminated browser import map.');
+  }
+  if (html.indexOf(marker, contentStart) !== -1) {
+    throw new Error('Realtime builder output contains more than one browser import map.');
+  }
+
+  let current;
+  try {
+    current = JSON.parse(html.slice(contentStart, end));
+  } catch (error) {
+    throw new Error('Realtime builder output contains an invalid browser import map.', {
+      cause: error,
+    });
+  }
+  let replacement = JSON.stringify({ ...current, imports }, null, 2);
+  return `${html.slice(0, contentStart)}\n${replacement}\n${html.slice(end)}`;
+}
+
+export async function startRealtimeBrowserPreview({ outputDir, port }) {
+  let host = await resolveRealtimeBrowserHost();
+  let summary = await writeRealtimeChatStateDemo({ outputDir, port });
+  let htmlPath = join(outputDir, 'index.html');
+  let html = await readFile(htmlPath, 'utf8');
+  await writeFile(htmlPath, replaceBrowserImportMap(html, host.imports));
+  let server = await startStaticServer({
+    outputDir,
+    workspaceRoot: host.workspaceRoot,
+    uiRoot: host.uiRoot,
+    engineRoot: host.engineRoot,
+    symbioteRoot: host.symbioteRoot,
+    port,
+  });
+  return { host, server, summary };
 }
 
 async function pathExists(path) {
@@ -168,6 +375,19 @@ function waitForProcessExit(child, timeout = 5000) {
     child.once('exit', () => {
       clearTimeout(timer);
       resolveWait();
+    });
+  });
+}
+
+function closeServer(server) {
+  if (!server?.listening) return Promise.resolve();
+  return new Promise((resolveClose, rejectClose) => {
+    server.close((error) => {
+      if (error) {
+        rejectClose(error);
+        return;
+      }
+      resolveClose();
     });
   });
 }
@@ -1480,6 +1700,7 @@ async function run() {
   let outputDir = resolve(readArg('--output-dir', await mkdtemp(join(tmpdir(), 'symbiote-visual-demo-'))));
   let profileDir = null;
   let preview = null;
+  let previewServer = null;
   let browserProcess = null;
   let cdp = null;
   let url = `http://127.0.0.1:${previewPort}/`;
@@ -1490,16 +1711,24 @@ async function run() {
   let browserSummary = {};
 
   try {
-    preview = spawnProcess(process.execPath, [
-      join(scriptDir(), command.script),
-      '--port',
-      String(previewPort),
-      '--output-dir',
-      outputDir,
-    ], {
-      cwd: resolve(scriptDir(), '../..'),
-    });
-    await waitForPreview(preview, timeout, command.readyText);
+    if (demo === 'realtime-builder') {
+      let startedPreview = await startRealtimeBrowserPreview({
+        outputDir,
+        port: previewPort,
+      });
+      previewServer = startedPreview.server;
+    } else {
+      preview = spawnProcess(process.execPath, [
+        join(scriptDir(), command.script),
+        '--port',
+        String(previewPort),
+        '--output-dir',
+        outputDir,
+      ], {
+        cwd: resolve(scriptDir(), '../..'),
+      });
+      await waitForPreview(preview, timeout, command.readyText);
+    }
 
     if (driver === 'playwright') {
       let result = await runPlaywrightSmoke({ demo, url, expression, timeout });
@@ -1581,18 +1810,21 @@ async function run() {
     await Promise.all([
       waitForProcessExit(browserProcess),
       waitForProcessExit(preview),
+      closeServer(previewServer),
     ]);
     if (profileDir) await removeTempDir(profileDir);
     if (!keepOutput) await removeTempDir(outputDir);
   }
 }
 
-run().catch((error) => {
-  if (process.env.SYMBIOTE_BROWSER_SMOKE_OPTIONAL === '1') {
-    console.log(JSON.stringify({ status: 'skipped', reason: error.message }, null, 2));
-    process.exitCode = 0;
-  } else {
-    console.error(error.message);
-    process.exitCode = 1;
-  }
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  run().catch((error) => {
+    if (process.env.SYMBIOTE_BROWSER_SMOKE_OPTIONAL === '1') {
+      console.log(JSON.stringify({ status: 'skipped', reason: error.message }, null, 2));
+      process.exitCode = 0;
+    } else {
+      console.error(error.message);
+      process.exitCode = 1;
+    }
+  });
+}

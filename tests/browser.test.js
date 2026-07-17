@@ -70,8 +70,12 @@ async function compositionFixture({ timeline, output, targetSnapshot }) {
     steps: slots.map((slot, index) => {
       let y = 100 + index * 80;
       return {
+        id: `${slot.turnId}:${slot.slotIndex}`,
         turnId: slot.turnId,
         slotIndex: slot.slotIndex,
+        cueId: slot.cueId,
+        cueIndex: slot.cueIndex,
+        cueKind: slot.kind,
         targetId: slot.targetId,
         stateActions: [],
         scroll: [],
@@ -79,6 +83,7 @@ async function compositionFixture({ timeline, output, targetSnapshot }) {
           targetRect: { x: 80, y: y - 20, width: 600, height: 300 },
           focusRect: { x: 100, y, width: 160, height: 40 },
           visibleRect: { x: 100, y, width: 160, height: 40 },
+          criticalAttentionRect: { x: 160, y: y + 8, width: 40, height: 24 },
           visibleRatio: 1,
           visible: true,
           reachable: true,

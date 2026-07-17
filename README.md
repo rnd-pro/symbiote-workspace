@@ -85,10 +85,22 @@ mode.
 - **Presentation viewport geometry** — `workspace-presentation-output-v3` carries
   neutral final-frame `frameInsets` and derives a positive `presentationViewport`.
   Content and captions are laid out inside that viewport, while
-  `workspace-presentation-composition-v3` measurement is checked against the
+  `workspace-presentation-composition-v4` measurement is checked against the
   presentation viewport and translates page-local focus/annotation rectangles into
   final-frame coordinates before containment and collision checks. Both contracts
   reject obsolete explicit schema identities instead of silently re-signing them.
+- **Presenter action schedule** — `workspace-presenter-action-schedule-v1` serializes
+  retained presenter focus, interaction, and annotation events with a positive bounded gap,
+  preserving cue-to-speech causality and total duration extension. Every active action keeps
+  at least the configured readable duration; shorter authored spans extend instead of
+  accelerating or truncating UI motion. Semantic identity includes the authored turn, while
+  caption obstacles retain exact cue identity and kind. The version constant, constructor,
+  and validator are exported as `PRESENTER_ACTION_SCHEDULE_VERSION`,
+  `createPresenterActionSchedule()`, and `validatePresenterActionSchedule()` from the
+  Node-safe root, browser, and runtime presentation entrypoints.
+- **Caption composition** — `workspace-presentation-caption-composition-v2` maps
+  attention-aware caption placements inside the viewport, avoiding the scheduled presenter
+  action regions on each interval.
 
 ### Unified Agent Tooling
 
@@ -105,6 +117,9 @@ mode.
 ```sh
 npm install symbiote-workspace symbiote-ui symbiote-engine
 ```
+
+Version 1.1 requires `symbiote-engine >=0.3.0-alpha.13` and
+`symbiote-ui >=0.3.0-alpha.63`.
 
 ```js
 import {

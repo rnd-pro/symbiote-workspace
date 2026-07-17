@@ -4,6 +4,47 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## [1.1.0] - 2026-07-17
+
+- Release preflight now verifies the resolved lockfile nodes for the required
+  engine and UI versions, including the UI package's exact engine dependency.
+- Reworked the realtime builder browser smoke to resolve installed package
+  exports into contained opaque routes, so release verification exercises the
+  published dependency graph instead of adjacent development checkouts.
+- Passed the mounted workspace's current `baseRevision` through progressive
+  realtime demo updates, preserving the atomic workspace commit contract.
+- Updated the packaged visual-demo component contract to the released
+  `symbiote-ui` coordinate used by this workspace version.
+- Exported the presenter action schedule version, constructor, and validator from
+  the Node-safe root, browser, runtime, and runtime presentation entrypoints, and
+  added installed-package proof that the contract source ships in the npm package.
+- Raised the public peer requirements to `symbiote-engine >=0.3.0-alpha.13` and
+  `symbiote-ui >=0.3.0-alpha.63`, with matching exact development requirements
+  for release verification.
+- Restored output-spec schema to `v3` (`workspace-presentation-output-v3`).
+  Bumped composition-plan schema to `v4`
+  (`workspace-presentation-composition-v4`) and caption-composition schema to
+  `v2` (`workspace-presentation-caption-composition-v2`).
+- Implemented strict `validatePresenterActionSchedule` structural, temporal,
+  and canonical-value validation, rejecting tampered fields even when the
+  caller supplies a recomputed hash.
+- Added structural, property-order-independent `semanticKey` values, authored
+  effective spans (`[startMs, endMs)`), and final scheduled `duplicateKey`
+  values to presenter events.
+- Rejected exact and overlapping same-semantic authored effective occurrences
+  while preserving legal later non-overlapping repeats.
+- Persisted schedule policy (`pointDurationMs`, `gapMs`) in the hashed contract.
+  Every active action retains at least the readable duration (1000 ms by
+  default), scheduled actions retain positive gaps, and `totalDurationMs`
+  extends to the final action instead of accelerating or truncating UI motion.
+- Included authored turn identity in structural semantic keys and exported each
+  caption avoid region with its exact cue ID, kind, and scheduled span.
+- Required exact `cueId`, `cueIndex`, and `cueKind` composition-step identity
+  and positive critical attention geometry for focus and interaction cues.
+- Updated `planCaptionPlacements` to require and validate `actionSchedule`, bind
+  its hash into caption composition, and derive avoid regions from exact
+  scheduled event intervals.
+
 - Added the final-clock presentation solver `solvePresentationClock` inside `runtime/presentation/solver.js` (exported from `runtime/presentation.js` and `runtime/index.js`). The solver consumes an immutable `presentation-timeline-v3` timeline contract, TTS speech turn durations with Whisper word timings, source replay events, and hard causality constraints (`not-before`, `coincident`, `min-gap`), and produces a deterministic clock projection (`presentation-clock-projection-v1`) that schedules all turns, source events, and cue events using longest-path constraint propagation. Cue intervals participate in the same graph and final duration, so late UI actions extend the frame clock, short spoken spans gain elastic dwell, and contradictory cue ranges fail closed instead of being clipped. Speech and real UI motion are never compressed to fit a preset duration.
 
 - Added the portable `text-select` presentation interaction for real browser
@@ -28,7 +69,7 @@ All notable changes to this project will be documented in this file.
   must include the journey source as a structured semantic surface address, bare
   custom-element names and DOM selectors are rejected, and obsolete v1 receipts
   cannot be silently migrated.
-- Added composition orchestration caption placement planner (`planCaptionPlacements`) integrating timing calculations and focus/annotation rectangle avoid regions using the public, required `symbiote-engine >=0.3.0-alpha.12` peer. Caption plans are signed only after the complete composition audit accepts visibility, reachability, clipping, occlusion, readability, viewport, restored state, frozen simulation, scroll application, annotation placement, and required target coverage.
+- Added composition orchestration caption placement planner (`planCaptionPlacements`) integrating timing calculations and focus/annotation rectangle avoid regions using the public, required `symbiote-engine >=0.3.0-alpha.13` peer. Caption plans are signed only after the complete composition audit accepts visibility, reachability, clipping, occlusion, readability, viewport, restored state, frozen simulation, scroll application, annotation placement, and required target coverage.
 - Centralized composition cue coverage in `listPresentationCompositionCueSlots()` so preflight, finalization, and caption placement require matching layout evidence for focus, interaction, and annotation targets.
 - Added the exact-version `workspace-presentation-journey-v1` contract in
   `runtime/presentation-journey.js`, exported from `symbiote-workspace`,

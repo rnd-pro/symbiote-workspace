@@ -2,13 +2,15 @@ import { computeIntegrity } from '../schema/canonical-json.js';
 import { buildCaptionPlacementTrack, resolveCaptionProfile } from 'symbiote-engine/render-captions';
 import { validatePresentationAlignedSequence } from './presentation/align.js';
 import { createPresentationTimelineContract } from './presentation/contract.js';
+import { validatePresenterActionSchedule } from './presentation/presenter-schedule.js';
 
 export const PRESENTATION_OUTPUT_SPEC_SCHEMA_VERSION = 'workspace-presentation-output-v3';
-export const PRESENTATION_COMPOSITION_PLAN_SCHEMA_VERSION = 'workspace-presentation-composition-v3';
+export const PRESENTATION_COMPOSITION_PLAN_SCHEMA_VERSION = 'workspace-presentation-composition-v4';
 export const PRESENTATION_CONTEXT_SNAPSHOT_SCHEMA_VERSION = 'presentation-context-snapshot-v2';
 export const PRESENTATION_REPLAN_REQUEST_SCHEMA_VERSION = 'presentation-replan-request-v2';
 export const PRESENTATION_REPLAN_RESULT_SCHEMA_VERSION = 'presentation-replan-result-v2';
-export const PRESENTATION_CAPTION_COMPOSITION_SCHEMA_VERSION = 'workspace-presentation-caption-composition-v1';
+export const PRESENTATION_CAPTION_COMPOSITION_SCHEMA_VERSION =
+  'workspace-presentation-caption-composition-v2';
 export const PRESENTATION_CAPTION_TIMING_TOLERANCE_MS = 50;
 export const PRESENTATION_COMPOSITION_CUE_KINDS = Object.freeze(['focus', 'interaction', 'annotation']);
 
@@ -73,6 +75,7 @@ export function listPresentationCompositionCueSlots(timeline = {}) {
         turnIndex,
         slotIndex,
         cueIndex,
+        cueId: `${turnIndex}.${cueIndex}`,
         kind: cue.kind,
         targetId,
       };
@@ -185,6 +188,19 @@ export function normalizePresentationRect(input = {}) {
   return rect(source.x ?? source.left, source.y ?? source.top, source.width, source.height);
 }
 
+function normalizeCriticalAttentionRect(input) {
+  if (!isObject(input)) return null;
+  let x = input.x ?? input.left;
+  let y = input.y ?? input.top;
+  let width = input.width;
+  let height = input.height;
+  if (![x, y, width, height].every((value) => (
+    typeof value === 'number' && Number.isFinite(value)
+  ))) return null;
+  let normalized = rect(x, y, width, height);
+  return normalized.width > 0 && normalized.height > 0 ? normalized : null;
+}
+
 export function normalizePresentationOutputSpec(input = {}) {
   let source = isObject(input) ? input : {};
   if (source.schemaVersion !== undefined && source.schemaVersion !== PRESENTATION_OUTPUT_SPEC_SCHEMA_VERSION) {
@@ -288,6 +304,7 @@ export function normalizePresentationTargetComposition(input = {}) {
     targetRect: normalizePresentationRect(source.targetRect || source.rect),
     focusRect: normalizePresentationRect(source.focusRect || source.targetRect || source.rect),
     visibleRect: normalizePresentationRect(source.visibleRect || source.focusRect || source.targetRect || source.rect),
+    criticalAttentionRect: normalizeCriticalAttentionRect(source.criticalAttentionRect),
     visibleRatio: Math.max(0, Math.min(1, rounded(source.visibleRatio ?? 0))),
     visible: source.visible === true,
     reachable: source.reachable === true,
@@ -320,10 +337,20 @@ function normalizeCompositionStep(input = {}, index = 0) {
     placement: cleanText(source.annotation.placement),
     rect: normalizePresentationRect(source.annotation.rect),
   } : null;
+
+  let cueId = source.cueId !== undefined ? cleanText(source.cueId) : '';
+  let cueIndex = source.cueIndex !== undefined && source.cueIndex !== null
+    ? Math.max(0, Math.floor(finiteNumber(source.cueIndex, 0)))
+    : undefined;
+  let cueKind = source.cueKind !== undefined ? cleanText(source.cueKind) : '';
+
   return {
     id: cleanText(source.id, `${turnId}:${slotIndex}`),
     turnId,
     slotIndex,
+    cueId,
+    cueIndex,
+    cueKind,
     targetId: cleanText(source.targetId || source.target),
     stateActions: clonePortable(Array.isArray(source.stateActions) ? source.stateActions : []),
     scroll: (Array.isArray(source.scroll) ? source.scroll : []).map(normalizeScrollProjection),
@@ -428,18 +455,109 @@ export function auditPresentationCompositionPlan(plan = {}, expectations = {}) {
   ) add('output-viewport-mismatch', 'measuredViewport', 'measured browser viewport does not match the presentation viewport and DPR');
   if (!plan.simulationFrozen) add('composition-simulation-active', 'simulationFrozen', 'live simulation was active during composition measurement');
   if (!plan.baselineStructuralHash || plan.baselineStructuralHash !== plan.restoredStructuralHash) add('composition-restore-mismatch', 'restoredStructuralHash', 'workspace state was not restored after composition preflight');
-  let stepByTarget = new Map();
+  let expectedSlots = expectations.requiredCueSlots || [];
+  let expectedSlotMap = new Map();
+  for (let slot of expectedSlots) {
+    expectedSlotMap.set(slot.cueId, slot);
+  }
+
+  let requiredCueIdsRaw = expectations.requiredCueIds;
+  if (!requiredCueIdsRaw) {
+    if (expectedSlotMap.size > 0) {
+      requiredCueIdsRaw = [...expectedSlotMap.keys()];
+    } else {
+      requiredCueIdsRaw = [...new Set((plan.steps || []).map((step) => step.cueId).filter(Boolean))];
+    }
+  }
+  let requiredCueIds = uniqueSorted(requiredCueIdsRaw);
+  let stepByCueId = new Map();
   let stepIds = new Set();
+  let seenCueIds = new Set();
+
   for (let [index, step] of (Array.isArray(plan.steps) ? plan.steps : []).entries()) {
     let path = `steps[${index}]`;
-    if (!step.id || stepIds.has(step.id)) add('composition-step-missing', `${path}.id`, 'composition step ID is missing or duplicated');
+    if (!step.id || stepIds.has(step.id)) {
+      add(
+        'composition-step-missing',
+        `${path}.id`,
+        'composition step ID is missing or duplicated',
+      );
+    }
     stepIds.add(step.id);
-    if (!step.targetId) add('composition-step-missing', `${path}.targetId`, 'composition step has no target');
-    if (step.targetId && !stepByTarget.has(step.targetId)) stepByTarget.set(step.targetId, []);
-    if (step.targetId) stepByTarget.get(step.targetId).push(step);
+
+    if (!step.cueId) {
+      add('composition-step-missing', `${path}.cueId`, 'composition step is missing required cueId');
+    }
+    if (step.cueIndex === undefined || step.cueIndex === null) {
+      add('composition-step-missing', `${path}.cueIndex`, 'composition step is missing required cueIndex');
+    }
+    if (!step.cueKind) {
+      add('composition-step-missing', `${path}.cueKind`, 'composition step is missing required cueKind');
+    }
+
+    if (step.cueId) {
+      if (seenCueIds.has(step.cueId)) {
+        add(
+          'composition-step-missing',
+          `${path}.cueId`,
+          `duplicate composition step for cueId: ${step.cueId}`,
+        );
+      }
+      seenCueIds.add(step.cueId);
+
+      if (!stepByCueId.has(step.cueId)) {
+        stepByCueId.set(step.cueId, []);
+      }
+      stepByCueId.get(step.cueId).push(step);
+
+      if (expectedSlotMap.size > 0) {
+        let expectedSlot = expectedSlotMap.get(step.cueId);
+        if (!expectedSlot) {
+          add('composition-step-missing', `${path}.cueId`, `unknown cueId: ${step.cueId}`);
+        } else {
+          if (step.cueIndex !== expectedSlot.cueIndex) {
+            add(
+              'composition-step-missing',
+              `${path}.cueIndex`,
+              `mismatched cueIndex for cueId ${step.cueId}: `
+                + `expected ${expectedSlot.cueIndex}, got ${step.cueIndex}`,
+            );
+          }
+          if (step.cueKind !== expectedSlot.kind) {
+            add(
+              'composition-step-missing',
+              `${path}.cueKind`,
+              `mismatched cueKind for cueId ${step.cueId}: `
+                + `expected ${expectedSlot.kind}, got ${step.cueKind}`,
+            );
+          }
+          if (step.targetId !== expectedSlot.targetId) {
+            add(
+              'composition-step-missing',
+              `${path}.targetId`,
+              `mismatched targetId for cueId ${step.cueId}: `
+                + `expected ${expectedSlot.targetId}, got ${step.targetId}`,
+            );
+          }
+          if (step.turnId !== expectedSlot.turnId) {
+            add(
+              'composition-step-missing',
+              `${path}.turnId`,
+              `mismatched turnId for cueId ${step.cueId}: `
+                + `expected ${expectedSlot.turnId}, got ${step.turnId}`,
+            );
+          }
+        }
+      } else if (requiredCueIds.length > 0 && !requiredCueIds.includes(step.cueId)) {
+        add('composition-step-missing', `${path}.cueId`, `unknown cueId: ${step.cueId}`);
+      }
+    }
+
     let measurement = normalizePresentationTargetComposition(step.measurement || {});
     let focusRect = translateRect(measurement.focusRect, presentationViewport.x, presentationViewport.y);
-    let annotationRect = step.annotation?.rect ? translateRect(step.annotation.rect, presentationViewport.x, presentationViewport.y) : null;
+    let annotationRect = step.annotation?.rect
+      ? translateRect(step.annotation.rect, presentationViewport.x, presentationViewport.y)
+      : null;
     if (!measurement.reachable) add('target-unreachable', path, 'target cannot be reached by declared reversible actions');
     if (!measurement.visible) add('target-hidden', path, 'target remains hidden after composition actions');
     if (
@@ -448,24 +566,57 @@ export function auditPresentationCompositionPlan(plan = {}, expectations = {}) {
       || measurement.visibleRatio < 0.995
       || !rectContains(output.contentRect, focusRect, 1)
     ) add('target-clipped', path, 'target focus rectangle is clipped or outside usable content');
+    if (step.cueKind === 'focus' || step.cueKind === 'interaction') {
+      let criticalAttentionRect = measurement.criticalAttentionRect
+        ? translateRect(
+            measurement.criticalAttentionRect,
+            presentationViewport.x,
+            presentationViewport.y,
+          )
+        : null;
+      if (
+        !criticalAttentionRect
+        || !rectContains(output.contentRect, criticalAttentionRect, 1)
+      ) {
+        add(
+          'target-clipped',
+          path,
+          'target critical attention rectangle is missing or invalid',
+        );
+      }
+    }
     if (measurement.occluders.length || measurement.pointerTransparentOccluders.length) add('target-occluded', path, 'target focus rectangle is occluded');
     if (measurement.hasText && (measurement.fontSizePx < 12 || measurement.textTruncated)) add('target-unreadable', path, 'target text is too small or truncated');
     if ((Array.isArray(step.scroll) ? step.scroll : []).some((scroll) => scroll.changed && !scroll.applied)) add('composition-scroll-failed', `${path}.scroll`, 'absolute scroll projection was not applied');
-    if (!step.annotation?.placement || !annotationRect || !rectContains(output.contentRect, annotationRect, 1)
-      || rectIntersects(annotationRect, focusRect)) {
-      add('annotation-placement-unavailable', `${path}.annotation`, 'no collision-free annotation placement is available');
+    let hasAnnotation = step.cueKind === 'annotation';
+    if (hasAnnotation) {
+      if (
+        !step.annotation?.placement
+        || !annotationRect
+        || !rectContains(output.contentRect, annotationRect, 1)
+        || rectIntersects(annotationRect, focusRect)
+      ) {
+        add(
+          'annotation-placement-unavailable',
+          `${path}.annotation`,
+          'no collision-free annotation placement is available',
+        );
+      }
     }
   }
-  let requiredTargetIds = uniqueSorted(expectations.requiredTargetIds);
-  for (let targetId of requiredTargetIds) if (!stepByTarget.has(targetId)) add('composition-step-missing', 'steps', `missing composition step for target: ${targetId}`);
+  for (let cueId of requiredCueIds) {
+    if (!stepByCueId.has(cueId)) {
+      add('composition-step-missing', 'steps', `missing composition step for cueId: ${cueId}`);
+    }
+  }
   return {
     schemaVersion: `${PRESENTATION_COMPOSITION_PLAN_SCHEMA_VERSION}:audit-v1`,
     verdict: issues.length ? 'reject' : 'accept',
     issueCodes: uniqueSorted(issues.map((issue) => issue.code)),
     issues,
     coverage: {
-      requiredTargetCount: requiredTargetIds.length,
-      coveredTargetCount: requiredTargetIds.filter((id) => stepByTarget.has(id)).length,
+      requiredCueCount: requiredCueIds.length,
+      coveredCueCount: requiredCueIds.filter((id) => stepByCueId.has(id)).length,
       stepCount: Array.isArray(plan.steps) ? plan.steps.length : 0,
     },
   };
@@ -476,6 +627,7 @@ export function presentationRectsIntersect(left, right) {
 }
 
 function timedAvoidRegion(id, kind, value, startMs, endMs, offsetX, offsetY) {
+  if (!value) return null;
   let region = normalizePresentationRect(value);
   if (region.width <= 0 || region.height <= 0 || endMs <= startMs) return null;
   return {
@@ -487,36 +639,50 @@ function timedAvoidRegion(id, kind, value, startMs, endMs, offsetX, offsetY) {
   };
 }
 
-function compositionAvoidRegions(timeline, alignedSequence, compositionPlan, presentationViewport) {
-  let turnIndexById = new Map((timeline.turns || []).map((turn, index) => [turn.id, index]));
+function compositionAvoidRegions(schedule, compositionPlan, presentationViewport) {
   let regions = [];
   for (let [stepIndex, step] of (compositionPlan.steps || []).entries()) {
-    let turnIndex = turnIndexById.get(step.turnId);
-    let span = alignedSequence.turns?.[turnIndex];
-    if (turnIndex === undefined || !span) throw new TypeError(`composition step ${stepIndex} has no aligned turn span`);
+    let cueId = step.cueId;
+    let cueKind = step.cueKind;
+    if (!cueId) {
+      throw new TypeError(`composition step ${stepIndex} has no matching cue ID`);
+    }
+    let event = (schedule.events || []).find((candidate) => candidate.cueId === cueId);
+    if (!event) {
+      throw new TypeError(
+        `composition step ${stepIndex} with cueId ${cueId} has no matching scheduled event`,
+      );
+    }
+    if (event.kind !== cueKind) {
+      throw new TypeError(
+        `composition step ${stepIndex} kind ${cueKind} does not match scheduled event ${event.kind}`,
+      );
+    }
     let measurement = normalizePresentationTargetComposition(step.measurement || {});
-    let focus = timedAvoidRegion(
-      `focus:${step.id || stepIndex}`,
-      'focus',
-      measurement.focusRect,
-      span.startMs,
-      span.endMs,
-      presentationViewport.x,
-      presentationViewport.y,
-    );
-    if (focus) regions.push(focus);
-    let annotation = timedAvoidRegion(
-      `annotation:${step.id || stepIndex}`,
-      'annotation',
-      step.annotation?.rect,
-      span.startMs,
-      span.endMs,
-      presentationViewport.x,
-      presentationViewport.y,
-    );
-    if (annotation) regions.push(annotation);
-    let hasAction = (timeline.turns[turnIndex]?.cues || []).some((cue) => cue.kind === 'interaction');
-    if (hasAction && focus) regions.push({ ...focus, id: `action:${step.id || stepIndex}`, kind: 'action' });
+
+    if (cueKind === 'focus' || cueKind === 'interaction') {
+      let region = timedAvoidRegion(
+        `${cueKind}:${cueId}`,
+        cueKind,
+        measurement.criticalAttentionRect,
+        event.startMs,
+        event.endMs,
+        presentationViewport.x,
+        presentationViewport.y,
+      );
+      if (region) regions.push(region);
+    } else if (cueKind === 'annotation') {
+      let region = timedAvoidRegion(
+        `annotation:${cueId}`,
+        'annotation',
+        step.annotation?.rect,
+        event.startMs,
+        event.endMs,
+        presentationViewport.x,
+        presentationViewport.y,
+      );
+      if (region) regions.push(region);
+    }
   }
   return regions;
 }
@@ -660,6 +826,10 @@ export function planCaptionPlacements(input = {}) {
   let timeline = createPresentationTimelineContract(isObject(input.timeline) ? input.timeline : {});
   let alignedSequence = isObject(input.alignedSequence) ? input.alignedSequence : {};
   let compositionPlan = isObject(input.compositionPlan) ? input.compositionPlan : {};
+  let actionSchedule = isObject(input.actionSchedule) ? input.actionSchedule : null;
+  if (!actionSchedule) {
+    throw new TypeError('caption composition requires an action schedule');
+  }
   if (!Array.isArray(timeline.turns) || timeline.turns.length === 0) {
     throw new TypeError('caption composition requires an authored timeline');
   }
@@ -668,6 +838,7 @@ export function planCaptionPlacements(input = {}) {
   }
   if (!Array.isArray(input.cues)) throw new TypeError('caption composition requires timed caption cues');
   validatePresentationAlignedSequence(alignedSequence, timeline);
+  validatePresenterActionSchedule(actionSchedule, timeline, alignedSequence);
   if (compositionPlan.schemaVersion !== PRESENTATION_COMPOSITION_PLAN_SCHEMA_VERSION) {
     throw new TypeError('caption composition requires a current presentation composition plan');
   }
@@ -701,13 +872,16 @@ export function planCaptionPlacements(input = {}) {
   if (normalizedPlan.outputSpecHash !== output.hash) {
     throw new TypeError('caption composition output does not match the composition plan');
   }
-  let requiredTargetIds = listPresentationCompositionCueSlots(timeline).map((slot) => slot.targetId);
+  let requiredCueSlots = listPresentationCompositionCueSlots(timeline);
+  let requiredCueIds = requiredCueSlots.map((slot) => slot.cueId);
+
   let compositionAudit = auditPresentationCompositionPlan(normalizedPlan, {
     sourceCompositionHash,
     targetCompositionHash,
     outputSpecHash: output.hash,
     timelineHash: timeline.hash,
-    requiredTargetIds,
+    requiredCueSlots,
+    requiredCueIds,
   });
   if (compositionAudit.verdict !== 'accept') {
     let error = new TypeError(`caption composition rejected layout evidence: ${compositionAudit.issueCodes.join(', ')}`);
@@ -715,35 +889,39 @@ export function planCaptionPlacements(input = {}) {
     error.review = compositionAudit;
     throw error;
   }
-  let stepsByTurnAndTarget = new Map();
+  let stepsByCueId = new Map();
   for (let step of normalizedPlan.steps) {
-    let key = `${step.turnId}\u0000${step.targetId}`;
-    if (!stepsByTurnAndTarget.has(key)) stepsByTurnAndTarget.set(key, []);
-    stepsByTurnAndTarget.get(key).push(step);
+    if (step.cueId) {
+      if (!stepsByCueId.has(step.cueId)) stepsByCueId.set(step.cueId, []);
+      stepsByCueId.get(step.cueId).push(step);
+    }
   }
-  for (let [turnIndex, turn] of timeline.turns.entries()) {
-    for (let [cueIndex, cue] of turn.cues.entries()) {
-      if (!['focus', 'interaction', 'annotation'].includes(cue.kind)) continue;
-      let key = `${turn.id}\u0000${cue.targetId}`;
-      let steps = stepsByTurnAndTarget.get(key) || [];
-      let covered = steps.some((step) => {
-        if (cue.kind === 'annotation') {
-          let annotationRect = normalizePresentationRect(step.annotation?.rect);
-          return Boolean(step.annotation?.placement && annotationRect.width > 0 && annotationRect.height > 0);
-        }
-        let focusRect = normalizePresentationTargetComposition(step.measurement).focusRect;
-        return focusRect.width > 0 && focusRect.height > 0;
-      });
-      if (!covered) {
-        throw new TypeError(
-          `caption composition is missing measured coverage for ${cue.kind} cue ${turnIndex}.${cueIndex}`,
+  for (let slot of requiredCueSlots) {
+    let steps = stepsByCueId.get(slot.cueId) || [];
+    let covered = steps.some((step) => {
+      if (step.cueKind !== slot.kind) return false;
+      if (slot.kind === 'annotation') {
+        let annotationRect = normalizePresentationRect(step.annotation?.rect);
+        return Boolean(
+          step.annotation?.placement
+          && annotationRect.width > 0
+          && annotationRect.height > 0,
         );
       }
+      let criticalAttentionRect = normalizePresentationTargetComposition(
+        step.measurement,
+      ).criticalAttentionRect;
+      return Boolean(criticalAttentionRect);
+    });
+    if (!covered) {
+      throw new TypeError(
+        `caption composition is missing measured coverage for ${slot.kind} cue ${slot.cueId}`,
+      );
     }
   }
   let presentationViewport = output.presentationViewport;
   let avoidRegions = [
-    ...compositionAvoidRegions(timeline, alignedSequence, normalizedPlan, presentationViewport),
+    ...compositionAvoidRegions(actionSchedule, normalizedPlan, presentationViewport),
     ...(Array.isArray(input.reservedRegions) ? input.reservedRegions : []),
     ...(Array.isArray(input.avoidRegions) ? input.avoidRegions : []),
   ];
@@ -768,6 +946,7 @@ export function planCaptionPlacements(input = {}) {
     timelineHash: timeline.hash,
     alignedSequenceHash: cleanText(alignedSequence.hash),
     compositionPlanHash: normalizedPlan.hash,
+    actionScheduleHash: actionSchedule.hash,
     output,
     track,
   };

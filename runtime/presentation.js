@@ -57,6 +57,11 @@ export {
   createPresentationAlignedSequence,
   validatePresentationAlignedSequence,
 } from './presentation/align.js';
+export {
+  PRESENTER_ACTION_SCHEDULE_VERSION,
+  createPresenterActionSchedule,
+  validatePresenterActionSchedule,
+} from './presentation/presenter-schedule.js';
 export { solvePresentationClock } from './presentation/solver.js';
 
 
@@ -1878,9 +1883,11 @@ export function finalizePresentationReplan(candidate = {}, request = {}, options
   let compositionPlan = options.compositionPlan;
   let compositionAudit = null;
   if (options.requireComposition !== false) {
+    let slots = listPresentationCompositionCueSlots(timeline);
+    let requiredCueIds = slots.map((slot) => slot.cueId);
     let requiredTargetIds = [...new Set([
       ...listValue(request.lessonContext?.lesson?.requiredTargetIds),
-      ...listPresentationCompositionCueSlots(timeline).map((slot) => slot.targetId),
+      ...slots.map((slot) => slot.targetId),
     ])];
     compositionAudit = auditPresentationCompositionPlan(compositionPlan, {
       outputSpecHash: request.outputSpecHash,
@@ -1889,6 +1896,8 @@ export function finalizePresentationReplan(candidate = {}, request = {}, options
       targetCompositionHash: request.targetCompositionHash,
       timelineHash: timeline.hash,
       lessonIntentHash,
+      requiredCueSlots: slots,
+      requiredCueIds,
       requiredTargetIds,
     });
     if (compositionAudit.verdict !== 'accept') {

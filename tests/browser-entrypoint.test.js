@@ -56,6 +56,12 @@ describe('browser entrypoint', () => {
     assert.equal(typeof browser.applyWorkspaceTheme, 'function');
     assert.equal(typeof browser.collectWorkspaceInterfaceContext, 'function');
     assert.equal(typeof browser.createWorkspacePresentationTimeline, 'function');
+    assert.equal(
+      browser.PRESENTER_ACTION_SCHEDULE_VERSION,
+      'workspace-presenter-action-schedule-v1',
+    );
+    assert.equal(typeof browser.createPresenterActionSchedule, 'function');
+    assert.equal(typeof browser.validatePresenterActionSchedule, 'function');
     assert.equal(typeof browser.playWorkspacePresentationTimeline, 'function');
   });
 
@@ -64,6 +70,14 @@ describe('browser entrypoint', () => {
     let browser = await import('../browser.js');
     let onlyRoot = Object.keys(root).filter((key) => !(key in browser)).sort();
     let onlyBrowser = Object.keys(browser).filter((key) => !(key in root)).sort();
+
+    for (let name of [
+      'PRESENTER_ACTION_SCHEDULE_VERSION',
+      'createPresenterActionSchedule',
+      'validatePresenterActionSchedule',
+    ]) {
+      assert.equal(browser[name], root[name], `${name} must share one public implementation`);
+    }
 
     assert.deepEqual(onlyRoot, [
       'TOOLS',

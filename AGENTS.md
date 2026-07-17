@@ -5,7 +5,7 @@
 - **Layer**: orchestration (between symbiote-ui primitives and host products)
 - **Dependency direction**: workspace → ui + engine. Never reverse.
 - **Independence**: usable standalone by any open-source consumer
-- **Version**: 1.0.0
+- **Version**: 1.1.0
 
 ## Architecture
 

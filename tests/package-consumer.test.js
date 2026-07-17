@@ -14,8 +14,11 @@ let ROOT = resolve(import.meta.dirname, '..');
 let TMP_ROOT = resolve(ROOT, 'tmp');
 let PACKAGE_META = JSON.parse(readFileSync(resolve(ROOT, 'package.json'), 'utf8'));
 
-it('requires the published engine release that owns caption presentation APIs', () => {
-  assert.equal(PACKAGE_META.peerDependencies['symbiote-engine'], '>=0.3.0-alpha.12');
+it('requires and develops against the presentation dependency releases', () => {
+  assert.equal(PACKAGE_META.devDependencies['symbiote-engine'], '0.3.0-alpha.13');
+  assert.equal(PACKAGE_META.devDependencies['symbiote-ui'], '0.3.0-alpha.63');
+  assert.equal(PACKAGE_META.peerDependencies['symbiote-engine'], '>=0.3.0-alpha.13');
+  assert.equal(PACKAGE_META.peerDependencies['symbiote-ui'], '>=0.3.0-alpha.63');
 });
 
 async function withTempConsumer(run) {
@@ -233,6 +236,11 @@ function assertWorkspacePackList(pack) {
     'Package must include the release preflight script referenced by package.json',
   );
   assert.equal(
+    paths.has('runtime/presentation/presenter-schedule.js'),
+    true,
+    'Package must include the presenter action schedule contract',
+  );
+  assert.equal(
     paths.has('examples/visual-demo/README.md'),
     true,
     'Package must include the visual demo README',
@@ -372,6 +380,10 @@ describe('packed package consumer', () => {
       `);
 
       await runNode(consumerDir, `
+        import * as rootPresentation from 'symbiote-workspace';
+        import * as runtimePresentation from 'symbiote-workspace/runtime';
+        import * as browserPresentation from 'symbiote-workspace/browser';
+        import * as presentationBarrel from 'symbiote-workspace/runtime/presentation.js';
         import {
           createVirtualSequence,
           validateVirtualSequence,
@@ -386,6 +398,22 @@ describe('packed package consumer', () => {
         }
         if (MEDIA_EVIDENCE_MANIFEST_SCHEMA_VERSION !== 'workspace-media-evidence-v3') {
           throw new Error('media evidence schema version drift');
+        }
+        let scheduleExports = [
+          'PRESENTER_ACTION_SCHEDULE_VERSION',
+          'createPresenterActionSchedule',
+          'validatePresenterActionSchedule',
+        ];
+        let scheduleSurfaces = [runtimePresentation, browserPresentation, presentationBarrel];
+        if (rootPresentation.PRESENTER_ACTION_SCHEDULE_VERSION !== 'workspace-presenter-action-schedule-v1') {
+          throw new Error('presenter action schedule version drift');
+        }
+        for (let surface of scheduleSurfaces) {
+          for (let name of scheduleExports) {
+            if (surface[name] !== rootPresentation[name]) {
+              throw new Error('presenter action schedule export mismatch: ' + name);
+            }
+          }
         }
         for (let fn of [createVirtualSequence, validateVirtualSequence, projectVirtualSequenceAt, invalidateVirtualSequence]) {
           if (typeof fn !== 'function') throw new Error('virtual sequence export missing');

@@ -1,5 +1,12 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { computeIntegrity } from '../schema/canonical-json.js';
+import {
+  getDuplicateKey,
+  getSemanticKey,
+  stringifyDuplicateKey,
+  stringifySemanticKey,
+} from '../runtime/presentation/presenter-schedule.js';
 
 import {
   PRESENTATION_COMPOSITION_CUE_KINDS,
@@ -10,12 +17,24 @@ import {
   createPresentationCompositionPlan,
   listPresentationCompositionCueSlots,
   normalizePresentationOutputSpec,
+  planCaptionPlacements,
 } from '../runtime/presentation-output.js';
+import {
+  createPresenterActionSchedule,
+  validatePresenterActionSchedule,
+  createPresentationAlignedSequence,
+  createPresentationTimelineContract,
+  PRESENTER_ACTION_SCHEDULE_VERSION,
+} from '../runtime/index.js';
 
 function validStep(overrides = {}) {
+  let kind = overrides.cueKind || 'focus';
   return {
     turnId: 'turn-1',
     slotIndex: 0,
+    cueId: '0.0',
+    cueIndex: 0,
+    cueKind: kind,
     targetId: 'panel:orders',
     stateActions: [{ name: 'select_window', reversible: true }],
     scroll: [{ id: 'orders-scroll', before: { left: 0, top: 0 }, after: { left: 0, top: 120 }, changed: true, applied: true }],
@@ -23,6 +42,7 @@ function validStep(overrides = {}) {
       targetRect: { x: 80, y: 80, width: 600, height: 500 },
       focusRect: { x: 100, y: 100, width: 160, height: 48 },
       visibleRect: { x: 100, y: 100, width: 160, height: 48 },
+      criticalAttentionRect: { x: 150, y: 112, width: 40, height: 24 },
       visibleRatio: 1,
       visible: true,
       reachable: true,
@@ -63,6 +83,15 @@ function compositionExpectations(plan, overrides = {}) {
   };
 }
 
+function resignSchedule(schedule) {
+  let projection = { ...schedule };
+  delete projection.hash;
+  return {
+    ...schedule,
+    hash: `${PRESENTER_ACTION_SCHEDULE_VERSION}:${computeIntegrity(projection)}`,
+  };
+}
+
 describe('presentation output and composition contracts', () => {
   it('uses one composition cue taxonomy for focus, interaction, and annotation evidence', () => {
     let slots = listPresentationCompositionCueSlots({
@@ -87,13 +116,13 @@ describe('presentation output and composition contracts', () => {
 
   it('rejects obsolete output and composition identities instead of silently migrating them', () => {
     assert.equal(PRESENTATION_OUTPUT_SPEC_SCHEMA_VERSION, 'workspace-presentation-output-v3');
-    assert.equal(PRESENTATION_COMPOSITION_PLAN_SCHEMA_VERSION, 'workspace-presentation-composition-v3');
+    assert.equal(PRESENTATION_COMPOSITION_PLAN_SCHEMA_VERSION, 'workspace-presentation-composition-v4');
     assert.throws(
       () => normalizePresentationOutputSpec({ schemaVersion: 'workspace-presentation-output-v2' }),
       /unsupported presentation output schema version/,
     );
     assert.throws(
-      () => createPresentationCompositionPlan({ schemaVersion: 'workspace-presentation-composition-v2' }),
+      () => createPresentationCompositionPlan({ schemaVersion: 'workspace-presentation-composition-v3' }),
       /unsupported presentation composition schema version/,
     );
   });
@@ -284,6 +313,7 @@ describe('presentation output and composition contracts', () => {
       restoredStructuralHash: 'snapshot-v2:structural',
       simulationFrozen: true,
       steps: [validStep({
+        cueKind: 'annotation',
         measurement: { ...validStep().measurement, focusRect: { x: 44, y: 44, width: 200, height: 60 }, visibleRect: { x: 44, y: 44, width: 200, height: 60 } },
         annotation: { placement: 'below', rect: { x: 44, y: 860, width: 120, height: 60 } },
       })],
@@ -305,8 +335,8 @@ describe('presentation output and composition contracts', () => {
     }));
 
     assert.equal(audit.verdict, 'accept');
-    assert.equal(audit.coverage.coveredTargetCount, 1);
-    assert.match(plan.hash, /^workspace-presentation-composition-v3:/);
+    assert.equal(audit.coverage.coveredCueCount, 1);
+    assert.match(plan.hash, /^workspace-presentation-composition-v4:/);
   });
 
   it('rejects every output and target composition failure with stable issue codes', () => {
@@ -320,7 +350,15 @@ describe('presentation output and composition contracts', () => {
       ['target-unreachable', { steps: [validStep({ measurement: { ...validStep().measurement, reachable: false } })] }],
       ['target-unreadable', { steps: [validStep({ measurement: { ...validStep().measurement, textTruncated: true } })] }],
       ['composition-scroll-failed', { steps: [validStep({ scroll: [{ id: 'scroll', before: {}, after: { top: 10 }, changed: true, applied: false }] })] }],
-      ['annotation-placement-unavailable', { steps: [validStep({ annotation: { placement: 'right', rect: { x: 100, y: 100, width: 100, height: 40 } } })] }],
+      ['annotation-placement-unavailable', {
+        steps: [validStep({
+          cueKind: 'annotation',
+          annotation: {
+            placement: 'right',
+            rect: { x: 100, y: 100, width: 100, height: 40 },
+          },
+        })],
+      }],
     ];
 
     for (let [expectedCode, overrides] of cases) {
@@ -356,5 +394,642 @@ describe('presentation output and composition contracts', () => {
       createLessonIntentHash({ lesson: { type: 'overview', objective: 'Explain queue' } }, { locale: 'ru-RU' }),
       createLessonIntentHash({ lesson: { type: 'overview', objective: 'Explain queue', locale: 'ru-RU' } }),
     );
+  });
+
+  it('rejects duplicate cue schemas and verifies presenter action schedule version constraints', () => {
+    let timeline = createPresentationTimelineContract({
+      contractVersion: 'presentation-timeline-v3',
+      id: 'output-test-timeline',
+      title: 'Output Test Timeline',
+      locale: 'en-US',
+      profile: 'brief',
+      personas: { guide: { name: 'Guide', role: 'lesson guide' } },
+      grounding: { sources: [] },
+      turns: [
+        {
+          id: 'turn-1',
+          persona: 'guide',
+          dialogueAct: 'explain',
+          text: 'Wait for page load.',
+          cues: [
+            {
+              kind: 'focus',
+              targetId: 'panel:home',
+              at: { anchor: 'turn-start', offsetMs: 0 },
+              focus: { mode: 'cursor' },
+            },
+            {
+              kind: 'focus',
+              targetId: 'panel:home',
+              at: { anchor: 'turn-start', offsetMs: 500 },
+              focus: { mode: 'cursor' },
+            },
+          ],
+        },
+      ],
+    });
+
+    let alignedSequence = createPresentationAlignedSequence(timeline, {
+      media: { hash: 'audio-1', durationMs: 2000, locale: 'en-US' },
+      turns: [
+        {
+          startMs: 0,
+          endMs: 2000,
+          speaker: 'guide',
+          transcript: 'Wait for page load.',
+          words: [],
+        },
+      ],
+    });
+
+    assert.throws(
+      () => createPresenterActionSchedule(timeline, alignedSequence),
+      (err) => {
+        assert.equal(err.name, 'PresenterDuplicateActionError');
+        assert.equal(err.code, 'PRESENTER_DUPLICATE_ACTION');
+        return true;
+      },
+    );
+
+    let validTimeline = createPresentationTimelineContract({
+      contractVersion: 'presentation-timeline-v3',
+      id: 'output-test-timeline-valid',
+      title: 'Output Test Timeline Valid',
+      locale: 'en-US',
+      profile: 'brief',
+      personas: { guide: { name: 'Guide', role: 'lesson guide' } },
+      grounding: { sources: [] },
+      turns: [
+        {
+          id: 'turn-1',
+          persona: 'guide',
+          dialogueAct: 'explain',
+          text: 'Wait for page load.',
+          cues: [
+            {
+              kind: 'focus',
+              targetId: 'panel:home',
+              at: { anchor: 'turn-start', offsetMs: 0 },
+              focus: { mode: 'cursor' },
+            },
+          ],
+        },
+      ],
+    });
+
+    let validAligned = createPresentationAlignedSequence(validTimeline, {
+      media: { hash: 'audio-1', durationMs: 2000, locale: 'en-US' },
+      turns: [
+        {
+          startMs: 0,
+          endMs: 2000,
+          speaker: 'guide',
+          transcript: 'Wait for page load.',
+          words: [],
+        },
+      ],
+    });
+
+    let schedule = createPresenterActionSchedule(validTimeline, validAligned);
+    assert.equal(schedule.contractVersion, PRESENTER_ACTION_SCHEDULE_VERSION);
+    assert.equal(schedule.events.length, 1);
+
+    let validated = validatePresenterActionSchedule(schedule, validTimeline, validAligned);
+    assert.equal(validated.contractVersion, PRESENTER_ACTION_SCHEDULE_VERSION);
+
+    let wrongVersion = { ...schedule, contractVersion: 'wrong-version-v9' };
+    assert.throws(
+      () => validatePresenterActionSchedule(wrongVersion, validTimeline, validAligned),
+      /unsupported presenter action schedule version/,
+    );
+
+    let wrongTimeline = { ...schedule, timelineHash: 'stale-timeline-hash' };
+    assert.throws(
+      () => validatePresenterActionSchedule(wrongTimeline, validTimeline, validAligned),
+      /presenter action schedule timelineHash does not match/,
+    );
+  });
+
+  it('rejects canonical schedule tampering even with a recomputed hash', () => {
+    let timeline = createPresentationTimelineContract({
+      contractVersion: 'presentation-timeline-v3',
+      id: 'tamper-test',
+      title: 'Tamper Test',
+      locale: 'en-US',
+      profile: 'brief',
+      personas: { guide: { name: 'Guide', role: 'lesson guide' } },
+      grounding: { sources: [] },
+      turns: [
+        {
+          id: 'turn-1',
+          persona: 'guide',
+          dialogueAct: 'explain',
+          text: 'Step one.',
+          cues: [
+            {
+              kind: 'focus',
+              targetId: 'panel:home',
+              at: { anchor: 'turn-start', offsetMs: 0 },
+              focus: { mode: 'cursor' },
+            },
+          ],
+        },
+      ],
+    });
+
+    let alignedSequence = createPresentationAlignedSequence(timeline, {
+      media: { hash: 'audio-1', durationMs: 2000, locale: 'en-US' },
+      turns: [{ startMs: 0, endMs: 2000, speaker: 'guide', transcript: 'Step one.', words: [] }],
+    });
+
+    let schedule = createPresenterActionSchedule(timeline, alignedSequence);
+
+    let tampered = resignSchedule({
+      ...schedule,
+      events: [{ ...schedule.events[0], startMs: 500 }],
+    });
+
+    assert.throws(
+      () => validatePresenterActionSchedule(tampered, timeline, alignedSequence),
+      /startMs mismatch/,
+    );
+
+    let tamperedMeta = resignSchedule({
+      ...schedule,
+      events: [{
+        ...schedule.events[0],
+        semanticKey: { ...schedule.events[0].semanticKey, variant: 'tampered' },
+      }],
+    });
+
+    assert.throws(
+      () => validatePresenterActionSchedule(tamperedMeta, timeline, alignedSequence),
+      /semanticKey.*mismatch/,
+    );
+  });
+
+  it('calculates cue-owned composition coverage and audit per cue ID', () => {
+    let timeline = createPresentationTimelineContract({
+      contractVersion: 'presentation-timeline-v3',
+      id: 'coverage-test',
+      title: 'Coverage Test',
+      locale: 'en-US',
+      profile: 'brief',
+      personas: { guide: { name: 'Guide', role: 'lesson guide' } },
+      grounding: { sources: [] },
+      turns: [
+        {
+          id: 'turn-1',
+          persona: 'guide',
+          dialogueAct: 'explain',
+          text: 'Step one.',
+          cues: [
+            {
+              kind: 'focus',
+              targetId: 'panel:home',
+              at: { anchor: 'turn-start', offsetMs: 0 },
+              focus: { mode: 'cursor' },
+            },
+            {
+              kind: 'focus',
+              targetId: 'panel:home',
+              at: { anchor: 'turn-start', offsetMs: 500 },
+              focus: { mode: 'cursor' },
+            },
+          ],
+        },
+      ],
+    });
+
+    let slots = listPresentationCompositionCueSlots(timeline);
+    assert.equal(slots.length, 2);
+    assert.equal(slots[0].cueId, '0.0');
+    assert.equal(slots[1].cueId, '0.1');
+
+    let planWithOneStep = validPlan({
+      steps: [
+        validStep({ cueId: '0.0', cueIndex: 0, cueKind: 'focus', targetId: 'panel:home' }),
+      ],
+    });
+
+    let audit = auditPresentationCompositionPlan(planWithOneStep, {
+      requiredCueSlots: slots,
+      requiredCueIds: slots.map((slot) => slot.cueId),
+      requiredTargetIds: ['panel:home'],
+    });
+
+    assert.equal(audit.verdict, 'reject');
+    assert.ok(audit.issueCodes.includes('composition-step-missing'));
+    assert.equal(audit.coverage.requiredCueCount, 2);
+    assert.equal(audit.coverage.coveredCueCount, 1);
+  });
+
+  it('enforces exact scheduled region spans from the action schedule', () => {
+    let timeline = createPresentationTimelineContract({
+      contractVersion: 'presentation-timeline-v3',
+      id: 'spans-test',
+      title: 'Spans Test',
+      locale: 'en-US',
+      profile: 'brief',
+      personas: { guide: { name: 'Guide', role: 'lesson guide' } },
+      grounding: { sources: [] },
+      turns: [
+        {
+          id: 'turn-1',
+          persona: 'guide',
+          dialogueAct: 'explain',
+          text: 'Step one.',
+          cues: [
+            {
+              kind: 'focus',
+              targetId: 'panel:home',
+              at: { anchor: 'turn-start', offsetMs: 0 },
+              until: { anchor: 'turn-start', offsetMs: 200 },
+              focus: { mode: 'cursor' },
+            },
+            {
+              kind: 'focus',
+              targetId: 'panel:orders',
+              at: { anchor: 'turn-start', offsetMs: 100 },
+              until: { anchor: 'turn-start', offsetMs: 300 },
+              focus: { mode: 'cursor' },
+            },
+          ],
+        },
+      ],
+    });
+
+    let alignedSequence = createPresentationAlignedSequence(timeline, {
+      media: { hash: 'audio-1', durationMs: 2000, locale: 'en-US' },
+      turns: [{ startMs: 0, endMs: 2000, speaker: 'guide', transcript: 'Step one.', words: [] }],
+    });
+
+    let schedule = createPresenterActionSchedule(timeline, alignedSequence, { gapMs: 150 });
+    assert.equal(schedule.events[0].startMs, 0);
+    assert.equal(schedule.events[0].endMs, 1000);
+    assert.equal(schedule.events[1].startMs, 1150);
+    assert.equal(schedule.events[1].endMs, 2150);
+
+    let reordered = resignSchedule({
+      ...schedule,
+      events: [...schedule.events].reverse(),
+    });
+    assert.throws(
+      () => validatePresenterActionSchedule(reordered, timeline, alignedSequence),
+      /ordering|mismatch/,
+    );
+
+    let plan = validPlan({
+      timelineHash: timeline.hash,
+      steps: [
+        validStep({ id: 'step-1', cueId: '0.0', cueIndex: 0, cueKind: 'focus', targetId: 'panel:home' }),
+        validStep({ id: 'step-2', cueId: '0.1', cueIndex: 1, cueKind: 'focus', targetId: 'panel:orders' }),
+      ],
+    });
+
+    let placementInput = {
+      timeline,
+      alignedSequence,
+      compositionPlan: plan,
+      actionSchedule: schedule,
+      sourceCompositionHash: plan.sourceCompositionHash,
+      targetCompositionHash: plan.targetCompositionHash,
+      cues: [{
+        cueId: 'cue-1',
+        index: 0,
+        speaker: 'guide',
+        text: 'Step one.',
+        startSec: 0,
+        endSec: 2,
+        wordTimings: [],
+      }],
+    };
+
+    let result = planCaptionPlacements(placementInput);
+    let focusAvoid = result.track.avoidRegions.find((region) => region.id === 'focus:0.1');
+    assert.ok(focusAvoid);
+    assert.equal(focusAvoid.kind, 'focus');
+    assert.equal(focusAvoid.startSec, 1.15);
+    assert.equal(focusAvoid.endSec, 2.15);
+  });
+
+  it('rejects duplicate cue steps in composition audit', () => {
+    let plan = validPlan({
+      steps: [
+        validStep({ id: 'step-1', cueId: '0.0', cueIndex: 0, cueKind: 'focus', targetId: 'panel:orders' }),
+        validStep({ id: 'step-2', cueId: '0.0', cueIndex: 0, cueKind: 'focus', targetId: 'panel:orders' }),
+      ],
+    });
+
+    let audit = auditPresentationCompositionPlan(plan, {
+      requiredTargetIds: ['panel:orders'],
+    });
+
+    assert.equal(audit.verdict, 'reject');
+    assert.ok(audit.issueCodes.includes('composition-step-missing'));
+  });
+
+  it('extends total duration when schedule events push past media end time', () => {
+    let timeline = createPresentationTimelineContract({
+      contractVersion: 'presentation-timeline-v3',
+      id: 'extension-test',
+      title: 'Extension Test',
+      locale: 'en-US',
+      profile: 'brief',
+      personas: { guide: { name: 'Guide', role: 'lesson guide' } },
+      grounding: { sources: [] },
+      turns: [
+        {
+          id: 'turn-1',
+          persona: 'guide',
+          dialogueAct: 'explain',
+          text: 'First, second.',
+          cues: [
+            {
+              kind: 'focus',
+              targetId: 'panel:home',
+              at: { anchor: 'turn-start', offsetMs: 0 },
+              focus: { mode: 'cursor' },
+            },
+            {
+              kind: 'focus',
+              targetId: 'panel:orders',
+              at: { anchor: 'turn-start', offsetMs: 500 },
+              focus: { mode: 'cursor' },
+            },
+          ],
+        },
+      ],
+    });
+
+    let alignedSequence = createPresentationAlignedSequence(timeline, {
+      media: { hash: 'audio-1', durationMs: 400, locale: 'en-US' },
+      turns: [{ startMs: 0, endMs: 400, speaker: 'guide', transcript: 'First, second.', words: [] }],
+    });
+
+    let schedule = createPresenterActionSchedule(timeline, alignedSequence, { gapMs: 100 });
+    assert.equal(schedule.pointDurationMs, 1000);
+    assert.equal(schedule.totalDurationMs, 2100);
+    assert.equal(schedule.extensionMs, 1700);
+  });
+
+  it('rejects unknown or omitted schedule fields even with a supplied hash', () => {
+    let timeline = createPresentationTimelineContract({
+      contractVersion: 'presentation-timeline-v3',
+      id: 'tamper-test',
+      title: 'Tamper Test',
+      locale: 'en-US',
+      profile: 'brief',
+      personas: { guide: { name: 'Guide', role: 'lesson guide' } },
+      grounding: { sources: [] },
+      turns: [
+        {
+          id: 'turn-1',
+          persona: 'guide',
+          dialogueAct: 'explain',
+          text: 'Step one.',
+          cues: [
+            {
+              kind: 'focus',
+              targetId: 'panel:home',
+              at: { anchor: 'turn-start', offsetMs: 0 },
+              focus: { mode: 'cursor' },
+            },
+          ],
+        },
+      ],
+    });
+
+    let alignedSequence = createPresentationAlignedSequence(timeline, {
+      media: { hash: 'audio-1', durationMs: 2000, locale: 'en-US' },
+      turns: [{ startMs: 0, endMs: 2000, speaker: 'guide', transcript: 'Step one.', words: [] }],
+    });
+
+    let schedule = createPresenterActionSchedule(timeline, alignedSequence);
+
+    let tamperedTopLevel = resignSchedule({
+      ...schedule,
+      unknownField: 'tampered',
+    });
+
+    assert.throws(
+      () => validatePresenterActionSchedule(tamperedTopLevel, timeline, alignedSequence),
+      /presenter action schedule structural mismatch/,
+    );
+
+    let tamperedEvent = resignSchedule({
+      ...schedule,
+      events: [{
+        ...schedule.events[0],
+        unknownEventField: undefined,
+      }],
+    });
+
+    assert.throws(
+      () => validatePresenterActionSchedule(tamperedEvent, timeline, alignedSequence),
+      /presenter action schedule structural mismatch/,
+    );
+
+    let omittedTopLevelField = structuredClone(schedule);
+    delete omittedTopLevelField.extensionMs;
+    omittedTopLevelField = resignSchedule(omittedTopLevelField);
+    assert.throws(
+      () => validatePresenterActionSchedule(omittedTopLevelField, timeline, alignedSequence),
+      /extensionMs/,
+    );
+
+    let omittedEventField = structuredClone(schedule);
+    delete omittedEventField.events[0].targetId;
+    omittedEventField = resignSchedule(omittedEventField);
+    assert.throws(
+      () => validatePresenterActionSchedule(omittedEventField, timeline, alignedSequence),
+      /targetId/,
+    );
+  });
+
+  it('accepts reordered-key semantic equivalence and produces identical semantic/duplicate keys', () => {
+    let cueA = {
+      kind: 'interaction',
+      targetId: 'panel:home',
+      tabId: 'primary',
+      interaction: {
+        type: 'click',
+        parameters: { x: 10, nested: { alpha: 1, beta: 2 } },
+        binding: {
+          source: 'webmcp',
+          tool: 'action1',
+          input: { first: true, second: false },
+        },
+      },
+    };
+    let cueB = {
+      tabId: 'primary',
+      targetId: 'panel:home',
+      kind: 'interaction',
+      interaction: {
+        binding: {
+          input: { second: false, first: true },
+          tool: 'action1',
+          source: 'webmcp',
+        },
+        parameters: { nested: { beta: 2, alpha: 1 }, x: 10 },
+        type: 'click',
+      },
+    };
+    let semanticKeyA = getSemanticKey(cueA, 'turn-1');
+    let semanticKeyB = getSemanticKey(cueB, 'turn-1');
+    let duplicateKeyA = getDuplicateKey('reorder-test', semanticKeyA, 0, 1000);
+    let duplicateKeyB = getDuplicateKey('reorder-test', semanticKeyB, 0, 1000);
+
+    assert.equal(typeof semanticKeyA.effect, 'object');
+    assert.deepEqual(semanticKeyA, semanticKeyB);
+    assert.equal(stringifySemanticKey(semanticKeyA), stringifySemanticKey(semanticKeyB));
+    assert.deepEqual(duplicateKeyA, duplicateKeyB);
+    assert.equal(stringifyDuplicateKey(duplicateKeyA), stringifyDuplicateKey(duplicateKeyB));
+    assert.notDeepEqual(getSemanticKey(cueA, 'turn-2'), semanticKeyA);
+
+    let timeline = createPresentationTimelineContract({
+      contractVersion: 'presentation-timeline-v3',
+      id: 'reorder-test',
+      title: 'Reorder Test',
+      locale: 'en-US',
+      profile: 'brief',
+      personas: { guide: { name: 'Guide', role: 'lesson guide' } },
+      grounding: { sources: [] },
+      turns: [
+        {
+          id: 'turn-1',
+          persona: 'guide',
+          dialogueAct: 'explain',
+          text: 'Step one.',
+          cues: [
+            {
+              kind: 'interaction',
+              targetId: 'panel:home',
+              at: { anchor: 'turn-start', offsetMs: 0 },
+              interaction: {
+                type: 'click',
+                parameters: { x: 10, y: 20 },
+                binding: { source: 'webmcp', tool: 'action1', input: {} },
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    let alignedSequence = createPresentationAlignedSequence(timeline, {
+      media: { hash: 'audio-1', durationMs: 2000, locale: 'en-US' },
+      turns: [{ startMs: 0, endMs: 2000, speaker: 'guide', transcript: 'Step one.', words: [] }],
+    });
+
+    let schedule = createPresenterActionSchedule(timeline, alignedSequence);
+
+    let reorderedEvents = [
+      {
+        ...schedule.events[0],
+        semanticKey: {
+          effect: schedule.events[0].semanticKey.effect,
+          target: schedule.events[0].semanticKey.target,
+          tab: schedule.events[0].semanticKey.tab,
+          variant: schedule.events[0].semanticKey.variant,
+          kind: schedule.events[0].semanticKey.kind,
+          turn: schedule.events[0].semanticKey.turn,
+          version: schedule.events[0].semanticKey.version,
+        },
+      },
+    ];
+
+    let reorderedSchedule = {
+      ...schedule,
+      events: reorderedEvents,
+    };
+
+    let validated = validatePresenterActionSchedule(reorderedSchedule, timeline, alignedSequence);
+    assert.deepEqual(validated, reorderedSchedule);
+  });
+
+  it('prevents collisions for delimiter-containing text (delimiter safety)', () => {
+    let semKey1 = {
+      version: 'v1',
+      turn: 'turn-1',
+      kind: 'focus',
+      variant: 'cursor',
+      tab: 'a',
+      target: 'b:c',
+      effect: null,
+    };
+    let semKey2 = {
+      version: 'v1',
+      turn: 'turn-1',
+      kind: 'focus',
+      variant: 'cursor',
+      tab: 'a:b',
+      target: 'c',
+      effect: null,
+    };
+
+    let str1 = stringifySemanticKey(semKey1);
+    let str2 = stringifySemanticKey(semKey2);
+    let dup1 = stringifyDuplicateKey(getDuplicateKey('timeline', semKey1, 10, 20));
+    let dup2 = stringifyDuplicateKey(getDuplicateKey('timeline', semKey2, 10, 20));
+
+    assert.notEqual(str1, str2);
+    assert.notEqual(dup1, dup2);
+  });
+
+  it('fails closed when criticalAttentionRect is missing or non-positive for focus/interaction steps', () => {
+    for (let cueKind of ['focus', 'interaction']) {
+      let missingPlan = validPlan({
+        steps: [validStep({
+          cueKind,
+          measurement: {
+            ...validStep().measurement,
+            criticalAttentionRect: null,
+          },
+        })],
+      });
+      let missingAudit = auditPresentationCompositionPlan(missingPlan, {
+        requiredTargetIds: ['panel:orders'],
+      });
+
+      assert.equal(missingAudit.verdict, 'reject');
+      assert.ok(missingAudit.issueCodes.includes('target-clipped'));
+    }
+
+    let nonPositivePlan = validPlan({
+      steps: [validStep({
+        cueKind: 'focus',
+        measurement: {
+          ...validStep().measurement,
+          criticalAttentionRect: { x: 100, y: 100, width: 0, height: 48 },
+        },
+      })],
+    });
+
+    let nonPositiveAudit = auditPresentationCompositionPlan(nonPositivePlan, {
+      requiredTargetIds: ['panel:orders'],
+    });
+
+    assert.equal(nonPositiveAudit.verdict, 'reject');
+    assert.ok(nonPositiveAudit.issueCodes.includes('target-clipped'));
+
+    let nonFinitePlan = validPlan({
+      steps: [
+        validStep({
+          cueKind: 'interaction',
+          measurement: {
+            ...validStep().measurement,
+            criticalAttentionRect: { x: 'invalid', y: 100, width: 40, height: 24 },
+          },
+        }),
+      ],
+    });
+    let nonFiniteAudit = auditPresentationCompositionPlan(nonFinitePlan, {
+      requiredTargetIds: ['panel:orders'],
+    });
+
+    assert.equal(nonFiniteAudit.verdict, 'reject');
+    assert.ok(nonFiniteAudit.issueCodes.includes('target-clipped'));
   });
 });

@@ -9,6 +9,10 @@ import {
   buildRealtimeChatStateDemo,
   writeRealtimeChatStateDemo,
 } from '../examples/visual-demo/realtime-builder.js';
+import {
+  browserPackageImports,
+  startRealtimeBrowserPreview,
+} from '../examples/visual-demo/browser-smoke.js';
 import { startStaticServer } from '../examples/visual-demo/server-utils.js';
 import { validateWorkspaceConfig } from '../schema/index.js';
 
@@ -729,6 +733,18 @@ describe('realtime builder demo', () => {
     assert.doesNotMatch(smoke, /themeMode === 'light'/);
   });
 
+  it('passes the current mounted revision to generated workspace updates', async () => {
+    await withTempDir(async (dir) => {
+      await writeRealtimeChatStateDemo({ outputDir: dir, port: 4567 });
+      let app = await readFile(join(dir, 'app.js'), 'utf8');
+      let updateCall = app.match(/mounted\.updateConfig\(config, \{([\s\S]*?)\n\s*\}\);/);
+
+      assert.ok(updateCall, 'generated runtime must update the mounted workspace');
+      assert.match(updateCall[1], /baseRevision: mounted\.revision,/);
+      assert.doesNotMatch(updateCall[1], /baseRevision:\s*\d+/);
+    });
+  });
+
   it('serves extensionless package subpaths for browser import maps', async () => {
     await withTempDir(async (dir) => {
       let outputDir = join(dir, 'out');
@@ -762,6 +778,81 @@ describe('realtime builder demo', () => {
       } finally {
         await new Promise((resolveClose) => server.close(resolveClose));
       }
+    });
+  });
+
+  it('serves realtime browser imports from the installed package graph', async () => {
+    await withTempDir(async (dir) => {
+      let outputDir = join(dir, 'out');
+      let preview = await startRealtimeBrowserPreview({ outputDir, port: 0 });
+      try {
+        let html = await readFile(join(outputDir, 'index.html'), 'utf8');
+        let marker = '<script type="importmap">';
+        let start = html.indexOf(marker) + marker.length;
+        let end = html.indexOf('</script>', start);
+        let importMap = JSON.parse(html.slice(start, end));
+
+        assert.equal(preview.host.packages['symbiote-ui'].version, '0.3.0-alpha.63');
+        assert.equal(preview.host.packages['symbiote-engine'].version, '0.3.0-alpha.13');
+        assert.equal(preview.host.packages['@symbiotejs/symbiote'].version, '3.8.0-webmcp.2');
+        assert.equal(
+          importMap.imports['@symbiotejs/symbiote/utils'],
+          '/__symbiote__/utils/index.js'
+        );
+        assert.equal(
+          importMap.imports['symbiote-ui/ui'],
+          '/__symbiote_ui__/ui/index.js'
+        );
+        assert.equal(
+          importMap.imports['symbiote-engine/FocusController.js'],
+          '/__symbiote_engine__/FocusController.js'
+        );
+        assert.equal(
+          Object.values(importMap.imports).some((value) => value.includes('node_modules')),
+          false
+        );
+
+        let routes = [
+          '/__symbiote_ui__/control/Mentions/Mentions.js',
+          '/__symbiote__/utils/index.js',
+          '/__symbiote__/utils/setNestedProp.js',
+          '/__symbiote__/utils/UID.js',
+          '/__symbiote__/utils/dom-helpers.js',
+          '/__symbiote__/utils/kebabToCamel.js',
+          '/__symbiote__/utils/reassignDictionary.js',
+          '/__symbiote_engine__/FocusController.js',
+        ];
+        let port = preview.server.address().port;
+        for (let route of routes) {
+          let response = await httpText(port, route);
+          assert.equal(response.statusCode, 200, route);
+          assert.match(response.contentType, /text\/javascript/, route);
+          assert.notEqual(response.body.length, 0, route);
+        }
+      } finally {
+        await new Promise((resolveClose) => preview.server.close(resolveClose));
+      }
+    });
+  });
+
+  it('maps package export aliases and wildcard prefixes to opaque browser routes', () => {
+    let imports = browserPackageImports({
+      name: '@scope/example',
+      exports: {
+        '.': {
+          import: './browser.js',
+          default: './index.js',
+        },
+        './utils': './utils/index.js',
+        './features/*': './features/*',
+      },
+    }, '/__example__/');
+
+    assert.deepEqual(imports, {
+      '@scope/example': '/__example__/browser.js',
+      '@scope/example/': '/__example__/',
+      '@scope/example/features/': '/__example__/features/',
+      '@scope/example/utils': '/__example__/utils/index.js',
     });
   });
 });

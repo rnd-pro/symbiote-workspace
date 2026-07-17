@@ -4,6 +4,10 @@ import assert from 'node:assert/strict';
 import {
   solvePresentationClock,
   createPresentationTimelineContract,
+  createPresenterActionSchedule,
+  validatePresenterActionSchedule,
+  createPresentationAlignedSequence,
+  PRESENTER_ACTION_SCHEDULE_VERSION,
 } from '../runtime/index.js';
 
 function createTestTimeline() {
@@ -480,5 +484,237 @@ describe('solvePresentationClock solver', () => {
 
     assert.deepEqual(result1, result2);
     assert.ok(result1.hash.startsWith('presentation-clock-projection-v1:'));
+  });
+
+  describe('presenter action schedule generation and validation', () => {
+    it('throws PresenterDuplicateActionError on overlapping exact/semantic duplicates', () => {
+      let timeline = createPresentationTimelineContract({
+        contractVersion: 'presentation-timeline-v3',
+        id: 'schedule-timeline-dup',
+        title: 'Schedule Timeline Dup',
+        locale: 'en-US',
+        profile: 'brief',
+        personas: {
+          guide: { name: 'Guide', role: 'lesson guide' },
+        },
+        grounding: { sources: [] },
+        turns: [
+          {
+            id: 'turn-1',
+            persona: 'guide',
+            dialogueAct: 'explain',
+            text: 'Click here and see.',
+            cues: [
+              {
+                kind: 'focus',
+                targetId: 'button-ok',
+                at: { anchor: 'turn-start', offsetMs: 100 },
+                focus: { mode: 'cursor' },
+              },
+              {
+                kind: 'focus',
+                targetId: 'button-ok',
+                at: { anchor: 'turn-start', offsetMs: 500 },
+                focus: { mode: 'cursor' },
+              },
+            ],
+          },
+        ],
+      });
+
+      let alignedSequence = createPresentationAlignedSequence(timeline, {
+        media: { hash: 'audio-1', durationMs: 3000, locale: 'en-US' },
+        turns: [
+          {
+            startMs: 0,
+            endMs: 3000,
+            speaker: 'guide',
+            transcript: 'Click here and see.',
+            words: [],
+          },
+        ],
+      });
+
+      assert.throws(
+        () => createPresenterActionSchedule(timeline, alignedSequence),
+        (err) => {
+          assert.equal(err.name, 'PresenterDuplicateActionError');
+          assert.equal(err.code, 'PRESENTER_DUPLICATE_ACTION');
+          assert.ok(err.diagnosticInfo.duplicateKey1);
+          assert.ok(err.diagnosticInfo.duplicateKey2);
+          return true;
+        },
+      );
+
+      let exactTimeline = createPresentationTimelineContract({
+        ...timeline,
+        id: 'schedule-timeline-exact-dup',
+        turns: [{
+          ...timeline.turns[0],
+          cues: timeline.turns[0].cues.map((cue) => ({
+            ...cue,
+            at: { anchor: 'turn-start', offsetMs: 100 },
+          })),
+        }],
+      });
+      let exactAlignedSequence = createPresentationAlignedSequence(exactTimeline, {
+        media: { hash: 'audio-exact', durationMs: 3000, locale: 'en-US' },
+        turns: [{
+          startMs: 0,
+          endMs: 3000,
+          speaker: 'guide',
+          transcript: 'Click here and see.',
+          words: [],
+        }],
+      });
+      assert.throws(
+        () => createPresenterActionSchedule(exactTimeline, exactAlignedSequence),
+        /Exact authored duplicates/,
+      );
+    });
+
+    it('creates schedule for non-overlapping same-kind cues and legal later repeats', () => {
+      let timeline = createPresentationTimelineContract({
+        contractVersion: 'presentation-timeline-v3',
+        id: 'schedule-timeline-legal',
+        title: 'Schedule Timeline Legal',
+        locale: 'en-US',
+        profile: 'brief',
+        personas: {
+          guide: { name: 'Guide', role: 'lesson guide' },
+        },
+        grounding: { sources: [] },
+        turns: [
+          {
+            id: 'turn-1',
+            persona: 'guide',
+            dialogueAct: 'explain',
+            text: 'Click here then there.',
+            cues: [
+              {
+                kind: 'focus',
+                targetId: 'button-ok',
+                at: { anchor: 'turn-start', offsetMs: 100 },
+                until: { anchor: 'turn-start', offsetMs: 1100 },
+                focus: { mode: 'cursor' },
+              },
+              {
+                kind: 'focus',
+                targetId: 'button-ok',
+                at: { anchor: 'turn-start', offsetMs: 1200 },
+                until: { anchor: 'turn-start', offsetMs: 2200 },
+                focus: { mode: 'cursor' },
+              },
+            ],
+          },
+        ],
+      });
+
+      let alignedSequence = createPresentationAlignedSequence(timeline, {
+        media: { hash: 'audio-2', durationMs: 3000, locale: 'en-US' },
+        turns: [
+          {
+            startMs: 0,
+            endMs: 3000,
+            speaker: 'guide',
+            transcript: 'Click here then there.',
+            words: [],
+          },
+        ],
+      });
+
+      let schedule = createPresenterActionSchedule(timeline, alignedSequence, { boundedGapMs: 100 });
+      assert.equal(schedule.timelineHash, timeline.hash);
+      assert.equal(schedule.events.length, 2);
+      assert.equal(schedule.events[0].startMs, 100);
+      assert.equal(schedule.events[0].endMs, 1100);
+      assert.equal(schedule.events[1].startMs, 1200);
+      assert.equal(schedule.events[1].endMs, 2200);
+
+      let validated = validatePresenterActionSchedule(schedule, timeline, alignedSequence);
+      assert.deepEqual(validated, schedule);
+    });
+
+    it('serializes mixed kinds with a gap, point duration, and duration extension', () => {
+      let timeline = createPresentationTimelineContract({
+        contractVersion: 'presentation-timeline-v3',
+        id: 'schedule-timeline-mixed',
+        title: 'Schedule Timeline Mixed',
+        locale: 'en-US',
+        profile: 'brief',
+        personas: {
+          guide: { name: 'Guide', role: 'lesson guide' },
+        },
+        grounding: { sources: [] },
+        turns: [
+          {
+            id: 'turn-1',
+            persona: 'guide',
+            dialogueAct: 'explain',
+            text: 'First click, then highlight.',
+            cues: [
+              {
+                kind: 'interaction',
+                targetId: 'button-ok',
+                at: { anchor: 'turn-start', offsetMs: 100 },
+                interaction: { type: 'click', reversible: true },
+              },
+              {
+                kind: 'annotation',
+                targetId: 'panel-info',
+                at: { anchor: 'turn-start', offsetMs: 200 },
+                until: { anchor: 'turn-start', offsetMs: 400 },
+                annotation: { intent: 'emphasize', marker: 'box' },
+              },
+            ],
+          },
+        ],
+      });
+
+      let alignedSequence = createPresentationAlignedSequence(timeline, {
+        media: { hash: 'audio-3', durationMs: 500, locale: 'en-US' },
+        turns: [
+          {
+            startMs: 0,
+            endMs: 500,
+            speaker: 'guide',
+            transcript: 'First click, then highlight.',
+            words: [],
+          },
+        ],
+      });
+
+      let schedule = createPresenterActionSchedule(timeline, alignedSequence, { boundedGapMs: 100 });
+      assert.equal(schedule.events.length, 2);
+
+      let interaction = schedule.events[0];
+      let annotation = schedule.events[1];
+
+      assert.equal(schedule.pointDurationMs, 1000);
+      assert.equal(interaction.startMs, 100);
+      assert.equal(interaction.endMs, 1100);
+      assert.deepEqual(interaction.duplicateKey.span, [100, 1100]);
+
+      assert.equal(annotation.startMs, 1200);
+      assert.equal(annotation.endMs, 2200);
+      assert.deepEqual(annotation.duplicateKey.span, [1200, 2200]);
+
+      assert.equal(schedule.totalDurationMs, 2200);
+      assert.equal(schedule.extensionMs, 1700);
+
+      let validated = validatePresenterActionSchedule(schedule, timeline, alignedSequence);
+      assert.deepEqual(validated, schedule);
+
+      let configured = createPresenterActionSchedule(timeline, alignedSequence, {
+        gapMs: 100,
+        pointDurationMs: 1200,
+      });
+      assert.equal(configured.pointDurationMs, 1200);
+      assert.equal(configured.events[0].endMs - configured.events[0].startMs, 1200);
+      assert.deepEqual(
+        validatePresenterActionSchedule(configured, timeline, alignedSequence),
+        configured,
+      );
+    });
   });
 });

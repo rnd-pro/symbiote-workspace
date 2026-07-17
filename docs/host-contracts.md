@@ -375,7 +375,7 @@ aligned span. Segment boundaries may differ by at most the exported
 `PRESENTATION_CAPTION_TIMING_TOLERANCE_MS` (`50` ms), measured in integer
 microseconds so the inclusive boundary is deterministic. A single-speaker output
 must declare `voice.speakerId`; every caption cue must use that identity.
-`planCaptionPlacements()` requires the public `symbiote-engine >=0.3.0-alpha.12`
+`planCaptionPlacements()` requires the public `symbiote-engine >=0.3.0-alpha.13`
 peer and does not estimate around missing layout evidence. Before signing a
 caption track it runs the complete composition audit against the exact output,
 timeline, source layout, target layout, and every focus, interaction, and
@@ -385,8 +385,16 @@ missing annotation placement, active simulation, stale restoration, viewport
 drift, or missing cue coverage reject the plan.
 
 The current layout identities are `workspace-presentation-output-v3` and
-`workspace-presentation-composition-v3`. Explicit older schema identities are a
-migration boundary and fail closed. Hosts must rebuild output-specific planning
+`workspace-presentation-composition-v4`. The corresponding presenter action
+schedule identity is `workspace-presenter-action-schedule-v1`, and the caption
+composition identity is `workspace-presentation-caption-composition-v2`.
+Create schedules with `createPresenterActionSchedule()` and validate persisted or
+transported schedules with `validatePresenterActionSchedule()`. Both functions and
+`PRESENTER_ACTION_SCHEDULE_VERSION` are available from `symbiote-workspace`,
+`symbiote-workspace/browser`, `symbiote-workspace/runtime`, and the Node-safe
+`symbiote-workspace/runtime/presentation.js` barrel.
+Explicit older schema identities are a migration boundary and fail closed.
+Hosts must rebuild output-specific planning
 after viewport, frame inset, caption, voice, locale, duration, target snapshot,
 or lesson intent changes; they must not rewrite an old artifact's version field.
 
