@@ -2,6 +2,8 @@
 
 # symbiote-workspace
 
+[Documentation and live demo](https://rnd-pro.github.io/symbiote-workspace/)
+
 **symbiote-workspace turns chat intent into portable, executable Symbiote
 workspaces. Fast.**
 

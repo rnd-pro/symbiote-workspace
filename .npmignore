@@ -1,0 +1,7 @@
+site/
+_site/
+scripts/build-pages.js
+project.cfg.js
+tests/pages.test.js
+tests/pages-browser.test.js
+.github/
