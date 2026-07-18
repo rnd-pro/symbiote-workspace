@@ -925,11 +925,12 @@ export function planCaptionPlacements(input = {}) {
     ...(Array.isArray(input.reservedRegions) ? input.reservedRegions : []),
     ...(Array.isArray(input.avoidRegions) ? input.avoidRegions : []),
   ];
+  let margins = output.captions.profile?.margins || { top: 0, right: 0, bottom: 0, left: 0 };
   let safeInsets = {
-    top: presentationViewport.y + output.safeArea.top,
-    right: output.width - presentationViewport.x - presentationViewport.width + output.safeArea.right,
-    bottom: output.height - presentationViewport.y - presentationViewport.height + output.safeArea.bottom,
-    left: presentationViewport.x + output.safeArea.left,
+    top: Math.max(presentationViewport.y + output.safeArea.top, margins.top),
+    right: Math.max(output.width - presentationViewport.x - presentationViewport.width + output.safeArea.right, margins.right),
+    bottom: Math.max(output.height - presentationViewport.y - presentationViewport.height + output.safeArea.bottom, margins.bottom),
+    left: Math.max(presentationViewport.x + output.safeArea.left, margins.left),
   };
   let track = output.captions.enabled
     ? buildCaptionPlacementTrack(input.cues, {

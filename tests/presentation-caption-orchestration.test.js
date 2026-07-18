@@ -658,4 +658,186 @@ describe('planCaptionPlacements orchestration', () => {
       );
     }
   });
+
+  function buildVerticalFixture(outputOverrides = {}) {
+    let timeline = createPresentationTimelineContract({
+      contractVersion: 'presentation-timeline-v3',
+      id: 'tiktok-safe-inset-test',
+      title: 'TikTok caption safe inset regression test',
+      locale: 'en-US',
+      profile: 'dialogue',
+      personas: { guide: { name: 'Guide', role: 'lesson guide' } },
+      grounding: { sources: [] },
+      turns: [{
+        id: 'turn-1',
+        persona: 'guide',
+        dialogueAct: 'explain',
+        text: 'This is a caption in TikTok style with margins and safe area.',
+        sourceRefs: [],
+        claims: [],
+        cues: [
+          {
+            kind: 'focus',
+            targetId: 'panel:home:queue-node',
+            at: { anchor: 'turn-start' },
+            until: { anchor: 'turn-end' },
+            focus: { mode: 'cursor' },
+          },
+        ],
+      }],
+    });
+    let output = normalizePresentationOutputSpec({
+      width: 1080,
+      height: 1920,
+      fps: 30,
+      dpr: 1,
+      safeArea: { top: 54, right: 54, bottom: 54, left: 54 },
+      captions: {
+        enabled: true,
+        stylePreset: 'tiktok',
+      },
+      ...outputOverrides,
+    });
+    let alignedSequence = createPresentationAlignedSequence(timeline, {
+      media: { hash: 'audio:test', durationMs: 3000, locale: 'en-US' },
+      turns: [{
+        startMs: 0,
+        endMs: 3000,
+        speaker: timeline.turns[0].persona,
+        transcript: timeline.turns[0].text,
+        words: [],
+      }],
+    });
+
+    let compositionPlan = createPresentationCompositionPlan({
+      output,
+      structuralHash: 'snapshot:stable',
+      sourceCompositionHash: 'composition:source',
+      targetCompositionHash: 'composition:target',
+      timelineHash: timeline.hash,
+      lessonIntentHash: 'lesson:stable',
+      measuredViewport: {
+        width: output.presentationViewport.width,
+        height: output.presentationViewport.height,
+        visualWidth: output.presentationViewport.width,
+        visualHeight: output.presentationViewport.height,
+        dpr: 1,
+      },
+      baselineStructuralHash: 'snapshot:stable',
+      restoredStructuralHash: 'snapshot:stable',
+      simulationFrozen: true,
+      steps: [
+        {
+          id: 'step-1',
+          turnId: 'turn-1',
+          targetId: 'panel:home:queue-node',
+          cueId: '0.0',
+          cueKind: 'focus',
+          cueIndex: 0,
+          measurement: {
+            targetRect: { x: 100, y: 700, width: 880, height: 200 },
+            focusRect: { x: 100, y: 700, width: 880, height: 200 },
+            visibleRect: { x: 100, y: 700, width: 880, height: 200 },
+            criticalAttentionRect: { x: 480, y: 800, width: 120, height: 80 },
+            visibleRatio: 1,
+            visible: true,
+            reachable: true,
+            occluders: [],
+            pointerTransparentOccluders: [],
+          },
+        },
+      ],
+    });
+    let cues = [{
+      cueId: 'caption-1',
+      index: 0,
+      speaker: 'guide',
+      text: 'This is a caption in TikTok style with margins and safe area.',
+      startSec: 0,
+      endSec: 3,
+      wordTimings: [],
+    }];
+    let actionSchedule = createPresenterActionSchedule(timeline, alignedSequence);
+    let avoidRegions = [
+      {
+        id: 'persistent-top-chrome',
+        kind: 'chrome',
+        x: 0,
+        y: 0,
+        width: 1080,
+        height: 100,
+        startSec: 0,
+        endSec: 3,
+      },
+      {
+        id: 'persistent-chat-composer',
+        kind: 'composer',
+        x: 540,
+        y: 1770,
+        width: 540,
+        height: 150,
+        startSec: 0,
+        endSec: 3,
+      },
+    ];
+
+    return {
+      timeline,
+      output,
+      alignedSequence,
+      compositionPlan,
+      cues,
+      actionSchedule,
+      sourceCompositionHash: 'composition:source',
+      targetCompositionHash: 'composition:target',
+      avoidRegions,
+    };
+  }
+
+  it('respects both frame safe area and profile margins for TikTok vertical format to prevent chat composer collision', () => {
+    let input = buildVerticalFixture();
+    let composition = planCaptionPlacements(input);
+
+    let track = composition.track;
+    assert.ok(track, 'Caption placement track should be generated');
+    assert.equal(track.hardCollisionCount, 0, 'No hard collisions with avoid regions');
+    assert.equal(track.safeBoundsViolationCount, 0, 'No safe bounds violations');
+
+    let firstCue = track.cues[0];
+    assert.equal(firstCue.placement.zone, 'bottom', 'Caption should remain in the preferred bottom zone');
+    let rect = firstCue.measuredRect;
+    assert.equal(rect.y + rect.height, 1632, 'Caption bottom should be exactly at the bottom margin limit (1920 - 288 = 1632)');
+    assert.ok(rect.x >= 86, `x (${rect.x}) must be >= 86 (left margin)`);
+    assert.ok(rect.x + rect.width <= 994, `x + width (${rect.x + rect.width}) must be <= 994 (right margin)`);
+
+    assert.ok(firstCue.decisionEvidence.activeAvoidRegionIds.includes('focus:0.0'), 'Focus region should be considered active');
+    let focusRegion = track.avoidRegions.find((region) => region.id === 'focus:0.0');
+    assert.deepEqual(
+      { width: focusRegion.width, height: focusRegion.height },
+      { width: 120, height: 80 },
+    );
+    let overlapsFocus = rect.x < focusRegion.x + focusRegion.width
+      && rect.x + rect.width > focusRegion.x
+      && rect.y < focusRegion.y + focusRegion.height
+      && rect.y + rect.height > focusRegion.y;
+    assert.equal(overlapsFocus, false, 'Caption must not intersect the compact focus avoid region');
+  });
+
+  it('respects stricter absolute output-edge inset when frameInsets plus safe-area bottom exceeds profile margin', () => {
+    let input = buildVerticalFixture({
+      frameInsets: { top: 0, right: 0, bottom: 300, left: 0 },
+    });
+    let composition = planCaptionPlacements(input);
+
+    let track = composition.track;
+    assert.ok(track, 'Caption placement track should be generated');
+    assert.equal(track.hardCollisionCount, 0, 'No hard collisions with avoid regions');
+    assert.equal(track.safeBoundsViolationCount, 0, 'No safe bounds violations');
+
+    let firstCue = track.cues[0];
+    assert.equal(firstCue.placement.zone, 'bottom', 'Caption should still select bottom zone given safe space');
+
+    let rect = firstCue.measuredRect;
+    assert.equal(rect.y + rect.height, 1566, 'Caption bottom should respect absolute output-edge inset of 354 (1920 - 300 - 54 = 1566)');
+  });
 });

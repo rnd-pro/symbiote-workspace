@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+## [1.1.1] - 2026-07-18
+
+- Combined presentation frame safe area and caption profile format margins in
+  `planCaptionPlacements` to prevent vertical layout collisions.
+
 ## [1.1.0] - 2026-07-17
 
 - Release preflight now verifies the resolved lockfile nodes for the required
