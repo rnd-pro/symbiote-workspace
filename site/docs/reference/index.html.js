@@ -1,8 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createMarkdownRenderer, pageTemplate } from '../../layout.js';
 import { marked } from 'marked';
+import { renderDocsPage } from 'library-pages/shell';
+import { createMarkdownRenderer } from '../../layout.js';
+import { docsRoutes, docsSiteConfig } from '../../site.config.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const workspaceRoot = resolve(__dirname, '../../..');
@@ -33,10 +35,11 @@ for (const f of files) {
 }
 
 const contentHtml = marked.parse(markdown, { renderer: createMarkdownRenderer() });
+const currentRoute = docsRoutes.find((route) => route.path === '/docs/reference/');
 
-export default pageTemplate({
-  title: 'Reference',
-  content: `<article class="prose">${contentHtml}</article>`,
-  currentPath: '/docs/reference/',
-  isDocs: true
+export default renderDocsPage({
+  siteConfig: docsSiteConfig(currentRoute),
+  routes: docsRoutes,
+  currentRoute,
+  contentHtml: `<article class="prose">${contentHtml}</article>`,
 });

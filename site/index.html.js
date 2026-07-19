@@ -1,12 +1,125 @@
-import { pageTemplate, url } from './layout.js';
+import { renderPage } from 'library-pages/shell';
+import { buildSearchIndex } from 'library-pages/search';
+import { composeSiteConfig, docsRoutes, resolvePath } from './site.config.js';
 
-const content = `
+const landingStyles = /*css*/ `
+.hero {
+  min-height: 550px;
+  padding: clamp(4.5rem, 11vw, 7.7rem) 0 clamp(5.5rem, 11vw, 8rem);
+}
+.hero-title {
+  max-width: 620px;
+  margin: 0 0 1.55rem;
+  color: var(--ink);
+  font-size: clamp(3rem, 6.6vw, 5rem);
+  line-height: 1.03;
+  letter-spacing: -0.055em;
+  font-weight: 700;
+}
+.hero-lead {
+  max-width: 640px;
+  margin: 0 0 2.35rem;
+  color: var(--muted);
+  font-size: clamp(1.1rem, 2vw, 1.38rem);
+  line-height: 1.55;
+}
+.hero-actions { display: flex; flex-wrap: wrap; gap: 0.75rem; }
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.5rem;
+  padding: 0 1.25rem;
+  border-radius: 999px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+.btn-primary { border: 1px solid var(--brand); background: var(--brand); color: var(--page); }
+.btn-primary:hover { border-color: var(--brand-strong); background: var(--brand-strong); color: var(--page); }
+.btn-secondary { border: 1px solid var(--line); background: transparent; color: var(--ink); }
+.btn-secondary:hover { border-color: var(--line-strong); background: var(--surface-soft); }
+
+.narrative-section { padding: 0 0 5rem; }
+.narrative-intro { max-width: 720px; margin: 0 auto 4.5rem; text-align: center; }
+.narrative-eyebrow {
+  display: inline-flex;
+  margin: 0 auto 1.8rem;
+  padding: 0.25rem 0.65rem;
+  border: 1px solid var(--brand);
+  border-radius: 999px;
+  color: var(--brand);
+  font-size: 0.72rem;
+  font-weight: 650;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+.narrative-title {
+  margin: 0 0 1rem;
+  color: var(--ink);
+  font-size: clamp(2.1rem, 4.2vw, 3.15rem);
+  line-height: 1.08;
+  letter-spacing: -0.04em;
+}
+.narrative-lead { max-width: 640px; margin: 0 auto; color: var(--muted); font-size: 1.04rem; }
+.narrative-illustration { display: none; }
+.chapter-row {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(2rem, 6vw, 4.5rem);
+  margin: 0 0 6.5rem;
+}
+.chapter-row:nth-of-type(even) { grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr); }
+.chapter-row:nth-of-type(even) .chapter-text { order: 2; }
+.chapter-num, .ill-header { display: block; color: var(--brand); font-size: 0.75rem; font-weight: 650; letter-spacing: 0.08em; text-transform: uppercase; }
+.chapter-num { margin-bottom: 0.7rem; }
+.chapter-title { margin: 0 0 0.75rem; color: var(--ink); font-size: clamp(1.55rem, 3vw, 2rem); line-height: 1.15; letter-spacing: -0.035em; }
+.chapter-desc { max-width: 32rem; margin: 0; color: var(--muted); font-size: 1rem; }
+.chapter-visual { min-width: 0; }
+.motion-surface {
+  position: relative;
+  min-height: 240px;
+  overflow: hidden;
+  background: transparent;
+  color: var(--brand);
+}
+.motion-surface svg { display: block; width: 100%; height: 100%; min-height: 240px; }
+.motion-surface .line { stroke: currentColor; stroke-width: 1.5; fill: none; opacity: 0.65; }
+.motion-surface .soft { fill: var(--brand-soft); stroke: currentColor; stroke-width: 1.2; }
+.motion-surface .dot { fill: currentColor; }
+.motion-surface .muted { stroke: var(--line-strong); stroke-width: 1.2; fill: none; }
+.motion-surface .motion-dash { stroke-dasharray: 5 7; }
+.motion-surface .motion-pulse { transform-box: fill-box; transform-origin: center; }
+.motion-surface .motion-delay-1 { animation-delay: 700ms; }
+.motion-surface .motion-delay-2 { animation-delay: 1.4s; }
+@keyframes dash-flow { to { stroke-dashoffset: -48; } }
+@keyframes pulse { 0%, 100% { opacity: 0.4; transform: scale(0.9); } 50% { opacity: 1; transform: scale(1); } }
+@keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+
+@media (prefers-reduced-motion: no-preference) {
+  .motion-ready .motion-surface .motion-dash { animation: dash-flow 4.8s linear infinite; }
+  .motion-ready .motion-surface .motion-pulse { animation: pulse 3.6s ease-in-out infinite; }
+  .motion-ready .motion-surface .motion-float { animation: float 5s ease-in-out infinite; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .motion-surface *, .motion-surface *::before, .motion-surface *::after { animation-duration: 0s !important; animation-iteration-count: 1 !important; transition-duration: 0s !important; }
+}
+@media (max-width: 780px) {
+  .chapter-row, .chapter-row:nth-of-type(even) { grid-template-columns: 1fr; gap: 1.8rem; margin-bottom: 4.5rem; }
+  .chapter-row:nth-of-type(even) .chapter-text { order: initial; }
+  .motion-surface, .motion-surface svg { min-height: 190px; }
+}
+`;
+
+const contentHtml = /*html*/ `
 <section class="hero" aria-labelledby="hero-title">
   <h1 id="hero-title" class="hero-title">Turn chat intent into a workspace that can travel.</h1>
   <p class="hero-lead">symbiote-workspace turns chat intent into portable, executable workspaces. A guided construction protocol makes the layout, capabilities, actions, and theme explicit before a host mounts the result.</p>
   <div class="hero-actions">
-    <a class="btn btn-primary" href="${url('/docs/')}">Get started</a>
-    <a class="btn btn-secondary" href="${url('/docs/reference/')}">View reference</a>
+    <a class="btn btn-primary" href="${resolvePath('/docs/')}">Get started</a>
+    <a class="btn btn-secondary" href="${resolvePath('/docs/reference/')}">View reference</a>
   </div>
 </section>
 
@@ -103,4 +216,10 @@ const content = `
 </section>
 `;
 
-export default pageTemplate({ title: 'Home', content, currentPath: '/' });
+export default renderPage({
+  siteConfig: composeSiteConfig({ pageStyles: landingStyles }),
+  pageTitle: 'Portable workspace construction',
+  contentHtml,
+  currentPath: '/',
+  searchIndex: buildSearchIndex(docsRoutes),
+});

@@ -110,16 +110,14 @@ test('manifest routes and generated output are exact', () => {
   assert.deepEqual(sortedEntries(SITE_DIR), [
     '.nojekyll',
     '404.html',
-    'css',
+    'client',
     'demo',
     'docs',
     'index.html',
-    'js',
     'robots.txt',
     'sitemap.xml',
   ]);
-  assert.deepEqual(sortedEntries(join(SITE_DIR, 'css')), ['styles.css']);
-  assert.deepEqual(sortedEntries(join(SITE_DIR, 'js')), ['main.js']);
+  assert.deepEqual(sortedEntries(join(SITE_DIR, 'client')), ['index.js']);
   assert.deepEqual(sortedEntries(join(SITE_DIR, 'docs')), ['getting-started', 'index.html', 'reference']);
   assert.deepEqual(sortedEntries(join(SITE_DIR, 'docs', 'getting-started')), ['index.html']);
   assert.deepEqual(sortedEntries(join(SITE_DIR, 'docs', 'reference')), ['index.html']);
@@ -216,12 +214,15 @@ test('the landing narrative remains semantic, restrained, and visible without Ja
     ['Register', 'Compose', 'Validate', 'Export'],
   );
   assert.match(document.documentElement.textContent, /turns chat intent into portable, executable workspaces/i);
-  assert.ok(document.querySelector('.header-search'));
+  assert.ok(document.querySelector('[data-search-trigger]'));
   assert.ok(document.querySelector('a[href*="/docs/"]'));
   assert.equal(document.querySelectorAll('.motion-surface button, .motion-surface input, .motion-surface select').length, 0);
 
-  const css = readFileSync(join(ROOT, 'site', 'css', 'styles.css'), 'utf8');
-  const javascript = readFileSync(join(ROOT, 'site', 'js', 'main.js'), 'utf8');
+  const css = [
+    readFileSync(join(ROOT, 'site', 'site.config.js'), 'utf8'),
+    readFileSync(join(ROOT, 'site', 'index.html.js'), 'utf8'),
+  ].join('\n');
+  const javascript = readFileSync(join(ROOT, 'site', 'client', 'index.js'), 'utf8');
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
   assert.match(css, /@media \(prefers-reduced-motion: no-preference\)/);
   assert.match(css, /animation:/);
@@ -234,9 +235,29 @@ test('the landing narrative remains semantic, restrained, and visible without Ja
   assert.deepEqual([...references].filter((name) => !definitions.has(name)), []);
 });
 
+test('Pages shell and generated demo assets are production optimized', () => {
+  const clientSource = readFileSync(join(ROOT, 'site', 'client', 'index.js'), 'utf8');
+  const clientOutput = readFileSync(join(SITE_DIR, 'client', 'index.js'), 'utf8');
+  const htmlOutput = readFileSync(join(SITE_DIR, 'index.html'), 'utf8');
+  const demoHtml = readFileSync(join(SITE_DIR, 'demo', 'index.html'), 'utf8');
+  const demoApp = readFileSync(join(SITE_DIR, 'demo', 'app.js'), 'utf8');
+  const scenarios = readFileSync(join(SITE_DIR, 'demo', 'scenarios.json'), 'utf8');
+  const vendorManifest = readFileSync(join(SITE_DIR, 'demo', 'vendor-manifest.json'), 'utf8');
+
+  assert.ok(clientOutput.length > clientSource.length, 'bundled client must inline the shared enhancement runtime');
+  assert.ok(clientOutput.trim().split('\n').length <= 2);
+  assert.doesNotMatch(clientOutput, /from\s*['"]@rnd-pro\/library-pages/);
+  assert.equal(htmlOutput.trim().split('\n').length, 1);
+  assert.equal(demoHtml.trim().split('\n').length, 1);
+  assert.equal(demoApp.slice(0, 4096).includes('\n'), false);
+  assert.match(demoApp, /\.\/vendor\//);
+  assert.equal(scenarios.trim().split('\n').length, 1);
+  assert.equal(vendorManifest.trim().split('\n').length, 1);
+});
+
 test('canonical documentation is required', () => {
   assert.throws(
-    () => renderDocsMarkdown('docs/__missing-pages-canonical__.md', 'Missing', '/docs/missing/'),
+    () => renderDocsMarkdown('docs/__missing-pages-canonical__.md', '/docs/'),
     /ENOENT/,
   );
 });
@@ -259,8 +280,20 @@ test('demo import map and vendor manifest describe an exact bounded browser arti
   });
 
   const manifest = JSON.parse(readFileSync(join(SITE_DIR, 'demo', 'vendor-manifest.json'), 'utf8'));
-  assert.equal(manifest.schemaVersion, 1);
-  assert.equal(manifest.strategy, 'browser-esm-transitive-closure');
+  assert.equal(manifest.schemaVersion, 2);
+  assert.equal(manifest.strategy, 'browser-esm-minified-transitive-closure');
+  assert.deepEqual(manifest.optimization, {
+    javascript: {
+      tool: 'esbuild',
+      format: 'esm',
+      target: 'esnext',
+      minify: true,
+      keepNames: true,
+      legalComments: 'none',
+    },
+    css: { tool: 'jsda-kit/cssMin', minify: true },
+    json: { tool: 'JSON.stringify', compact: true },
+  });
   assert.deepEqual(manifest.entrypoints, EXPECTED_ENTRYPOINTS);
   assert.deepEqual(manifest.allowedLazyNodeImports, EXPECTED_LAZY_NODE_IMPORTS);
   assert.deepEqual(manifest.limits, {
@@ -278,14 +311,32 @@ test('demo import map and vendor manifest describe an exact bounded browser arti
   assert.deepEqual(diskFiles, manifest.files.map((file) => file.path));
   assert.equal(new Set(diskFiles).size, diskFiles.length);
 
+  let totalSourceBytes = 0;
   let totalBytes = 0;
   const lazyNodeImports = new Set();
   for (const file of manifest.files) {
     assert.equal(FORBIDDEN_VENDOR_PATHS.some((pattern) => pattern.test(file.path)), false, file.path);
     const data = readFileSync(join(vendorDir, ...file.path.split('/')));
+    const packageName = manifest.packages
+      .map((entry) => entry.name)
+      .sort((left, right) => right.length - left.length)
+      .find((name) => file.path.startsWith(`${name}/`));
+    assert.ok(packageName, file.path);
+    const packagePath = file.path.slice(packageName.length + 1);
+    const packageRoot = packageName === 'symbiote-workspace'
+      ? ROOT
+      : join(ROOT, 'node_modules', ...packageName.split('/'));
+    const source = readFileSync(join(packageRoot, ...packagePath.split('/')));
+    assert.equal(file.sourceBytes, source.byteLength, file.path);
+    assert.equal(file.sourceSha256, createHash('sha256').update(source).digest('hex'), file.path);
     assert.equal(data.byteLength, file.bytes, file.path);
     assert.ok(file.bytes <= manifest.limits.maxSingleFileBytes, file.path);
     assert.equal(createHash('sha256').update(data).digest('hex'), file.sha256, file.path);
+    if (file.path.endsWith('/LICENSE')) {
+      assert.equal(file.optimization, 'copied', file.path);
+      assert.deepEqual(data, source, file.path);
+    }
+    totalSourceBytes += file.sourceBytes;
     totalBytes += file.bytes;
 
     if (file.path.endsWith('.js')) {
@@ -296,20 +347,26 @@ test('demo import map and vendor manifest describe an exact bounded browser arti
       }
     }
   }
+  assert.equal(totalSourceBytes, manifest.totals.sourceBytes);
   assert.equal(totalBytes, manifest.totals.bytes);
+  assert.ok(manifest.totals.bytes < manifest.totals.sourceBytes);
   assert.equal(manifest.files.length, manifest.totals.files);
   assert.deepEqual([...lazyNodeImports].sort(), EXPECTED_LAZY_NODE_IMPORTS);
 
-  const packageFiles = new Map(manifest.packages.map((entry) => [entry.name, { files: 0, bytes: 0 }]));
+  const packageFiles = new Map(manifest.packages.map((entry) => [entry.name, { files: 0, sourceBytes: 0, bytes: 0 }]));
   for (const file of manifest.files) {
     const packageName = [...packageFiles.keys()].find((name) => file.path.startsWith(`${name}/`));
     assert.ok(packageName, file.path);
     const totals = packageFiles.get(packageName);
     totals.files += 1;
+    totals.sourceBytes += file.sourceBytes;
     totals.bytes += file.bytes;
   }
   for (const entry of manifest.packages) {
-    assert.deepEqual({ files: entry.files, bytes: entry.bytes }, packageFiles.get(entry.name));
+    assert.deepEqual(
+      { files: entry.files, sourceBytes: entry.sourceBytes, bytes: entry.bytes },
+      packageFiles.get(entry.name),
+    );
   }
 });
 
@@ -326,6 +383,7 @@ test('Pages-only sources and generated output stay out of the npm package', () =
     /^project\.cfg\.js$/,
     /^scripts\/build-pages\.js$/,
     /^tests\/pages(?:-browser)?\.test\.js$/,
+    /^tests\/site-package-output\.test\.js$/,
   ];
   for (const file of files) {
     assert.equal(forbidden.some((pattern) => pattern.test(file)), false, file);

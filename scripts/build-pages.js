@@ -2,10 +2,12 @@
 
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { copyFile, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, extname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { transform } from 'esbuild';
 import { init, parse } from 'es-module-lexer';
+import { cssMin, htmlMin } from 'jsda-kit/node';
 
 import { writeChatBuilderDemo } from '../examples/visual-demo/chat-builder-runtime.js';
 
@@ -53,6 +55,18 @@ const FORBIDDEN_VENDOR_PATHS = [
 const ALLOWED_LAZY_NODE_IMPORTS = new Set([
   'symbiote-engine/Persistence.js::node:fs/promises',
 ]);
+const OPTIMIZATION = Object.freeze({
+  javascript: Object.freeze({
+    tool: 'esbuild',
+    format: 'esm',
+    target: 'esnext',
+    minify: true,
+    keepNames: true,
+    legalComments: 'none',
+  }),
+  css: Object.freeze({ tool: 'jsda-kit/cssMin', minify: true }),
+  json: Object.freeze({ tool: 'JSON.stringify', compact: true }),
+});
 
 function packageByName(name) {
   const descriptor = PACKAGES.find((candidate) => candidate.name === name);
@@ -156,6 +170,38 @@ async function moduleImports(file) {
     : []);
 }
 
+function optimizationForPath(file) {
+  const extension = extname(file);
+  if (extension === '.js' || extension === '.mjs') return 'javascript';
+  if (extension === '.css') return 'css';
+  if (extension === '.json') return 'json';
+  return 'copied';
+}
+
+async function optimizeBrowserAsset(file, source) {
+  const optimization = optimizationForPath(file);
+  if (optimization === 'javascript') {
+    const result = await transform(source.toString('utf8'), {
+      format: 'esm',
+      target: 'esnext',
+      minify: true,
+      keepNames: true,
+      legalComments: 'none',
+    });
+    return { data: Buffer.from(result.code), optimization };
+  }
+  if (optimization === 'css') {
+    return { data: Buffer.from(cssMin(source.toString('utf8'))), optimization };
+  }
+  if (optimization === 'json') {
+    return {
+      data: Buffer.from(JSON.stringify(JSON.parse(source.toString('utf8')))),
+      optimization,
+    };
+  }
+  return { data: source, optimization };
+}
+
 async function copyVendorClosure() {
   await init;
   const queue = VENDOR_ENTRYPOINTS.map(([name, packagePath]) => sourcePath(name, packagePath));
@@ -175,18 +221,22 @@ async function copyVendorClosure() {
 
     const descriptor = classifySource(file);
     assertVendorPath(descriptor.name, descriptor.packagePath);
-    const data = await readFile(file);
-    if (data.byteLength > VENDOR_LIMITS.maxSingleFileBytes) {
+    const source = await readFile(file);
+    const optimized = await optimizeBrowserAsset(file, source);
+    if (optimized.data.byteLength > VENDOR_LIMITS.maxSingleFileBytes) {
       throw new Error(`Vendor file exceeds the single-file budget: ${descriptor.name}/${descriptor.packagePath}`);
     }
 
     const outputPath = join(VENDOR_DIR, descriptor.name, ...descriptor.packagePath.split('/'));
     await mkdir(dirname(outputPath), { recursive: true });
-    await copyFile(file, outputPath);
+    await writeFile(outputPath, optimized.data);
     copied.push({
       path: `${descriptor.name}/${descriptor.packagePath}`,
-      bytes: data.byteLength,
-      sha256: createHash('sha256').update(data).digest('hex'),
+      optimization: optimized.optimization,
+      sourceBytes: source.byteLength,
+      sourceSha256: createHash('sha256').update(source).digest('hex'),
+      bytes: optimized.data.byteLength,
+      sha256: createHash('sha256').update(optimized.data).digest('hex'),
     });
 
     for (const { specifier, dynamic } of await moduleImports(file)) {
@@ -203,6 +253,7 @@ async function copyVendorClosure() {
   }
 
   copied.sort((left, right) => left.path.localeCompare(right.path));
+  const totalSourceBytes = copied.reduce((sum, file) => sum + file.sourceBytes, 0);
   const totalBytes = copied.reduce((sum, file) => sum + file.bytes, 0);
   if (copied.length > VENDOR_LIMITS.maxFiles) {
     throw new Error(`Vendor artifact has ${copied.length} files; budget is ${VENDOR_LIMITS.maxFiles}.`);
@@ -223,22 +274,24 @@ async function copyVendorClosure() {
         name,
         version: packageVersions.get(name),
         files: files.length,
+        sourceBytes: files.reduce((sum, file) => sum + file.sourceBytes, 0),
         bytes: files.reduce((sum, file) => sum + file.bytes, 0),
       };
     })
     .sort((left, right) => left.name.localeCompare(right.name));
 
   const manifest = {
-    schemaVersion: 1,
-    strategy: 'browser-esm-transitive-closure',
+    schemaVersion: 2,
+    strategy: 'browser-esm-minified-transitive-closure',
+    optimization: OPTIMIZATION,
     entrypoints: VENDOR_ENTRYPOINTS.map(([name, packagePath]) => `${name}/${packagePath}`),
     allowedLazyNodeImports: [...lazyNodeImports].sort(),
     limits: VENDOR_LIMITS,
-    totals: { files: copied.length, bytes: totalBytes },
+    totals: { files: copied.length, sourceBytes: totalSourceBytes, bytes: totalBytes },
     packages,
     files: copied,
   };
-  await writeFile(join(DEMO_DIR, 'vendor-manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
+  await writeFile(join(DEMO_DIR, 'vendor-manifest.json'), JSON.stringify(manifest));
   return manifest;
 }
 
@@ -257,6 +310,10 @@ async function rewriteDemoImports() {
         /<link rel="stylesheet"\s+href="https:\/\/fonts\.googleapis\.com\/css2\?family=Material\+Symbols\+Outlined:[^"]+"\s*\/>/,
         '<link rel="stylesheet" href="./vendor/symbiote-ui/icons/material-symbols.css">',
       );
+      content = content.replace(
+        /(<script type="importmap">)([\s\S]*?)(<\/script>)/,
+        (_, open, importMap, close) => `${open}${JSON.stringify(JSON.parse(importMap))}${close}`,
+      );
       if (content.includes('fonts.googleapis.com')) {
         throw new Error('The generated demo still depends on the remote Material Symbols stylesheet.');
       }
@@ -268,6 +325,20 @@ async function rewriteDemoImports() {
   }
 }
 
+async function optimizeGeneratedDemo() {
+  const appPath = join(DEMO_DIR, 'app.js');
+  const app = await optimizeBrowserAsset(appPath, await readFile(appPath));
+  await writeFile(appPath, app.data);
+
+  const htmlPath = join(DEMO_DIR, 'index.html');
+  const html = await readFile(htmlPath, 'utf8');
+  await writeFile(htmlPath, htmlMin(html));
+
+  const scenariosPath = join(DEMO_DIR, 'scenarios.json');
+  const scenarios = JSON.parse(await readFile(scenariosPath, 'utf8'));
+  await writeFile(scenariosPath, JSON.stringify(scenarios));
+}
+
 async function requireOutput(relativePath) {
   if (!await existingFile(join(OUT_DIR, ...relativePath.split('/')))) {
     throw new Error(`Required Pages output is missing: ${relativePath}`);
@@ -275,6 +346,9 @@ async function requireOutput(relativePath) {
 }
 
 async function main() {
+  process.env.BASE_PATH ||= '/';
+  process.env.BASE_URL ||= 'https://rnd-pro.github.io/';
+
   await rm(OUT_DIR, { recursive: true, force: true });
   await mkdir(OUT_DIR, { recursive: true });
 
@@ -285,16 +359,13 @@ async function main() {
   });
 
   await writeFile(join(OUT_DIR, '.nojekyll'), '');
-  await mkdir(join(OUT_DIR, 'css'), { recursive: true });
-  await mkdir(join(OUT_DIR, 'js'), { recursive: true });
-  await copyFile(join(ROOT, 'site', 'css', 'styles.css'), join(OUT_DIR, 'css', 'styles.css'));
-  await copyFile(join(ROOT, 'site', 'js', 'main.js'), join(OUT_DIR, 'js', 'main.js'));
 
   await mkdir(DEMO_DIR, { recursive: true });
   const demo = await writeChatBuilderDemo({ outputDir: DEMO_DIR });
   if (demo.scenarioCount < 1) throw new Error('The generated visual demo has no scenarios.');
   await rewriteDemoImports();
   const vendor = await copyVendorClosure();
+  await optimizeGeneratedDemo();
 
   for (const path of [
     'index.html',

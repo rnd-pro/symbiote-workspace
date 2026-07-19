@@ -112,14 +112,18 @@ test('the built Pages artifact passes Chromium acceptance under a project path',
     assert.equal(await page.locator('ol[data-pipeline] > li').count(), 4);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true);
     assert.equal(await page.getAttribute('html', 'data-theme'), 'dark');
-    await page.locator('#theme-toggle').click();
+    await page.locator('[data-theme-toggle]').click();
     assert.equal(await page.getAttribute('html', 'data-theme'), 'light');
     await page.reload({ waitUntil: 'networkidle' });
     assert.equal(await page.getAttribute('html', 'data-theme'), 'light');
     await page.keyboard.press('Tab');
-    assert.equal(await page.evaluate(() => document.activeElement?.classList.contains('skip-link')), true);
+    assert.equal(await page.evaluate(() => document.activeElement?.classList.contains('lp-skip-link')), true);
     await page.keyboard.press('Enter');
     assert.equal(await page.evaluate(() => document.activeElement?.id), 'main-content');
+    await page.locator('[data-search-trigger]').click();
+    assert.equal(await page.locator('dialog[open]').count(), 1);
+    await page.keyboard.press('Escape');
+    assert.equal(await page.locator('dialog[open]').count(), 0);
     await assertClean();
     await context.close();
   });
@@ -133,7 +137,9 @@ test('the built Pages artifact passes Chromium acceptance under a project path',
       'mobile landing',
     );
     assert.equal(await page.locator('h1').isVisible(), true);
-    assert.equal(await page.locator('.main-nav').isVisible(), true);
+    assert.equal(await page.locator('.lp-header-nav summary').isVisible(), true);
+    await page.locator('.lp-header-nav summary').click();
+    assert.equal(await page.locator('.lp-header-nav-menu a[href*="/docs/"]').first().isVisible(), true);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true);
     await assertClean();
     await context.close();
@@ -149,10 +155,13 @@ test('the built Pages artifact passes Chromium acceptance under a project path',
     );
     assert.equal(await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches), true);
     assert.equal(await page.locator('[data-pipeline]').evaluate((element) => element.classList.contains('motion-ready')), true);
-    assert.deepEqual(
-      await page.locator('.ill-stage').evaluateAll((elements) => elements.map((element) => getComputedStyle(element).animationDuration)),
-      ['0s', '0s', '0s', '0s'],
-    );
+    const durations = await page
+      .locator('.ill-stage, .motion-surface .motion-dash, .motion-surface .motion-pulse, .motion-surface .motion-float')
+      .evaluateAll((elements) => elements.map((element) => getComputedStyle(element).animationDuration));
+    assert.ok(durations.length >= 4);
+    for (const duration of durations) {
+      assert.match(duration, /^0(?:\.001)?s$/, `reduced motion left a running animation: ${duration}`);
+    }
     await assertClean();
     await context.close();
   });
