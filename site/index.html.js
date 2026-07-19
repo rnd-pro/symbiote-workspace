@@ -217,7 +217,7 @@ const contentHtml = /*html*/ `
 `;
 
 export default renderPage({
-  siteConfig: composeSiteConfig({ pageStyles: landingStyles }),
+  siteConfig: composeSiteConfig({ pageStyles: landingStyles, withStack: true }),
   pageTitle: 'Portable workspace construction',
   contentHtml,
   currentPath: '/',

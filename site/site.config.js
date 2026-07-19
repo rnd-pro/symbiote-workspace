@@ -98,6 +98,27 @@ const PROSE_STYLES = /*css*/ `
 .prose th { color: var(--ink); }
 `;
 
+const SYMBIOTE_STACK = {
+  title: 'The Symbiote stack',
+  items: [
+    {
+      label: 'symbiote-workspace',
+      description: 'The workspace-as-config layer and primary track of the stack. You are here.',
+      current: true,
+    },
+    {
+      label: 'symbiote-engine',
+      description: 'Executes workspace graphs: portable DAG execution with composable server primitives.',
+      path: 'https://rnd-pro.github.io/symbiote-engine/',
+    },
+    {
+      label: 'symbiote-ui',
+      description: 'Supplies the Web Components, themes, and canvas primitives workspaces mount.',
+      path: 'https://rnd-pro.github.io/symbiote-ui/',
+    },
+  ],
+};
+
 const BASE_CONFIG = {
   brand: {
     title: 'symbiote-workspace',
@@ -133,9 +154,10 @@ const BASE_CONFIG = {
  * @param {string} [family.description]
  * @returns {Object}
  */
-export function composeSiteConfig({ pageStyles = '', clientEntryPath = '/client/index.js', description } = {}) {
+export function composeSiteConfig({ pageStyles = '', clientEntryPath = '/client/index.js', description, withStack = false } = {}) {
   return defineSiteConfig({
     ...BASE_CONFIG,
+    ...(withStack ? { stack: SYMBIOTE_STACK } : {}),
     metadata: {
       ...BASE_CONFIG.metadata,
       description: description ?? BASE_CONFIG.metadata.description,
