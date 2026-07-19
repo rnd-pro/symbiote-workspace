@@ -12,6 +12,7 @@ const BRAND_MARK_URI = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/
 export const docsRoutes = defineDocsRoutes([
   {
     path: '/docs/',
+    editPath: 'README.md',
     title: 'Guide',
     section: 'Guide',
     headers: ['workspace', 'construction', 'protocol', 'portable', 'chat'],
@@ -19,6 +20,7 @@ export const docsRoutes = defineDocsRoutes([
   },
   {
     path: '/docs/getting-started/',
+    editPath: 'docs/getting-started.md',
     title: 'Getting Started',
     section: 'Guide',
     headers: ['install', 'construct', 'mount', 'host', 'quick'],
@@ -26,6 +28,7 @@ export const docsRoutes = defineDocsRoutes([
   },
   {
     path: '/docs/reference/',
+    editPath: 'docs/architecture.md',
     title: 'Reference',
     section: 'Reference',
     headers: ['architecture', 'host', 'contracts', 'plugins', 'templates', 'entry'],
@@ -78,6 +81,7 @@ const BASE_CONFIG = {
       { label: 'GitHub', path: 'https://github.com/RND-PRO/symbiote-workspace' },
     ],
   },
+  editBaseUrl: 'https://github.com/RND-PRO/symbiote-workspace/edit/main/',
   themeStorageKey: 'symbiote-theme',
   basePath: pagesEnv.basePath,
 };
