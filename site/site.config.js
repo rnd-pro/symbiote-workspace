@@ -81,6 +81,7 @@ const WORKSPACE_TOKENS = /*css*/ `
 
 const PROSE_STYLES = /*css*/ `
 .prose { max-width: 760px; }
+.prose img { max-width: 100%; height: auto; }
 .prose h1, .prose h2, .prose h3, .prose h4 { color: var(--ink); line-height: 1.15; letter-spacing: -0.035em; }
 .prose h1 { margin: 0 0 1.5rem; font-size: clamp(2.4rem, 5vw, 4rem); }
 .prose h2 { margin: 3.5rem 0 1rem; padding-top: 0.5rem; font-size: 1.8rem; }

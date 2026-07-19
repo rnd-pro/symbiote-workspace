@@ -145,6 +145,31 @@ test('the built Pages artifact passes Chromium acceptance under a project path',
     await context.close();
   });
 
+  await t.test('docs pages constrain embedded media and never scroll horizontally', async () => {
+    const pixel = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
+    for (const path of ['docs/', 'docs/getting-started/', 'docs/reference/']) {
+      const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+      const page = await context.newPage();
+      await page.route('**/*', (route) => {
+        if (route.request().url().startsWith(server.origin)) return route.continue();
+        return route.fulfill({ contentType: 'image/gif', body: pixel });
+      });
+      const response = await page.goto(`${server.origin}${BASE_PATH}${path}`, { waitUntil: 'load' });
+      assert.equal(response?.status(), 200);
+      assert.equal(
+        await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth),
+        true,
+        `${path} must not scroll horizontally`,
+      );
+      assert.equal(
+        await page.evaluate(() => [...document.querySelectorAll('.prose img')].every((img) => getComputedStyle(img).maxWidth === '100%')),
+        true,
+        `${path} must cap article images at the article width`,
+      );
+      await context.close();
+    }
+  });
+
   await t.test('reduced motion disables landing animations', async () => {
     const { context, page, assertClean } = await openPage(
       browser,
