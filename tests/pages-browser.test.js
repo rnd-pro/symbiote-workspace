@@ -179,9 +179,9 @@ test('the built Pages artifact passes Chromium acceptance under a project path',
       'reduced-motion landing',
     );
     assert.equal(await page.evaluate(() => matchMedia('(prefers-reduced-motion: reduce)').matches), true);
-    assert.equal(await page.locator('[data-pipeline]').evaluate((element) => element.classList.contains('motion-ready')), true);
+    assert.equal(await page.evaluate(() => document.documentElement.classList.contains('js-active')), true);
     const durations = await page
-      .locator('.ill-stage, .motion-surface .motion-dash, .motion-surface .motion-pulse, .motion-surface .motion-float')
+      .locator('.ill-stage, .motion-surface .lp-anim-dash, .motion-surface .lp-anim-pulse, .motion-surface .lp-anim-float')
       .evaluateAll((elements) => elements.map((element) => getComputedStyle(element).animationDuration));
     assert.ok(durations.length >= 4);
     for (const duration of durations) {
@@ -200,8 +200,8 @@ test('the built Pages artifact passes Chromium acceptance under a project path',
       'no-JavaScript landing',
     );
     assert.equal(await page.locator('h1').isVisible(), true);
-    assert.equal(await page.locator('.chapter-row').first().isVisible(), true);
-    assert.equal(await page.locator('[data-pipeline]').evaluate((element) => element.classList.contains('motion-ready')), false);
+    assert.equal(await page.locator('.lp-story-row').first().isVisible(), true);
+    assert.equal(await page.evaluate(() => document.documentElement.classList.contains('js-active')), false);
     assert.deepEqual(
       await page.locator('.ill-stage').evaluateAll((elements) => elements.map((element) => getComputedStyle(element).opacity)),
       ['1', '1', '1', '1'],

@@ -80,20 +80,8 @@ const WORKSPACE_TOKENS = /*css*/ `
 `;
 
 const PROSE_STYLES = /*css*/ `
-.prose { max-width: 760px; }
-.prose img { max-width: 100%; height: auto; }
-.prose h1, .prose h2, .prose h3, .prose h4 { color: var(--ink); line-height: 1.15; letter-spacing: -0.035em; }
-.prose h1 { margin: 0 0 1.5rem; font-size: clamp(2.4rem, 5vw, 4rem); }
-.prose h2 { margin: 3.5rem 0 1rem; padding-top: 0.5rem; font-size: 1.8rem; }
-.prose h3 { margin: 2.4rem 0 0.8rem; font-size: 1.3rem; }
-.prose p, .prose ul, .prose ol, .prose blockquote, .prose pre, .prose table { margin: 0 0 1.2rem; }
-.prose p, .prose li { color: var(--muted); }
-.prose li + li { margin-top: 0.3rem; }
-.prose code { padding: 0.1rem 0.35rem; border-radius: 0.35rem; background: var(--surface-soft); color: var(--ink); font-family: var(--mono); font-size: 0.88em; }
-.prose pre { overflow-x: auto; padding: 1rem 1.15rem; border: 1px solid var(--line); border-radius: 0.75rem; background: var(--surface); }
-.prose pre code { padding: 0; background: transparent; }
 .prose blockquote { padding-left: 1rem; border-left: 2px solid var(--brand); color: var(--muted); }
-.prose table { width: 100%; border-collapse: collapse; display: block; overflow-x: auto; }
+.prose table { width: 100%; border-collapse: collapse; display: block; overflow-x: auto; margin: 0 0 1.2rem; }
 .prose th, .prose td { padding: 0.65rem; border-bottom: 1px solid var(--line); text-align: left; }
 .prose th { color: var(--ink); }
 `;

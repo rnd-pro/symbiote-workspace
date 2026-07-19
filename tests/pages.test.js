@@ -208,7 +208,9 @@ test('the landing narrative remains semantic, restrained, and visible without Ja
   const document = htmlDocument('index.html');
   const pipeline = document.querySelector('ol[data-pipeline]');
   assert.ok(pipeline);
-  assert.equal(pipeline.classList.contains('motion-ready'), false);
+  // Motion is gated on the runtime js-active root class; the static
+  // artifact must not pre-enable it.
+  assert.equal(document.documentElement.classList.contains('js-active'), false);
   assert.deepEqual(
     [...pipeline.children].map((item) => item.querySelector('.ill-header')?.textContent),
     ['Register', 'Compose', 'Validate', 'Export'],
@@ -222,13 +224,15 @@ test('the landing narrative remains semantic, restrained, and visible without Ja
     readFileSync(join(ROOT, 'site', 'site.config.js'), 'utf8'),
     readFileSync(join(ROOT, 'site', 'index.html.js'), 'utf8'),
   ].join('\n');
+  const landingSource = readFileSync(join(ROOT, 'site', 'index.html.js'), 'utf8');
   const javascript = readFileSync(join(ROOT, 'site', 'client', 'index.js'), 'utf8');
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
-  assert.match(css, /@media \(prefers-reduced-motion: no-preference\)/);
-  assert.match(css, /animation:/);
+  assert.match(landingSource, /lp-anim-dash/, 'scenes flow through the shared reference dash loop');
+  assert.match(landingSource, /lp-anim-pulse/, 'scenes pulse through the shared reference utility');
+  assert.doesNotMatch(css, /@keyframes/, 'no local keyframes remain; motion is package-owned');
   assert.match(css, /\.motion-surface\s*\{[^}]*background:\s*transparent;/);
   assert.doesNotMatch(css, /\.motion-surface\s*\{[^}]*border(?:-radius)?\s*:/);
-  assert.match(javascript, /classList\.add\('motion-ready'\)/);
+  assert.match(javascript, /enhanceLibraryPages\(\)/, 'client composes only the shared enhancement runtime');
 
   const definitions = new Set([...css.matchAll(/(--[a-z0-9-]+)\s*:/gi)].map((match) => match[1]));
   const references = new Set([...css.matchAll(/var\((--[a-z0-9-]+)/gi)].map((match) => match[1]));
