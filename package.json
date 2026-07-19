@@ -151,13 +151,14 @@
     "es-module-lexer": "1.7.0",
     "esbuild": "0.25.12",
     "jsda-kit": "1.6.0",
-    "library-pages": "0.1.0-alpha.4",
+    "library-pages": "0.1.0-alpha.5",
     "linkedom": "^0.18.12",
     "marked": "18.0.6",
     "mime": "4.1.0",
     "playwright": "1.61.0",
     "symbiote-engine": "0.3.0-alpha.12",
-    "symbiote-ui": "0.3.0-alpha.50"
+    "symbiote-ui": "0.3.0-alpha.50",
+    "symbiote-ui-docs": "npm:symbiote-ui@^0.3.0-alpha.67"
   },
   "repository": {
     "type": "git",

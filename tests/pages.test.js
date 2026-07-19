@@ -118,7 +118,7 @@ test('manifest routes and generated output are exact', () => {
     'sitemap.xml',
   ]);
   assert.deepEqual(sortedEntries(join(SITE_DIR, 'client')), ['index.js']);
-  assert.deepEqual(sortedEntries(join(SITE_DIR, 'docs')), ['getting-started', 'index.html', 'reference']);
+  assert.deepEqual(sortedEntries(join(SITE_DIR, 'docs')), ['getting-started', 'index.html', 'index.js', 'reference']);
   assert.deepEqual(sortedEntries(join(SITE_DIR, 'docs', 'getting-started')), ['index.html']);
   assert.deepEqual(sortedEntries(join(SITE_DIR, 'docs', 'reference')), ['index.html']);
   assert.deepEqual(sortedEntries(join(SITE_DIR, 'demo')), [
@@ -234,7 +234,10 @@ test('the landing narrative remains semantic, restrained, and visible without Ja
   assert.doesNotMatch(css, /\.motion-surface\s*\{[^}]*border(?:-radius)?\s*:/);
   assert.match(javascript, /enhanceLibraryPages\(\)/, 'client composes only the shared enhancement runtime');
 
-  const definitions = new Set([...css.matchAll(/(--[a-z0-9-]+)\s*:/gi)].map((match) => match[1]));
+  // Semantic tokens are package-owned: every var referenced by consumer page
+  // styles must be defined by the built page's style layer.
+  const builtCss = [...document.querySelectorAll('style')].map((style) => style.textContent).join('\n');
+  const definitions = new Set([...builtCss.matchAll(/(--[a-z0-9-]+)\s*:/gi)].map((match) => match[1]));
   const references = new Set([...css.matchAll(/var\((--[a-z0-9-]+)/gi)].map((match) => match[1]));
   assert.deepEqual([...references].filter((name) => !definitions.has(name)), []);
 });
