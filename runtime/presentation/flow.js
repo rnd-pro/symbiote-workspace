@@ -480,6 +480,9 @@ export function createPresentationAuthoringRequest({ basis, task, adaptation, sk
       objective: normalizedTask.objective,
       locale: normalizedTask.locale,
       mode: normalizedTask.mode,
+      ...(normalizedTask.qualityDisposition === 'warn-and-play-live'
+        ? { qualityDisposition: normalizedTask.qualityDisposition }
+        : {}),
     },
     adaptation: {
       id: normalizedAdaptation.id,

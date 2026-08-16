@@ -327,6 +327,8 @@ test('preserves a receipt-ready warning project after bounded narration-quality 
   const selection = createPresentationFlowPlanSelection({ basis, options, selection: { targetIds: ['details', 'orders'], factIds: [], actionOptionIds: [] } });
   const skeleton = repeatRepairPlan();
   const bound = bindPresentationFlowSemanticPlan({ basis, options, selection, skeleton });
+  const request = createPresentationAuthoringRequest({ basis: bound, task, adaptation, skeleton, options });
+  assert.equal(request.task.qualityDisposition, 'warn-and-play-live');
   const result = await runPresentationFlowAuthoring({
     basis: bound,
     task,
