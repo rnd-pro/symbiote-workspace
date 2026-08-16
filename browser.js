@@ -2001,3 +2001,14 @@ export function mountWorkspace(config, container, options = {}) {
 
   return mounted;
 }
+
+export * from './runtime/presentation/semantic-skeleton.js';
+export * from './runtime/presentation/presentation-project.js';
+export * from './runtime/presentation/flow.js';
+export * from './runtime/presentation/flow-authoring.js';
+export * from './runtime/presentation/flow-bridge.js';
+export * from './runtime/presentation/transcript-word-anchoring.js';
+export * from './runtime/presentation/production-revision.js';
+export * from './runtime/presentation/script-lineage.js';
+export * from './runtime/presentation/inspection.js';
+export { listPresentationCompositionCueSlots } from './runtime/presentation-output.js';

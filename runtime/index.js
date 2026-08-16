@@ -282,3 +282,14 @@ export {
   mediaToolFamily,
   tools as mediaToolDefinitions,
 } from './tools/media-tools.js';
+
+export * from './presentation/semantic-skeleton.js';
+export * from './presentation/presentation-project.js';
+export * from './presentation/flow.js';
+export * from './presentation/flow-authoring.js';
+export * from './presentation/flow-bridge.js';
+export * from './presentation/transcript-word-anchoring.js';
+export * from './presentation/production-revision.js';
+export * from './presentation/script-lineage.js';
+export * from './presentation/inspection.js';
+export { listPresentationCompositionCueSlots } from './presentation-output.js';
