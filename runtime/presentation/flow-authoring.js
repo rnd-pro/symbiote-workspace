@@ -236,9 +236,20 @@ export async function runPresentationFlowAuthoring({ basis, task, adaptation, sk
       });
     }
     if (transition.status !== 'repair') {
-      const error = new Error(transition.code || 'presentation-flow-authoring-rejected');
-      error.code = transition.code || 'presentation-flow-authoring-rejected';
+      // The caller may safely render an exhausted prose-quality result, but
+      // must never receive the provider's raw narration or inspector message.
+      // A stale basis remains a distinct immutable-context failure.
+      const exhaustedInspection = findings.length > 0 && transition.status === 'reject';
+      const error = new Error(exhaustedInspection
+        ? 'presentation narration inspection rejected'
+        : 'presentation flow basis is stale');
+      error.code = exhaustedInspection
+        ? 'PRESENTATION_NARRATION_INSPECTION_REJECTED'
+        : 'PRESENTATION_FLOW_BASIS_STALE';
+      error.attempts = attempt + 1;
+      error.findings = findings;
       error.inspection = inspection;
+      error.transitionCode = transition.code || '';
       throw error;
     }
     repair = transition.repair;

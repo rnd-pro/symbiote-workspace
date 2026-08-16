@@ -305,6 +305,42 @@ test('repairs only typed inspection findings when a changed candidate makes prog
   ]);
 });
 
+test('reports exhausted prose inspection with only safe attempt and slot findings', async () => {
+  const task = createPresentationFlowTask({ id: 'tour-exhausted', mode: 'author', artifactKind: 'live-tour', objective: 'Review', locale: 'en-US', budgets: { maxRepairRounds: 1, maxDeepeningActions: 0, maxContextQueries: 1 } });
+  const adaptation = createProjectAdaptationCapsule({ id: 'maintenance', version: '1', locale: 'en-US', profileRefs: [], rubricRefs: [], capabilityProfiles: [], guidance: [] });
+  const context = lessonContext();
+  const basis = createPresentationFlowBasis({ task, adaptation, lessonContext: context, generation: 1, expiresAt: 9999999999 });
+  const options = createPresentationFlowPlanOptions({ basis, lessonContext: context });
+  const skeleton = repeatRepairPlan();
+  const selection = createPresentationFlowPlanSelection({ basis, options, selection: { targetIds: ['details', 'orders'], factIds: [], actionOptionIds: [] } });
+  const bound = bindPresentationFlowSemanticPlan({ basis, options, selection, skeleton });
+  let calls = 0;
+
+  await assert.rejects(() => runPresentationFlowAuthoring({
+    basis: bound,
+    task,
+    adaptation,
+    skeleton,
+    draft: async () => {
+      calls += 1;
+      return { narrationProjection: { narrations: [
+        { slotId: 'slot-1-orders', text: 'Review the current workspace.' },
+        { slotId: 'slot-2-details', text: 'Review the current workspace.' },
+      ] } };
+    },
+  }), (error) => {
+    assert.equal(error.code, 'PRESENTATION_NARRATION_INSPECTION_REJECTED');
+    assert.equal(error.attempts, 2);
+    assert.deepEqual(error.findings, [
+      { code: 'repeated-narration', slotId: 'slot-1-orders' },
+      { code: 'repeated-narration', slotId: 'slot-2-details' },
+    ]);
+    assert.equal('message' in error.findings[0], false);
+    return true;
+  });
+  assert.equal(calls, 2);
+});
+
 test('authoring can request only one offered context-deepening option and no tool input', () => {
   const task = createPresentationFlowTask({ id: 'tour-deepening-response', mode: 'author', artifactKind: 'live-tour', objective: 'Review orders', locale: 'en-US', budgets: { maxRepairRounds: 1, maxDeepeningActions: 1, maxContextQueries: 1 } });
   const adaptation = createProjectAdaptationCapsule({ id: 'maintenance', version: '1', locale: 'en-US', profileRefs: [], rubricRefs: [], capabilityProfiles: [], guidance: [] });
