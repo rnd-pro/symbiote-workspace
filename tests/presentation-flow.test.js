@@ -7,6 +7,11 @@ import { createPresentationLessonContext } from '../runtime/lesson-context.js';
 import { createSemanticSkeleton } from '../runtime/presentation/semantic-skeleton.js';
 import { createPresentationFlowBridge } from '../runtime/presentation/flow-bridge.js';
 import {
+  createLivePresentationProjection,
+  createMediaPresentationAncestryAssertion,
+  validateMediaPresentationAncestry,
+} from '../runtime/presentation/presentation-project.js';
+import {
   compilePresentationAuthoringPrompt,
   compilePresentationFlowPlanningPrompt,
   createPresentationAuthoringPrompt,
@@ -305,7 +310,7 @@ test('repairs only typed inspection findings when a changed candidate makes prog
   ]);
 });
 
-test('can start a live-only warning tour after bounded narration-quality repair is exhausted', async () => {
+test('preserves a receipt-ready warning project after bounded narration-quality repair is exhausted', async () => {
   const task = createPresentationFlowTask({
     id: 'tour-quality-warning',
     mode: 'author',
@@ -334,12 +339,40 @@ test('can start a live-only warning tour after bounded narration-quality repair 
     ] } }),
   });
   assert.equal(result.status, 'quality-warning');
-  assert.equal('project' in result, false);
+  assert.equal(result.project.projectKind, 'quality-warning');
   assert.equal(result.timeline.turns.length, 2);
+  assert.deepEqual(result.timeline.turns.map((turn) => turn.claims), [[], []]);
+  const live = createLivePresentationProjection(result.project);
+  assert.equal(live.projectKind, 'quality-warning');
+  assert.equal(live.timelineHash, result.project.timelineHash);
+  assert.equal(validateMediaPresentationAncestry(result.project, createMediaPresentationAncestryAssertion(result.project)), true);
   assert.deepEqual(result.warnings, [
     { code: 'repeated-narration', slotId: 'slot-1-orders' },
     { code: 'repeated-narration', slotId: 'slot-2-details' },
   ]);
+});
+
+test('materializes an immutable warning project from an exact text-only candidate with unverified factual prose', async () => {
+  const task = createPresentationFlowTask({
+    id: 'tour-unverified-warning', mode: 'author', artifactKind: 'live-tour', objective: 'Review orders', locale: 'en-US',
+    qualityDisposition: 'warn-and-play-live', budgets: { maxRepairRounds: 1, maxDeepeningActions: 0, maxContextQueries: 1 },
+  });
+  const adaptation = createProjectAdaptationCapsule({ id: 'maintenance', version: '1', locale: 'en-US', profileRefs: [], rubricRefs: [], capabilityProfiles: [], guidance: [] });
+  const context = lessonContext();
+  const basis = createPresentationFlowBasis({ task, adaptation, lessonContext: context, generation: 1, expiresAt: 9999999999 });
+  const options = createPresentationFlowPlanOptions({ basis, lessonContext: context });
+  const skeleton = semanticPlan();
+  const selection = createPresentationFlowPlanSelection({ basis, options, selection: { targetIds: ['orders'], factIds: ['fact:status'], actionOptionIds: [] } });
+  const bound = bindPresentationFlowSemanticPlan({ basis, options, selection, skeleton });
+  const result = await runPresentationFlowAuthoring({
+    basis: bound, task, adaptation, skeleton, options,
+    draft: async () => ({ narrationProjection: { narrations: [{ slotId: skeleton.slots[0].slotId, text: 'Review the orders workspace.' }] } }),
+  });
+  assert.equal(result.status, 'quality-warning');
+  assert.equal(result.project.projectKind, 'quality-warning');
+  assert.deepEqual(result.warnings, [{ code: 'unverified-narration', slotId: skeleton.slots[0].slotId }]);
+  assert.deepEqual(result.timeline.turns[0].claims, []);
+  assert.equal(createLivePresentationProjection(result.project).qualityWarnings[0].code, 'unverified-narration');
 });
 
 test('reports exhausted prose inspection with only safe attempt and slot findings', async () => {

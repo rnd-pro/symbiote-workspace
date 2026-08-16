@@ -11,6 +11,8 @@ import {
 } from './semantic-skeleton.js';
 
 export const WORKSPACE_PRESENTATION_PROJECT_VERSION = 'workspace-presentation-project-v7';
+export const WORKSPACE_PRESENTATION_WARNING_PROJECT_VERSION = 'workspace-presentation-warning-project-v1';
+export const PRESENTATION_WARNING_NARRATION_VERSION = 'presentation-warning-narration-v1';
 export const PRESENTATION_PRE_AUDIO_INSPECTION_VERSION = 'presentation-pre-audio-inspection-v1';
 export const PRESENTATION_NARRATION_QUALITY_INSPECTION_VERSION = 'presentation-narration-quality-inspection-v1';
 export const PRESENTATION_PRE_AUDIO_INSPECTION_BUNDLE_VERSION = 'presentation-pre-audio-inspection-bundle-v1';
@@ -90,6 +92,63 @@ export function materializePresentationTimeline(skeletonRaw, projectionRaw) {
     };
   });
   let grounding = skeleton.grounding?.sources ? { sources: skeleton.grounding.sources } : { sources: [] };
+  return normalizePresentationTimeline({
+    contractVersion: 'presentation-timeline-v3', id: skeleton.hash.slice(-32), title: skeleton.title,
+    locale: skeleton.locale, profile: skeleton.profile, personas: skeleton.personas, grounding, turns,
+  });
+}
+
+/**
+ * Materializes an explicitly unverified live-only timeline from the exact
+ * text-only candidate envelope. It deliberately carries no claims, proofs,
+ * or word anchors: none of those may be inferred when factual narration did
+ * not pass provider validation. Fixed non-destructive actions remain part of
+ * the immutable skeleton and therefore retain a turn-start cue.
+ */
+export function materializeLiveWarningPresentationTimeline(skeletonRaw, candidateRaw) {
+  const skeleton = normalizeSemanticSkeleton(skeletonRaw);
+  known(candidateRaw, ['narrations'], 'liveWarningNarration');
+  if (!Array.isArray(candidateRaw.narrations) || candidateRaw.narrations.length !== skeleton.slots.length) {
+    throw new TypeError('live warning narration must provide every declared slot exactly once');
+  }
+  const narrations = candidateRaw.narrations.map((raw, index) => {
+    known(raw, ['slotId', 'text'], `liveWarningNarration.narrations[${index}]`);
+    const slot = skeleton.slots[index];
+    if (raw.slotId !== slot.slotId) throw new TypeError('live warning narration slot order does not match the semantic skeleton');
+    const value = String(raw.text || '').normalize('NFC').trim();
+    if (!value) throw new TypeError(`live warning narration text is required for ${slot.slotId}`);
+    return Object.freeze({ slot, text: value });
+  });
+  const turns = narrations.map(({ slot, text: narration }) => {
+    const cues = slot.focusMode === 'frame' && !slot.action
+      ? [{
+        kind: 'focus', targetId: slot.targetId, tabId: slot.tabId,
+        at: { anchor: 'turn-start', offsetMs: 0 }, focus: { mode: 'frame' },
+      }]
+      : [];
+    slot.anchors.forEach((declared) => {
+      if (declared.intent === 'action') {
+        if (!slot.action) throw new TypeError(`Action anchor declared without registered action in ${slot.slotId}`);
+        cues.push({
+          kind: 'interaction', targetId: slot.targetId, tabId: slot.tabId,
+          at: { anchor: 'turn-start', offsetMs: 0 },
+          interaction: { type: slot.action.interactionType, binding: { source: slot.action.source, tool: slot.action.tool, input: slot.action.input } },
+        });
+      } else {
+        cues.push({
+          kind: 'annotation', targetId: slot.targetId, tabId: slot.tabId,
+          at: { anchor: 'turn-start', offsetMs: 0 }, annotation: { intent: declared.intent },
+        });
+      }
+    });
+    return {
+      id: slot.slotId, persona: slot.persona, addressee: slot.addressee,
+      dialogueAct: slot.semanticAct, replyTo: slot.replyToSlotId, text: narration,
+      sourceRefs: slot.sourceRefs.map((sourceId) => ({ sourceId, targetId: slot.targetId })),
+      claims: [], transition: slot.transition, cues,
+    };
+  });
+  const grounding = skeleton.grounding?.sources ? { sources: skeleton.grounding.sources } : { sources: [] };
   return normalizePresentationTimeline({
     contractVersion: 'presentation-timeline-v3', id: skeleton.hash.slice(-32), title: skeleton.title,
     locale: skeleton.locale, profile: skeleton.profile, personas: skeleton.personas, grounding, turns,
@@ -210,6 +269,52 @@ export function createPresentationProject(input = {}) {
   });
 }
 
+function normalizeQualityWarnings(value, skeleton) {
+  if (!Array.isArray(value) || !value.length) throw new TypeError('warning presentation project requires quality warnings');
+  const knownSlots = new Set(skeleton.slots.map((slot) => slot.slotId));
+  const seen = new Set();
+  return value.map((warning, index) => {
+    known(warning, ['code', 'slotId'], `warningProject.qualityWarnings[${index}]`);
+    const code = String(warning.code || '').normalize('NFC').trim();
+    const slotId = String(warning.slotId || '').normalize('NFC').trim();
+    if (!code || !slotId || !knownSlots.has(slotId)) throw new TypeError('warning presentation project has an invalid quality warning');
+    const key = `${code}\u0000${slotId}`;
+    if (seen.has(key)) throw new TypeError('warning presentation project repeats a quality warning');
+    seen.add(key);
+    return { code, slotId };
+  });
+}
+
+/**
+ * A warning project is immutable provenance for a user-approved best-effort
+ * tour. It is intentionally distinct from a fully verified presentation
+ * project: it has no derived claim/proof authority, while retaining the same
+ * skeleton-bound timeline and server-held receipt/ancestry chain for a user
+ * who chooses to continue to media rendering.
+ */
+export function createPresentationWarningProject(input = {}) {
+  known(input, ['skeleton', 'narration', 'qualityWarnings'], 'warningProjectInput');
+  const skeleton = normalizeSemanticSkeleton(input.skeleton);
+  const timeline = materializeLiveWarningPresentationTimeline(skeleton, input.narration);
+  const narration = hashRecord(PRESENTATION_WARNING_NARRATION_VERSION, {
+    schemaVersion: PRESENTATION_WARNING_NARRATION_VERSION,
+    skeletonHash: skeleton.hash,
+    narrations: input.narration.narrations.map((item) => ({ slotId: item.slotId, text: String(item.text || '').normalize('NFC').trim() })),
+  });
+  const qualityWarnings = normalizeQualityWarnings(input.qualityWarnings, skeleton);
+  return hashRecord(WORKSPACE_PRESENTATION_WARNING_PROJECT_VERSION, {
+    schemaVersion: WORKSPACE_PRESENTATION_WARNING_PROJECT_VERSION,
+    projectKind: 'quality-warning',
+    skeletonHash: skeleton.hash,
+    projectionHash: narration.hash,
+    skeleton,
+    narration,
+    qualityWarnings,
+    timelineHash: createPresentationTimelineHash(timeline),
+    timeline,
+  });
+}
+
 export function normalizePresentationProject(raw = {}) {
   known(raw, ['schemaVersion', 'skeletonHash', 'projectionHash', 'skeleton', 'projection', 'inspection', 'timelineHash', 'timeline', 'hash'], 'presentationProject');
   verifyIntegrity(WORKSPACE_PRESENTATION_PROJECT_VERSION, raw);
@@ -219,13 +324,35 @@ export function normalizePresentationProject(raw = {}) {
   return reconstructed;
 }
 
+export function normalizePresentationWarningProject(raw = {}) {
+  known(raw, ['schemaVersion', 'projectKind', 'skeletonHash', 'projectionHash', 'skeleton', 'narration', 'qualityWarnings', 'timelineHash', 'timeline', 'hash'], 'warningPresentationProject');
+  verifyIntegrity(WORKSPACE_PRESENTATION_WARNING_PROJECT_VERSION, raw);
+  if (raw.schemaVersion !== WORKSPACE_PRESENTATION_WARNING_PROJECT_VERSION || raw.projectKind !== 'quality-warning') {
+    throw new TypeError('Unsupported warning presentation project schemaVersion');
+  }
+  const reconstructed = createPresentationWarningProject({ skeleton: raw.skeleton, narration: { narrations: raw.narration?.narrations }, qualityWarnings: raw.qualityWarnings });
+  if (canonicalize(reconstructed) !== canonicalize(raw)) throw new TypeError('Warning presentation project reconstruction does not match immutable project');
+  return reconstructed;
+}
+
+export function normalizePresentationRenderableProject(raw = {}) {
+  if (raw?.schemaVersion === WORKSPACE_PRESENTATION_PROJECT_VERSION) return normalizePresentationProject(raw);
+  if (raw?.schemaVersion === WORKSPACE_PRESENTATION_WARNING_PROJECT_VERSION) return normalizePresentationWarningProject(raw);
+  throw new TypeError('Unsupported renderable presentation project schemaVersion');
+}
+
 export function createLivePresentationProjection(projectRaw) {
-  let project = normalizePresentationProject(projectRaw);
-  return Object.freeze({ schemaVersion: 'presentation-live-projection-v1', projectHash: project.hash, skeletonHash: project.skeletonHash, projectionHash: project.projectionHash, timelineHash: project.timelineHash, timeline: clone(project.timeline), inspection: clone(project.inspection) });
+  const project = normalizePresentationRenderableProject(projectRaw);
+  return Object.freeze({
+    schemaVersion: 'presentation-live-projection-v1', projectHash: project.hash, skeletonHash: project.skeletonHash,
+    projectionHash: project.projectionHash, timelineHash: project.timelineHash, timeline: clone(project.timeline),
+    ...(project.inspection ? { inspection: clone(project.inspection) } : {}),
+    ...(project.projectKind === 'quality-warning' ? { projectKind: project.projectKind, qualityWarnings: clone(project.qualityWarnings) } : {}),
+  });
 }
 
 export function createMediaPresentationAncestryAssertion(projectRaw, kind = 'preparation') {
-  let project = normalizePresentationProject(projectRaw);
+  let project = normalizePresentationRenderableProject(projectRaw);
   return hashRecord(PRESENTATION_MEDIA_ANCESTRY_ASSERTION_VERSION, {
     schemaVersion: PRESENTATION_MEDIA_ANCESTRY_ASSERTION_VERSION,
     kind: String(kind || 'preparation').normalize('NFC').trim(),
@@ -235,7 +362,7 @@ export function createMediaPresentationAncestryAssertion(projectRaw, kind = 'pre
 }
 
 export function validateMediaPresentationAncestry(projectRaw, mediaPreparation = {}) {
-  let project = normalizePresentationProject(projectRaw);
+  let project = normalizePresentationRenderableProject(projectRaw);
   known(mediaPreparation, ['schemaVersion', 'projectHash', 'timelineHash', 'skeletonHash', 'projectionHash', 'kind', 'hash'], 'mediaPreparation');
   if (mediaPreparation.schemaVersion !== PRESENTATION_MEDIA_ANCESTRY_ASSERTION_VERSION) throw new TypeError('Media ancestry assertion has unsupported schemaVersion');
   verifyIntegrity(PRESENTATION_MEDIA_ANCESTRY_ASSERTION_VERSION, mediaPreparation);

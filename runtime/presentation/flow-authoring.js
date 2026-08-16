@@ -4,8 +4,9 @@ import {
 } from './semantic-skeleton.js';
 import {
   createPresentationProject,
+  createPresentationWarningProject,
   inspectPresentationPreAudio,
-  materializePresentationTimeline,
+  materializeLiveWarningPresentationTimeline,
 } from './presentation-project.js';
 import {
   createPresentationAuthoringRequest,
@@ -19,6 +20,7 @@ export const WORKSPACE_PRESENTATION_AUTHORING_PROMPT_VERSION = 'workspace-presen
 const LIVE_WARNING_QUALITY_CODES = new Set([
   'repeated-narration',
   'duplicate-substantive-atom',
+  'unverified-narration',
 ]);
 
 function requiredFunction(value, path) {
@@ -231,7 +233,33 @@ export async function runPresentationFlowAuthoring({ basis, task, adaptation, sk
       return Object.freeze({ status: 'needs-context', request, prompt, needsContext: parsed.needsContext, attempts: attempt + 1 });
     }
     const candidate = parsed.narrationProjection;
-    const projection = createNarrationProjection(candidate, normalizedSkeleton);
+    let projection;
+    try {
+      projection = createNarrationProjection(candidate, normalizedSkeleton);
+    } catch (error) {
+      // A syntactically exact, slot-bound candidate can still lack factual
+      // proof. The task may opt into an explicitly labelled warning project.
+      // It never gains claim/proof authority, but preserves server-held
+      // provenance for a user who chooses to render the same warning tour.
+      if (normalizedTask.qualityDisposition === 'warn-and-play-live') {
+        const warnings = normalizedSkeleton.slots.map((slot) => ({ code: 'unverified-narration', slotId: slot.slotId }));
+        const project = createPresentationWarningProject({
+          skeleton: normalizedSkeleton,
+          narration: candidate,
+          qualityWarnings: warnings,
+        });
+        return Object.freeze({
+          status: 'quality-warning',
+          project,
+          timeline: project.timeline,
+          request,
+          prompt,
+          warnings,
+          attempts: attempt + 1,
+        });
+      }
+      throw error;
+    }
     const inspection = inspectPresentationPreAudio(normalizedSkeleton, projection);
     const findings = collectPresentationInspectionFindings(inspection);
     const transition = decidePresentationFlowTransition({
@@ -256,10 +284,15 @@ export async function runPresentationFlowAuthoring({ basis, task, adaptation, sk
         ? liveWarningFindings(inspection)
         : null;
       if (warnings) {
+        const project = createPresentationWarningProject({
+          skeleton: normalizedSkeleton,
+          narration: candidate,
+          qualityWarnings: warnings,
+        });
         return Object.freeze({
           status: 'quality-warning',
-          projection,
-          timeline: materializePresentationTimeline(normalizedSkeleton, projection),
+          project,
+          timeline: project.timeline,
           request,
           prompt,
           inspection,
