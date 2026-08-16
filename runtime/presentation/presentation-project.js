@@ -99,7 +99,7 @@ export function materializePresentationTimeline(skeletonRaw, projectionRaw) {
 }
 
 /**
- * Materializes an explicitly unverified live-only timeline from the exact
+ * Materializes an explicitly unverified warning timeline from the exact
  * text-only candidate envelope. It deliberately carries no claims, proofs,
  * or word anchors: none of those may be inferred when factual narration did
  * not pass provider validation. Fixed non-destructive actions remain part of
