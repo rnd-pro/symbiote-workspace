@@ -12,7 +12,7 @@ import {
 export const WORKSPACE_PRESENTATION_FLOW_TASK_VERSION = 'workspace-presentation-flow-task-v1';
 export const WORKSPACE_PROJECT_ADAPTATION_VERSION = 'workspace-project-adaptation-v1';
 export const WORKSPACE_PRESENTATION_FLOW_BASIS_VERSION = 'workspace-presentation-flow-basis-v1';
-export const WORKSPACE_PRESENTATION_PLAN_OPTIONS_VERSION = 'workspace-presentation-plan-options-v1';
+export const WORKSPACE_PRESENTATION_PLAN_OPTIONS_VERSION = 'workspace-presentation-plan-options-v2';
 export const WORKSPACE_PRESENTATION_PLAN_SELECTION_VERSION = 'workspace-presentation-plan-selection-v1';
 export const WORKSPACE_PRESENTATION_PLANNING_REQUEST_VERSION = 'workspace-presentation-planning-request-v1';
 export const WORKSPACE_PRESENTATION_AUTHORING_REQUEST_VERSION = 'workspace-presentation-authoring-request-v1';
@@ -215,12 +215,18 @@ function normalizeActionOptions(value, lesson) {
   return options;
 }
 
-export function createPresentationFlowPlanOptions({ basis, lessonContext, actionOptions = [], dialogueProfiles = [] } = {}) {
+export function createPresentationFlowPlanOptions({ basis, lessonContext, actionOptions = [], dialogueProfiles = [], requiredTargetIds = [] } = {}) {
   const normalizedBasis = normalizeBasis(basis);
   const lesson = assertCurrentBasis(normalizedBasis, lessonContext);
+  const offeredTargetIds = lesson.targets.map((target) => target.id).sort();
+  const required = uniqueRefs(requiredTargetIds, 'presentationPlanOptions.requiredTargetIds');
+  if (required.some((id) => !offeredTargetIds.includes(id))) {
+    throw new TypeError('presentation plan required targets must be registered in lesson context');
+  }
   return seal(WORKSPACE_PRESENTATION_PLAN_OPTIONS_VERSION, {
     basisHash: normalizedBasis.hash,
-    targetIds: lesson.targets.map((target) => target.id).sort(),
+    targetIds: offeredTargetIds,
+    requiredTargetIds: required,
     factIds: lesson.facts.map((fact) => fact.id).sort(),
     actionOptions: normalizeActionOptions(actionOptions, lesson),
     dialogueProfiles: uniqueRefs(dialogueProfiles, 'presentationPlanOptions.dialogueProfiles'),
@@ -229,10 +235,16 @@ export function createPresentationFlowPlanOptions({ basis, lessonContext, action
 
 function normalizePlanOptions(input = {}) {
   const raw = verify(WORKSPACE_PRESENTATION_PLAN_OPTIONS_VERSION, input,
-    ['schemaVersion', 'basisHash', 'targetIds', 'factIds', 'actionOptions', 'dialogueProfiles', 'hash'], 'presentationPlanOptions');
+    ['schemaVersion', 'basisHash', 'targetIds', 'requiredTargetIds', 'factIds', 'actionOptions', 'dialogueProfiles', 'hash'], 'presentationPlanOptions');
+  const targetIds = uniqueRefs(raw.targetIds, 'presentationPlanOptions.targetIds');
+  const requiredTargetIds = uniqueRefs(raw.requiredTargetIds, 'presentationPlanOptions.requiredTargetIds');
+  if (requiredTargetIds.some((id) => !targetIds.includes(id))) {
+    throw new TypeError('presentation plan required targets must be registered in lesson context');
+  }
   return seal(WORKSPACE_PRESENTATION_PLAN_OPTIONS_VERSION, {
     basisHash: requiredText(raw.basisHash, 'presentationPlanOptions.basisHash'),
-    targetIds: uniqueRefs(raw.targetIds, 'presentationPlanOptions.targetIds'),
+    targetIds,
+    requiredTargetIds,
     factIds: uniqueRefs(raw.factIds, 'presentationPlanOptions.factIds'),
     actionOptions: (raw.actionOptions || []).map((entry, index) => {
       exactKeys(entry, ['id', 'actionId', 'targetId', 'toolId'], `presentationPlanOptions.actionOptions[${index}]`);
@@ -259,6 +271,11 @@ export function createPresentationFlowPlanSelection({ basis, options, selection 
     || actionOptionIds.some((id) => !targetIds.includes(optionActionById.get(id).targetId))
     || (dialogueProfileId && !normalizedOptions.dialogueProfiles.includes(dialogueProfileId))) {
     throw new TypeError('presentation plan selection contains an unoffered option');
+  }
+  if (normalizedOptions.requiredTargetIds.some((id) => !targetIds.includes(id))) {
+    const error = new TypeError('presentation plan selection omits a required target');
+    error.code = 'presentation-plan-required-targets-missing';
+    throw error;
   }
   return seal(WORKSPACE_PRESENTATION_PLAN_SELECTION_VERSION, {
     basisHash: normalizedBasis.hash,
@@ -328,6 +345,7 @@ export function createPresentationFlowPlanningRequest({ task, adaptation, basis,
         toolId: option.toolId,
         ...(toolsById.get(option.toolId)?.description ? { description: toolsById.get(option.toolId).description } : {}),
       })),
+      requiredTargetIds: normalizedOptions.requiredTargetIds,
       dialogueProfiles: normalizedOptions.dialogueProfiles,
     },
   });

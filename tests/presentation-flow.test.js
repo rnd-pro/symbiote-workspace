@@ -55,19 +55,25 @@ test('compiles a bounded semantic planning request and rejects unoffered model s
     lessonContext: context,
     actionOptions: [{ id: 'inspect-orders', actionId: 'inspect-orders', targetId: 'orders', toolId: 'inspect-orders' }],
     dialogueProfiles: ['dialogue'],
+    requiredTargetIds: ['orders', 'details'],
   });
   const request = createPresentationFlowPlanningRequest({ task, adaptation, basis, options, lessonContext: context });
   const prompt = createPresentationFlowPlanningPrompt(request);
   const compiled = compilePresentationFlowPlanningPrompt(request);
   const selection = parsePresentationFlowPlanningResponse({
-    planSelection: { targetIds: ['orders'], factIds: ['fact:status'], actionOptionIds: ['inspect-orders'], dialogueProfileId: 'dialogue' },
+    planSelection: { targetIds: ['orders', 'details'], factIds: ['fact:status'], actionOptionIds: ['inspect-orders'], dialogueProfileId: 'dialogue' },
   }, request);
 
   assert.equal(prompt.selectionAuthority.targets[0].id, 'details');
   assert.equal(prompt.selectionAuthority.facts.some((fact) => fact.id === 'fact:status'), true);
   assert.equal('value' in prompt.selectionAuthority.facts[0], false);
   assert.match(compiled, /Choose only IDs from selectionAuthority/);
-  assert.deepEqual(selection.targetIds, ['orders']);
+  assert.match(compiled, /Include every ID in selectionAuthority\.requiredTargetIds/);
+  assert.deepEqual(selection.targetIds, ['details', 'orders']);
+  assert.deepEqual(prompt.selectionAuthority.requiredTargetIds, ['details', 'orders']);
+  assert.throws(() => parsePresentationFlowPlanningResponse({
+    planSelection: { targetIds: ['orders'], factIds: ['fact:status'], actionOptionIds: ['inspect-orders'], dialogueProfileId: 'dialogue' },
+  }, request), (error) => error?.code === 'presentation-plan-required-targets-missing');
   assert.throws(() => parsePresentationFlowPlanningResponse({
     planSelection: { targetIds: ['unknown'], factIds: [], actionOptionIds: [] },
   }, request), /unoffered option/);
