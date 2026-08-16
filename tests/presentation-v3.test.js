@@ -155,7 +155,7 @@ describe('presentation timeline v3 contract', () => {
   });
 });
 
-describe('workspace aligned sequence v1', () => {
+describe('workspace aligned sequence v2', () => {
   it('resolves every turn and cue against one media identity with provenance', () => {
     let timeline = createPresentationTimelineContract(fixture());
     let sequence = createPresentationAlignedSequence(timeline, {
@@ -205,6 +205,46 @@ describe('workspace aligned sequence v1', () => {
     assert.throws(
       () => validatePresentationAlignedSequence({ ...sequence, turns: [{ ...sequence.turns[0], extra: true }, ...sequence.turns.slice(1)] }, timeline),
       /extra is not supported/,
+    );
+  });
+
+  it('retains voice-owned transcripts and word timings for production media authority', () => {
+    let timeline = createPresentationTimelineContract(fixture());
+    let sequence = createPresentationAlignedSequence(timeline, {
+      media: { hash: 'sha256-audio', durationMs: 4200, locale: 'ru-RU' },
+      voice: { mode: 'dialogue', speakerIds: ['guide-voice', 'ops-voice'] },
+      turns: [
+        {
+          startMs: 0,
+          endMs: 1800,
+          speaker: 'guide-voice',
+          transcript: timeline.turns[0].text,
+          words: [{ text: 'Где', startMs: 0, endMs: 250 }],
+        },
+        {
+          startMs: 1900,
+          endMs: 4200,
+          speaker: 'ops-voice',
+          transcript: timeline.turns[1].text,
+          words: [{ text: 'Поток', startMs: 1900, endMs: 2200 }],
+        },
+      ],
+    });
+
+    assert.deepEqual(sequence.voice, { mode: 'dialogue', speakerIds: ['guide-voice', 'ops-voice'] });
+    assert.equal(sequence.turns[0].speaker, 'guide-voice');
+    assert.deepEqual(sequence.turns[1].words, [{ text: 'Поток', startMs: 1900, endMs: 2200 }]);
+    assert.equal(validatePresentationAlignedSequence(sequence, timeline), sequence);
+    assert.throws(
+      () => createPresentationAlignedSequence(timeline, {
+        media: { hash: 'sha256-audio', durationMs: 4200 },
+        voice: { mode: 'dialogue', speakerIds: ['guide-voice', 'ops-voice'] },
+        turns: [
+          { startMs: 0, endMs: 1800, speaker: 'ops-voice', transcript: '', words: [] },
+          { startMs: 1900, endMs: 4200, speaker: 'ops-voice', transcript: '', words: [] },
+        ],
+      }),
+      /speaker does not match voice ownership/,
     );
   });
 });

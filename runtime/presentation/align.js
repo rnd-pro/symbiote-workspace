@@ -1,7 +1,10 @@
 import { computeIntegrity } from '../../schema/canonical-json.js';
 import { createPresentationTimelineContract } from './contract.js';
 
-export const PRESENTATION_ALIGNED_SEQUENCE_VERSION = 'workspace-aligned-sequence-v1';
+// v2 adds hash-bound voice ownership plus transcript word evidence to the
+// aligned media sequence. Production revision, captions, and live playback
+// consume the same enriched artifact; v1 spans cannot prove that lineage.
+export const PRESENTATION_ALIGNED_SEQUENCE_VERSION = 'workspace-aligned-sequence-v2';
 export const PRESENTATION_ALIGNMENT_RESOLUTIONS = Object.freeze(['exact', 'occurrence', 'fuzzy', 'proportional']);
 
 function text(value) {
@@ -109,20 +112,67 @@ function normalizeMedia(value = {}) {
   };
 }
 
+function normalizeVoice(value, turnCount) {
+  if (value === undefined) return null;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError('aligned sequence voice must be an object');
+  let mode = text(value.mode);
+  if (mode === 'single') {
+    for (let key of Object.keys(value)) if (!['mode', 'speakerId'].includes(key)) throw new TypeError(`aligned sequence voice.${key} is not supported`);
+    let speakerId = text(value.speakerId);
+    if (!speakerId) throw new TypeError('aligned sequence voice.speakerId must be nonempty');
+    return { mode, speakerId };
+  }
+  if (mode === 'dialogue') {
+    for (let key of Object.keys(value)) if (!['mode', 'speakerIds'].includes(key)) throw new TypeError(`aligned sequence voice.${key} is not supported`);
+    if (!Array.isArray(value.speakerIds) || value.speakerIds.length !== turnCount) {
+      throw new TypeError('aligned sequence dialogue voice requires one speakerId per turn');
+    }
+    let speakerIds = value.speakerIds.map((speakerId, index) => {
+      let normalized = text(speakerId);
+      if (!normalized) throw new TypeError(`aligned sequence voice.speakerIds[${index}] must be nonempty`);
+      return normalized;
+    });
+    return { mode, speakerIds };
+  }
+  throw new TypeError('aligned sequence voice.mode is unsupported');
+}
+
+function normalizeEnrichedTurn(alignment, turnIndex, media, voice) {
+  let supportedKeys = ['startMs', 'endMs', 'transcript', 'words', 'speaker'];
+  for (let key of Object.keys(alignment)) if (!supportedKeys.includes(key)) throw new TypeError(`aligned sequence turns[${turnIndex}].${key} is not supported`);
+  let startMs = integer(alignment.startMs, `aligned sequence turns[${turnIndex}].startMs`, { max: media.durationMs });
+  let endMs = integer(alignment.endMs, `aligned sequence turns[${turnIndex}].endMs`, { min: startMs, max: media.durationMs });
+  let expectedSpeaker = voice.mode === 'single' ? voice.speakerId : voice.speakerIds[turnIndex];
+  let speaker = text(alignment.speaker);
+  if (!speaker || speaker !== expectedSpeaker) throw new TypeError(`aligned sequence turns[${turnIndex}].speaker does not match voice ownership`);
+  if (typeof alignment.transcript !== 'string') throw new TypeError(`aligned sequence turns[${turnIndex}].transcript must be a string`);
+  let words = wordTimingIndex(alignment);
+  for (let [wordIndex, word] of words.entries()) {
+    if (!word.text || word.endMs < word.startMs || word.startMs < startMs || word.endMs > endMs) {
+      throw new TypeError(`aligned sequence turns[${turnIndex}].words[${wordIndex}] is outside its turn span`);
+    }
+  }
+  return { turnIndex, startMs, endMs, speaker, transcript: text(alignment.transcript), words };
+}
+
 export function createPresentationAlignedSequence(timelineInput = {}, input = {}) {
   let timeline = createPresentationTimelineContract(timelineInput);
   let media = normalizeMedia(input.media);
   let alignments = Array.isArray(input.turns) ? input.turns : [];
   if (alignments.length !== timeline.turns.length) throw new TypeError('aligned sequence requires one alignment for every authored turn');
+  let voice = normalizeVoice(input.voice, alignments.length);
   let priorStartMs = -1;
   let turns = alignments.map((alignment, turnIndex) => {
     if (!alignment || typeof alignment !== 'object' || Array.isArray(alignment)) throw new TypeError(`aligned sequence turns[${turnIndex}] must be an object`);
-    for (let key of Object.keys(alignment)) if (!['startMs', 'endMs', 'transcript', 'words'].includes(key)) throw new TypeError(`aligned sequence turns[${turnIndex}].${key} is not supported`);
-    let startMs = integer(alignment.startMs, `aligned sequence turns[${turnIndex}].startMs`, { max: media.durationMs });
-    let endMs = integer(alignment.endMs, `aligned sequence turns[${turnIndex}].endMs`, { min: startMs, max: media.durationMs });
+    let enriched = voice ? normalizeEnrichedTurn(alignment, turnIndex, media, voice) : null;
+    if (!voice) {
+      for (let key of Object.keys(alignment)) if (!['startMs', 'endMs', 'transcript', 'words'].includes(key)) throw new TypeError(`aligned sequence turns[${turnIndex}].${key} is not supported`);
+    }
+    let startMs = enriched?.startMs ?? integer(alignment.startMs, `aligned sequence turns[${turnIndex}].startMs`, { max: media.durationMs });
+    let endMs = enriched?.endMs ?? integer(alignment.endMs, `aligned sequence turns[${turnIndex}].endMs`, { min: startMs, max: media.durationMs });
     if (startMs < priorStartMs) throw new TypeError('aligned sequence turn spans must be monotonic');
     priorStartMs = startMs;
-    return { turnIndex, startMs, endMs };
+    return enriched || { turnIndex, startMs, endMs };
   });
   let events = [];
   for (let [turnIndex, turn] of timeline.turns.entries()) {
@@ -150,6 +200,7 @@ export function createPresentationAlignedSequence(timelineInput = {}, input = {}
     contractVersion: PRESENTATION_ALIGNED_SEQUENCE_VERSION,
     timelineHash: timeline.hash,
     media,
+    ...(voice ? { voice } : {}),
     turns,
     events,
   };
@@ -160,7 +211,7 @@ export function validatePresentationAlignedSequence(value = {}, timelineInput = 
   let timeline = createPresentationTimelineContract(timelineInput);
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError('aligned sequence must be an object');
   for (let key of Object.keys(value)) {
-    if (!['contractVersion', 'timelineHash', 'media', 'turns', 'events', 'hash'].includes(key)) {
+    if (!['contractVersion', 'timelineHash', 'media', 'voice', 'turns', 'events', 'hash'].includes(key)) {
       throw new TypeError(`aligned sequence.${key} is not supported`);
     }
   }
@@ -169,14 +220,30 @@ export function validatePresentationAlignedSequence(value = {}, timelineInput = 
   let media = normalizeMedia(value.media);
   let expectedCueCount = timeline.turns.reduce((count, turn) => count + turn.cues.length, 0);
   if (!Array.isArray(value.turns) || value.turns.length !== timeline.turns.length) throw new TypeError('aligned sequence turn coverage is incomplete');
+  let voice = normalizeVoice(value.voice, value.turns.length);
   if (!Array.isArray(value.events) || value.events.length !== expectedCueCount) throw new TypeError('aligned sequence cue coverage is incomplete');
   let priorStartMs = -1;
   for (let [index, span] of value.turns.entries()) {
     if (!span || typeof span !== 'object' || Array.isArray(span)) throw new TypeError(`aligned sequence turns[${index}] must be an object`);
-    for (let key of Object.keys(span)) if (!['turnIndex', 'startMs', 'endMs'].includes(key)) throw new TypeError(`aligned sequence turns[${index}].${key} is not supported`);
+    let permittedKeys = voice
+      ? ['turnIndex', 'startMs', 'endMs', 'speaker', 'transcript', 'words']
+      : ['turnIndex', 'startMs', 'endMs'];
+    for (let key of Object.keys(span)) if (!permittedKeys.includes(key)) throw new TypeError(`aligned sequence turns[${index}].${key} is not supported`);
     if (span.turnIndex !== index) throw new TypeError(`aligned sequence turns[${index}].turnIndex is invalid`);
     let startMs = integer(span.startMs, `aligned sequence turns[${index}].startMs`, { max: media.durationMs });
-    integer(span.endMs, `aligned sequence turns[${index}].endMs`, { min: startMs, max: media.durationMs });
+    let endMs = integer(span.endMs, `aligned sequence turns[${index}].endMs`, { min: startMs, max: media.durationMs });
+    if (voice) {
+      let expectedSpeaker = voice.mode === 'single' ? voice.speakerId : voice.speakerIds[index];
+      if (text(span.speaker) !== expectedSpeaker || typeof span.transcript !== 'string') {
+        throw new TypeError(`aligned sequence turns[${index}] does not match voice ownership`);
+      }
+      let words = wordTimingIndex(span);
+      for (let [wordIndex, word] of words.entries()) {
+        if (!word.text || word.endMs < word.startMs || word.startMs < startMs || word.endMs > endMs) {
+          throw new TypeError(`aligned sequence turns[${index}].words[${wordIndex}] is outside its turn span`);
+        }
+      }
+    }
     if (startMs < priorStartMs) throw new TypeError('aligned sequence turn spans must be monotonic');
     priorStartMs = startMs;
   }
@@ -205,6 +272,7 @@ export function validatePresentationAlignedSequence(value = {}, timelineInput = 
     contractVersion: value.contractVersion,
     timelineHash: value.timelineHash,
     media,
+    ...(voice ? { voice } : {}),
     turns: value.turns,
     events: value.events,
   })}`;
