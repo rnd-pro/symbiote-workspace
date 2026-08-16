@@ -23,6 +23,21 @@ const LIVE_WARNING_QUALITY_CODES = new Set([
   'unverified-narration',
 ]);
 
+// A warning project is permitted only when the candidate is structurally
+// exact and its remaining defect is ordinary narration quality.  Reference
+// locality is authority, not quality: accepting text that leaks a structural
+// or another-slot atom would make the warning path an authority bypass.
+const LIVE_WARNING_CANDIDATE_CODES = new Set([
+  'tuple-proof-missing',
+  'claim-proof-not-audible',
+  'question-response-claim-not-audible',
+  'question-response-claim-missing',
+]);
+
+function mayMaterializeLiveWarningFromCandidate(error) {
+  return LIVE_WARNING_CANDIDATE_CODES.has(String(error?.code || '').trim());
+}
+
 function requiredFunction(value, path) {
   if (typeof value !== 'function') throw new TypeError(`${path} must be a function`);
   return value;
@@ -241,7 +256,8 @@ export async function runPresentationFlowAuthoring({ basis, task, adaptation, sk
       // proof. The task may opt into an explicitly labelled warning project.
       // It never gains claim/proof authority, but preserves server-held
       // provenance for a user who chooses to render the same warning tour.
-      if (normalizedTask.qualityDisposition === 'warn-and-play-live') {
+      if (normalizedTask.qualityDisposition === 'warn-and-play-live'
+        && mayMaterializeLiveWarningFromCandidate(error)) {
         const warnings = normalizedSkeleton.slots.map((slot) => ({ code: 'unverified-narration', slotId: slot.slotId }));
         const project = createPresentationWarningProject({
           skeleton: normalizedSkeleton,

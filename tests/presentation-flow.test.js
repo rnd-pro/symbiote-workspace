@@ -375,6 +375,40 @@ test('materializes an immutable warning project from an exact text-only candidat
   assert.equal(createLivePresentationProjection(result.project).qualityWarnings[0].code, 'unverified-narration');
 });
 
+test('keeps structural reference integrity fail-closed even when live quality warnings are allowed', async () => {
+  const task = createPresentationFlowTask({
+    id: 'tour-reference-integrity', mode: 'author', artifactKind: 'live-tour', objective: 'Review', locale: 'en-US',
+    qualityDisposition: 'warn-and-play-live', budgets: { maxRepairRounds: 1, maxDeepeningActions: 0, maxContextQueries: 1 },
+  });
+  const adaptation = createProjectAdaptationCapsule({ id: 'neutral', version: '1', locale: 'en-US', profileRefs: [], rubricRefs: [], capabilityProfiles: [], guidance: [] });
+  const context = lessonContext();
+  const basis = createPresentationFlowBasis({ task, adaptation, lessonContext: context, generation: 1, expiresAt: 9999999999 });
+  const options = createPresentationFlowPlanOptions({ basis, lessonContext: context });
+  const skeleton = createSemanticSkeleton({
+    locale: 'en-US', title: 'Reference integrity', profile: 'brief', personas: { guide: { role: 'operator' } },
+    grounding: {
+      facts: [
+        { id: 'fact:opaque', value: 'opaque-reference-41', narration: { role: 'structural', coverage: 'optional' } },
+        { id: 'fact:status', value: 'Ready', narration: { role: 'substantive', coverage: 'required' } },
+      ],
+      claims: [{ id: 'claim:status', kind: 'state', factRefs: ['fact:status'] }],
+    },
+    requiredTargets: [{ targetId: 'orders', factRefs: ['fact:opaque', 'fact:status'], claimRefs: ['claim:status'] }],
+    orderedCausalRelations: [{ targetId: 'orders', factRefs: ['fact:opaque', 'fact:status'], claimRefs: [{ id: 'claim:status', kind: 'state' }], focusMode: 'frame' }],
+    dialoguePlan: [{ persona: 'guide', dialogueAct: 'explain' }],
+  });
+  const selection = createPresentationFlowPlanSelection({ basis, options, selection: { targetIds: ['orders'], factIds: [], actionOptionIds: [] } });
+  const bound = bindPresentationFlowSemanticPlan({ basis, options, selection, skeleton });
+
+  await assert.rejects(
+    runPresentationFlowAuthoring({
+      basis: bound, task, adaptation, skeleton, options,
+      draft: async () => ({ narrationProjection: { narrations: [{ slotId: skeleton.slots[0].slotId, text: 'opaque-reference-41 is Ready.' }] } }),
+    }),
+    (error) => error?.code === 'structural-atom-prose-forbidden' && !error.message.includes('opaque-reference-41'),
+  );
+});
+
 test('reports exhausted prose inspection with only safe attempt and slot findings', async () => {
   const task = createPresentationFlowTask({ id: 'tour-exhausted', mode: 'author', artifactKind: 'live-tour', objective: 'Review', locale: 'en-US', budgets: { maxRepairRounds: 1, maxDeepeningActions: 0, maxContextQueries: 1 } });
   const adaptation = createProjectAdaptationCapsule({ id: 'maintenance', version: '1', locale: 'en-US', profileRefs: [], rubricRefs: [], capabilityProfiles: [], guidance: [] });
