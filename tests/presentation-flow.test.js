@@ -305,6 +305,43 @@ test('repairs only typed inspection findings when a changed candidate makes prog
   ]);
 });
 
+test('can start a live-only warning tour after bounded narration-quality repair is exhausted', async () => {
+  const task = createPresentationFlowTask({
+    id: 'tour-quality-warning',
+    mode: 'author',
+    artifactKind: 'live-tour',
+    objective: 'Review orders',
+    locale: 'en-US',
+    qualityDisposition: 'warn-and-play-live',
+    budgets: { maxRepairRounds: 0, maxDeepeningActions: 0, maxContextQueries: 1 },
+  });
+  const adaptation = createProjectAdaptationCapsule({ id: 'maintenance', version: '1', locale: 'en-US', profileRefs: [], rubricRefs: [], capabilityProfiles: [], guidance: [] });
+  const context = lessonContext();
+  const basis = createPresentationFlowBasis({ task, adaptation, lessonContext: context, generation: 1, expiresAt: 9999999999 });
+  const options = createPresentationFlowPlanOptions({ basis, lessonContext: context });
+  const selection = createPresentationFlowPlanSelection({ basis, options, selection: { targetIds: ['details', 'orders'], factIds: [], actionOptionIds: [] } });
+  const skeleton = repeatRepairPlan();
+  const bound = bindPresentationFlowSemanticPlan({ basis, options, selection, skeleton });
+  const result = await runPresentationFlowAuthoring({
+    basis: bound,
+    task,
+    adaptation,
+    skeleton,
+    options,
+    draft: async () => ({ narrationProjection: { narrations: [
+      { slotId: 'slot-1-orders', text: 'Review the current workspace.' },
+      { slotId: 'slot-2-details', text: 'Review the current workspace.' },
+    ] } }),
+  });
+  assert.equal(result.status, 'quality-warning');
+  assert.equal('project' in result, false);
+  assert.equal(result.timeline.turns.length, 2);
+  assert.deepEqual(result.warnings, [
+    { code: 'repeated-narration', slotId: 'slot-1-orders' },
+    { code: 'repeated-narration', slotId: 'slot-2-details' },
+  ]);
+});
+
 test('reports exhausted prose inspection with only safe attempt and slot findings', async () => {
   const task = createPresentationFlowTask({ id: 'tour-exhausted', mode: 'author', artifactKind: 'live-tour', objective: 'Review', locale: 'en-US', budgets: { maxRepairRounds: 1, maxDeepeningActions: 0, maxContextQueries: 1 } });
   const adaptation = createProjectAdaptationCapsule({ id: 'maintenance', version: '1', locale: 'en-US', profileRefs: [], rubricRefs: [], capabilityProfiles: [], guidance: [] });

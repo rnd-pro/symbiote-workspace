@@ -5,15 +5,21 @@ import {
 import {
   createPresentationProject,
   inspectPresentationPreAudio,
+  materializePresentationTimeline,
 } from './presentation-project.js';
 import {
   createPresentationAuthoringRequest,
   createPresentationFlowPlanSelection,
+  createPresentationFlowTask,
   decidePresentationFlowTransition,
 } from './flow.js';
 
 export const WORKSPACE_PRESENTATION_PLANNING_PROMPT_VERSION = 'workspace-presentation-planning-prompt-v1';
 export const WORKSPACE_PRESENTATION_AUTHORING_PROMPT_VERSION = 'workspace-presentation-authoring-prompt-v3';
+const LIVE_WARNING_QUALITY_CODES = new Set([
+  'repeated-narration',
+  'duplicate-substantive-atom',
+]);
 
 function requiredFunction(value, path) {
   if (typeof value !== 'function') throw new TypeError(`${path} must be a function`);
@@ -37,6 +43,15 @@ export function collectPresentationInspectionFindings(inspection = {}) {
       : [{ code, ...(finding.claimId ? { claimId: String(finding.claimId) } : {}) }];
   });
   return [...new Map(findings.map((finding) => [`${finding.code}\u0000${finding.slotId || ''}\u0000${finding.claimId || ''}`, finding])).values()];
+}
+
+function liveWarningFindings(inspection = {}) {
+  const structural = Array.isArray(inspection?.structural?.findings) ? inspection.structural.findings : [];
+  const narration = Array.isArray(inspection?.narration?.findings) ? inspection.narration.findings : [];
+  if (structural.length || !narration.length || narration.some((finding) => !LIVE_WARNING_QUALITY_CODES.has(String(finding?.code || '')))) {
+    return null;
+  }
+  return collectPresentationInspectionFindings({ narration: { findings: narration } });
 }
 
 /** Builds the portable, text-only contract for a model-facing host adapter. */
@@ -201,6 +216,7 @@ export function compilePresentationAuthoringPrompt(request = {}) {
  */
 export async function runPresentationFlowAuthoring({ basis, task, adaptation, skeleton, options, draft } = {}) {
   const normalizedSkeleton = normalizeSemanticSkeleton(skeleton);
+  const normalizedTask = createPresentationFlowTask(task);
   const writeDraft = requiredFunction(draft, 'presentation flow draft');
   let repair = null;
   let previousCandidateHash = '';
@@ -236,9 +252,24 @@ export async function runPresentationFlowAuthoring({ basis, task, adaptation, sk
       });
     }
     if (transition.status !== 'repair') {
-      // The caller may safely render an exhausted prose-quality result, but
-      // must never receive the provider's raw narration or inspector message.
-      // A stale basis remains a distinct immutable-context failure.
+      const warnings = normalizedTask.qualityDisposition === 'warn-and-play-live'
+        ? liveWarningFindings(inspection)
+        : null;
+      if (warnings) {
+        return Object.freeze({
+          status: 'quality-warning',
+          projection,
+          timeline: materializePresentationTimeline(normalizedSkeleton, projection),
+          request,
+          prompt,
+          inspection,
+          warnings,
+          attempts: attempt + 1,
+        });
+      }
+      // The default remains fail-closed. A host must opt in through the
+      // hash-bound task policy and receives only the materialized timeline
+      // plus typed warning IDs; it never receives an accepted project.
       const exhaustedInspection = findings.length > 0 && transition.status === 'reject';
       const error = new Error(exhaustedInspection
         ? 'presentation narration inspection rejected'

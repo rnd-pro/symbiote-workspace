@@ -21,6 +21,7 @@ export const WORKSPACE_PRESENTATION_DEEPENING_REQUEST_VERSION = 'workspace-prese
 
 const TASK_MODES = new Set(['author', 'review', 'repair']);
 const ARTIFACT_KINDS = new Set(['live-tour']);
+const QUALITY_DISPOSITIONS = new Set(['reject', 'warn-and-play-live']);
 
 function clone(value) {
   return JSON.parse(canonicalize(value));
@@ -93,13 +94,22 @@ function normalizeBudgets(value = {}) {
   };
 }
 
+function normalizeQualityDisposition(value) {
+  const disposition = optionalText(value, 'presentationFlowTask.qualityDisposition') || 'reject';
+  if (!QUALITY_DISPOSITIONS.has(disposition)) {
+    throw new TypeError('presentationFlowTask.qualityDisposition is unsupported');
+  }
+  return disposition;
+}
+
 export function createPresentationFlowTask(input = {}) {
   const raw = verify(WORKSPACE_PRESENTATION_FLOW_TASK_VERSION, input,
-    ['schemaVersion', 'id', 'mode', 'artifactKind', 'objective', 'locale', 'budgets', 'hash'], 'presentationFlowTask');
+    ['schemaVersion', 'id', 'mode', 'artifactKind', 'objective', 'locale', 'budgets', 'qualityDisposition', 'hash'], 'presentationFlowTask');
   const mode = requiredText(raw.mode, 'presentationFlowTask.mode');
   const artifactKind = requiredText(raw.artifactKind, 'presentationFlowTask.artifactKind');
   if (!TASK_MODES.has(mode)) throw new TypeError('presentationFlowTask.mode is unsupported');
   if (!ARTIFACT_KINDS.has(artifactKind)) throw new TypeError('presentationFlowTask.artifactKind is unsupported');
+  const qualityDisposition = normalizeQualityDisposition(raw.qualityDisposition);
   return seal(WORKSPACE_PRESENTATION_FLOW_TASK_VERSION, {
     id: requiredText(raw.id, 'presentationFlowTask.id'),
     mode,
@@ -107,6 +117,7 @@ export function createPresentationFlowTask(input = {}) {
     objective: requiredText(raw.objective, 'presentationFlowTask.objective'),
     locale: requiredText(raw.locale, 'presentationFlowTask.locale'),
     budgets: normalizeBudgets(raw.budgets || {}),
+    ...(qualityDisposition === 'warn-and-play-live' ? { qualityDisposition } : {}),
   });
 }
 
