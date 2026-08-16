@@ -12,7 +12,7 @@ import {
 export const WORKSPACE_PRESENTATION_FLOW_TASK_VERSION = 'workspace-presentation-flow-task-v1';
 export const WORKSPACE_PROJECT_ADAPTATION_VERSION = 'workspace-project-adaptation-v1';
 export const WORKSPACE_PRESENTATION_FLOW_BASIS_VERSION = 'workspace-presentation-flow-basis-v1';
-export const WORKSPACE_PRESENTATION_PLAN_OPTIONS_VERSION = 'workspace-presentation-plan-options-v3';
+export const WORKSPACE_PRESENTATION_PLAN_OPTIONS_VERSION = 'workspace-presentation-plan-options-v4';
 export const WORKSPACE_PRESENTATION_PLAN_SELECTION_VERSION = 'workspace-presentation-plan-selection-v1';
 export const WORKSPACE_PRESENTATION_PLANNING_REQUEST_VERSION = 'workspace-presentation-planning-request-v1';
 export const WORKSPACE_PRESENTATION_AUTHORING_REQUEST_VERSION = 'workspace-presentation-authoring-request-v1';
@@ -215,19 +215,25 @@ function normalizeActionOptions(value, lesson) {
   return options;
 }
 
-export function createPresentationFlowPlanOptions({ basis, lessonContext, actionOptions = [], dialogueProfiles = [], requiredTargetIds = [] } = {}) {
+export function createPresentationFlowPlanOptions({ basis, lessonContext, actionOptions = [], dialogueProfiles = [], requiredTargetIds = [], requiredFactIds = [] } = {}) {
   const normalizedBasis = normalizeBasis(basis);
   const lesson = assertCurrentBasis(normalizedBasis, lessonContext);
   const offeredTargetIds = lesson.targets.map((target) => target.id).sort();
+  const offeredFactIds = lesson.facts.map((fact) => fact.id).sort();
   const required = uniqueRefs(requiredTargetIds, 'presentationPlanOptions.requiredTargetIds');
+  const requiredFacts = uniqueRefs(requiredFactIds, 'presentationPlanOptions.requiredFactIds');
   if (required.some((id) => !offeredTargetIds.includes(id))) {
     throw new TypeError('presentation plan required targets must be registered in lesson context');
+  }
+  if (requiredFacts.some((id) => !offeredFactIds.includes(id))) {
+    throw new TypeError('presentation plan required facts must be registered in lesson context');
   }
   return seal(WORKSPACE_PRESENTATION_PLAN_OPTIONS_VERSION, {
     basisHash: normalizedBasis.hash,
     targetIds: offeredTargetIds,
     requiredTargetIds: required,
-    factIds: lesson.facts.map((fact) => fact.id).sort(),
+    factIds: offeredFactIds,
+    requiredFactIds: requiredFacts,
     actionOptions: normalizeActionOptions(actionOptions, lesson),
     dialogueProfiles: uniqueRefs(dialogueProfiles, 'presentationPlanOptions.dialogueProfiles'),
   });
@@ -235,17 +241,23 @@ export function createPresentationFlowPlanOptions({ basis, lessonContext, action
 
 function normalizePlanOptions(input = {}) {
   const raw = verify(WORKSPACE_PRESENTATION_PLAN_OPTIONS_VERSION, input,
-    ['schemaVersion', 'basisHash', 'targetIds', 'requiredTargetIds', 'factIds', 'actionOptions', 'dialogueProfiles', 'hash'], 'presentationPlanOptions');
+    ['schemaVersion', 'basisHash', 'targetIds', 'requiredTargetIds', 'factIds', 'requiredFactIds', 'actionOptions', 'dialogueProfiles', 'hash'], 'presentationPlanOptions');
   const targetIds = uniqueRefs(raw.targetIds, 'presentationPlanOptions.targetIds');
   const requiredTargetIds = uniqueRefs(raw.requiredTargetIds, 'presentationPlanOptions.requiredTargetIds');
+  const factIds = uniqueRefs(raw.factIds, 'presentationPlanOptions.factIds');
+  const requiredFactIds = uniqueRefs(raw.requiredFactIds, 'presentationPlanOptions.requiredFactIds');
   if (requiredTargetIds.some((id) => !targetIds.includes(id))) {
     throw new TypeError('presentation plan required targets must be registered in lesson context');
+  }
+  if (requiredFactIds.some((id) => !factIds.includes(id))) {
+    throw new TypeError('presentation plan required facts must be registered in lesson context');
   }
   return seal(WORKSPACE_PRESENTATION_PLAN_OPTIONS_VERSION, {
     basisHash: requiredText(raw.basisHash, 'presentationPlanOptions.basisHash'),
     targetIds,
     requiredTargetIds,
-    factIds: uniqueRefs(raw.factIds, 'presentationPlanOptions.factIds'),
+    factIds,
+    requiredFactIds,
     actionOptions: (raw.actionOptions || []).map((entry, index) => {
       exactKeys(entry, ['id', 'actionId', 'targetId', 'toolId'], `presentationPlanOptions.actionOptions[${index}]`);
       return { id: requiredText(entry.id, 'actionOption.id'), actionId: requiredText(entry.actionId, 'actionOption.actionId'), targetId: requiredText(entry.targetId, 'actionOption.targetId'), toolId: requiredText(entry.toolId, 'actionOption.toolId') };
@@ -261,7 +273,8 @@ export function createPresentationFlowPlanSelection({ basis, options, selection 
   exactKeys(selection, ['targetIds', 'factIds', 'actionOptionIds', 'dialogueProfileId'], 'presentationPlanSelection');
   const selectedTargetIds = uniqueRefs(selection.targetIds, 'presentationPlanSelection.targetIds');
   const targetIds = [...new Set([...selectedTargetIds, ...normalizedOptions.requiredTargetIds])].sort();
-  const factIds = uniqueRefs(selection.factIds, 'presentationPlanSelection.factIds');
+  const selectedFactIds = uniqueRefs(selection.factIds, 'presentationPlanSelection.factIds');
+  const factIds = [...new Set([...selectedFactIds, ...normalizedOptions.requiredFactIds])].sort();
   const actionOptionIds = uniqueRefs(selection.actionOptionIds, 'presentationPlanSelection.actionOptionIds');
   const dialogueProfileId = optionalText(selection.dialogueProfileId, 'presentationPlanSelection.dialogueProfileId');
   if (!targetIds.length) throw new TypeError('presentation plan requires at least one target');
@@ -342,6 +355,7 @@ export function createPresentationFlowPlanningRequest({ task, adaptation, basis,
         ...(toolsById.get(option.toolId)?.description ? { description: toolsById.get(option.toolId).description } : {}),
       })),
       requiredTargetIds: normalizedOptions.requiredTargetIds,
+      requiredFactIds: normalizedOptions.requiredFactIds,
       dialogueProfiles: normalizedOptions.dialogueProfiles,
     },
   });
