@@ -12,7 +12,7 @@ import {
 export const WORKSPACE_PRESENTATION_FLOW_TASK_VERSION = 'workspace-presentation-flow-task-v1';
 export const WORKSPACE_PROJECT_ADAPTATION_VERSION = 'workspace-project-adaptation-v1';
 export const WORKSPACE_PRESENTATION_FLOW_BASIS_VERSION = 'workspace-presentation-flow-basis-v1';
-export const WORKSPACE_PRESENTATION_PLAN_OPTIONS_VERSION = 'workspace-presentation-plan-options-v2';
+export const WORKSPACE_PRESENTATION_PLAN_OPTIONS_VERSION = 'workspace-presentation-plan-options-v3';
 export const WORKSPACE_PRESENTATION_PLAN_SELECTION_VERSION = 'workspace-presentation-plan-selection-v1';
 export const WORKSPACE_PRESENTATION_PLANNING_REQUEST_VERSION = 'workspace-presentation-planning-request-v1';
 export const WORKSPACE_PRESENTATION_AUTHORING_REQUEST_VERSION = 'workspace-presentation-authoring-request-v1';
@@ -259,7 +259,8 @@ export function createPresentationFlowPlanSelection({ basis, options, selection 
   const normalizedOptions = normalizePlanOptions(options);
   if (normalizedOptions.basisHash !== normalizedBasis.hash) throw new TypeError('presentation plan options belong to another flow basis');
   exactKeys(selection, ['targetIds', 'factIds', 'actionOptionIds', 'dialogueProfileId'], 'presentationPlanSelection');
-  const targetIds = uniqueRefs(selection.targetIds, 'presentationPlanSelection.targetIds');
+  const selectedTargetIds = uniqueRefs(selection.targetIds, 'presentationPlanSelection.targetIds');
+  const targetIds = [...new Set([...selectedTargetIds, ...normalizedOptions.requiredTargetIds])].sort();
   const factIds = uniqueRefs(selection.factIds, 'presentationPlanSelection.factIds');
   const actionOptionIds = uniqueRefs(selection.actionOptionIds, 'presentationPlanSelection.actionOptionIds');
   const dialogueProfileId = optionalText(selection.dialogueProfileId, 'presentationPlanSelection.dialogueProfileId');
@@ -271,11 +272,6 @@ export function createPresentationFlowPlanSelection({ basis, options, selection 
     || actionOptionIds.some((id) => !targetIds.includes(optionActionById.get(id).targetId))
     || (dialogueProfileId && !normalizedOptions.dialogueProfiles.includes(dialogueProfileId))) {
     throw new TypeError('presentation plan selection contains an unoffered option');
-  }
-  if (normalizedOptions.requiredTargetIds.some((id) => !targetIds.includes(id))) {
-    const error = new TypeError('presentation plan selection omits a required target');
-    error.code = 'presentation-plan-required-targets-missing';
-    throw error;
   }
   return seal(WORKSPACE_PRESENTATION_PLAN_SELECTION_VERSION, {
     basisHash: normalizedBasis.hash,

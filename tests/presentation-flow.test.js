@@ -71,9 +71,10 @@ test('compiles a bounded semantic planning request and rejects unoffered model s
   assert.match(compiled, /Include every ID in selectionAuthority\.requiredTargetIds/);
   assert.deepEqual(selection.targetIds, ['details', 'orders']);
   assert.deepEqual(prompt.selectionAuthority.requiredTargetIds, ['details', 'orders']);
-  assert.throws(() => parsePresentationFlowPlanningResponse({
+  const partialSelection = parsePresentationFlowPlanningResponse({
     planSelection: { targetIds: ['orders'], factIds: ['fact:status'], actionOptionIds: ['inspect-orders'], dialogueProfileId: 'dialogue' },
-  }, request), (error) => error?.code === 'presentation-plan-required-targets-missing');
+  }, request);
+  assert.deepEqual(partialSelection.targetIds, ['details', 'orders']);
   assert.throws(() => parsePresentationFlowPlanningResponse({
     planSelection: { targetIds: ['unknown'], factIds: [], actionOptionIds: [] },
   }, request), /unoffered option/);
