@@ -35,7 +35,7 @@ test('validates explicit inputs and generates two-person ask/respond fixture', (
       { targetId: 'target-A', sourceRefs: ['s1'], actionRef: 'select-a', resultRefs: ['res-1'], focusMode: 'none', anchors: [{ intent: 'action' }, { intent: 'emphasize' }] }
     ],
     registeredActions: [
-      { actionId: 'select-a', targetId: 'target-A', tabId: 'tab-1', source: 'workspace', tool: 'select', interactionType: 'zoom', resultRef: 'res-1' }
+      { actionId: 'select-a', targetId: 'target-A', tabId: 'tab-1', source: 'workspace', tool: 'select', interactionType: 'zoom', reversible: true, resultRef: 'res-1' }
     ],
     dialoguePlan: [
       { persona: 'p1', dialogueAct: 'ask', addressee: 'p2' },
@@ -64,6 +64,7 @@ test('validates explicit inputs and generates two-person ask/respond fixture', (
   // Turn 1: action interaction + annotation, no redundant focus
   assert.strictEqual(project.timeline.turns[1].cues.length, 2);
   assert.strictEqual(project.timeline.turns[1].cues[0].kind, 'interaction');
+  assert.strictEqual(project.timeline.turns[1].cues[0].interaction.reversible, true);
   assert.strictEqual(project.timeline.turns[1].cues[1].kind, 'annotation');
   assert.strictEqual(project.timeline.turns[1].cues[0].at.anchor, 'turn-start');
   assert.strictEqual(project.timeline.turns[1].replyTo, project.timeline.turns[0].id);

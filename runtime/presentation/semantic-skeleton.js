@@ -15,6 +15,12 @@ export function requiredText(value, path) {
   return normalized;
 }
 
+function optionalBoolean(value, path) {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'boolean') throw new TypeError(`${path} must be a boolean`);
+  return value;
+}
+
 function occurrences(value, quote) {
   let count = 0; let cursor = 0;
   while (cursor <= value.length - quote.length) { let next = value.indexOf(quote, cursor); if (next < 0) break; count += 1; cursor = next + Math.max(1, quote.length); }
@@ -197,7 +203,7 @@ export function normalizeSemanticSkeleton(input = {}) {
     slotIds.add(slot.slotId);
 
     if (slot.action) {
-       assertKnownKeys(slot.action, ['actionId', 'targetId', 'tabId', 'source', 'tool', 'input', 'interactionType', 'resultRef'], `slots[${i}].action`);
+       assertKnownKeys(slot.action, ['actionId', 'targetId', 'tabId', 'source', 'tool', 'input', 'interactionType', 'reversible', 'resultRef'], `slots[${i}].action`);
        let actionId = requiredText(slot.action.actionId, `slots[${i}].action.actionId`);
        if (actionIds.has(actionId)) throw new TypeError(`Duplicate action identity ${actionId}`);
        actionIds.add(actionId);
@@ -255,6 +261,7 @@ export function normalizeSemanticSkeleton(input = {}) {
            tool: requiredText(slot.action.tool, `slots[${i}].action.tool`),
            input: slot.action.input !== undefined ? JSON.parse(canonicalize(slot.action.input)) : undefined,
            interactionType: requiredText(slot.action.interactionType, `slots[${i}].action.interactionType`),
+           reversible: optionalBoolean(slot.action.reversible, `slots[${i}].action.reversible`),
            resultRef: requiredText(slot.action.resultRef, `slots[${i}].action.resultRef`),
        } : undefined,
        transition: slot.transition ? JSON.parse(canonicalize(slot.transition)) : undefined,
@@ -291,11 +298,11 @@ export function normalizeSemanticSkeleton(input = {}) {
       };
   });
   reconstructed.registeredActions = array(input.registeredActions || [], 'registeredActions').map((action, index) => {
-    assertKnownKeys(action, ['actionId', 'targetId', 'tabId', 'source', 'tool', 'input', 'interactionType', 'resultRef'], `registeredActions[${index}]`);
+    assertKnownKeys(action, ['actionId', 'targetId', 'tabId', 'source', 'tool', 'input', 'interactionType', 'reversible', 'resultRef'], `registeredActions[${index}]`);
     return {
       actionId: requiredText(action.actionId, `registeredActions[${index}].actionId`), targetId: requiredText(action.targetId, `registeredActions[${index}].targetId`),
       tabId: text(action.tabId) || undefined, source: requiredText(action.source, `registeredActions[${index}].source`), tool: requiredText(action.tool, `registeredActions[${index}].tool`),
-      input: action.input === undefined ? undefined : JSON.parse(canonicalize(action.input)), interactionType: requiredText(action.interactionType, `registeredActions[${index}].interactionType`), resultRef: requiredText(action.resultRef, `registeredActions[${index}].resultRef`),
+      input: action.input === undefined ? undefined : JSON.parse(canonicalize(action.input)), interactionType: requiredText(action.interactionType, `registeredActions[${index}].interactionType`), reversible: optionalBoolean(action.reversible, `registeredActions[${index}].reversible`), resultRef: requiredText(action.resultRef, `registeredActions[${index}].resultRef`),
     };
   });
 
@@ -424,13 +431,13 @@ export function createSemanticSkeleton(input = {}) {
   let actions = array(input.registeredActions || [], 'registeredActions');
   let actionMap = new Map();
   actions.forEach(a => {
-     assertKnownKeys(a, ['actionId', 'targetId', 'tabId', 'source', 'tool', 'input', 'interactionType', 'resultRef'], 'action');
+     assertKnownKeys(a, ['actionId', 'targetId', 'tabId', 'source', 'tool', 'input', 'interactionType', 'reversible', 'resultRef'], 'action');
      let actionId = requiredText(a.actionId, 'action.actionId');
      if (actionMap.has(actionId)) throw new Error(`Duplicate registered action identity ${actionId}`);
      let target = targetMap.get(requiredText(a.targetId, 'action.targetId'));
      if (!target) throw new Error(`Registered action ${actionId} targets an undeclared target`);
      if (text(a.tabId) !== text(target.tabId)) throw new Error(`Registered action ${actionId} tab does not match target`);
-     requiredText(a.source, 'action.source'); requiredText(a.tool, 'action.tool'); requiredText(a.interactionType, 'action.interactionType'); requiredText(a.resultRef, 'action.resultRef');
+     requiredText(a.source, 'action.source'); requiredText(a.tool, 'action.tool'); requiredText(a.interactionType, 'action.interactionType'); optionalBoolean(a.reversible, 'action.reversible'); requiredText(a.resultRef, 'action.resultRef');
      actionMap.set(actionId, a);
   });
 
@@ -568,6 +575,7 @@ export function createSemanticSkeleton(input = {}) {
              tool: requiredText(slotAction.tool, 'action.tool'),
              input: slotAction.input !== undefined ? JSON.parse(canonicalize(slotAction.input)) : undefined,
              interactionType: requiredText(slotAction.interactionType, 'action.interactionType'),
+             reversible: optionalBoolean(slotAction.reversible, 'action.reversible'),
              resultRef: requiredText(slotAction.resultRef, 'action.resultRef')
          } : undefined,
          replyToSlotId,

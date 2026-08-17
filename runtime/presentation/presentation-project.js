@@ -71,7 +71,7 @@ export function materializePresentationTimeline(skeletonRaw, projectionRaw) {
         if (!slot.action) throw new TypeError(`Action anchor declared without registered action in ${slot.slotId}`);
         cues.push({ kind: 'interaction', targetId: slot.targetId, tabId: slot.tabId,
           at: anchor.event === 'turn-start' ? { anchor: 'turn-start', offsetMs: 0 } : { anchor: 'speech', quote: anchor.quote, occurrence: anchor.occurrence, edge: 'start', offsetMs: 0 },
-          interaction: { type: slot.action.interactionType, binding: { source: slot.action.source, tool: slot.action.tool, input: slot.action.input } },
+          interaction: { type: slot.action.interactionType, binding: { source: slot.action.source, tool: slot.action.tool, input: slot.action.input }, reversible: slot.action.reversible === true ? true : undefined },
         });
       } else {
         cues.push({ kind: 'annotation', targetId: slot.targetId, tabId: slot.tabId,
@@ -132,7 +132,7 @@ export function materializeLiveWarningPresentationTimeline(skeletonRaw, candidat
         cues.push({
           kind: 'interaction', targetId: slot.targetId, tabId: slot.tabId,
           at: { anchor: 'turn-start', offsetMs: 0 },
-          interaction: { type: slot.action.interactionType, binding: { source: slot.action.source, tool: slot.action.tool, input: slot.action.input } },
+          interaction: { type: slot.action.interactionType, binding: { source: slot.action.source, tool: slot.action.tool, input: slot.action.input }, reversible: slot.action.reversible === true ? true : undefined },
         });
       } else {
         cues.push({
