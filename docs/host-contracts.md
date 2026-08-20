@@ -362,11 +362,15 @@ unknown fields, target-mismatched sources, unregistered tools, unsafe spoken
 tokens, and disconnected dialogue before exposing TTS items.
 
 After synthesis/transcription, `createPresentationAlignedSequence()` produces a
-separate `workspace-aligned-sequence-v1` artifact bound to the exact timeline and
+separate `workspace-aligned-sequence-v3` artifact bound to the exact timeline and
 media hashes. It contains complete turn spans and one deterministic event per cue
-with absolute times and resolution provenance (`exact`, `occurrence`, `fuzzy`, or
-`proportional`). Renderers consume this derived artifact; they never write timing
-back into the authored timeline.
+with absolute times, resolution provenance (`exact`, `occurrence`, or
+`interpolated`), and `high`, `medium`, or `low` confidence. Missing or conflicting
+speech matches are placed monotonically between the nearest trusted observed
+anchors and turn boundaries; the inferred confidence remains explicit so hosts
+can warn without inventing lexical evidence or blocking playback. Renderers
+consume this derived artifact; they never write timing back into the authored
+timeline.
 
 `createPresentationContextSnapshot()` separates stable interface identity from
 volatile live data. `identityHash` includes viewport, visible/rendered targets,

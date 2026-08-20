@@ -322,6 +322,7 @@ function skeletonEventFacts(timeline, alignedSequence, actionOwnership) {
       startMs: event.startMs,
       endMs: event.endMs,
       resolution: event.resolution,
+      confidence: event.confidence,
     };
   });
 }
@@ -336,9 +337,6 @@ export function createProductionSkeleton(timelineInput, alignedInput, mixInput, 
   if (alignedSequence.media.hash !== mixEvidence.artifactHash
     || alignedSequence.media.durationMs !== mixEvidence.durationMs) {
     throw new ProductionRevisionError('aligned media must exactly match accepted mix artifact and duration');
-  }
-  if (alignedSequence.events.some((event) => ['fuzzy', 'proportional'].includes(event.resolution))) {
-    throw new ProductionRevisionError('production skeleton requires exact or occurrence word resolution');
   }
   let source = record(options, 'productionSkeleton.options');
   exactKeys(source, [

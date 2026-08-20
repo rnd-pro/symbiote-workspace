@@ -6,7 +6,9 @@ import {
   PRESENTATION_CONTRACT_VERSION,
   PRESENTATION_DIALOGUE_ACTS,
   PRESENTATION_INTERACTION_TYPES,
+  createAudioEvidence,
   createPresentationAlignedSequence,
+  createProductionSkeleton,
   createPresentationTimelineContract,
   normalizePresentationTimeline,
   reviewPresentationTimeline,
@@ -155,7 +157,7 @@ describe('presentation timeline v3 contract', () => {
   });
 });
 
-describe('workspace aligned sequence v2', () => {
+describe('workspace aligned sequence v3', () => {
   it('resolves every turn and cue against one media identity with provenance', () => {
     let timeline = createPresentationTimelineContract(fixture());
     let sequence = createPresentationAlignedSequence(timeline, {
@@ -195,8 +197,17 @@ describe('workspace aligned sequence v2', () => {
     assert.equal(sequence.turns.length, timeline.turns.length);
     assert.equal(sequence.events.length, timeline.turns.reduce((count, turn) => count + turn.cues.length, 0));
     assert.equal(sequence.events[0].cueId, '0.0');
-    assert.equal(sequence.events.every((event) => ['exact', 'occurrence', 'fuzzy', 'proportional'].includes(event.resolution)), true);
+    assert.equal(sequence.events.every((event) => ['exact', 'occurrence', 'interpolated'].includes(event.resolution)), true);
+    assert.equal(sequence.events.every((event) => ['high', 'medium', 'low'].includes(event.confidence)), true);
     assert.equal(validatePresentationAlignedSequence(sequence, timeline), sequence);
+    assert.throws(
+      () => validatePresentationAlignedSequence({ ...sequence, contractVersion: 'workspace-aligned-sequence-v2' }, timeline),
+      /unsupported aligned sequence version/,
+    );
+    assert.throws(
+      () => validatePresentationAlignedSequence({ ...sequence, events: [{ ...sequence.events[0], confidence: 'low' }, ...sequence.events.slice(1)] }, timeline),
+      /hash is stale/,
+    );
     assert.throws(() => validatePresentationAlignedSequence({ ...sequence, timelineHash: 'stale' }, timeline), /timelineHash/);
     assert.throws(
       () => validatePresentationAlignedSequence({ ...sequence, events: [{ ...sequence.events[0], cueId: '9.9' }, ...sequence.events.slice(1)] }, timeline),
@@ -206,6 +217,114 @@ describe('workspace aligned sequence v2', () => {
       () => validatePresentationAlignedSequence({ ...sequence, turns: [{ ...sequence.turns[0], extra: true }, ...sequence.turns.slice(1)] }, timeline),
       /extra is not supported/,
     );
+  });
+
+  it('interpolates missing speech anchors monotonically between exact observed words', () => {
+    let source = fixture({
+      turns: [{
+        id: 'interpolate', persona: 'guide', dialogueAct: 'explain', text: 'alpha beta gamma delta',
+        sourceRefs: [{ sourceId: 'graph', hash: 'sha256-graph', targetId: 'panel:graph' }], claims: [],
+        cues: [
+          { kind: 'focus', targetId: 'panel:graph', at: { anchor: 'speech', quote: 'alpha', occurrence: 1, edge: 'start', offsetMs: 0 }, focus: { mode: 'cursor' } },
+          { kind: 'focus', targetId: 'panel:graph', at: { anchor: 'speech', quote: 'beta', occurrence: 1, edge: 'start', offsetMs: 0 }, focus: { mode: 'cursor' } },
+          { kind: 'focus', targetId: 'panel:graph', at: { anchor: 'speech', quote: 'gamma', occurrence: 1, edge: 'start', offsetMs: 0 }, focus: { mode: 'cursor' } },
+          { kind: 'focus', targetId: 'panel:graph', at: { anchor: 'speech', quote: 'delta', occurrence: 1, edge: 'start', offsetMs: 0 }, focus: { mode: 'cursor' } },
+        ],
+      }],
+    });
+    let timeline = createPresentationTimelineContract(source);
+    let sequence = createPresentationAlignedSequence(timeline, {
+      media: { hash: 'sha256-audio', durationMs: 1000, locale: 'ru-RU' },
+      turns: [{
+        startMs: 0, endMs: 1000, transcript: timeline.turns[0].text,
+        words: [
+          { text: 'alpha', startMs: 100, endMs: 180 },
+          { text: 'delta', startMs: 900, endMs: 980 },
+        ],
+      }],
+    });
+
+    assert.deepEqual(sequence.events.map(({ startMs, resolution, confidence }) => ({ startMs, resolution, confidence })), [
+      { startMs: 100, resolution: 'exact', confidence: 'high' },
+      { startMs: 382, resolution: 'interpolated', confidence: 'medium' },
+      { startMs: 618, resolution: 'interpolated', confidence: 'medium' },
+      { startMs: 900, resolution: 'exact', confidence: 'high' },
+    ]);
+    assert.equal(validatePresentationAlignedSequence(JSON.parse(JSON.stringify(sequence)), timeline).hash, sequence.hash);
+
+    let crossed = createPresentationAlignedSequence(timeline, {
+      media: { hash: 'sha256-audio', durationMs: 1000, locale: 'ru-RU' },
+      turns: [{
+        startMs: 0, endMs: 1000, transcript: timeline.turns[0].text,
+        words: [
+          { text: 'alpha', startMs: 900, endMs: 920 },
+          { text: 'delta', startMs: 100, endMs: 120 },
+        ],
+      }],
+    });
+    let crossedByCueId = new Map(crossed.events.map((event) => [event.cueId, event]));
+    assert.equal(crossedByCueId.get('0.0').resolution, 'exact');
+    assert.equal(crossedByCueId.get('0.3').confidence, 'low');
+    assert.ok(crossedByCueId.get('0.0').startMs <= crossedByCueId.get('0.1').startMs);
+    assert.ok(crossedByCueId.get('0.1').startMs <= crossedByCueId.get('0.2').startMs);
+    assert.ok(crossedByCueId.get('0.2').startMs <= crossedByCueId.get('0.3').startMs);
+  });
+
+  it('uses authored-position turn-bound interpolation when no lexical anchor is observed', () => {
+    let source = fixture({
+      turns: [{
+        id: 'bounds', persona: 'guide', dialogueAct: 'explain', text: 'alpha beta gamma delta',
+        sourceRefs: [{ sourceId: 'graph', hash: 'sha256-graph', targetId: 'panel:graph' }], claims: [],
+        cues: [{
+          kind: 'focus', targetId: 'panel:graph',
+          at: { anchor: 'speech', quote: 'beta', occurrence: 1, edge: 'start', offsetMs: 0 },
+          focus: { mode: 'cursor' },
+        }],
+      }],
+    });
+    let timeline = createPresentationTimelineContract(source);
+    let sequence = createPresentationAlignedSequence(timeline, {
+      media: { hash: 'sha256-audio', durationMs: 1000, locale: 'ru-RU' },
+      turns: [{
+        startMs: 0, endMs: 1000, transcript: timeline.turns[0].text,
+        words: [{ text: 'noise', startMs: 100, endMs: 900 }],
+      }],
+    });
+
+    assert.deepEqual(sequence.events[0], {
+      cueId: '0.0', turnIndex: 0, kind: 'focus', startMs: 273, endMs: 1000,
+      resolution: 'interpolated', confidence: 'low',
+    });
+
+    const judgmentKinds = ['correspondence', 'punctuation-phrasing', 'contour', 'pauses', 'speaker-continuity', 'dialogue-flow'];
+    const artifact = 'workspace-artifact-v1:sha256-a';
+    const mix = createAudioEvidence({
+      type: 'mix', artifactId: artifact, artifactHash: artifact, durationMs: 1000,
+      constituentClipIds: ['workspace-audio-clip-v1:sha256-a'],
+      authoredTranscript: 'noise', whisperTranscript: 'noise', words: [{ text: 'noise', startMs: 100, endMs: 900 }],
+      judgments: judgmentKinds.map((kind) => ({
+        kind, providerId: 'provider', agentId: 'agent', passed: true,
+        evidenceHash: 'workspace-audio-judgment-v1:sha256-a',
+      })),
+    });
+    let productionSequence = createPresentationAlignedSequence(timeline, {
+      media: { hash: artifact, durationMs: 1000, locale: 'ru-RU' },
+      turns: [{ startMs: 0, endMs: 1000, transcript: timeline.turns[0].text, words: [{ text: 'noise', startMs: 100, endMs: 900 }] }],
+    });
+    let skeleton = createProductionSkeleton(timeline, productionSequence, mix, {
+      pointDurationMs: 1,
+      gapMs: 1,
+      semanticScript: {
+        locale: 'ru-RU', styleRefs: [], profileRefs: [],
+        turns: [{
+          id: 'bounds', text: 'alpha beta gamma delta', semanticAct: 'explain', replyToTurnId: null,
+          factRefs: [], claimRefs: [], targetRefs: ['panel:graph'], actionRefs: [],
+        }],
+      },
+      actionOwnership: [],
+    });
+    assert.equal(skeleton.eventFacts[0].resolution, 'interpolated');
+    assert.equal(skeleton.eventFacts[0].confidence, 'low');
   });
 
   it('retains voice-owned transcripts and word timings for production media authority', () => {
