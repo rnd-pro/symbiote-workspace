@@ -14,6 +14,7 @@ import {
   createMediaPresentationAncestryAssertion,
   validateMediaPresentationAncestry,
   normalizePresentationProject,
+  materializeLiveWarningPresentationTimeline,
   inspectPresentationProject,
   inspectPresentationNarrationQuality,
   inspectPresentationPreAudio,
@@ -228,6 +229,42 @@ test('v7 resolves a claim-atom anchor only from its selected immutable tuple', (
     orderedCausalRelations: [{ targetId: 'target', factRefs: ['fact'], claimRefs: [{ id: 'claim', kind: 'state' }], focusMode: 'frame', anchors: [{ intent: 'emphasize', binding: { type: 'claim-atom', claimId: 'claim', atomPath: '/missing', occurrence: 1 } }] }],
     dialoguePlan: [{ persona: 'guide', dialogueAct: 'explain' }],
   }), /selected claim tuple atom/);
+});
+
+test('word-anchored focus emits one speech-bound frame and reconstructs exactly', () => {
+  const input = {
+    locale: 'und', title: 'Word-anchored frame', profile: 'brief', personas: { guide: { role: 'operator' } },
+    grounding: { facts: [{ id: 'fact', value: 'ANCHOR-7', narration: { role: 'substantive', coverage: 'required' } }], claims: [{ id: 'claim', kind: 'state', factRefs: ['fact'] }] },
+    requiredTargets: [{ targetId: 'target', factRefs: ['fact'], claimRefs: ['claim'] }],
+    orderedCausalRelations: [{ targetId: 'target', factRefs: ['fact'], claimRefs: [{ id: 'claim', kind: 'state' }], focusMode: 'frame', anchors: [{ intent: 'focus', binding: { type: 'claim-atom', claimId: 'claim', atomPath: '', occurrence: 1 } }] }],
+    dialoguePlan: [{ persona: 'guide', dialogueAct: 'explain' }],
+  };
+  const skeleton = createSemanticSkeleton(input);
+  const projection = createNarrationProjection({ narrations: [{ slotId: skeleton.slots[0].slotId, text: 'ANCHOR-7 is ready.' }] }, skeleton);
+  const project = createPresentationProject({ skeleton, projection });
+  assert.equal(project.timeline.turns[0].cues.length, 1);
+  assert.deepEqual(project.timeline.turns[0].cues[0], {
+    kind: 'focus', targetId: 'target',
+    at: { anchor: 'speech', quote: 'ANCHOR-7', occurrence: 1, edge: 'start', offsetMs: 0 },
+    until: { anchor: 'turn-end', offsetMs: 0 }, focus: { mode: 'frame' },
+  });
+  assert.equal(normalizePresentationProject(project).hash, project.hash);
+  const warningTimeline = materializeLiveWarningPresentationTimeline(skeleton, {
+    narrations: [{ slotId: skeleton.slots[0].slotId, text: 'Unverified candidate text.' }],
+  });
+  assert.equal(warningTimeline.turns[0].cues.length, 1);
+  assert.equal(warningTimeline.turns[0].cues[0].at.anchor, 'turn-start');
+  assert.throws(() => createSemanticSkeleton({
+    ...input,
+    orderedCausalRelations: [{ ...input.orderedCausalRelations[0], focusMode: 'none' }],
+  }), /focus anchor.*requires frame focusMode/i);
+  assert.throws(() => createSemanticSkeleton({
+    ...input,
+    orderedCausalRelations: [{ ...input.orderedCausalRelations[0], anchors: [
+      ...input.orderedCausalRelations[0].anchors,
+      { intent: 'focus', binding: { type: 'turn-start' } },
+    ] }],
+  }), /multiple focus anchors/i);
 });
 
 test('pre-audio quality rejects repeated substantive atoms including fixed response coverage', () => {

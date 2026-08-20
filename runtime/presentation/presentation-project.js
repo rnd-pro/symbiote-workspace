@@ -60,22 +60,30 @@ export function materializePresentationTimeline(skeletonRaw, projectionRaw) {
   let turns = skeleton.slots.map((slot, index) => {
     let narration = projection.narrations[index];
     let cues = [];
+    let hasAnchoredFocus = slot.anchors.some((anchor) => anchor.intent === 'focus');
     // A visual frame is only a declared independent emphasis. Interaction owns its own cursor.
-    if (slot.focusMode === 'frame' && !slot.action) cues.push({
+    if (slot.focusMode === 'frame' && !slot.action && !hasAnchoredFocus) cues.push({
       kind: 'focus', targetId: slot.targetId, tabId: slot.tabId,
       at: { anchor: 'turn-start', offsetMs: 0 }, focus: { mode: 'frame' },
     });
     slot.anchors.forEach((declared, anchorIndex) => {
       let anchor = narration.anchors[anchorIndex];
+      let at = anchor.event === 'turn-start'
+        ? { anchor: 'turn-start', offsetMs: 0 }
+        : { anchor: 'speech', quote: anchor.quote, occurrence: anchor.occurrence, edge: 'start', offsetMs: 0 };
       if (declared.intent === 'action') {
         if (!slot.action) throw new TypeError(`Action anchor declared without registered action in ${slot.slotId}`);
         cues.push({ kind: 'interaction', targetId: slot.targetId, tabId: slot.tabId,
-          at: anchor.event === 'turn-start' ? { anchor: 'turn-start', offsetMs: 0 } : { anchor: 'speech', quote: anchor.quote, occurrence: anchor.occurrence, edge: 'start', offsetMs: 0 },
+          at,
           interaction: { type: slot.action.interactionType, binding: { source: slot.action.source, tool: slot.action.tool, input: slot.action.input }, reversible: slot.action.reversible === true ? true : undefined },
+        });
+      } else if (declared.intent === 'focus') {
+        cues.push({ kind: 'focus', targetId: slot.targetId, tabId: slot.tabId,
+          at, focus: { mode: 'frame' },
         });
       } else {
         cues.push({ kind: 'annotation', targetId: slot.targetId, tabId: slot.tabId,
-          at: anchor.event === 'turn-start' ? { anchor: 'turn-start', offsetMs: 0 } : { anchor: 'speech', quote: anchor.quote, occurrence: anchor.occurrence, edge: 'start', offsetMs: 0 },
+          at,
           annotation: { intent: declared.intent },
         });
       }
@@ -120,7 +128,8 @@ export function materializeLiveWarningPresentationTimeline(skeletonRaw, candidat
     return Object.freeze({ slot, text: value });
   });
   const turns = narrations.map(({ slot, text: narration }) => {
-    const cues = slot.focusMode === 'frame' && !slot.action
+    const hasAnchoredFocus = slot.anchors.some((anchor) => anchor.intent === 'focus');
+    const cues = slot.focusMode === 'frame' && !slot.action && !hasAnchoredFocus
       ? [{
         kind: 'focus', targetId: slot.targetId, tabId: slot.tabId,
         at: { anchor: 'turn-start', offsetMs: 0 }, focus: { mode: 'frame' },
@@ -133,6 +142,11 @@ export function materializeLiveWarningPresentationTimeline(skeletonRaw, candidat
           kind: 'interaction', targetId: slot.targetId, tabId: slot.tabId,
           at: { anchor: 'turn-start', offsetMs: 0 },
           interaction: { type: slot.action.interactionType, binding: { source: slot.action.source, tool: slot.action.tool, input: slot.action.input }, reversible: slot.action.reversible === true ? true : undefined },
+        });
+      } else if (declared.intent === 'focus') {
+        cues.push({
+          kind: 'focus', targetId: slot.targetId, tabId: slot.tabId,
+          at: { anchor: 'turn-start', offsetMs: 0 }, focus: { mode: 'frame' },
         });
       } else {
         cues.push({

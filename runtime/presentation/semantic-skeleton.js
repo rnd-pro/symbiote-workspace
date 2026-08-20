@@ -335,6 +335,9 @@ export function normalizeSemanticSkeleton(input = {}) {
       if (slot.addressee !== replied.persona) throw new TypeError(`slots[${index}] addressee does not match replied persona`);
     }
     if (!['frame', 'none'].includes(slot.focusMode)) throw new TypeError(`slots[${index}].focusMode must be frame or none`);
+    let focusAnchorCount = slot.anchors.filter((anchor) => anchor.intent === 'focus').length;
+    if (focusAnchorCount > 1) throw new TypeError(`slots[${index}] cannot declare multiple focus anchors`);
+    if (focusAnchorCount === 1 && slot.focusMode !== 'frame') throw new TypeError(`slots[${index}] focus anchor requires frame focusMode`);
     if (slot.action && slot.focusMode !== 'none') throw new TypeError(`slots[${index}] action cannot carry focus before interaction`);
     slot.claimRefs.forEach((claim) => {
       if (claim.factRefs.some((id) => !slot.factRefs.includes(id)) || claim.evidenceRefs.some((id) => !slot.evidenceRefs.includes(id))) throw new TypeError(`slots[${index}] claim ${claim.id} grounding must be local to the slot`);
@@ -517,6 +520,9 @@ export function createSemanticSkeleton(input = {}) {
          assertKnownKeys(a.binding, ['type', 'claimId', 'atomPath', 'occurrence'], 'anchor.binding');
          return { intent: requiredText(a.intent, 'intent'), binding: JSON.parse(canonicalize(a.binding)) };
      });
+     let focusAnchorCount = anchors.filter((anchor) => anchor.intent === 'focus').length;
+     if (focusAnchorCount > 1) throw new Error(`Causal relation at target ${targetId} cannot declare multiple focus anchors`);
+     if (focusAnchorCount === 1 && focusMode !== 'frame') throw new Error(`Focus anchor at target ${targetId} requires frame focusMode`);
      if (actionAttached && anchors.filter(a => a.intent === 'action').length !== 1) throw new Error(`Action at target ${targetId} requires exactly one declared action word anchor`);
      if (!slotAction && anchors.some(a => a.intent === 'action')) throw new Error(`Action word anchor has no registered action at ${targetId}`);
      if (actionAttached && focusMode !== 'none') throw new Error(`Action at target ${targetId} cannot add a redundant focus frame`);
