@@ -208,11 +208,12 @@ describe('presentation output and composition contracts', () => {
       requiredTargetIds: ['panel:orders'],
     });
     let minor = validPlan({ steps: [validStep({
-      id: 'step-minor', cueId: 'cue-minor', cueIndex: 0, cueKind: 'annotation',
+      id: 'step-minor', cueId: 'cue-minor', cueIndex: 0, cueKind: 'focus',
       measurement: {
         ...validStep().measurement,
         focusRect: { x: 45, y: 100, width: 160, height: 48 },
         visibleRect: { x: 54, y: 100, width: 151, height: 48 },
+        criticalAttentionRect: { x: 45, y: 100, width: 160, height: 48 },
         visibleRatio: 0.944,
       },
     })] });
@@ -226,6 +227,17 @@ describe('presentation output and composition contracts', () => {
     let audit = auditPlan(material);
     assert.equal(audit.verdict, 'reject');
     assert.ok(audit.issueCodes.includes('target-clipped'));
+
+    let critical = validPlan({ steps: [validStep({
+      id: 'step-critical', cueId: 'cue-critical', cueIndex: 0, cueKind: 'interaction',
+      measurement: {
+        ...validStep().measurement,
+        criticalAttentionRect: { x: 20, y: 100, width: 160, height: 48 },
+      },
+    })] });
+    let criticalAudit = auditPlan(critical);
+    assert.equal(criticalAudit.verdict, 'reject');
+    assert.ok(criticalAudit.issueCodes.includes('target-clipped'));
   });
 
   it('accepts a restored, readable and collision-free per-turn composition plan', () => {

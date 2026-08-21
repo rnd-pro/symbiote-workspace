@@ -183,6 +183,14 @@ function rectIntersects(left, right) {
     && rectBottom(left) > finiteNumber(right?.y);
 }
 
+function rectIntersection(left, right) {
+  let x = Math.max(finiteNumber(left?.x), finiteNumber(right?.x));
+  let y = Math.max(finiteNumber(left?.y), finiteNumber(right?.y));
+  let rightEdge = Math.min(rectRight(left), rectRight(right));
+  let bottomEdge = Math.min(rectBottom(left), rectBottom(right));
+  return rect(x, y, Math.max(0, rightEdge - x), Math.max(0, bottomEdge - y));
+}
+
 export function normalizePresentationRect(input = {}) {
   let source = isObject(input) ? input : {};
   return rect(source.x ?? source.left, source.y ?? source.top, source.width, source.height);
@@ -579,9 +587,18 @@ export function auditPresentationCompositionPlan(plan = {}, expectations = {}) {
             presentationViewport.y,
           )
         : null;
+      let visibleCriticalAttentionRect = criticalAttentionRect
+        ? rectIntersection(criticalAttentionRect, output.contentRect)
+        : null;
+      let criticalAttentionArea = criticalAttentionRect
+        ? criticalAttentionRect.width * criticalAttentionRect.height
+        : 0;
+      let visibleCriticalAttentionRatio = criticalAttentionArea > 0
+        ? (visibleCriticalAttentionRect.width * visibleCriticalAttentionRect.height) / criticalAttentionArea
+        : 0;
       if (
         !criticalAttentionRect
-        || !rectContains(output.contentRect, criticalAttentionRect, 1)
+        || visibleCriticalAttentionRatio < 0.9
       ) {
         add(
           'target-clipped',
