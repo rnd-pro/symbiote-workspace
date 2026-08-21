@@ -52,6 +52,12 @@ function normalizeProjectionForProviderUse(skeleton, projectionRaw) {
   return reconstructed;
 }
 
+function annotationForDeclaredIntent(intent) {
+  return intent === 'pointer'
+    ? { intent, marker: 'arrow', placement: 'before' }
+    : { intent };
+}
+
 /** Rebuilds the v3 timeline from the immutable semantic inputs; it never accepts model topology. */
 export function materializePresentationTimeline(skeletonRaw, projectionRaw) {
   let skeleton = normalizeSemanticSkeleton(skeletonRaw);
@@ -60,6 +66,13 @@ export function materializePresentationTimeline(skeletonRaw, projectionRaw) {
   let turns = skeleton.slots.map((slot, index) => {
     let narration = projection.narrations[index];
     let cues = [];
+    let actionAnchorIndex = slot.anchors.findIndex((anchor) => anchor.intent === 'action');
+    let actionAnchor = actionAnchorIndex >= 0 ? narration.anchors[actionAnchorIndex] : null;
+    let actionAt = actionAnchor
+      ? (actionAnchor.event === 'turn-start'
+        ? { anchor: 'turn-start', offsetMs: 0 }
+        : { anchor: 'speech', quote: actionAnchor.quote, occurrence: actionAnchor.occurrence, edge: 'start', offsetMs: 0 })
+      : null;
     let hasAnchoredFocus = slot.anchors.some((anchor) => anchor.intent === 'focus');
     // A visual frame is only a declared independent emphasis. Interaction owns its own cursor.
     if (slot.focusMode === 'frame' && !slot.action && !hasAnchoredFocus) cues.push({
@@ -84,7 +97,8 @@ export function materializePresentationTimeline(skeletonRaw, projectionRaw) {
       } else {
         cues.push({ kind: 'annotation', targetId: slot.targetId, tabId: slot.tabId,
           at,
-          annotation: { intent: declared.intent },
+          ...(declared.intent === 'pointer' && actionAt?.anchor === 'speech' ? { until: actionAt } : {}),
+          annotation: annotationForDeclaredIntent(declared.intent),
         });
       }
     });
@@ -151,7 +165,7 @@ export function materializeLiveWarningPresentationTimeline(skeletonRaw, candidat
       } else {
         cues.push({
           kind: 'annotation', targetId: slot.targetId, tabId: slot.tabId,
-          at: { anchor: 'turn-start', offsetMs: 0 }, annotation: { intent: declared.intent },
+          at: { anchor: 'turn-start', offsetMs: 0 }, annotation: annotationForDeclaredIntent(declared.intent),
         });
       }
     });

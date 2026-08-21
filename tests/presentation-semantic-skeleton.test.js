@@ -75,6 +75,55 @@ test('validates explicit inputs and generates two-person ask/respond fixture', (
   assert.strictEqual(project.timeline.turns[1].sourceRefs[0].sourceId, 's1');
 });
 
+test('action-bound pointer materializes a marker arrow before its registered interaction', () => {
+  const input = {
+    locale: 'en-US', title: 'Pointer', profile: 'brief',
+    personas: { guide: { role: 'operator' } },
+    grounding: {
+      facts: [{ id: 'fact:chat', value: { label: 'Agent chat' }, narration: { role: 'substantive', coverage: 'required' } }],
+      claims: [{ id: 'claim:chat', kind: 'state', factRefs: ['fact:chat'], tupleScope: { mode: 'single', selectors: [{ sourceId: 'fact:chat', tuplePath: '/value' }] } }],
+    },
+    requiredTargets: [{ targetId: 'chat-input', factRefs: ['fact:chat'], claimRefs: ['claim:chat'] }],
+    registeredActions: [{
+      actionId: 'type-request', targetId: 'chat-input', source: 'host', tool: 'type',
+      input: { targetId: 'chat-input' }, interactionType: 'input', resultRef: 'typed',
+    }],
+    orderedCausalRelations: [{
+      targetId: 'chat-input', factRefs: ['fact:chat'], claimRefs: [{ id: 'claim:chat', kind: 'state' }], actionRef: 'type-request', resultRefs: ['typed'], focusMode: 'none',
+      anchors: [
+        { intent: 'pointer', binding: { type: 'turn-start' } },
+        { intent: 'action', binding: { type: 'claim-atom', claimId: 'claim:chat', atomPath: '/label', occurrence: 1 } },
+      ],
+    }],
+    dialoguePlan: [{ persona: 'guide', dialogueAct: 'explain' }],
+  };
+  const skeleton = createSemanticSkeletonRaw(input);
+  const projection = createNarrationProjectionRaw({ narrations: [{
+    slotId: skeleton.slots[0].slotId,
+    text: 'Use Agent chat here.',
+  }] }, skeleton);
+  const project = createPresentationProject({ skeleton, projection });
+
+  assert.deepEqual(project.timeline.turns[0].cues, [
+    {
+      kind: 'annotation', targetId: 'chat-input',
+      at: { anchor: 'turn-start', offsetMs: 0 },
+      until: { anchor: 'speech', quote: 'Agent chat', occurrence: 1, edge: 'start', offsetMs: 0 },
+      annotation: { intent: 'pointer', marker: 'arrow', placement: 'before' },
+    },
+    {
+      kind: 'interaction', targetId: 'chat-input',
+      at: { anchor: 'speech', quote: 'Agent chat', occurrence: 1, edge: 'start', offsetMs: 0 },
+      interaction: { type: 'input', binding: { source: 'host', tool: 'type', input: { targetId: 'chat-input' } } },
+    },
+  ]);
+  assert.throws(() => createSemanticSkeletonRaw({
+    ...input,
+    registeredActions: [],
+    orderedCausalRelations: [{ targetId: 'chat-input', focusMode: 'none', anchors: [{ intent: 'pointer', binding: { type: 'turn-start' } }] }],
+  }), /pointer anchor requires a registered action/);
+});
+
 test('exact-key validation rejects extra/unrecognized topology fields', () => {
   const input = {
     locale: 'en-US', title: 'Tour', profile: 'brief',
