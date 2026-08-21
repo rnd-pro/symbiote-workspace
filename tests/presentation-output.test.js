@@ -197,6 +197,32 @@ describe('presentation output and composition contracts', () => {
     assert.ok(!audit.issueCodes.includes('target-clipped'), audit.issueCodes.join(', '));
   });
 
+  it('accepts minor browser-edge clipping while rejecting materially clipped targets', () => {
+    const auditPlan = (plan) => auditPresentationCompositionPlan(plan, {
+      outputSpecHash: plan.outputSpecHash,
+      structuralHash: plan.structuralHash,
+      sourceCompositionHash: plan.sourceCompositionHash,
+      targetCompositionHash: plan.targetCompositionHash,
+      timelineHash: plan.timelineHash,
+      lessonIntentHash: plan.lessonIntentHash,
+      requiredTargetIds: ['panel:orders'],
+    });
+    let minor = validPlan({ steps: [validStep({
+      id: 'step-minor', cueId: 'cue-minor', cueIndex: 0, cueKind: 'annotation',
+      measurement: { ...validStep().measurement, visibleRatio: 0.944 },
+    })] });
+    let minorAudit = auditPlan(minor);
+    assert.equal(minorAudit.verdict, 'accept', minorAudit.issueCodes.join(', '));
+
+    let material = validPlan({ steps: [validStep({
+      id: 'step-material', cueId: 'cue-material', cueIndex: 0, cueKind: 'annotation',
+      measurement: { ...validStep().measurement, visibleRatio: 0.899 },
+    })] });
+    let audit = auditPlan(material);
+    assert.equal(audit.verdict, 'reject');
+    assert.ok(audit.issueCodes.includes('target-clipped'));
+  });
+
   it('accepts a restored, readable and collision-free per-turn composition plan', () => {
     let plan = validPlan();
     let audit = auditPresentationCompositionPlan(plan, {

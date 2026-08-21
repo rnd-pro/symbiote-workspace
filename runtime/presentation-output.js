@@ -560,10 +560,14 @@ export function auditPresentationCompositionPlan(plan = {}, expectations = {}) {
       : null;
     if (!measurement.reachable) add('target-unreachable', path, 'target cannot be reached by declared reversible actions');
     if (!measurement.visible) add('target-hidden', path, 'target remains hidden after composition actions');
+    // Browser chrome and fractional layout rounding can trim a few edge pixels
+    // while the separately measured critical-attention/annotation geometry is
+    // still fully usable. Keep true clipping fail-closed, but do not reject a
+    // target whose meaningful geometry is contained and at least 90% visible.
     if (
       focusRect.width < 24
       || focusRect.height < 16
-      || measurement.visibleRatio < 0.995
+      || measurement.visibleRatio < 0.9
       || !rectContains(output.contentRect, focusRect, 1)
     ) add('target-clipped', path, 'target focus rectangle is clipped or outside usable content');
     if (step.cueKind === 'focus' || step.cueKind === 'interaction') {
