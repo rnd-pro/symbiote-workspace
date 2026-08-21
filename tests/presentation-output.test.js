@@ -255,6 +255,35 @@ describe('presentation output and composition contracts', () => {
     assert.match(plan.hash, /^workspace-presentation-composition-v2:/);
   });
 
+  it('retains target readability findings as nonblocking presentation warnings', () => {
+    let plan = validPlan({
+      steps: [validStep({
+        id: 'step-warning', cueId: 'cue-warning', cueIndex: 0, cueKind: 'focus',
+        measurement: {
+          ...validStep().measurement,
+          criticalAttentionRect: { x: 100, y: 100, width: 160, height: 48 },
+          textTruncated: true,
+        },
+      })],
+    });
+    let audit = auditPresentationCompositionPlan(plan, {
+      outputSpecHash: plan.outputSpecHash,
+      structuralHash: plan.structuralHash,
+      sourceCompositionHash: plan.sourceCompositionHash,
+      targetCompositionHash: plan.targetCompositionHash,
+      timelineHash: plan.timelineHash,
+      lessonIntentHash: plan.lessonIntentHash,
+      requiredTargetIds: ['panel:orders'],
+    });
+
+    assert.equal(audit.verdict, 'accept');
+    assert.ok(audit.issueCodes.includes('target-unreadable'));
+    assert.deepEqual(
+      audit.issues.filter((issue) => issue.code === 'target-unreadable').map((issue) => issue.severity),
+      ['warning'],
+    );
+  });
+
   it('rejects every output and target composition failure with stable issue codes', () => {
     let cases = [
       ['output-viewport-mismatch', { measuredViewport: { width: 1080, height: 1920, visualWidth: 1080, visualHeight: 1920, dpr: 1 } }],
@@ -264,7 +293,6 @@ describe('presentation output and composition contracts', () => {
       ['target-clipped', { steps: [validStep({ measurement: { ...validStep().measurement, focusRect: { x: 0, y: 0, width: 10, height: 10 } } })] }],
       ['target-occluded', { steps: [validStep({ measurement: { ...validStep().measurement, pointerTransparentOccluders: ['overlay'] } })] }],
       ['target-unreachable', { steps: [validStep({ measurement: { ...validStep().measurement, reachable: false } })] }],
-      ['target-unreadable', { steps: [validStep({ measurement: { ...validStep().measurement, textTruncated: true } })] }],
       ['composition-scroll-failed', { steps: [validStep({ scroll: [{ id: 'scroll', before: {}, after: { top: 10 }, changed: true, applied: false }] })] }],
       ['annotation-placement-unavailable', { steps: [validStep({ annotation: { placement: 'right', rect: { x: 100, y: 100, width: 100, height: 40 } } })] }],
     ];

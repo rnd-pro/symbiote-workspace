@@ -41,6 +41,7 @@ export const PRESENTATION_COMPOSITION_ISSUE_CODES = Object.freeze([
 ]);
 
 const ISSUE_CODE_SET = new Set(PRESENTATION_COMPOSITION_ISSUE_CODES);
+const WARNING_ISSUE_CODES = new Set(['target-unreadable']);
 
 function isObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -412,7 +413,7 @@ export function createPresentationCompositionPlan(input = {}) {
 
 function auditIssue(code, path, message) {
   if (!ISSUE_CODE_SET.has(code)) throw new TypeError(`unregistered presentation composition issue code: ${code}`);
-  return { code, severity: 'error', path, message };
+  return { code, severity: WARNING_ISSUE_CODES.has(code) ? 'warning' : 'error', path, message };
 }
 
 export function auditPresentationCompositionPlan(plan = {}, expectations = {}) {
@@ -633,7 +634,7 @@ export function auditPresentationCompositionPlan(plan = {}, expectations = {}) {
   }
   return {
     schemaVersion: `${PRESENTATION_COMPOSITION_PLAN_SCHEMA_VERSION}:audit-v1`,
-    verdict: issues.length ? 'reject' : 'accept',
+    verdict: issues.some((issue) => issue.severity === 'error') ? 'reject' : 'accept',
     issueCodes: uniqueSorted(issues.map((issue) => issue.code)),
     issues,
     coverage: {
