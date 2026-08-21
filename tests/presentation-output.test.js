@@ -209,7 +209,12 @@ describe('presentation output and composition contracts', () => {
     });
     let minor = validPlan({ steps: [validStep({
       id: 'step-minor', cueId: 'cue-minor', cueIndex: 0, cueKind: 'annotation',
-      measurement: { ...validStep().measurement, visibleRatio: 0.944 },
+      measurement: {
+        ...validStep().measurement,
+        focusRect: { x: 45, y: 100, width: 160, height: 48 },
+        visibleRect: { x: 54, y: 100, width: 151, height: 48 },
+        visibleRatio: 0.944,
+      },
     })] });
     let minorAudit = auditPlan(minor);
     assert.equal(minorAudit.verdict, 'accept', minorAudit.issueCodes.join(', '));

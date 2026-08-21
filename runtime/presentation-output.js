@@ -555,6 +555,7 @@ export function auditPresentationCompositionPlan(plan = {}, expectations = {}) {
 
     let measurement = normalizePresentationTargetComposition(step.measurement || {});
     let focusRect = translateRect(measurement.focusRect, presentationViewport.x, presentationViewport.y);
+    let visibleRect = translateRect(measurement.visibleRect, presentationViewport.x, presentationViewport.y);
     let annotationRect = step.annotation?.rect
       ? translateRect(step.annotation.rect, presentationViewport.x, presentationViewport.y)
       : null;
@@ -565,10 +566,10 @@ export function auditPresentationCompositionPlan(plan = {}, expectations = {}) {
     // still fully usable. Keep true clipping fail-closed, but do not reject a
     // target whose meaningful geometry is contained and at least 90% visible.
     if (
-      focusRect.width < 24
-      || focusRect.height < 16
+      visibleRect.width < 24
+      || visibleRect.height < 16
       || measurement.visibleRatio < 0.9
-      || !rectContains(output.contentRect, focusRect, 1)
+      || !rectContains(output.contentRect, visibleRect, 1)
     ) add('target-clipped', path, 'target focus rectangle is clipped or outside usable content');
     if (step.cueKind === 'focus' || step.cueKind === 'interaction') {
       let criticalAttentionRect = measurement.criticalAttentionRect
