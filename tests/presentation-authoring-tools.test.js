@@ -356,9 +356,10 @@ describe('workspace presentation authoring tool pack', () => {
         'presentation_authoring_cell_set_content',
         'presentation_authoring_cell_set_timing',
         'presentation_authoring_cell_set_dependencies',
+        'presentation_authoring_narration_replace',
       ],
     );
-    assert.equal(descriptors.length, 14);
+    assert.equal(descriptors.length, 15);
     assert.equal(descriptors.every((item) => item.inputSchema.additionalProperties === false), true);
     assert.equal(commandDescriptors.every((item) => (
       item.toolName.startsWith('presentation_authoring_')
@@ -378,6 +379,12 @@ describe('workspace presentation authoring tool pack', () => {
       descriptorByType.get('cell.set-content').payloadSchema.properties.content.oneOf
         .every((variant) => variant.additionalProperties === false),
       true,
+    );
+    let narrationReplace = descriptorByType.get('narration.replace');
+    assert.equal(narrationReplace.payloadSchema.properties.cueBindings.minItems, 1);
+    assert.equal(
+      narrationReplace.payloadSchema.properties.cueBindings.items.additionalProperties,
+      false,
     );
     for (let toolName of [
       'presentation_authoring_regeneration_request',
@@ -543,6 +550,204 @@ describe('workspace presentation authoring tool pack', () => {
       mediaAncestry: ancestry,
     });
     assert.equal(fixture.authority.counts().commits, 1);
+  });
+
+  it('atomically replaces narration and same-turn speech cue bindings', async () => {
+    let fixture = fixturePack();
+    let narration = fixture.project.cells.find((cell) => cell.kind === 'narration');
+    let cue = fixture.project.cells.find((cell) => cell.kind === 'cue');
+    let turn = { ...narration.turn, text: 'Review the workspace closely.' };
+    let at = { ...cue.timing.at, quote: 'workspace' };
+    let singularContent = {
+      schemaVersion: PRESENTATION_AUTHORING_COMMAND_SCHEMA_VERSION,
+      id: 'singular-narration',
+      base: base(fixture.project),
+      type: 'cell.set-content',
+      payload: { cellId: narration.id, content: turn },
+    };
+    let singularTiming = {
+      schemaVersion: PRESENTATION_AUTHORING_COMMAND_SCHEMA_VERSION,
+      id: 'singular-anchor',
+      base: base(fixture.project),
+      type: 'cell.set-timing',
+      payload: {
+        cellId: cue.id,
+        timing: { ...cue.timing, at },
+      },
+    };
+
+    assert.throws(
+      () => applyPresentationAuthoringProjectCommand(fixture.project, singularContent),
+      (error) => error.code === 'PRESENTATION_AUTHORING_PROJECT_INVALID',
+    );
+    assert.throws(
+      () => applyPresentationAuthoringProjectCommand(fixture.project, singularTiming),
+      (error) => error.code === 'PRESENTATION_AUTHORING_PROJECT_INVALID',
+    );
+
+    let applied = await fixture.pack.invoke('presentation_authoring_narration_replace', {
+      id: 'replace-narration-and-anchors',
+      base: base(fixture.project),
+      payload: {
+        narrationCellId: narration.id,
+        turn,
+        cueBindings: [{ cueCellId: cue.id, at, until: cue.timing.until }],
+      },
+    });
+    let appliedCue = applied.project.cells.find((cell) => cell.id === cue.id);
+
+    assert.equal(fixture.authority.counts().commits, 1);
+    assert.equal(applied.project.revision, fixture.project.revision + 1);
+    assert.equal(applied.receipt.authoringProjectHash, applied.project.hash);
+    assert.equal(applied.change.type, 'narration.replace');
+    assert.equal(appliedCue.timing.at.quote, 'workspace');
+    assert.equal(appliedCue.timing.leadMs, cue.timing.leadMs);
+    assert.equal(appliedCue.timing.gestureDurationMs, cue.timing.gestureDurationMs);
+    assert.equal(appliedCue.timing.settleBy, cue.timing.settleBy);
+    assert.deepEqual(appliedCue.cue, cue.cue);
+    assert.deepEqual(appliedCue.dependsOn, cue.dependsOn);
+    assert.equal(applied.mediaDisposition.status, 'invalidated');
+
+    await assert.rejects(
+      fixture.pack.invoke('presentation_authoring_narration_replace', {
+        id: 'stale-narration-replacement',
+        base: base(fixture.project),
+        payload: applied.command.payload,
+      }),
+      (error) => error.code === 'PRESENTATION_AUTHORING_TOOL_STALE',
+    );
+    assert.equal(fixture.authority.counts().commits, 1);
+
+    let inverse = await fixture.pack.invoke('presentation_authoring_inverse', {
+      command: applied.command,
+      change: applied.change,
+      receipt: applied.receipt,
+    });
+    assert.equal(inverse.toolName, 'presentation_authoring_narration_replace');
+    let restored = await fixture.pack.invoke(inverse.toolName, {
+      id: inverse.inverse.id,
+      base: inverse.inverse.base,
+      payload: inverse.inverse.payload,
+    });
+    assert.equal(fixture.authority.counts().commits, 2);
+    assert.equal(canonicalProjectContent(restored.project), canonicalProjectContent(fixture.project));
+  });
+
+  it('rejects invalid narration replacement scopes without an authority commit', async () => {
+    let fixture = fixturePack();
+    let narration = fixture.project.cells.find((cell) => cell.kind === 'narration');
+    let cue = fixture.project.cells.find((cell) => cell.kind === 'cue');
+    let binding = { cueCellId: cue.id, at: cue.timing.at, until: cue.timing.until };
+    let input = (id, payload, inputBase = base(fixture.project)) => ({
+      id,
+      base: inputBase,
+      payload,
+    });
+    let assertAtomicReject = async (request, code) => {
+      let before = fixture.authority.state();
+      let commits = fixture.authority.counts().commits;
+      await assert.rejects(
+        fixture.pack.invoke('presentation_authoring_narration_replace', request),
+        (error) => error instanceof PresentationAuthoringToolError && error.code === code,
+      );
+      assert.deepEqual(fixture.authority.state(), before);
+      assert.equal(fixture.authority.counts().commits, commits);
+    };
+
+    await assertAtomicReject(input('duplicate-cue-binding', {
+      narrationCellId: narration.id,
+      turn: narration.turn,
+      cueBindings: [binding, binding],
+    }), 'PRESENTATION_AUTHORING_COMMAND_DUPLICATE_ID');
+    await assertAtomicReject(input('generated-narration-target', {
+      narrationCellId: 'generated:narration',
+      turn: narration.turn,
+      cueBindings: [binding],
+    }), 'PRESENTATION_AUTHORING_TOOL_READ_ONLY');
+    await assertAtomicReject(input('generated-cue-target', {
+      narrationCellId: narration.id,
+      turn: narration.turn,
+      cueBindings: [{ ...binding, cueCellId: 'generated:cue' }],
+    }), 'PRESENTATION_AUTHORING_TOOL_READ_ONLY');
+    await assertAtomicReject(input('incomplete-final-anchor', {
+      narrationCellId: narration.id,
+      turn: { ...narration.turn, text: 'Review the workspace closely.' },
+      cueBindings: [{
+        ...binding,
+        at: { ...binding.at, quote: 'missing phrase' },
+      }],
+    }), 'PRESENTATION_AUTHORING_PROJECT_INVALID');
+    await assertAtomicReject(input('stale-narration-base', {
+      narrationCellId: narration.id,
+      turn: narration.turn,
+      cueBindings: [binding],
+    }, { ...base(fixture.project), revision: fixture.project.revision + 1 }),
+    'PRESENTATION_AUTHORING_TOOL_STALE');
+
+    let { project: crossTurnProject } = createPresentationAuthoringProjectFromTimeline(
+      collectionTimelineFixture(2),
+    );
+    let otherNarration = crossTurnProject.cells.find((cell) => cell.turnId === 'entry-02');
+    let annotationLayer = crossTurnProject.layers.find((layer) => layer.kind === 'annotation');
+    let cueCell = {
+      id: 'entry-02:cue',
+      kind: 'cue',
+      layerId: annotationLayer.id,
+      turnId: otherNarration.turnId,
+      cue: {
+        kind: 'annotation',
+        targetId: 'panel:entry-02',
+        annotation: { intent: 'emphasize', marker: 'box', placement: 'over' },
+      },
+      timing: {
+        at: {
+          anchor: 'speech',
+          quote: 'independent entry 2',
+          occurrence: 1,
+          edge: 'start',
+          offsetMs: 0,
+        },
+        until: { anchor: 'turn-end', offsetMs: 0 },
+        leadMs: 0,
+        gestureDurationMs: 800,
+        settleBy: 'none',
+      },
+      dependsOn: [],
+    };
+    let withCue = applyPresentationAuthoringProjectCommand(crossTurnProject, {
+      schemaVersion: PRESENTATION_AUTHORING_COMMAND_SCHEMA_VERSION,
+      id: 'add-cross-turn-cue',
+      base: base(crossTurnProject),
+      type: 'cell.add',
+      payload: { cell: cueCell },
+    }).project;
+    let crossTurnAuthority = memoryAuthority({
+      project: withCue,
+      mediaCollection: acceptedCollection(withCue),
+    });
+    let crossTurnPack = createPresentationAuthoringToolPack({
+      authority: crossTurnAuthority,
+      regeneration: memoryRegeneration(),
+    });
+    let firstNarration = withCue.cells.find((cell) => cell.turnId === 'entry-01');
+
+    await assert.rejects(
+      crossTurnPack.invoke('presentation_authoring_narration_replace', {
+        id: 'cross-turn-cue-binding',
+        base: base(withCue),
+        payload: {
+          narrationCellId: firstNarration.id,
+          turn: firstNarration.turn,
+          cueBindings: [{
+            cueCellId: cueCell.id,
+            at: cueCell.timing.at,
+            until: cueCell.timing.until,
+          }],
+        },
+      }),
+      (error) => error.code === 'PRESENTATION_AUTHORING_COMMAND_INVALID',
+    );
+    assert.equal(crossTurnAuthority.counts().commits, 0);
   });
 
   it('rejects stale, generated, unknown, patch, and nested free-form edits atomically', async () => {
@@ -1069,7 +1274,7 @@ describe('workspace presentation authoring tool pack', () => {
     assert.deepEqual(result.cells, before.project.cells);
     assert.deepEqual(result.mediaAncestry, before.mediaAncestry);
     assert.equal(result.projectionStatus.status, 'ready');
-    assert.equal(result.descriptors.length, 14);
+    assert.equal(result.descriptors.length, 15);
     assert.equal(fixture.authority.counts().commits, commits);
   });
 

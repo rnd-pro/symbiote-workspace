@@ -368,6 +368,35 @@ with absolute times and resolution provenance (`exact`, `occurrence`, `fuzzy`, o
 `proportional`). Renderers consume this derived artifact; they never write timing
 back into the authored timeline.
 
+`createPresentationObservedAlignment(timeline, { media, voice, observations })`
+is the distinct strict producer for observed recognition evidence. It requires a
+current hash-bearing `presentation-timeline-v3`, exact media hash, duration, and
+locale, optional `{ mode: 'single', speakerId }` voice identity, and exactly one
+ordered `{ turnIndex, startMs, endMs, transcript, words }` observation per turn.
+Every word has exact NFC text plus integer `startMs` and `endMs`. Transcript tokens
+must exactly equal the flattened word tokens, and all word intervals must be real,
+positive, in-range, monotonic, and non-overlapping. Missing or inconsistent
+evidence throws `PresentationObservedAlignmentError`; there is no fuzzy,
+proportional, character-derived, or fabricated timing fallback.
+
+The result contains a canonical `workspace-aligned-sequence-v3` under `sequence`,
+per-turn `workspace-transcript-word-anchoring-v1` records under `anchorings`, and
+aggregate metrics. The sequence preserves exact observed transcript and word
+values, carries optional single-speaker identity, has `events: []`, and hashes all
+fields except `hash` with `computeIntegrity()`. Each anchoring records exact
+authored and observed tokens, source word timing, deterministic
+`match|substitute|delete|insert` operations, and authored, recognized, timed,
+distance, WER, edit-similarity, exact-correspondence, and timing-coverage metrics.
+Authored-token comparison is case- and diacritic-insensitive. Dynamic-programming
+ties resolve in the fixed order `substitute`, `delete`, then `insert` after an
+available `match`. `validatePresentationObservedAlignedSequence()` rejects stale
+timeline or sequence hashes and the same incomplete or inconsistent observation
+shape without changing the existing v1 API.
+WER is edit distance divided by authored-token count, edit similarity is one
+minus distance divided by the larger token count, and timing coverage is timed
+recognized tokens divided by recognized-token count. Aggregate metrics sum the
+per-turn counts and edit distances before applying the same formulas.
+
 `createPresentationProject({ skeleton, projection })` creates an immutable
 `workspace-presentation-project-v7` from the exact v7 semantic skeleton and
 narration projection. `normalizePresentationProject()` reconstructs and verifies
@@ -389,7 +418,8 @@ written back into Authoring Project, Schedule, NLE, or their hashes.
 `createPresentationAuthoringToolPack({ authority, regeneration })` is the shared
 semantic agent surface for Maximo, CV, or another host. Its descriptors come from
 the Authoring Project command registry. They expose exactly one tool for each
-`layer.*` / `cell.*` command, plus `presentation_authoring_inspect`,
+`layer.*` / `cell.*` command, the bounded atomic `narration.replace` command,
+plus `presentation_authoring_inspect`,
 `presentation_authoring_inverse`, `presentation_authoring_regeneration_request`,
 and `presentation_authoring_regeneration_inspect`. There is no generic apply,
 batch, JSON Patch, raw-project replacement, absolute-time, DOM, pixel, scheduler,
@@ -489,6 +519,15 @@ commit, and returns the canonical command, immutable project revision, change,
 receipt, hashes, timeline, and—when the supplied aligned sequence still validates—
 Schedule v2 and NLE projections. A stale or missing alignment produces an explicit
 projection status and omits Schedule/NLE rather than fabricating Whisper timing.
+`presentation_authoring_narration_replace` accepts one complete narration `turn`
+and a non-empty ordered `cueBindings` list of unique
+`{ cueCellId, at, until }` records. The narration identity remains stable, every
+cue belongs to that exact turn, and each binding has a current or replacement
+speech anchor. The command replaces only the turn and each listed cue's `at` and
+`until`; cue semantics, targets, dependencies, lead, gesture duration, and settle
+policy remain unchanged. The authority validates and commits only the one final
+Project, so unlisted anchors must also remain valid. Its inverse is another
+atomic `narration.replace` bound to the exact final revision and receipt.
 Narration-cell changes commit
 `workspace-presentation-authoring-invalidation-v1`, preserve old lineage hashes,
 mark exactly narration audio/alignment/render stale, and set `playable: false`.
@@ -510,14 +549,57 @@ barriers, while `pause()`, `seek()`, `stop()`, `dispose()`, and external abort
 cancel the active adapter signal.
 
 Adapters implement only `runInteraction`, `runAttention`, or `waitForState`.
-Each receives `{ operationId, generation, scheduleCell, projectCell, signal }`
-and returns one ordered array of `workspace-presentation-effect-receipt-v1`
-objects. An interaction must return `acted` then `settled`; attention must return
-`first-frame` then `settled`; state must return `ready`. The controller rejects
-wrong context, generation, order, or shape before opening a barrier. Narration
-and authored visibility expose `ended` only when an observed media sample crosses
-their end. Planned Schedule v2 milliseconds, DOM state, geometry, timers, and
-product-local queues are not execution receipts.
+Each receives the frozen operation context `{ operationId, generation,
+scheduleCell, projectCell, signal, reportAdmission, reportReceipt }`. Attention
+and semantic `select` interactions must call `reportAdmission()` once at zero
+progress, before reporting a visual milestone. Native scroll, navigation and
+panel reveal have no geometry-plan admission because their provider settlement
+is observed rather than estimated.
+
+`reportAdmission()` accepts exactly `{ providerAdmission }`; flattened provider
+plan fields are not a second input path. `providerAdmission` is the complete
+`show-attention-admission-v2` object with `provider`, `effect`, `target`,
+`budget`, `plan`, and structured `reason` namespaces. The controller validates
+those namespaces, recursively clones and freezes every serializable value, and
+returns `workspace-presentation-effect-admission-v2` with Workspace-owned
+operation, generation, Project hash, Schedule hash, cell, kind, target and
+authored budget outside the exact nested provider object. Admitted plans require
+the target/layout/geometry/plan identities, a finite in-budget duration and a
+path hash except for click. Rejected plans preserve explicit nulls for
+unavailable evidence. In particular, `reason.code: 'provider-rejected'` and
+`reason.provider.code: 'target-unresolved'` survive unchanged in the terminal
+failure; an admitted over-budget shape is rejected defensively.
+
+`reportReceipt()` accepts exactly `{ status, observedAt, providerReceipt }`.
+Callers cannot supply Workspace identity. `observedAt` must be
+`{ domain: 'performance', timeOriginMs, monotonicTimeMs }`; the controller
+mechanically rebases it to `performance.timeOrigin` without epoch-time
+substitution, timestamp clamping or fabrication. The emitted immutable
+`workspace-presentation-effect-receipt-v2` binds operation, generation, Project
+hash, Schedule hash, cell and kind, while preserving the exact recursively
+cloned provider receipt. Attention reports `first-frame` then `settled`;
+semantic select maps the provider's `first-frame` to Workspace `acted`, then
+reports `settled`; native interaction reports actual `acted` then `settled`;
+state reports `ready`. A reported provider `failed` terminal produces one
+stable `PRESENTATION_EFFECT_PROVIDER_FAILED` Workspace outcome with its exact
+provider receipt.
+
+Every visual activation creates one `AbortSignal.timeout()` hard-deadline owner
+from authored `gestureDurationMs`, or `state.timeoutMs` for state readiness. It
+begins before the adapter is invoked, aborts the existing operation controller
+once with `PRESENTATION_EFFECT_DEADLINE_MISSED`, and detaches its listener in
+the operation `finally`. It therefore covers missing admission, an admitted
+provider that never settles, and a milestone outside the activation-time
+budget. Pause, seek, Stop, replacement, dispose and external abort free the
+single active slot and suppress saved late reporters. Terminal receipts use
+immutable `{ code, message, details }` reasons and retain exact provider
+admission or receipt evidence. Each accepted milestone opens only its matching
+barrier. The adapter promise owns lifecycle completion only and must fulfill
+with `undefined` or `null`; `reportReceipt()` is the sole provider-evidence
+ingress. There is still one active operation, no pending queue, no polling,
+retry, drain, replay, media-time shift or second scheduler. Narration and
+authored visibility expose `ended` only when an observed media sample crosses
+their end.
 
 `createPresentationContextSnapshot()` separates stable interface identity from
 volatile live data. `identityHash` includes viewport, visible/rendered targets,

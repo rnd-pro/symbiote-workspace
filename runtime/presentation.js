@@ -58,6 +58,13 @@ export {
   validatePresentationAlignedSequence,
 } from './presentation/align.js';
 export {
+  PRESENTATION_OBSERVED_ALIGNED_SEQUENCE_VERSION,
+  PRESENTATION_TRANSCRIPT_WORD_ANCHORING_VERSION,
+  PresentationObservedAlignmentError,
+  createPresentationObservedAlignment,
+  validatePresentationObservedAlignedSequence,
+} from './presentation/observed-alignment.js';
+export {
   PRESENTER_ACTION_SCHEDULE_VERSION,
   createPresenterActionSchedule,
   validatePresenterActionSchedule,
@@ -98,8 +105,10 @@ export {
 } from './presentation/schedule-v2.js';
 export {
   PRESENTATION_EXECUTION_VERSION,
+  PRESENTATION_EFFECT_ADMISSION_VERSION,
   PRESENTATION_EFFECT_RECEIPT_VERSION,
   createPresentationExecutionController,
+  validatePresentationEffectAdmission,
   validatePresentationEffectReceipt,
 } from './presentation/execution.js';
 export {

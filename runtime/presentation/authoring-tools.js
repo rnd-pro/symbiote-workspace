@@ -868,9 +868,19 @@ function normalizeMutationInput(input, commandDescriptor) {
     commandDescriptor.inputSchema.properties.payload.required || [],
     'input.payload',
   );
-  let semanticId = payload.cellId || payload.layerId || payload.cell?.id || payload.layer?.id;
+  let semanticIds = [
+    payload.cellId,
+    payload.layerId,
+    payload.cell?.id,
+    payload.layer?.id,
+    payload.narrationCellId,
+    ...(Array.isArray(payload.cueBindings)
+      ? payload.cueBindings.map((binding) => binding?.cueCellId)
+      : []),
+  ].filter((id) => id !== undefined && id !== null);
+  let readOnlyId = semanticIds.find((id) => String(id).startsWith('generated:'));
   if (
-    String(semanticId || '').startsWith('generated:')
+    readOnlyId !== undefined
     || payload.cell?.generated === true
     || payload.cell?.editable === false
     || payload.layer?.generated === true
@@ -879,7 +889,7 @@ function normalizeMutationInput(input, commandDescriptor) {
     fail(
       'PRESENTATION_AUTHORING_TOOL_READ_ONLY',
       'generated or read-only presentation projections cannot be authored',
-      { id: semanticId || null },
+      { id: readOnlyId ?? semanticIds[0] ?? null },
     );
   }
   return {

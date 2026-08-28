@@ -80,6 +80,17 @@ const TIMING_SCHEMA = Object.freeze({
   additionalProperties: false,
 });
 
+const CUE_BINDING_SCHEMA = Object.freeze({
+  type: 'object',
+  properties: Object.freeze({
+    cueCellId: { type: 'string', minLength: 1 },
+    at: SYNC_ANCHOR_SCHEMA,
+    until: { anyOf: [SYNC_ANCHOR_SCHEMA, { type: 'null' }] },
+  }),
+  required: Object.freeze(['cueCellId', 'at', 'until']),
+  additionalProperties: false,
+});
+
 const DELIVERY_SCHEMA = Object.freeze({
   type: 'object',
   properties: Object.freeze({
@@ -365,6 +376,22 @@ const COMMAND_DESCRIPTORS = Object.freeze([
     }),
     invertible: true,
   },
+  {
+    type: 'narration.replace',
+    toolName: 'presentation_authoring_narration_replace',
+    description: 'Atomically replace one narration turn and its bounded speech cue bindings.',
+    payloadKeys: ['narrationCellId', 'turn', 'cueBindings'],
+    payloadSchema: payloadSchema({
+      narrationCellId: { type: 'string', minLength: 1 },
+      turn: TURN_CONTENT_SCHEMA,
+      cueBindings: {
+        type: 'array',
+        minItems: 1,
+        items: CUE_BINDING_SCHEMA,
+      },
+    }),
+    invertible: true,
+  },
 ]);
 const DESCRIPTOR_BY_TYPE = new Map(COMMAND_DESCRIPTORS.map((item) => [item.type, item]));
 
@@ -516,6 +543,125 @@ function applyMove(records, id, requestedIndex, key) {
   return { fromIndex, toIndex, item: clone(item) };
 }
 
+function isSpeechAnchor(value) {
+  return isObject(value) && value.anchor === 'speech';
+}
+
+function applyNarrationReplacement(draft, payload) {
+  let narrationCellId = text(payload.narrationCellId, 'command.payload.narrationCellId');
+  let narrationCellIndex = findIndex(
+    draft.cells,
+    narrationCellId,
+    'command.payload.narrationCellId',
+  );
+  let narrationCell = draft.cells[narrationCellIndex];
+  if (narrationCell.kind !== 'narration') {
+    fail(
+      'PRESENTATION_AUTHORING_COMMAND_INVALID',
+      `narration.replace requires a narration cell, received "${narrationCellId}"`,
+      { narrationCellId, kind: narrationCell.kind },
+    );
+  }
+  let turn = object(payload.turn, 'command.payload.turn');
+  let turnId = text(turn.id, 'command.payload.turn.id');
+  if (turnId !== narrationCell.turnId) {
+    fail(
+      'PRESENTATION_AUTHORING_COMMAND_INVALID',
+      `command.payload.turn.id must remain "${narrationCell.turnId}"`,
+      { narrationCellId, expectedTurnId: narrationCell.turnId, receivedTurnId: turnId },
+    );
+  }
+  if (!Array.isArray(payload.cueBindings) || !payload.cueBindings.length) {
+    fail(
+      'PRESENTATION_AUTHORING_COMMAND_INVALID',
+      'command.payload.cueBindings must be a nonempty array',
+      { path: 'command.payload.cueBindings' },
+    );
+  }
+
+  let seen = new Set();
+  let updates = payload.cueBindings.map((value, bindingIndex) => {
+    let path = `command.payload.cueBindings[${bindingIndex}]`;
+    let binding = object(value, path);
+    knownKeys(binding, ['cueCellId', 'at', 'until'], path);
+    let cueCellId = text(binding.cueCellId, `${path}.cueCellId`);
+    if (seen.has(cueCellId)) {
+      fail(
+        'PRESENTATION_AUTHORING_COMMAND_DUPLICATE_ID',
+        `${path}.cueCellId duplicates cue cell "${cueCellId}"`,
+        { cueCellId, path: `${path}.cueCellId` },
+      );
+    }
+    seen.add(cueCellId);
+    let cueCellIndex = findIndex(draft.cells, cueCellId, `${path}.cueCellId`);
+    let cueCell = draft.cells[cueCellIndex];
+    if (cueCell.kind !== 'cue') {
+      fail(
+        'PRESENTATION_AUTHORING_COMMAND_INVALID',
+        `${path}.cueCellId must name a cue cell`,
+        { cueCellId, kind: cueCell.kind },
+      );
+    }
+    if (cueCell.turnId !== narrationCell.turnId) {
+      fail(
+        'PRESENTATION_AUTHORING_COMMAND_INVALID',
+        `${path}.cueCellId must belong to turn "${narrationCell.turnId}"`,
+        { cueCellId, expectedTurnId: narrationCell.turnId, receivedTurnId: cueCell.turnId },
+      );
+    }
+    let at = object(binding.at, `${path}.at`);
+    let until = binding.until === null ? null : object(binding.until, `${path}.until`);
+    if (![
+      cueCell.timing.at,
+      cueCell.timing.until,
+      at,
+      until,
+    ].some(isSpeechAnchor)) {
+      fail(
+        'PRESENTATION_AUTHORING_COMMAND_INVALID',
+        `${path} must replace a current or replacement speech anchor`,
+        { cueCellId },
+      );
+    }
+    return {
+      cueCellIndex,
+      before: {
+        cueCellId,
+        at: clone(cueCell.timing.at),
+        until: clone(cueCell.timing.until),
+      },
+      after: { cueCellId, at: clone(at), until: clone(until) },
+    };
+  });
+
+  let before = {
+    turn: clone(narrationCell.turn),
+    cueBindings: updates.map((update) => update.before),
+  };
+  narrationCell.turn = clone(turn);
+  for (let update of updates) {
+    let cueCell = draft.cells[update.cueCellIndex];
+    cueCell.timing = {
+      ...cueCell.timing,
+      at: clone(update.after.at),
+      until: clone(update.after.until),
+    };
+  }
+  return {
+    draft,
+    change: {
+      type: 'narration.replace',
+      narrationCellId,
+      turnId: narrationCell.turnId,
+      before,
+      after: {
+        turn: clone(turn),
+        cueBindings: updates.map((update) => update.after),
+      },
+    },
+  };
+}
+
 function applyMutation(project, command) {
   let draft = clone(project);
   delete draft.hash;
@@ -599,6 +745,9 @@ function applyMutation(project, command) {
         toIndex: moved.toIndex,
       },
     };
+  }
+  if (command.type === 'narration.replace') {
+    return applyNarrationReplacement(draft, payload);
   }
 
   let cellId = text(payload.cellId, 'command.payload.cellId');
@@ -819,6 +968,13 @@ export function invertPresentationAuthoringProjectCommand(commandInput, applicat
   } else if (command.type === 'cell.set-dependencies') {
     inverseType = command.type;
     payload = { cellId: change.cellId, dependsOn: change.before };
+  } else if (command.type === 'narration.replace') {
+    inverseType = command.type;
+    payload = {
+      narrationCellId: change.narrationCellId,
+      turn: change.before.turn,
+      cueBindings: change.before.cueBindings,
+    };
   } else {
     fail(
       'PRESENTATION_AUTHORING_COMMAND_INVERSE_UNAVAILABLE',

@@ -289,6 +289,7 @@ describe('workspace presentation authoring project v1', () => {
       'cell.set-content',
       'cell.set-timing',
       'cell.set-dependencies',
+      'narration.replace',
     ]);
   });
 
@@ -423,24 +424,44 @@ describe('workspace presentation authoring project v1', () => {
     );
   });
 
-  it('applies same-base command batches atomically with one final revision', () => {
+  it('applies same-base command batches with one final Project validation', () => {
     let { project } = createPresentationAuthoringProjectFromTimeline(timelineFixture());
-    let cue = project.cells.find((cell) => cell.kind === 'cue');
+    let narration = project.cells.find((cell) => cell.turnId === 'open' && cell.kind === 'narration');
+    let cue = project.cells.find((cell) => (
+      cell.turnId === narration.turnId && cell.cue?.kind === 'interaction'
+    ));
+    let turn = {
+      ...narration.turn,
+      text: 'Review the workspace and inspect the result.',
+    };
+    let timing = {
+      ...cue.timing,
+      at: { ...cue.timing.at, quote: 'Review the workspace' },
+    };
     let commands = [
+      command(project, 'batch-narration', 'cell.set-content', {
+        cellId: narration.id,
+        content: turn,
+      }),
       command(project, 'batch-timing', 'cell.set-timing', {
         cellId: cue.id,
-        timing: { ...cue.timing, leadMs: 180 },
-      }),
-      command(project, 'batch-move', 'cell.move', {
-        cellId: cue.id,
-        index: project.cells.length - 1,
+        timing,
       }),
     ];
     let projectBefore = structuredClone(project);
     let commandsBefore = structuredClone(commands);
+
+    for (let singular of commands) {
+      assert.throws(
+        () => applyPresentationAuthoringProjectCommand(project, singular),
+        (error) => error.code === 'PRESENTATION_AUTHORING_PROJECT_INVALID',
+      );
+    }
     let result = applyPresentationAuthoringProjectCommands(project, commands);
+    let resultCue = result.project.cells.find((cell) => cell.id === cue.id);
 
     assert.equal(result.project.revision, project.revision + 1);
+    assert.equal(resultCue.timing.at.quote, 'Review the workspace');
     assert.equal(result.changes.length, commands.length);
     assert.equal(result.receipts.length, commands.length);
     assert.equal(result.receipts.every((receipt) => (
@@ -449,6 +470,149 @@ describe('workspace presentation authoring project v1', () => {
     )), true);
     assert.deepEqual(project, projectBefore);
     assert.deepEqual(commands, commandsBefore);
+  });
+
+  it('applies and inverts one bounded narration replacement command', () => {
+    let { project } = createPresentationAuthoringProjectFromTimeline(timelineFixture());
+    let narration = project.cells.find((cell) => cell.turnId === 'open' && cell.kind === 'narration');
+    let cue = project.cells.find((cell) => (
+      cell.turnId === narration.turnId && cell.cue?.kind === 'interaction'
+    ));
+    let turn = {
+      ...narration.turn,
+      text: 'Review the workspace and inspect the result.',
+    };
+    let replacement = command(project, 'replace-narration', 'narration.replace', {
+      narrationCellId: narration.id,
+      turn,
+      cueBindings: [{
+        cueCellId: cue.id,
+        at: { ...cue.timing.at, quote: 'Review the workspace' },
+        until: cue.timing.until,
+      }],
+    });
+    let applied = applyPresentationAuthoringProjectCommand(project, replacement);
+    let appliedCue = applied.project.cells.find((cell) => cell.id === cue.id);
+
+    assert.equal(applied.project.revision, project.revision + 1);
+    assert.equal(applied.receipt.authoringProjectHash, applied.project.hash);
+    assert.equal(applied.change.type, 'narration.replace');
+    assert.equal(applied.change.before.turn.text, narration.turn.text);
+    assert.equal(applied.change.after.turn.text, turn.text);
+    assert.equal(appliedCue.timing.at.quote, 'Review the workspace');
+    assert.equal(appliedCue.timing.leadMs, cue.timing.leadMs);
+    assert.equal(appliedCue.timing.gestureDurationMs, cue.timing.gestureDurationMs);
+    assert.equal(appliedCue.timing.settleBy, cue.timing.settleBy);
+    assert.deepEqual(appliedCue.cue, cue.cue);
+    assert.deepEqual(appliedCue.dependsOn, cue.dependsOn);
+
+    let inverse = invertPresentationAuthoringProjectCommand(replacement, applied);
+    let restored = applyPresentationAuthoringProjectCommand(applied.project, inverse);
+    assert.deepEqual(restored.project.cells, project.cells);
+    assert.deepEqual(restored.project.script, project.script);
+    assert.deepEqual(restored.project.layers, project.layers);
+    assert.deepEqual(restored.project.policy, project.policy);
+  });
+
+  it('rejects unbounded narration replacement targets and invalid final anchors', () => {
+    let { project } = createPresentationAuthoringProjectFromTimeline(timelineFixture());
+    let narration = project.cells.find((cell) => cell.turnId === 'open' && cell.kind === 'narration');
+    let cue = project.cells.find((cell) => (
+      cell.turnId === narration.turnId && cell.cue?.kind === 'interaction'
+    ));
+    let otherCue = project.cells.find((cell) => cell.turnId === 'answer' && cell.kind === 'cue');
+    let stateCue = project.cells.find((cell) => cell.cue?.kind === 'state');
+    let stateNarration = project.cells.find((cell) => (
+      cell.turnId === stateCue.turnId && cell.kind === 'narration'
+    ));
+    let binding = {
+      cueCellId: cue.id,
+      at: cue.timing.at,
+      until: cue.timing.until,
+    };
+    let replacement = (id, narrationCell, turn, cueBindings) => command(
+      project,
+      id,
+      'narration.replace',
+      { narrationCellId: narrationCell.id, turn, cueBindings },
+    );
+
+    assert.throws(
+      () => applyPresentationAuthoringProjectCommand(project, replacement(
+        'duplicate-binding',
+        narration,
+        narration.turn,
+        [binding, binding],
+      )),
+      (error) => error.code === 'PRESENTATION_AUTHORING_COMMAND_DUPLICATE_ID',
+    );
+    assert.throws(
+      () => applyPresentationAuthoringProjectCommand(project, replacement(
+        'cross-turn-binding',
+        narration,
+        narration.turn,
+        [{ cueCellId: otherCue.id, at: otherCue.timing.at, until: otherCue.timing.until }],
+      )),
+      (error) => error.code === 'PRESENTATION_AUTHORING_COMMAND_INVALID',
+    );
+    assert.throws(
+      () => applyPresentationAuthoringProjectCommand(project, replacement(
+        'non-speech-binding',
+        stateNarration,
+        stateNarration.turn,
+        [{ cueCellId: stateCue.id, at: stateCue.timing.at, until: stateCue.timing.until }],
+      )),
+      (error) => error.code === 'PRESENTATION_AUTHORING_COMMAND_INVALID',
+    );
+    assert.throws(
+      () => applyPresentationAuthoringProjectCommand(project, replacement(
+        'wrong-narration-cell-kind',
+        cue,
+        narration.turn,
+        [binding],
+      )),
+      (error) => error.code === 'PRESENTATION_AUTHORING_COMMAND_INVALID',
+    );
+    assert.throws(
+      () => applyPresentationAuthoringProjectCommand(project, replacement(
+        'wrong-cue-cell-kind',
+        narration,
+        narration.turn,
+        [{ cueCellId: narration.id, at: cue.timing.at, until: cue.timing.until }],
+      )),
+      (error) => error.code === 'PRESENTATION_AUTHORING_COMMAND_INVALID',
+    );
+    assert.throws(
+      () => applyPresentationAuthoringProjectCommand(project, replacement(
+        'changed-turn-identity',
+        narration,
+        { ...narration.turn, id: 'replacement-turn' },
+        [binding],
+      )),
+      (error) => error.code === 'PRESENTATION_AUTHORING_COMMAND_INVALID',
+    );
+    assert.throws(
+      () => applyPresentationAuthoringProjectCommand(project, replacement(
+        'empty-cue-bindings',
+        narration,
+        narration.turn,
+        [],
+      )),
+      (error) => error.code === 'PRESENTATION_AUTHORING_COMMAND_INVALID',
+    );
+    assert.throws(
+      () => applyPresentationAuthoringProjectCommand(project, replacement(
+        'incomplete-final-anchor',
+        narration,
+        { ...narration.turn, text: 'Review the workspace.' },
+        [{
+          cueCellId: cue.id,
+          at: { ...cue.timing.at, quote: 'Review the workspace' },
+          until: cue.timing.until,
+        }],
+      )),
+      (error) => error.code === 'PRESENTATION_AUTHORING_PROJECT_INVALID',
+    );
   });
 
   it('rejects mixed bases and leaves an atomic batch input unchanged on failure', () => {

@@ -61,10 +61,15 @@ describe('browser entrypoint', () => {
       'workspace-presentation-execution-v1',
     );
     assert.equal(
+      browser.PRESENTATION_EFFECT_ADMISSION_VERSION,
+      'workspace-presentation-effect-admission-v2',
+    );
+    assert.equal(
       browser.PRESENTATION_EFFECT_RECEIPT_VERSION,
-      'workspace-presentation-effect-receipt-v1',
+      'workspace-presentation-effect-receipt-v2',
     );
     assert.equal(typeof browser.createPresentationExecutionController, 'function');
+    assert.equal(typeof browser.validatePresentationEffectAdmission, 'function');
     assert.equal(typeof browser.validatePresentationEffectReceipt, 'function');
     assert.equal(typeof browser.playWorkspacePresentationTimeline, 'function');
   });
@@ -72,6 +77,14 @@ describe('browser entrypoint', () => {
   it('differs from the root entrypoint only by intentional runtime and DOM APIs', async () => {
     let root = await import('../index.js');
     let browser = await import('../browser.js');
+    assert.equal(
+      browser.PRESENTATION_EFFECT_ADMISSION_VERSION,
+      root.PRESENTATION_EFFECT_ADMISSION_VERSION,
+    );
+    assert.equal(
+      browser.PRESENTATION_EFFECT_RECEIPT_VERSION,
+      root.PRESENTATION_EFFECT_RECEIPT_VERSION,
+    );
     let onlyRoot = Object.keys(root).filter((key) => !(key in browser)).sort();
     let onlyBrowser = Object.keys(browser).filter((key) => !(key in root)).sort();
 
