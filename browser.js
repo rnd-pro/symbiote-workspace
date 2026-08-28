@@ -45,6 +45,7 @@ export {
   WORKSPACE_PACKAGE_SCHEMA_VERSION,
   BROWSER_ENGINE_CONTRACTS_IMPORT,
   BROWSER_ENGINE_IMPORT,
+  BROWSER_ENGINE_PREFIX_IMPORT,
   BROWSER_REQUIRED_IMPORTS,
   BROWSER_THEME_IMPORT,
   exportConfig,
@@ -122,17 +123,24 @@ export {
 } from './runtime/lesson-context.js';
 
 export {
+  PRESENTATION_CAPTION_COMPOSITION_SCHEMA_VERSION,
+  PRESENTATION_CAPTION_TIMING_TOLERANCE_MS,
+  PRESENTATION_COMPOSITION_CUE_KINDS,
   PRESENTATION_COMPOSITION_ISSUE_CODES,
   PRESENTATION_COMPOSITION_PLAN_SCHEMA_VERSION,
   PRESENTATION_OUTPUT_SPEC_SCHEMA_VERSION,
   auditPresentationCompositionPlan,
+  bindCaptionCuesToAlignedSequence,
   createLessonIntentHash,
   createPresentationCompositionPlan,
+  listPresentationCompositionCueSlots,
   normalizePresentationOutputSpec,
   normalizePresentationRect,
   normalizePresentationTargetComposition,
   presentationOutputOrientation,
+  presentationReplanRequestHash,
   presentationRectsIntersect,
+  planCaptionPlacements,
 } from './runtime/presentation-output.js';
 
 export {
@@ -140,6 +148,8 @@ export {
   PRESENTATION_PLANNER_INPUT_SCHEMA_VERSION,
   createPresentationPlannerInput,
 } from './runtime/presentation-planner.js';
+export * from './runtime/presentation/semantic-skeleton.js';
+export * from './runtime/presentation/presentation-project.js';
 
 export {
   PRESENTATION_CONTRACT_VERSION,
@@ -159,6 +169,25 @@ export {
   PRESENTATION_DIALOGUE_QUALITY_PROFILE_VERSION,
   PRESENTATION_ALIGNED_SEQUENCE_VERSION,
   PRESENTATION_ALIGNMENT_RESOLUTIONS,
+  SEMANTIC_SCRIPT_SCHEMA_VERSION,
+  VOICE_PLAN_SCHEMA_VERSION,
+  COMPOSITION_SCHEMA_VERSION,
+  PRESENTATION_SEMANTIC_SCRIPT_MISMATCH,
+  PresentationSemanticScriptMismatchError,
+  PRESENTER_ACTION_SCHEDULE_VERSION,
+  PRESENTATION_AUTHORING_PROJECT_SCHEMA_VERSION,
+  PRESENTATION_AUTHORING_PROJECT_LAYER_KINDS,
+  PRESENTATION_AUTHORING_PROJECT_SETTLE_POLICIES,
+  PresentationAuthoringProjectValidationError,
+  PRESENTATION_AUTHORING_COMMAND_SCHEMA_VERSION,
+  PRESENTATION_AUTHORING_COMMAND_RECEIPT_VERSION,
+  PresentationAuthoringProjectCommandError,
+  PRESENTATION_SCHEDULE_V2_VERSION,
+  PresentationScheduleV2Error,
+  PRESENTATION_EXECUTION_VERSION,
+  PRESENTATION_EFFECT_RECEIPT_VERSION,
+  PRESENTATION_NLE_SCHEMA_VERSION,
+  PresentationNleProjectionError,
   PRESENTATION_CONTEXT_SNAPSHOT_SCHEMA_VERSION,
   PRESENTATION_LESSON_AUDIT_SCHEMA_VERSION,
   PRESENTATION_LESSON_REVIEW_CODES,
@@ -166,6 +195,30 @@ export {
   PRESENTATION_REPLAN_REQUEST_SCHEMA_VERSION,
   PRESENTATION_REPLAN_RESULT_SCHEMA_VERSION,
   createPresentationAlignedSequence,
+  assertPresentationSemanticScriptEquality,
+  createSemanticScript,
+  createVoicePlan,
+  createComposition,
+  createPresenterActionSchedule,
+  createPresentationAuthoringProject,
+  createPresentationAuthoringProjectFromTimeline,
+  validatePresentationAuthoringProject,
+  createPresentationAuthoringProjectHashes,
+  createPresentationAuthoringTimelineProjection,
+  presentationAuthoringProjectCanonicalProjection,
+  listPresentationAuthoringProjectCommandDescriptors,
+  applyPresentationAuthoringProjectCommand,
+  applyPresentationAuthoringProjectCommands,
+  invertPresentationAuthoringProjectCommand,
+  PresentationAuthoringToolError,
+  listPresentationAuthoringToolDescriptors,
+  createPresentationAuthoringToolPack,
+  createPresentationScheduleV2,
+  validatePresentationScheduleV2,
+  createPresentationExecutionController,
+  validatePresentationEffectReceipt,
+  projectPresentationNle,
+  createPresentationAuthoringCommandFromNleEdit,
   createPresentationLessonAuditPacket,
   createPresentationContextSnapshot,
   createPresentationReplanRequest,
@@ -181,6 +234,7 @@ export {
   presentationTimelineHashProjection,
   presentationTimelineHasTurns,
   validatePresentationAlignedSequence,
+  validatePresenterActionSchedule,
   reviewPresentationTimeline,
   reviewPresentationDialogue,
   reviewPresentationTimelineAgainstLessonContext,
@@ -260,9 +314,12 @@ export {
   PRESENTATION_JOURNEY_SCHEMA_VERSION,
   PRESENTATION_JOURNEY_OUTCOMES,
   PRESENTATION_JOURNEY_PROVENANCE,
+  PORTABLE_READINESS_RECEIPT_VERSION,
   createPresentationJourney,
+  createPortableReadinessReceipt,
   presentationJourneyReplayProjection,
   validatePresentationJourney,
+  validatePortableReadinessReceipt,
 } from './runtime/presentation-journey.js';
 
 import {
@@ -281,6 +338,7 @@ import { createRouter } from './runtime/router-lane.js';
 import {
   createPresentationContextSnapshot,
   createPresentationReplanRequest,
+  createPresentationTimelineHash,
   createWorkspacePresentationTimeline,
   finalizePresentationReplan,
   normalizePresentationTimeline,
@@ -1014,6 +1072,17 @@ function presentationPreparationError(code, message, cause) {
   return error;
 }
 
+function resolveCurrentLessonDefinition(explicitLesson, contextLesson, fallback) {
+  let explicit = isObject(explicitLesson) ? clonePortable(explicitLesson) : {};
+  let current = isObject(contextLesson) ? clonePortable(contextLesson) : {};
+  if (!hasKeys(explicit) && !hasKeys(current)) return fallback;
+  let lesson = { ...current, ...explicit };
+  for (let key of ['requiredFactIds', 'requiredTargetIds']) {
+    if (Array.isArray(current[key])) lesson[key] = current[key];
+  }
+  return lesson;
+}
+
 function contextRecordMap(records = []) {
   return new Map(records.map((record) => [record?.id || record?.address || record?.path, JSON.stringify(clonePortable(record))]));
 }
@@ -1084,7 +1153,7 @@ export async function prepareWorkspacePresentation(options = {}) {
   let lessonEnabled = Boolean(options.lessonContext || options.lesson || sourceContext.lesson);
   let lessonContext = lessonEnabled
     ? createPresentationLessonContext(sourceContext, {
-      lesson: options.lesson || sourceContext.lesson || options.request,
+      lesson: resolveCurrentLessonDefinition(options.lesson, sourceContext.lesson, options.request),
       constraints: options.lessonConstraints || sourceContext.constraints,
       output,
       sourceSnapshot,
@@ -1199,8 +1268,8 @@ export async function prepareWorkspacePresentation(options = {}) {
       if (lessonContext) {
         try {
           lessonContext = createPresentationLessonContext(targetContext, {
-            lesson: options.lesson || sourceContext.lesson || options.request,
-            constraints: options.lessonConstraints || sourceContext.constraints,
+            lesson: resolveCurrentLessonDefinition(options.lesson, targetContext.lesson || sourceContext.lesson, options.request),
+            constraints: options.lessonConstraints || targetContext.constraints || sourceContext.constraints,
             output,
             sourceSnapshot,
             targetSnapshot,
@@ -1243,6 +1312,19 @@ export async function prepareWorkspacePresentation(options = {}) {
     compositionPlan,
     requireComposition,
   });
+  let withReviewFeedback = (reviewFeedback) => createPresentationReplanRequest({
+    request: { prompt: request.prompt, profile: request.profile },
+    sourceSnapshot,
+    targetSnapshot,
+    personaSpec: request.personaSpec,
+    turnBudget: request.turnBudget,
+    allowedActions: request.allowedActions,
+    actionBudget: { remainingRounds: 0, remainingActions: 0 },
+    output: request.output,
+    priorTimelineHash: createPresentationTimelineHash(candidate.timeline),
+    lessonContext: request.lessonContext,
+    reviewFeedback,
+  });
   let result;
   let repairUsed = false;
   try {
@@ -1250,18 +1332,10 @@ export async function prepareWorkspacePresentation(options = {}) {
   } catch (cause) {
     let repairLimit = Math.min(1, Math.max(0, Math.floor(Number(options.reviewRepairAttempts) || 0)));
     if (!repairLimit || cause?.code !== 'TOUR_REPLAN_REJECTED' || !cause?.review?.issues?.length) throw cause;
-    request = {
-      ...request,
-      reviewFeedback: {
-        attempt: 1,
-        issues: cause.review.issues.map((issue) => ({
-          code: issue.code,
-          turnIndex: issue.turnIndex,
-          turnId: issue.turnId,
-          message: issue.message,
-        })),
-      },
-    };
+    request = withReviewFeedback({
+      attempt: 1,
+      issues: cause.review.issues.map((issue) => clonePortable(issue)),
+    });
     repairUsed = true;
     await emit('tour.replan.review-repair.started', request.reviewFeedback);
     try {
@@ -1311,13 +1385,14 @@ export async function prepareWorkspacePresentation(options = {}) {
   } catch (cause) {
     let repairLimit = Math.min(1, Math.max(0, Math.floor(Number(options.reviewRepairAttempts) || 0)));
     if (repairUsed || !repairLimit || cause?.code !== 'PRESENTATION_COMPOSITION_REJECTED' || !cause?.review?.issues?.length) throw cause;
-    request = {
-      ...request,
-      reviewFeedback: {
-        attempt: 1,
-        issues: cause.review.issues.map((issue) => ({ code: issue.code, path: issue.path, message: issue.message })),
-      },
-    };
+    request = withReviewFeedback({
+      attempt: 1,
+      issues: cause.review.issues.map((issue) => {
+        let stepIndex = Number(/^steps\[(\d+)\]/.exec(String(issue.path || ''))?.[1]);
+        let targetId = Number.isInteger(stepIndex) ? cause.compositionPlan?.steps?.[stepIndex]?.targetId : '';
+        return { ...clonePortable(issue), ...(targetId ? { targetId } : {}) };
+      }),
+    });
     repairUsed = true;
     await emit('tour.composition.review-repair.started', request.reviewFeedback);
     try {

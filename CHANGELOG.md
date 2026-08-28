@@ -4,6 +4,40 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Added a stateless, product-neutral presentation authoring tool pack with one
+  strict tool descriptor per Authoring Project command, exact revision/hash CAS,
+  inspection, receipt-bound inverse generation, derived timeline/Schedule v2/NLE
+  results, and typed zero-mutation failures for stale, generated/read-only,
+  unknown, or free-form edits. Injected regeneration remains abortable and
+  storage-free. Narration changes retain immutable prior hashes while invalidating
+  exactly narration audio, alignment, and render; timing/attention edits preserve
+  ancestry, and only exact ordered accepted regeneration receipts restore
+  playability.
+- Added `workspace-presentation-execution-v1`, a host-neutral controller bound to
+  the exact Authoring Project, aligned-sequence, and Schedule v2 hashes. It keeps
+  capacity at one active effect and zero queued effects, admits work only on fresh
+  media samples, opens barriers only from validated actual adapter receipts, skips
+  expired cells without replay, and aborts stale work on `pause()`, `seek()`,
+  `stop()`, `dispose()`, or external cancellation. Interaction receipts are strictly
+  `acted → settled`, attention receipts are `first-frame → settled`, and state
+  receipts are `ready`; planned Schedule v2 barrier times never count as runtime
+  settlement.
+- Added `workspace-presentation-authoring-project-v1` as the sole mutable
+  presentation authoring authority, with stable layer and cell identities,
+  deterministic
+  project/timeline/layer/cell hashes, atomic same-base command transactions with
+  final-project receipts, lossless frozen `presentation-timeline-v3` projection,
+  frozen `workspace-aligned-sequence-v1`, strict
+  `workspace-presenter-action-schedule-v2`, and a derived versioned NLE projection.
+  Authoring Project validation rejects runtime selectors/geometry/receipts, invalid
+  dependency graphs, unavailable barriers, and multiple presenter collision
+  domains. Schedule v2 separates active gesture spans from persistent visibility,
+  applies deterministic audio pre-roll, preserves prerequisite order, and exposes
+  planned barriers without treating them as runtime settlement. Runtime consumers
+  must gate dependent attention on completed settlement receipts without queuing
+  late work or rewriting
+  authored/derived hashes. Exact-derived NLE edits map back to semantic anchors and
+  `leadMs`; ambiguous drags return bounded anchor choices instead of absolute timing.
 - Added the exact-version `workspace-presentation-journey-v1` contract in
   `runtime/presentation-journey.js`, exported from `symbiote-workspace`,
   `symbiote-workspace/runtime`, and `symbiote-workspace/browser` as

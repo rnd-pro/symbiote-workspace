@@ -56,6 +56,16 @@ describe('browser entrypoint', () => {
     assert.equal(typeof browser.applyWorkspaceTheme, 'function');
     assert.equal(typeof browser.collectWorkspaceInterfaceContext, 'function');
     assert.equal(typeof browser.createWorkspacePresentationTimeline, 'function');
+    assert.equal(
+      browser.PRESENTATION_EXECUTION_VERSION,
+      'workspace-presentation-execution-v1',
+    );
+    assert.equal(
+      browser.PRESENTATION_EFFECT_RECEIPT_VERSION,
+      'workspace-presentation-effect-receipt-v1',
+    );
+    assert.equal(typeof browser.createPresentationExecutionController, 'function');
+    assert.equal(typeof browser.validatePresentationEffectReceipt, 'function');
     assert.equal(typeof browser.playWorkspacePresentationTimeline, 'function');
   });
 

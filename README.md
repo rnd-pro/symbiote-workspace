@@ -88,6 +88,41 @@ mode.
   `workspace-presentation-composition-v2` measurement is checked against the
   presentation viewport and translates page-local focus/annotation rectangles into
   final-frame coordinates before containment and collision checks.
+- **Immutable Presentation Project v7** — `createPresentationProject({ skeleton,
+  projection })` binds a `workspace-presentation-semantic-skeleton-v7` and
+  `presentation-narration-projection-v7` to one reconstructed timeline and
+  `workspace-presentation-project-v7` hash. This provenance contract is separate
+  from the mutable Authoring Project API and rejects Authoring Project inputs.
+- **Presentation Authoring Project authority** —
+  `workspace-presentation-authoring-project-v1` is the
+  sole mutable authoring aggregate for presentation scripts, layers, and stable
+  cells. It rejects runtime selectors, geometry, and receipts; validates dependency
+  graphs and one exclusive presenter collision domain before publication; and
+  applies same-base command batches as one atomic revision. Timeline v3, aligned
+  sequence v1, presenter schedule v2, and NLE are derived projections. Schedule v2
+  records deterministic planned barriers only: runtime consumers must wait for an
+  actual completed settlement receipt before starting dependent attention, and a
+  late or cancelled receipt must not queue work or rewrite Authoring
+  Project/Schedule hashes.
+  NLE frame edits are accepted only against the exact derived projection and map
+  back to semantic anchors plus `leadMs`, never persisted absolute milliseconds.
+- **Stateless presentation authoring tools** —
+  `createPresentationAuthoringToolPack({ authority, regeneration })` exposes one
+  strict product-neutral tool per Authoring Project command, plus inspect,
+  receipt-bound inverse, and abortable regeneration request/inspection. The host
+  injects atomic session storage through exact revision/project-hash CAS; the pack
+  keeps no project copy, queue, timer, DOM state, or media bytes. Narration-cell
+  changes preserve immutable lineage evidence but mark narration audio, alignment,
+  and render stale until exact ordered regeneration receipts restore playability;
+  timing and attention-only edits preserve media ancestry.
+- **Single-flight presentation execution** —
+  `workspace-presentation-execution-v1` validates one exact Authoring Project,
+  aligned-sequence, and Schedule v2 tuple, then admits one active effect and zero
+  queued effects. Injected host adapters return ordered portable receipts:
+  interaction `acted → settled`, attention `first-frame → settled`, or state
+  `ready`. Only those actual receipts open dependency barriers; planned times do
+  not. Completion never pumps another cell, so the next effect requires a fresh
+  media sample, while expired cells are skipped without replay.
 
 ### Unified Agent Tooling
 

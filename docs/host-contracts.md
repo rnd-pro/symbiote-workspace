@@ -368,6 +368,157 @@ with absolute times and resolution provenance (`exact`, `occurrence`, `fuzzy`, o
 `proportional`). Renderers consume this derived artifact; they never write timing
 back into the authored timeline.
 
+`createPresentationProject({ skeleton, projection })` creates an immutable
+`workspace-presentation-project-v7` from the exact v7 semantic skeleton and
+narration projection. `normalizePresentationProject()` reconstructs and verifies
+the same hash. This provenance API and the mutable Authoring Project API have
+distinct names and reject each other's schema instead of dispatching by shape.
+
+`workspace-presentation-authoring-project-v1` is the sole mutable presentation
+authoring aggregate. It is distinct from immutable presentation-provenance
+contracts and owns stable layer/cell identities, semantic timing, dependencies,
+and one exclusive presenter collision domain; timeline v3, schedule v2, and NLE
+remain derived projections. Schedule v2 barrier times are deterministic planning
+evidence, not runtime completion. A host must wait for the matching successful
+settlement receipt before starting dependent attention. Late or cancelled work
+must be cancelled or surfaced, never queued behind a later gesture and never
+written back into Authoring Project, Schedule, NLE, or their hashes.
+
+### Presentation authoring tool host contract
+
+`createPresentationAuthoringToolPack({ authority, regeneration })` is the shared
+semantic agent surface for Maximo, CV, or another host. Its descriptors come from
+the Authoring Project command registry. They expose exactly one tool for each
+`layer.*` / `cell.*` command, plus `presentation_authoring_inspect`,
+`presentation_authoring_inverse`, `presentation_authoring_regeneration_request`,
+and `presentation_authoring_regeneration_inspect`. There is no generic apply,
+batch, JSON Patch, raw-project replacement, absolute-time, DOM, pixel, scheduler,
+or media-byte tool.
+
+The injected authority is the only session/storage owner:
+
+```javascript
+let pack = createPresentationAuthoringToolPack({
+  authority: {
+    read: () => currentSnapshot,
+    transact: ({ base }, update) => {
+      // Atomically compare base.revision + base.authoringProjectHash, call update
+      // once with the current snapshot, and commit the returned next snapshot.
+    },
+  },
+  regeneration: {
+    request: (request, { signal }) => provider.request(request, { signal }),
+    inspect: (receiptId, { signal }) => provider.inspect(receiptId, { signal }),
+  },
+});
+```
+
+The strict authority snapshot has one of two explicit forms. Single-artifact
+hosts keep `{ project, alignment?, mediaAncestry? }`. Collection hosts use
+`{ project, mediaCollection }` and cannot also supply an aggregate alignment or
+aggregate ancestry. `mediaCollection` uses
+`workspace-presentation-media-collection-v1`:
+
+```javascript
+{
+  schemaVersion: 'workspace-presentation-media-collection-v1',
+  collectionId: 'portable-collection-id',
+  manifestHash: 'sha256-manifest-identity',
+  entries: [{
+    entryId: 'semantic-turn-id',
+    narrationCellId: 'authoring-project:narration-cell-id',
+    mediaAncestry: {
+      schemaVersion: 'workspace-presentation-media-ancestry-v1',
+      narrationHash: 'workspace-presentation-narration-v1:...',
+      audio: { hash: 'sha256-audio', status: 'accepted' },
+      alignment: { hash: 'sha256-alignment', status: 'accepted' },
+      render: { hash: 'sha256-render', status: 'accepted' },
+      playable: true,
+    },
+  }],
+}
+```
+
+Entries cover every narration cell exactly once. `entryId` is the matching
+semantic turn identity, and every entry carries its own one-turn narration
+hash and audio/alignment/render ancestry. The collection contains identities
+and status only. Media bytes, local paths, voice/model policy, service
+credentials, transport, persistence, polling, retry, and scheduling remain
+host-owned.
+
+Both regeneration tools receive this exact structured scope for collection
+authority:
+
+```javascript
+artifactScope: {
+  collectionId,
+  manifestHash,
+  entryId,
+  narrationCellId,
+}
+```
+
+Scoped requests and receipts use
+`workspace-presentation-regeneration-request-v2` and
+`workspace-presentation-regeneration-receipt-v2`; the existing single-artifact
+v1 request/receipt remains unchanged. Their immutable hashes cover the exact
+Project base, complete `artifactScope`, scoped narration hash, dependency, and
+predecessor hashes. `presentation_authoring_regeneration_inspect` requires the
+same scope as the request, so a receipt cannot select a different current entry.
+A wrong entry/cell pair, Project base, collection/manifest identity, narration
+hash, or predecessor ancestry is rejected before authority mutation with a
+typed stale or invalid error.
+
+`mediaAncestry` uses `workspace-presentation-media-ancestry-v1` and carries
+only generic audio/alignment/render hashes with `accepted`, `stale`, or
+`missing` status plus `playable`. A narration mutation in collection mode emits
+one `workspace-presentation-authoring-invalidation-v2` per changed narration
+entry and preserves every unaffected entry byte-for-byte. Accepting a scoped
+host receipt updates only that entry. It never constructs a multi-clip aligned
+sequence, and aggregate Schedule/NLE projections remain unavailable.
+
+Semantic mutations are atomic: cancellation observed after commit returns the
+committed receipt rather than hiding state. An authority transaction may reject
+only when it has not committed; after committing the returned snapshot it must
+fulfill so the pack can return that receipt. Only external regeneration receives
+an owned `AbortSignal`; the pack creates no queue, retry loop, or timer.
+
+Every mutation supplies `{ id, base: { revision, authoringProjectHash }, payload }`.
+The provider supplies the command schema/type, validates Project semantics before
+commit, and returns the canonical command, immutable project revision, change,
+receipt, hashes, timeline, and—when the supplied aligned sequence still validates—
+Schedule v2 and NLE projections. A stale or missing alignment produces an explicit
+projection status and omits Schedule/NLE rather than fabricating Whisper timing.
+Narration-cell changes commit
+`workspace-presentation-authoring-invalidation-v1`, preserve old lineage hashes,
+mark exactly narration audio/alignment/render stale, and set `playable: false`.
+Attention and timing changes preserve the entire media ancestry. Regeneration may
+accept one dependency at a time in audio → alignment → render order only when the
+receipt names the exact current project, narration, and predecessor hashes.
+Collection mode applies the same order independently within the named
+`artifactScope`; an accepted alignment receipt is the host's content-addressed
+identity and is never adapted into a synthetic collection-wide alignment.
+
+`createPresentationExecutionController({ project, alignedSequence, schedule,
+adapter, onReceipt, signal })` validates the exact hash-bound tuple and owns the
+runtime admission policy. Capacity is one active operation and zero pending
+operations. `sample({ mediaTimeMs, reason })` may admit one current, non-expired
+cell whose actual dependencies are open. Busy samples are diagnostic only, and
+operation completion never starts another cell; the host must provide a fresh
+sample. `seek()` advances the execution generation and clears generation-scoped
+barriers, while `pause()`, `seek()`, `stop()`, `dispose()`, and external abort
+cancel the active adapter signal.
+
+Adapters implement only `runInteraction`, `runAttention`, or `waitForState`.
+Each receives `{ operationId, generation, scheduleCell, projectCell, signal }`
+and returns one ordered array of `workspace-presentation-effect-receipt-v1`
+objects. An interaction must return `acted` then `settled`; attention must return
+`first-frame` then `settled`; state must return `ready`. The controller rejects
+wrong context, generation, order, or shape before opening a barrier. Narration
+and authored visibility expose `ended` only when an observed media sample crosses
+their end. Planned Schedule v2 milliseconds, DOM state, geometry, timers, and
+product-local queues are not execution receipts.
+
 `createPresentationContextSnapshot()` separates stable interface identity from
 volatile live data. `identityHash` includes viewport, visible/rendered targets,
 and declared safe actions, while `dataHash` tracks source content. Source URLs
@@ -384,6 +535,7 @@ Hosts may set `reviewRepairAttempts: 1` to permit one review-guided planner
 correction on the same target snapshot. That correction cannot request another
 deepening round; a missing, non-ready, stale, or still-rejected result fails the
 preflight.
-The finalizer rejects stale generations or snapshot hashes and returns one
-atomic timeline/cache identity. Rendering and TTS must consume that finalized
-packet rather than constructing a fallback timeline server-side.
+The finalizer rejects a planner result unless its request hash, generation, and
+snapshot hashes match the exact replan request, then returns one atomic
+timeline/cache identity. Rendering and TTS must consume that finalized packet
+rather than constructing a fallback timeline server-side.

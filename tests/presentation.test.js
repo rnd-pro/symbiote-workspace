@@ -1102,6 +1102,32 @@ describe('canonical presentation timeline contract', () => {
     assert.deepEqual(review.coverage.missingRequestKeywords, []);
   });
 
+  it('treats generic Russian and Spanish tour commands like their English equivalents', () => {
+    let timeline = createPresentationTimelineContract({
+      id: 'multilingual-overview-tour',
+      title: 'Workspace overview',
+      turns: [{
+        persona: 'guide',
+        text: 'The operations board and agent dock are ready for review.',
+        cue: { targetId: 'panel:workspace:overview', tabId: 'home' },
+      }],
+    });
+    for (let requestPrompt of [
+      'Проведи полный тур по текущему UI',
+      'Haz un recorrido completo por la interfaz actual',
+    ]) {
+      let review = reviewPresentationTimeline(timeline, {
+        allowedTargetIds: ['panel:workspace:overview'],
+        requestedSurfaceIds: ['panel:workspace:overview'],
+        requestPrompt,
+        requireRequestFit: true,
+      });
+      assert.equal(review.verdict, 'pass', requestPrompt);
+      assert.deepEqual(review.coverage.requestKeywords, [], requestPrompt);
+      assert.deepEqual(review.coverage.missingRequestKeywords, [], requestPrompt);
+    }
+  });
+
   it('creates a separate complete aligned sequence from audio authority', () => {
     let timeline = createPresentationTimelineContract({
       id: 'audio-authority-tour',
@@ -1221,7 +1247,12 @@ describe('presentation replan contracts', () => {
     assert.deepEqual(request.turnBudget, { minTurns: 1, maxTurns: 6 });
     let candidate = {
       status: 'ready',
-      basis: { targetSnapshotHash: snapshot.identityHash, outputSpecHash: request.outputSpecHash, generation: 2 },
+      basis: {
+        requestHash: request.hash,
+        targetSnapshotHash: snapshot.identityHash,
+        outputSpecHash: request.outputSpecHash,
+        generation: 2,
+      },
       timeline: timelineV3({
         title: 'Grounded queue',
         grounding: { sources: snapshot.dataSources },
@@ -1247,7 +1278,12 @@ describe('presentation replan contracts', () => {
     assert.throws(
       () => finalizePresentationReplan({
         ...candidate,
-        basis: { targetSnapshotHash: snapshot.identityHash, outputSpecHash: request.outputSpecHash, generation: 1 },
+        basis: {
+          requestHash: request.hash,
+          targetSnapshotHash: snapshot.identityHash,
+          outputSpecHash: request.outputSpecHash,
+          generation: 1,
+        },
       }, request, { snapshot, requireComposition: false }),
       (error) => error.code === 'TARGET_CONTEXT_STALE',
     );

@@ -6,6 +6,9 @@ import {
   PRESENTATION_CONTRACT_VERSION,
   PRESENTATION_DIALOGUE_ACTS,
   PRESENTATION_INTERACTION_TYPES,
+  PRESENTATION_ANNOTATION_INTENTS,
+  PRESENTATION_MARKERS,
+  PRESENTATION_ANNOTATION_PLACEMENTS,
   createPresentationAlignedSequence,
   createPresentationTimelineContract,
   normalizePresentationTimeline,
@@ -89,6 +92,16 @@ describe('presentation timeline v3 contract', () => {
     assert.deepEqual(PRESENTATION_INTERACTION_TYPES, [
       'click', 'double-click', 'hover', 'drag', 'scroll', 'zoom', 'input',
       'select', 'panel-reveal', 'navigate',
+    ]);
+    assert.deepEqual(PRESENTATION_ANNOTATION_INTENTS, [
+      'emphasize', 'detail', 'group', 'pointer', 'risk', 'question', 'success',
+      'affinity', 'flourish',
+    ]);
+    assert.deepEqual(PRESENTATION_MARKERS, [
+      'circle', 'underline', 'box', 'bracket', 'slash', 'arrow',
+    ]);
+    assert.deepEqual(PRESENTATION_ANNOTATION_PLACEMENTS, [
+      'over', 'after', 'before', 'corner', 'below',
     ]);
   });
 
