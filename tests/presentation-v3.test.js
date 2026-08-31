@@ -99,6 +99,8 @@ describe('presentation timeline v3 contract', () => {
     ]);
     assert.deepEqual(PRESENTATION_MARKERS, [
       'circle', 'underline', 'box', 'bracket', 'slash', 'arrow',
+      'freehand', 'oval', 'multi-oval', 'converging-arrows', 'route',
+      'bidirectional-route', 'parallel-route', 'label', 'number',
     ]);
     assert.deepEqual(PRESENTATION_ANNOTATION_PLACEMENTS, [
       'over', 'after', 'before', 'corner', 'below',

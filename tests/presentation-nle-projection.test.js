@@ -57,7 +57,15 @@ function fixture() {
             offsetMs: 0,
           },
           until: { anchor: 'turn-end', offsetMs: 0 },
-          annotation: { intent: 'emphasize', marker: 'box', placement: 'over' },
+          annotation: {
+            intent: 'emphasize',
+            marker: 'number',
+            label: '2',
+            series: 'result-review',
+            quote: 'result',
+            occurrence: 2,
+            placement: 'over',
+          },
         },
       ],
     }],
@@ -120,7 +128,7 @@ function editBasis(nle) {
 
 describe('workspace presentation NLE projection', () => {
   it('projects semantic tracks in layer order and marks generated tracks non-editable', () => {
-    let { project, schedule } = fixture();
+    let { project, schedule, attention } = fixture();
     let nle = projectPresentationNle(project, schedule);
 
     assert.deepEqual(nle.tracks.map((track) => track.layerId), project.layers.map((layer) => layer.id));
@@ -139,6 +147,10 @@ describe('workspace presentation NLE projection', () => {
         .every((clip) => clip.commandTypes.includes('cell.set-timing')),
       true,
     );
+    let markerClip = nle.tracks
+      .flatMap((track) => track.clips)
+      .find((clip) => clip.cellId === attention.id);
+    assert.deepEqual(markerClip.cue, attention.cue);
   });
 
   it('maps an exact unique frame only to a semantic anchor command', () => {

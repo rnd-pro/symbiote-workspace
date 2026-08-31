@@ -60,7 +60,15 @@ function timelineFixture() {
           offsetMs: 0,
         },
         until: { anchor: 'turn-end', offsetMs: 0 },
-        annotation: { intent: 'emphasize', marker: 'box', placement: 'over' },
+        annotation: {
+          intent: 'emphasize',
+          marker: 'number',
+          label: 2,
+          series: 'result-review',
+          quote: 'result',
+          occurrence: 2,
+          placement: 'over',
+        },
       }],
     }],
   });
@@ -340,6 +348,41 @@ function canonicalProjectContent(project) {
 }
 
 describe('workspace presentation authoring tool pack', () => {
+  it('exposes one complete marker payload through canonical agent inspection and NLE layers', async () => {
+    let fixture = fixturePack();
+    let inspection = await fixture.pack.invoke('presentation_authoring_inspect', {});
+    let markerCell = inspection.project.cells.find((cell) => cell.cue?.kind === 'annotation');
+    let markerClip = inspection.nle.tracks
+      .flatMap((track) => track.clips)
+      .find((clip) => clip.cellId === markerCell.id);
+    let expected = {
+      intent: 'emphasize',
+      marker: 'number',
+      label: '2',
+      series: 'result-review',
+      quote: 'result',
+      occurrence: 2,
+      placement: 'over',
+    };
+
+    assert.deepEqual(markerCell.cue.annotation, expected);
+    assert.deepEqual(markerClip.cue.annotation, expected);
+    assert.deepEqual(
+      inspection.timeline.turns[0].cues[0].annotation,
+      expected,
+    );
+
+    let annotationSchema = listPresentationAuthoringToolDescriptors()
+      .find((item) => item.name === 'presentation_authoring_cell_set_content')
+      .inputSchema.properties.payload.properties.content.oneOf
+      .find((variant) => variant.properties.annotation)
+      .properties.annotation;
+    assert.deepEqual(
+      Object.keys(annotationSchema.properties).sort(),
+      ['intent', 'label', 'marker', 'occurrence', 'placement', 'quote', 'series', 'symbol'],
+    );
+  });
+
   it('exposes strict semantic descriptors without a generic mutation route', () => {
     let descriptors = listPresentationAuthoringToolDescriptors();
     let commandDescriptors = listPresentationAuthoringProjectCommandDescriptors();

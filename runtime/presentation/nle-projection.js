@@ -295,6 +295,7 @@ export function projectPresentationNle(projectInput = {}, scheduleInput = {}) {
           generated: false,
           commandTypes: commandTypesForCell(cell),
           timing: cell.kind === 'cue' || cell.kind === 'audio-clip' ? clone(cell.timing) : null,
+          ...(cell.kind === 'cue' ? { cue: clone(cell.cue) } : {}),
           ...(cell.kind === 'audio-clip' ? { audio: clone(cell.audio) } : {}),
           span: clipSpan(scheduled),
           gesture: scheduled.gesture,

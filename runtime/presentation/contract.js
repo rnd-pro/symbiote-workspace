@@ -40,7 +40,25 @@ export const PRESENTATION_ANNOTATION_INTENTS = Object.freeze([
   'affinity',
   'flourish',
 ]);
-export const PRESENTATION_MARKERS = Object.freeze(['circle', 'underline', 'box', 'bracket', 'slash', 'arrow']);
+export const PRESENTATION_MARKERS = Object.freeze([
+  // Legacy Project values remain valid; the remaining values are the shared
+  // presenter-marker vocabulary used by visual and headless playback.
+  'circle',
+  'underline',
+  'box',
+  'bracket',
+  'slash',
+  'arrow',
+  'freehand',
+  'oval',
+  'multi-oval',
+  'converging-arrows',
+  'route',
+  'bidirectional-route',
+  'parallel-route',
+  'label',
+  'number',
+]);
 export const PRESENTATION_SYMBOLS = Object.freeze(['question', 'cross', 'check', 'heart', 'flourish']);
 export const PRESENTATION_ANNOTATION_PLACEMENTS = Object.freeze(['over', 'after', 'before', 'corner', 'below']);
 export const PRESENTATION_STATE_CONDITIONS = Object.freeze([
@@ -242,15 +260,55 @@ function normalizeCuePayload(kind, source, path) {
   }
   if (kind === 'annotation') {
     let payload = assertObject(source.annotation, `${path}.annotation`);
-    assertKnownKeys(payload, ['intent', 'marker', 'symbol', 'placement'], `${path}.annotation`);
+    assertKnownKeys(
+      payload,
+      ['intent', 'marker', 'symbol', 'placement', 'label', 'series', 'quote', 'occurrence'],
+      `${path}.annotation`,
+    );
     let marker = enumValue(payload.marker, MARKER_SET, `${path}.annotation.marker`);
     let symbol = enumValue(payload.symbol, SYMBOL_SET, `${path}.annotation.symbol`);
     if (marker && symbol) throw new TypeError(`${path}.annotation cannot select both marker and symbol`);
+    if (
+      payload.label !== undefined
+      && !(
+        typeof payload.label === 'string'
+        || (typeof payload.label === 'number' && Number.isFinite(payload.label))
+      )
+    ) {
+      throw new TypeError(`${path}.annotation.label must be text or a finite number`);
+    }
+    let label = payload.label === undefined ? undefined : text(String(payload.label));
+    if (payload.label !== undefined && !label) {
+      throw new TypeError(`${path}.annotation.label must be nonempty text`);
+    }
+    if (payload.series !== undefined && typeof payload.series !== 'string') {
+      throw new TypeError(`${path}.annotation.series must be text`);
+    }
+    let series = payload.series === undefined ? undefined : text(payload.series);
+    if (payload.series !== undefined && !series) {
+      throw new TypeError(`${path}.annotation.series must be nonempty text`);
+    }
+    if (payload.quote !== undefined && typeof payload.quote !== 'string') {
+      throw new TypeError(`${path}.annotation.quote must be text`);
+    }
+    let quote = payload.quote === undefined ? undefined : text(payload.quote);
+    if (payload.quote !== undefined && !quote) {
+      throw new TypeError(`${path}.annotation.quote must be nonempty text`);
+    }
+    if (payload.occurrence !== undefined && !quote) {
+      throw new TypeError(`${path}.annotation.occurrence requires annotation.quote`);
+    }
     return { annotation: compact({
       intent: enumValue(payload.intent, ANNOTATION_INTENT_SET, `${path}.annotation.intent`, { required: true }),
       marker,
       symbol,
       placement: enumValue(payload.placement, PLACEMENT_SET, `${path}.annotation.placement`),
+      label,
+      series,
+      quote,
+      occurrence: quote
+        ? integer(payload.occurrence ?? 1, `${path}.annotation.occurrence`, { min: 1, max: 1000 })
+        : undefined,
     }) };
   }
   let payload = assertObject(source.state, `${path}.state`);
