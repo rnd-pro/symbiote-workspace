@@ -44,7 +44,9 @@ function cellStart(cell) {
 
 function availableBarriers(record) {
   let barriers = [];
-  if (record.kind === 'narration' || record.visibility) barriers.push('ended');
+  if (record.kind === 'narration' || record.kind === 'audio-clip' || record.visibility) {
+    barriers.push('ended');
+  }
   if (record.gestureDurationMs > 0) barriers.push('settled');
   if (record.kind === 'interaction') barriers.push('acted');
   if (record.kind === 'state') barriers.push('ready');
@@ -53,6 +55,9 @@ function availableBarriers(record) {
 
 function plannedBarrierTimes(record, startMs) {
   if (record.kind === 'narration') return { ended: record.narration.endMs };
+  if (record.kind === 'audio-clip') {
+    return { ended: startMs + record.audio.durationMs };
+  }
   let gestureEndMs = startMs + record.gestureDurationMs;
   let barriers = {};
   if (record.visibility) barriers.ended = record.visibility.endMs;
@@ -149,6 +154,40 @@ function createBaseRecords(project, alignment, presentationStartMs) {
         authoredStartMs: narration.startMs,
         gestureDurationMs: 0,
         narration,
+        visibility: null,
+        dependsOn: cell.dependsOn,
+        settleBy: 'none',
+      };
+    }
+    if (cell.kind === 'audio-clip') {
+      let turn = alignment.turns[turnIndex];
+      let anchorBaseMs = cell.timing.at.anchor === 'turn-end'
+        ? turn.endMs
+        : turn.startMs;
+      let authoredStartMs = anchorBaseMs + cell.timing.at.offsetMs + presentationStartMs;
+      let durationMs = cell.audio.sourceOutMs - cell.audio.sourceInMs;
+      return {
+        cellId: cell.id,
+        layerId: cell.layerId,
+        turnId: cell.turnId,
+        kind: 'audio-clip',
+        layerOrder: layerOrder.get(cell.layerId),
+        cellOrder,
+        targetId: null,
+        visualOwnerId: null,
+        collisionDomainId: null,
+        anchorMs: authoredStartMs,
+        authoredStartMs,
+        gestureDurationMs: 0,
+        narration: null,
+        audio: {
+          assetId: cell.audio.assetId,
+          sourceInMs: cell.audio.sourceInMs,
+          sourceOutMs: cell.audio.sourceOutMs,
+          durationMs,
+          startMs: authoredStartMs,
+          endMs: authoredStartMs + durationMs,
+        },
         visibility: null,
         dependsOn: cell.dependsOn,
         settleBy: 'none',
@@ -252,6 +291,13 @@ function scheduleRecords(records) {
       );
     }
     let plannedBarriers = plannedBarrierTimes(record, startMs);
+    let audio = record.audio
+      ? {
+          ...record.audio,
+          startMs,
+          endMs: startMs + record.audio.durationMs,
+        }
+      : null;
     let scheduled = {
       cellId: record.cellId,
       layerId: record.layerId,
@@ -268,6 +314,7 @@ function scheduleRecords(records) {
       plannedDependencyReadyMs,
       startMs,
       narration: record.narration,
+      audio,
       gesture,
       visibility,
       dependsOn: record.dependsOn,
@@ -359,6 +406,14 @@ export function createPresentationScheduleV2(
       event.startMs - cell.timing.leadMs,
     );
   }
+  for (let cell of project.cells.filter((item) => item.kind === 'audio-clip')) {
+    let turn = alignment.turns[turnIndexById.get(cell.turnId)];
+    let anchorBaseMs = cell.timing.at.anchor === 'turn-end' ? turn.endMs : turn.startMs;
+    earliestSourceStartMs = Math.min(
+      earliestSourceStartMs,
+      anchorBaseMs + cell.timing.at.offsetMs,
+    );
+  }
   let presentationStartMs = Math.max(0, -earliestSourceStartMs);
   let records = createBaseRecords(project, alignment, presentationStartMs);
   let cells = scheduleRecords(records);
@@ -373,10 +428,21 @@ export function createPresentationScheduleV2(
     endMs: presentationStartMs + alignment.media.durationMs,
     durationMs: alignment.media.durationMs,
   };
+  let authoredAudio = cells.filter((cell) => cell.kind === 'audio-clip');
+  if (authoredAudio.length) {
+    let authoredAudioStartMs = Math.min(...authoredAudio.map((cell) => cell.audio.startMs));
+    let authoredAudioEndMs = Math.max(...authoredAudio.map((cell) => cell.audio.endMs));
+    audio = {
+      startMs: authoredAudioStartMs,
+      endMs: authoredAudioEndMs,
+      durationMs: authoredAudioEndMs - authoredAudioStartMs,
+    };
+  }
   let totalDurationMs = Math.max(
     audio.endMs,
     ...cells.map((cell) => Math.max(
       cell.narration?.endMs ?? 0,
+      cell.audio?.endMs ?? 0,
       cell.gesture?.endMs ?? 0,
       cell.visibility?.endMs ?? 0,
       cell.startMs,

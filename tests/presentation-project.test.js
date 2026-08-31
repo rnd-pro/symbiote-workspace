@@ -166,7 +166,7 @@ function command(project, id, type, payload) {
   };
 }
 
-describe('workspace presentation authoring project v1', () => {
+describe('workspace presentation authoring project v2', () => {
   it('round-trips a canonical v3 timeline byte-for-byte without a second timeline store', () => {
     let timeline = timelineFixture();
     let imported = createPresentationAuthoringProjectFromTimeline(timeline);
@@ -290,6 +290,11 @@ describe('workspace presentation authoring project v1', () => {
       'cell.set-timing',
       'cell.set-dependencies',
       'narration.replace',
+      'audio-clip.split',
+      'audio-clip.trim',
+      'audio-clip.move',
+      'audio-clip.link',
+      'audio-clip.unlink',
     ]);
   });
 

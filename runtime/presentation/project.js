@@ -4,13 +4,14 @@ import {
   createPresentationTimelineContract,
 } from './contract.js';
 
-export const PRESENTATION_AUTHORING_PROJECT_SCHEMA_VERSION = 'workspace-presentation-authoring-project-v1';
+export const PRESENTATION_AUTHORING_PROJECT_SCHEMA_VERSION = 'workspace-presentation-authoring-project-v2';
 export const PRESENTATION_AUTHORING_PROJECT_LAYER_KINDS = Object.freeze([
   'narration',
   'focus',
   'annotation',
   'interaction',
   'state',
+  'audio',
 ]);
 export const PRESENTATION_AUTHORING_PROJECT_SETTLE_POLICIES = Object.freeze(['none', 'anchor']);
 
@@ -20,6 +21,7 @@ const PROJECT_KEYS = Object.freeze([
   'revision',
   'script',
   'policy',
+  'assets',
   'layers',
   'cells',
   'hash',
@@ -34,6 +36,13 @@ const SCRIPT_KEYS = Object.freeze([
   'metadata',
 ]);
 const VISUAL_LAYER_KINDS = new Set(['focus', 'annotation', 'interaction']);
+const DEFAULT_LAYER_KINDS = Object.freeze([
+  'narration',
+  'focus',
+  'annotation',
+  'interaction',
+  'state',
+]);
 const RUNTIME_DATA_KEYS = new Set([
   'selector',
   'selectors',
@@ -342,6 +351,58 @@ function normalizeLayers(value, policy) {
   return layers;
 }
 
+function normalizeAssets(value) {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) {
+    fail('PRESENTATION_AUTHORING_PROJECT_INVALID', 'project.assets must be an array', {
+      path: 'project.assets',
+    });
+  }
+  let seen = new Set();
+  return value.map((valueItem, index) => {
+    let path = `project.assets[${index}]`;
+    let item = object(valueItem, path);
+    knownKeys(
+      item,
+      [
+        'id',
+        'kind',
+        'mediaType',
+        'durationMs',
+        'contentHash',
+        'alignmentHash',
+        'sourceTimelineHash',
+      ],
+      path,
+    );
+    let id = assertPortableId(item.id, `${path}.id`);
+    if (seen.has(id)) {
+      fail('PRESENTATION_AUTHORING_PROJECT_INVALID', `${path}.id duplicates asset "${id}"`, {
+        path: `${path}.id`,
+        id,
+      });
+    }
+    seen.add(id);
+    let kind = text(item.kind, `${path}.kind`);
+    if (kind !== 'audio') {
+      fail(
+        'PRESENTATION_AUTHORING_PROJECT_INVALID',
+        `${path}.kind must be audio`,
+        { path: `${path}.kind`, kind },
+      );
+    }
+    return {
+      id,
+      kind,
+      mediaType: text(item.mediaType, `${path}.mediaType`),
+      durationMs: integer(item.durationMs, `${path}.durationMs`, { min: 1 }),
+      contentHash: text(item.contentHash, `${path}.contentHash`),
+      alignmentHash: text(item.alignmentHash, `${path}.alignmentHash`),
+      sourceTimelineHash: text(item.sourceTimelineHash, `${path}.sourceTimelineHash`),
+    };
+  });
+}
+
 function normalizeDependencies(value, path) {
   if (value === undefined) return [];
   if (!Array.isArray(value)) {
@@ -412,20 +473,46 @@ function normalizeTiming(value, cueKind, path) {
   };
 }
 
-function parseCells(value, layers) {
+function normalizeAudioClipTiming(value, path) {
+  let source = object(value, path);
+  knownKeys(source, ['at'], path);
+  let atPath = `${path}.at`;
+  let at = object(source.at, atPath);
+  knownKeys(at, ['anchor', 'offsetMs'], atPath);
+  let anchor = text(at.anchor, `${atPath}.anchor`);
+  if (!['turn-start', 'turn-end'].includes(anchor)) {
+    fail(
+      'PRESENTATION_AUTHORING_PROJECT_INVALID',
+      `${atPath}.anchor must be turn-start or turn-end`,
+      { path: `${atPath}.anchor`, anchor },
+    );
+  }
+  return {
+    at: {
+      anchor,
+      offsetMs: integer(at.offsetMs, `${atPath}.offsetMs`, {
+        min: Number.MIN_SAFE_INTEGER,
+        max: Number.MAX_SAFE_INTEGER,
+      }),
+    },
+  };
+}
+
+function parseCells(value, layers, assets) {
   if (!Array.isArray(value) || !value.length) {
     fail('PRESENTATION_AUTHORING_PROJECT_INVALID', 'project.cells must be a nonempty array', {
       path: 'project.cells',
     });
   }
   let layerById = new Map(layers.map((layer) => [layer.id, layer]));
+  let assetById = new Map(assets.map((asset) => [asset.id, asset]));
   let seen = new Set();
   return value.map((valueItem, index) => {
     let path = `project.cells[${index}]`;
     let item = object(valueItem, path);
     knownKeys(
       item,
-      ['id', 'kind', 'layerId', 'turnId', 'turn', 'cue', 'timing', 'dependsOn'],
+      ['id', 'kind', 'layerId', 'turnId', 'turn', 'cue', 'audio', 'timing', 'dependsOn'],
       path,
     );
     let id = assertPortableId(item.id, `${path}.id`);
@@ -437,10 +524,10 @@ function parseCells(value, layers) {
     }
     seen.add(id);
     let kind = text(item.kind, `${path}.kind`);
-    if (!['narration', 'cue'].includes(kind)) {
+    if (!['narration', 'cue', 'audio-clip'].includes(kind)) {
       fail(
         'PRESENTATION_AUTHORING_PROJECT_INVALID',
-        `${path}.kind must be narration or cue`,
+        `${path}.kind must be narration, cue, or audio-clip`,
         { path: `${path}.kind`, kind },
       );
     }
@@ -480,10 +567,57 @@ function parseCells(value, layers) {
       }
       return { id, kind, layerId, turnId, turn, dependsOn };
     }
-    if (layer.kind === 'narration') {
+    if (kind === 'audio-clip') {
+      knownKeys(
+        item,
+        ['id', 'kind', 'layerId', 'turnId', 'audio', 'timing', 'dependsOn'],
+        path,
+      );
+      if (layer.kind !== 'audio') {
+        fail(
+          'PRESENTATION_AUTHORING_PROJECT_INVALID',
+          `${path} audio-clip cell must use an audio layer`,
+          { path: `${path}.layerId`, layerId },
+        );
+      }
+      let turnId = assertPortableId(item.turnId, `${path}.turnId`);
+      let audioPath = `${path}.audio`;
+      let audio = object(item.audio, audioPath);
+      knownKeys(audio, ['assetId', 'sourceInMs', 'sourceOutMs'], audioPath);
+      let assetId = assertPortableId(audio.assetId, `${audioPath}.assetId`);
+      let asset = assetById.get(assetId);
+      if (!asset) {
+        fail(
+          'PRESENTATION_AUTHORING_PROJECT_INVALID',
+          `${audioPath}.assetId names unknown audio asset "${assetId}"`,
+          { path: `${audioPath}.assetId`, assetId },
+        );
+      }
+      let sourceInMs = integer(audio.sourceInMs, `${audioPath}.sourceInMs`);
+      let sourceOutMs = integer(audio.sourceOutMs, `${audioPath}.sourceOutMs`, {
+        max: asset.durationMs,
+      });
+      if (sourceOutMs <= sourceInMs) {
+        fail(
+          'PRESENTATION_AUTHORING_PROJECT_INVALID',
+          `${audioPath} must define a nonempty half-open source range within the audio duration`,
+          { path: audioPath, sourceInMs, sourceOutMs, durationMs: asset.durationMs },
+        );
+      }
+      return {
+        id,
+        kind,
+        layerId,
+        turnId,
+        audio: { assetId, sourceInMs, sourceOutMs },
+        timing: normalizeAudioClipTiming(item.timing, `${path}.timing`),
+        dependsOn,
+      };
+    }
+    if (layer.kind === 'narration' || layer.kind === 'audio') {
       fail(
         'PRESENTATION_AUTHORING_PROJECT_INVALID',
-        `${path} cue cell cannot use a narration layer`,
+        `${path} cue cell cannot use a ${layer.kind} layer`,
         { path: `${path}.layerId`, layerId },
       );
     }
@@ -522,7 +656,7 @@ function normalizeScript(value) {
 }
 
 function availableCellBarriers(cell) {
-  if (cell.kind === 'narration') return ['ended'];
+  if (cell.kind === 'narration' || cell.kind === 'audio-clip') return ['ended'];
   let barriers = [];
   if (cell.timing.until !== null) barriers.push('ended');
   if (cell.timing.gestureDurationMs > 0) barriers.push('settled');
@@ -597,11 +731,11 @@ function buildTimeline(projectId, script, cells) {
     }
     narrationByTurnId.set(cell.turnId, cell);
   }
-  for (let cell of cells.filter((item) => item.kind === 'cue')) {
+  for (let cell of cells.filter((item) => item.kind !== 'narration')) {
     if (!narrationByTurnId.has(cell.turnId)) {
       fail(
         'PRESENTATION_AUTHORING_PROJECT_INVALID',
-        `cue cell "${cell.id}" names unknown turn "${cell.turnId}"`,
+        `${cell.kind} cell "${cell.id}" names unknown semantic narration turn "${cell.turnId}"`,
         { cellId: cell.id, turnId: cell.turnId },
       );
     }
@@ -662,6 +796,17 @@ function normalizedCellsFromTimeline(cells, timeline) {
         dependsOn: cell.dependsOn,
       };
     }
+    if (cell.kind === 'audio-clip') {
+      return {
+        id: cell.id,
+        kind: cell.kind,
+        layerId: cell.layerId,
+        turnId: cell.turnId,
+        audio: cell.audio,
+        timing: cell.timing,
+        dependsOn: cell.dependsOn,
+      };
+    }
     let cueIndex = cueIndexes.get(cell.turnId) || 0;
     cueIndexes.set(cell.turnId, cueIndex + 1);
     let cue = turn.cues[cueIndex];
@@ -686,7 +831,7 @@ function normalizedCellsFromTimeline(cells, timeline) {
 function defaultLayers(timeline) {
   let visualOwnerId = `${timeline.id}:presenter`;
   let collisionDomainId = `${timeline.id}:presenter-gesture`;
-  return PRESENTATION_AUTHORING_PROJECT_LAYER_KINDS.map((kind) => ({
+  return DEFAULT_LAYER_KINDS.map((kind) => ({
     id: `${timeline.id}:layer:${kind}`,
     kind,
     name: `${kind[0].toUpperCase()}${kind.slice(1)}`,
@@ -718,9 +863,11 @@ export function createPresentationAuthoringProject(input = {}) {
   let revision = integer(source.revision, 'project.revision', { fallback: 0 });
   let script = normalizeScript(source.script);
   let policy = normalizePolicy(source.policy, projectId);
+  let assets = normalizeAssets(source.assets);
   let layers = normalizeLayers(source.layers, policy);
-  let parsedCells = parseCells(source.cells, layers);
+  let parsedCells = parseCells(source.cells, layers, assets);
   assertNoRuntimeData(script, 'project.script');
+  assertNoRuntimeData(assets, 'project.assets');
   assertNoRuntimeData(parsedCells, 'project.cells');
   let timeline = buildTimeline(projectId, script, parsedCells);
   let cells = normalizedCellsFromTimeline(parsedCells, timeline);
@@ -731,6 +878,7 @@ export function createPresentationAuthoringProject(input = {}) {
     revision,
     script: normalizedScriptFromTimeline(timeline),
     policy,
+    assets,
     layers,
     cells,
   };
@@ -796,6 +944,7 @@ export function createPresentationAuthoringProjectFromTimeline(timelineInput = {
         exclusive: true,
       }],
     },
+    assets: [],
     layers,
     cells,
   });

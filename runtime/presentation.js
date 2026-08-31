@@ -117,6 +117,21 @@ export {
   projectPresentationNle,
   createPresentationAuthoringCommandFromNleEdit,
 } from './presentation/nle-projection.js';
+export {
+  PRESENTATION_PLAYBACK_PLAN_VERSION,
+  PresentationPlaybackPlanError,
+  createPresentationPlaybackPlan,
+  validatePresentationPlaybackPlan,
+} from './presentation/audio-execution.js';
+export {
+  PRESENTATION_AUDIO_COMPOSITION_VERSION,
+  PRESENTATION_AUDIO_DELIVERY_MANIFEST_VERSION,
+  PRESENTATION_AUDIO_DELIVERY_DURATION_TOLERANCE_MS,
+  PresentationAudioCompositionError,
+  createPresentationAudioComposition,
+  validatePresentationAudioComposition,
+  createPresentationAudioDeliveryManifest,
+} from './presentation/audio-composition.js';
 export { solvePresentationClock } from './presentation/solver.js';
 export {
   SEMANTIC_SCRIPT_SCHEMA_VERSION,

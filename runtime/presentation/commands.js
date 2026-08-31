@@ -80,6 +80,40 @@ const TIMING_SCHEMA = Object.freeze({
   additionalProperties: false,
 });
 
+const AUDIO_CLIP_ANCHOR_SCHEMA = Object.freeze({
+  type: 'object',
+  properties: Object.freeze({
+    anchor: { enum: ['turn-start', 'turn-end'] },
+    offsetMs: {
+      type: 'integer',
+      minimum: Number.MIN_SAFE_INTEGER,
+      maximum: Number.MAX_SAFE_INTEGER,
+    },
+  }),
+  required: Object.freeze(['anchor', 'offsetMs']),
+  additionalProperties: false,
+});
+
+const AUDIO_CLIP_TIMING_SCHEMA = Object.freeze({
+  type: 'object',
+  properties: Object.freeze({
+    at: AUDIO_CLIP_ANCHOR_SCHEMA,
+  }),
+  required: Object.freeze(['at']),
+  additionalProperties: false,
+});
+
+const AUDIO_CLIP_SOURCE_SCHEMA = Object.freeze({
+  type: 'object',
+  properties: Object.freeze({
+    assetId: { type: 'string', minLength: 1 },
+    sourceInMs: { type: 'integer', minimum: 0 },
+    sourceOutMs: { type: 'integer', minimum: 1 },
+  }),
+  required: Object.freeze(['assetId', 'sourceInMs', 'sourceOutMs']),
+  additionalProperties: false,
+});
+
 const CUE_BINDING_SCHEMA = Object.freeze({
   type: 'object',
   properties: Object.freeze({
@@ -227,6 +261,21 @@ const CUE_CONTENT_SCHEMA = Object.freeze({
   additionalProperties: false,
 });
 
+const AUDIO_CLIP_CELL_SCHEMA = Object.freeze({
+  type: 'object',
+  properties: Object.freeze({
+    id: { type: 'string', minLength: 1 },
+    kind: { enum: ['audio-clip'] },
+    layerId: { type: 'string', minLength: 1 },
+    turnId: { type: 'string', minLength: 1 },
+    audio: AUDIO_CLIP_SOURCE_SCHEMA,
+    timing: AUDIO_CLIP_TIMING_SCHEMA,
+    dependsOn: { type: 'array', items: DEPENDENCY_SCHEMA },
+  }),
+  required: Object.freeze(['id', 'kind', 'layerId', 'turnId', 'audio', 'timing', 'dependsOn']),
+  additionalProperties: false,
+});
+
 const CELL_SCHEMA = Object.freeze({
   oneOf: Object.freeze([
     {
@@ -256,6 +305,7 @@ const CELL_SCHEMA = Object.freeze({
       required: ['id', 'kind', 'layerId', 'turnId', 'cue', 'timing', 'dependsOn'],
       additionalProperties: false,
     },
+    AUDIO_CLIP_CELL_SCHEMA,
   ]),
 });
 
@@ -392,8 +442,97 @@ const COMMAND_DESCRIPTORS = Object.freeze([
     }),
     invertible: true,
   },
+  {
+    type: 'audio-clip.split',
+    toolName: 'presentation_authoring_audio_clip_split',
+    description: 'Split one audio clip at a source-media boundary.',
+    payloadKeys: ['cellId', 'sourceAtMs', 'rightCellId'],
+    payloadSchema: payloadSchema({
+      cellId: { type: 'string', minLength: 1 },
+      sourceAtMs: { type: 'integer', minimum: 1 },
+      rightCellId: { type: 'string', minLength: 1 },
+    }),
+    invertible: true,
+  },
+  {
+    type: 'audio-clip.trim',
+    toolName: 'presentation_authoring_audio_clip_trim',
+    description: 'Trim one audio clip to a half-open source-media range.',
+    payloadKeys: ['cellId', 'sourceInMs', 'sourceOutMs'],
+    payloadSchema: payloadSchema({
+      cellId: { type: 'string', minLength: 1 },
+      sourceInMs: { type: 'integer', minimum: 0 },
+      sourceOutMs: { type: 'integer', minimum: 1 },
+    }),
+    invertible: true,
+  },
+  {
+    type: 'audio-clip.move',
+    toolName: 'presentation_authoring_audio_clip_move',
+    description: 'Move one audio clip by replacing its semantic timing anchor.',
+    payloadKeys: ['cellId', 'timing'],
+    payloadSchema: payloadSchema({
+      cellId: { type: 'string', minLength: 1 },
+      timing: AUDIO_CLIP_TIMING_SCHEMA,
+    }),
+    invertible: true,
+  },
+  {
+    type: 'audio-clip.link',
+    toolName: 'presentation_authoring_audio_clip_link',
+    description: 'Link one audio clip to an event barrier.',
+    payloadKeys: ['clipCellId', 'eventCellId', 'barrier'],
+    payloadSchema: payloadSchema({
+      clipCellId: { type: 'string', minLength: 1 },
+      eventCellId: { type: 'string', minLength: 1 },
+      barrier: { enum: ['ended', 'settled', 'acted', 'ready'] },
+    }),
+    invertible: true,
+  },
+  {
+    type: 'audio-clip.unlink',
+    toolName: 'presentation_authoring_audio_clip_unlink',
+    description: 'Remove one exact audio-clip event-barrier link.',
+    payloadKeys: ['clipCellId', 'eventCellId', 'barrier'],
+    payloadSchema: payloadSchema({
+      clipCellId: { type: 'string', minLength: 1 },
+      eventCellId: { type: 'string', minLength: 1 },
+      barrier: { enum: ['ended', 'settled', 'acted', 'ready'] },
+    }),
+    invertible: true,
+  },
 ]);
-const DESCRIPTOR_BY_TYPE = new Map(COMMAND_DESCRIPTORS.map((item) => [item.type, item]));
+
+// Split restoration must update the retained left cell and remove the generated right cell
+// atomically. Keep that receipt-only operation out of the public MCP/CLI tool surface.
+const INTERNAL_COMMAND_DESCRIPTORS = Object.freeze([
+  {
+    type: 'audio-clip.restore-split',
+    payloadKeys: ['leftCell', 'rightCellId'],
+    payloadSchema: payloadSchema({
+      leftCell: AUDIO_CLIP_CELL_SCHEMA,
+      rightCellId: { type: 'string', minLength: 1 },
+    }),
+    invertible: false,
+  },
+  {
+    type: 'audio-clip.restore-link',
+    payloadKeys: ['clipCellId', 'eventCellId', 'barrier', 'index'],
+    payloadSchema: payloadSchema({
+      clipCellId: { type: 'string', minLength: 1 },
+      eventCellId: { type: 'string', minLength: 1 },
+      barrier: { enum: ['ended', 'settled', 'acted', 'ready'] },
+      index: { type: 'integer', minimum: 0 },
+    }),
+    invertible: false,
+  },
+]);
+
+const ALL_COMMAND_DESCRIPTORS = Object.freeze([
+  ...COMMAND_DESCRIPTORS,
+  ...INTERNAL_COMMAND_DESCRIPTORS,
+]);
+const DESCRIPTOR_BY_TYPE = new Map(ALL_COMMAND_DESCRIPTORS.map((item) => [item.type, item]));
 
 export class PresentationAuthoringProjectCommandError extends Error {
   constructor(code, message, details = {}) {
@@ -462,6 +601,83 @@ function findIndex(records, id, path) {
     });
   }
   return found;
+}
+
+function integerValue(value, path, { min = Number.MIN_SAFE_INTEGER, max = Number.MAX_SAFE_INTEGER } = {}) {
+  if (!Number.isSafeInteger(value) || value < min || value > max) {
+    fail(
+      'PRESENTATION_AUTHORING_COMMAND_INVALID',
+      `${path} must be a safe integer between ${min} and ${max}`,
+      { path, value },
+    );
+  }
+  return value;
+}
+
+function audioClipAt(draft, value, path) {
+  let cellId = text(value, path);
+  let cellIndex = findIndex(draft.cells, cellId, path);
+  let cell = draft.cells[cellIndex];
+  if (cell.kind !== 'audio-clip') {
+    fail(
+      'PRESENTATION_AUTHORING_COMMAND_INVALID',
+      `${path} must name an audio-clip cell`,
+      { path, cellId, kind: cell.kind },
+    );
+  }
+  return { cellId, cellIndex, cell };
+}
+
+function eventCellAt(draft, value, path) {
+  let cellId = text(value, path);
+  let cellIndex = findIndex(draft.cells, cellId, path);
+  let cell = draft.cells[cellIndex];
+  if (cell.kind !== 'cue') {
+    fail(
+      'PRESENTATION_AUTHORING_COMMAND_INVALID',
+      `${path} must name a cue event cell`,
+      { path, cellId, kind: cell.kind },
+    );
+  }
+  return { cellId, cellIndex, cell };
+}
+
+function dependencyBarrier(value, path) {
+  let barrier = text(value, path);
+  if (!['ended', 'settled', 'acted', 'ready'].includes(barrier)) {
+    fail(
+      'PRESENTATION_AUTHORING_COMMAND_INVALID',
+      `${path} must be ended, settled, acted, or ready`,
+      { path, barrier },
+    );
+  }
+  return barrier;
+}
+
+function splitAudioClip(leftCell, sourceAtMs, rightCellId) {
+  let left = clone(leftCell);
+  let deltaMs = sourceAtMs - left.audio.sourceInMs;
+  left.audio.sourceOutMs = sourceAtMs;
+  let right = {
+    ...clone(leftCell),
+    id: rightCellId,
+    audio: {
+      ...clone(leftCell.audio),
+      sourceInMs: sourceAtMs,
+    },
+    timing: {
+      ...clone(leftCell.timing),
+      at: {
+        ...clone(leftCell.timing.at),
+        offsetMs: leftCell.timing.at.offsetMs + deltaMs,
+      },
+    },
+    dependsOn: [
+      ...clone(leftCell.dependsOn),
+      { cellId: leftCell.id, barrier: 'ended' },
+    ],
+  };
+  return { left, right };
 }
 
 function normalizeCommand(value) {
@@ -662,6 +878,163 @@ function applyNarrationReplacement(draft, payload) {
   };
 }
 
+function applyAudioClipMutation(draft, command) {
+  let payload = command.payload;
+  if (command.type === 'audio-clip.split') {
+    let { cellId, cellIndex, cell } = audioClipAt(
+      draft,
+      payload.cellId,
+      'command.payload.cellId',
+    );
+    let sourceAtMs = integerValue(payload.sourceAtMs, 'command.payload.sourceAtMs', {
+      min: cell.audio.sourceInMs + 1,
+      max: cell.audio.sourceOutMs - 1,
+    });
+    let rightCellId = text(payload.rightCellId, 'command.payload.rightCellId');
+    if (draft.cells.some((candidate) => candidate.id === rightCellId)) {
+      fail(
+        'PRESENTATION_AUTHORING_COMMAND_DUPLICATE_ID',
+        `cell id "${rightCellId}" already exists`,
+        { id: rightCellId },
+      );
+    }
+    let before = clone(cell);
+    let { left, right } = splitAudioClip(before, sourceAtMs, rightCellId);
+    integerValue(right.timing.at.offsetMs, 'command.payload.sourceAtMs');
+    draft.cells.splice(cellIndex, 1, left, right);
+    return {
+      draft,
+      change: {
+        type: command.type,
+        cellId,
+        rightCellId,
+        before,
+        left: clone(left),
+        right: clone(right),
+      },
+    };
+  }
+  if (command.type === 'audio-clip.trim') {
+    let { cellId, cell } = audioClipAt(draft, payload.cellId, 'command.payload.cellId');
+    let sourceInMs = integerValue(payload.sourceInMs, 'command.payload.sourceInMs', { min: 0 });
+    let sourceOutMs = integerValue(payload.sourceOutMs, 'command.payload.sourceOutMs', {
+      min: sourceInMs + 1,
+    });
+    let before = clone(cell.audio);
+    cell.audio = { ...cell.audio, sourceInMs, sourceOutMs };
+    return {
+      draft,
+      change: { type: command.type, cellId, before, after: clone(cell.audio) },
+    };
+  }
+  if (command.type === 'audio-clip.move') {
+    let { cellId, cell } = audioClipAt(draft, payload.cellId, 'command.payload.cellId');
+    let timing = object(payload.timing, 'command.payload.timing');
+    let before = clone(cell.timing);
+    cell.timing = clone(timing);
+    return {
+      draft,
+      change: { type: command.type, cellId, before, after: clone(timing) },
+    };
+  }
+  if (command.type === 'audio-clip.restore-split') {
+    let leftCell = object(payload.leftCell, 'command.payload.leftCell');
+    let { cellIndex, cell } = audioClipAt(draft, leftCell.id, 'command.payload.leftCell.id');
+    let rightCellId = text(payload.rightCellId, 'command.payload.rightCellId');
+    let rightIndex = findIndex(draft.cells, rightCellId, 'command.payload.rightCellId');
+    if (rightIndex !== cellIndex + 1) {
+      fail(
+        'PRESENTATION_AUTHORING_COMMAND_INVALID',
+        'split restoration requires the generated right clip immediately after the retained left clip',
+        { leftCellId: cell.id, rightCellId },
+      );
+    }
+    let { left: expectedLeft, right: expectedRight } = splitAudioClip(
+      leftCell,
+      cell.audio.sourceOutMs,
+      rightCellId,
+    );
+    if (
+      canonicalize(cell) !== canonicalize(expectedLeft)
+      || canonicalize(draft.cells[rightIndex]) !== canonicalize(expectedRight)
+    ) {
+      fail(
+        'PRESENTATION_AUTHORING_COMMAND_INVALID',
+        'split restoration target no longer matches the exact generated split pair',
+        { leftCellId: cell.id, rightCellId },
+      );
+    }
+    draft.cells.splice(cellIndex, 2, clone(leftCell));
+    return {
+      draft,
+      change: {
+        type: command.type,
+        leftCellId: leftCell.id,
+        rightCellId,
+        before: [clone(cell), clone(expectedRight)],
+        after: clone(leftCell),
+      },
+    };
+  }
+
+  let { cellId: clipCellId, cell: clip } = audioClipAt(
+    draft,
+    payload.clipCellId,
+    'command.payload.clipCellId',
+  );
+  let { cellId: eventCellId } = eventCellAt(
+    draft,
+    payload.eventCellId,
+    'command.payload.eventCellId',
+  );
+  let barrier = dependencyBarrier(payload.barrier, 'command.payload.barrier');
+  let dependency = { cellId: eventCellId, barrier };
+  let dependencyIndex = clip.dependsOn.findIndex((candidate) => (
+    candidate.cellId === eventCellId && candidate.barrier === barrier
+  ));
+  if (command.type === 'audio-clip.link' || command.type === 'audio-clip.restore-link') {
+    if (dependencyIndex >= 0) {
+      fail(
+        'PRESENTATION_AUTHORING_COMMAND_DUPLICATE_ID',
+        `audio clip "${clipCellId}" already has the exact dependency "${eventCellId}:${barrier}"`,
+        { clipCellId, eventCellId, barrier },
+      );
+    }
+    let toIndex = command.type === 'audio-clip.restore-link'
+      ? index(payload.index, 'command.payload.index', clip.dependsOn.length)
+      : clip.dependsOn.length;
+    clip.dependsOn.splice(toIndex, 0, dependency);
+    return {
+      draft,
+      change: {
+        type: command.type,
+        clipCellId,
+        eventCellId,
+        barrier,
+        index: toIndex,
+      },
+    };
+  }
+  if (dependencyIndex < 0) {
+    fail(
+      'PRESENTATION_AUTHORING_COMMAND_TARGET_MISSING',
+      `audio clip "${clipCellId}" has no exact dependency "${eventCellId}:${barrier}"`,
+      { clipCellId, eventCellId, barrier },
+    );
+  }
+  clip.dependsOn.splice(dependencyIndex, 1);
+  return {
+    draft,
+    change: {
+      type: command.type,
+      clipCellId,
+      eventCellId,
+      barrier,
+      index: dependencyIndex,
+    },
+  };
+}
+
 function applyMutation(project, command) {
   let draft = clone(project);
   delete draft.hash;
@@ -748,6 +1121,9 @@ function applyMutation(project, command) {
   }
   if (command.type === 'narration.replace') {
     return applyNarrationReplacement(draft, payload);
+  }
+  if (command.type.startsWith('audio-clip.')) {
+    return applyAudioClipMutation(draft, command);
   }
 
   let cellId = text(payload.cellId, 'command.payload.cellId');
@@ -974,6 +1350,34 @@ export function invertPresentationAuthoringProjectCommand(commandInput, applicat
       narrationCellId: change.narrationCellId,
       turn: change.before.turn,
       cueBindings: change.before.cueBindings,
+    };
+  } else if (command.type === 'audio-clip.split') {
+    inverseType = 'audio-clip.restore-split';
+    payload = { leftCell: change.before, rightCellId: change.rightCellId };
+  } else if (command.type === 'audio-clip.trim') {
+    inverseType = command.type;
+    payload = {
+      cellId: change.cellId,
+      sourceInMs: change.before.sourceInMs,
+      sourceOutMs: change.before.sourceOutMs,
+    };
+  } else if (command.type === 'audio-clip.move') {
+    inverseType = command.type;
+    payload = { cellId: change.cellId, timing: change.before };
+  } else if (command.type === 'audio-clip.link') {
+    inverseType = 'audio-clip.unlink';
+    payload = {
+      clipCellId: change.clipCellId,
+      eventCellId: change.eventCellId,
+      barrier: change.barrier,
+    };
+  } else if (command.type === 'audio-clip.unlink') {
+    inverseType = 'audio-clip.restore-link';
+    payload = {
+      clipCellId: change.clipCellId,
+      eventCellId: change.eventCellId,
+      barrier: change.barrier,
+      index: change.index,
     };
   } else {
     fail(

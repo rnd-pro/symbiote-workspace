@@ -357,9 +357,14 @@ describe('workspace presentation authoring tool pack', () => {
         'presentation_authoring_cell_set_timing',
         'presentation_authoring_cell_set_dependencies',
         'presentation_authoring_narration_replace',
+        'presentation_authoring_audio_clip_split',
+        'presentation_authoring_audio_clip_trim',
+        'presentation_authoring_audio_clip_move',
+        'presentation_authoring_audio_clip_link',
+        'presentation_authoring_audio_clip_unlink',
       ],
     );
-    assert.equal(descriptors.length, 15);
+    assert.equal(descriptors.length, 20);
     assert.equal(descriptors.every((item) => item.inputSchema.additionalProperties === false), true);
     assert.equal(commandDescriptors.every((item) => (
       item.toolName.startsWith('presentation_authoring_')
@@ -1274,7 +1279,7 @@ describe('workspace presentation authoring tool pack', () => {
     assert.deepEqual(result.cells, before.project.cells);
     assert.deepEqual(result.mediaAncestry, before.mediaAncestry);
     assert.equal(result.projectionStatus.status, 'ready');
-    assert.equal(result.descriptors.length, 15);
+    assert.equal(result.descriptors.length, 20);
     assert.equal(fixture.authority.counts().commits, commits);
   });
 

@@ -111,10 +111,20 @@ function commandTypesForCell(cell) {
     'cell.set-dependencies',
   ];
   if (cell.kind === 'cue') requested.push('cell.set-timing');
+  if (cell.kind === 'audio-clip') {
+    requested.push(
+      'audio-clip.split',
+      'audio-clip.trim',
+      'audio-clip.move',
+      'audio-clip.link',
+      'audio-clip.unlink',
+    );
+  }
   return requested.filter((type) => available.has(type));
 }
 
 function clipSpan(scheduled) {
+  if (scheduled.audio) return { startMs: scheduled.audio.startMs, endMs: scheduled.audio.endMs };
   if (scheduled.narration) return clone(scheduled.narration);
   if (scheduled.gesture) return clone(scheduled.gesture);
   if (scheduled.visibility) return clone(scheduled.visibility);
@@ -141,6 +151,25 @@ function createAnchors(project, scheduleById) {
         edge: 'turn-end',
         anchor: { anchor: 'turn-end', offsetMs: 0 },
         timeMs: scheduled.narration.endMs,
+      });
+      continue;
+    }
+    if (cell.kind === 'audio-clip') {
+      anchors.push({
+        id: `${cell.id}:start`,
+        turnId: cell.turnId,
+        sourceCellId: cell.id,
+        edge: 'start',
+        anchor: clone(cell.timing.at),
+        timeMs: scheduled.audio.startMs,
+      });
+      anchors.push({
+        id: `${cell.id}:end`,
+        turnId: cell.turnId,
+        sourceCellId: cell.id,
+        edge: 'end',
+        anchor: clone(cell.timing.at),
+        timeMs: scheduled.audio.endMs,
       });
       continue;
     }
@@ -261,18 +290,20 @@ export function projectPresentationNle(projectInput = {}, scheduleInput = {}) {
           layerId: cell.layerId,
           turnId: cell.turnId,
           kind: cell.kind,
-          semanticKind: cell.kind === 'cue' ? cell.cue.kind : 'narration',
+          semanticKind: cell.kind === 'cue' ? cell.cue.kind : cell.kind,
           editable: true,
           generated: false,
           commandTypes: commandTypesForCell(cell),
-          timing: cell.kind === 'cue' ? clone(cell.timing) : null,
+          timing: cell.kind === 'cue' || cell.kind === 'audio-clip' ? clone(cell.timing) : null,
+          ...(cell.kind === 'audio-clip' ? { audio: clone(cell.audio) } : {}),
           span: clipSpan(scheduled),
           gesture: scheduled.gesture,
           visibility: scheduled.visibility,
         };
       }),
   }));
-  let generatedTracks = [{
+  let authoredAudioClips = project.cells.filter((cell) => cell.kind === 'audio-clip');
+  let generatedTracks = authoredAudioClips.length ? [] : [{
     id: 'generated:narration-audio',
     kind: 'audio',
     name: 'Narration audio',
@@ -363,12 +394,47 @@ export function createPresentationAuthoringCommandFromNleEdit(
     );
   }
   let cell = project.cells.find((item) => item.id === clipId);
-  if (!cell || cell.kind !== 'cue') {
+  if (!cell || !['cue', 'audio-clip'].includes(cell.kind)) {
     fail(
       'PRESENTATION_NLE_EDIT_INVALID',
-      `NLE frame drag clipId "${clipId}" must name an editable semantic cue cell`,
+      `NLE frame drag clipId "${clipId}" must name an editable cue or audio-clip cell`,
       { clipId },
     );
+  }
+  if (cell.kind === 'audio-clip') {
+    let turnAnchors = nle.anchors.filter((anchor) => (
+      anchor.turnId === cell.turnId
+      && ['turn-start', 'turn-end'].includes(anchor.edge)
+    ));
+    let choice = editInput.anchorId === undefined
+      ? turnAnchors.find((anchor) => anchor.edge === 'turn-start')
+      : turnAnchors.find((anchor) => anchor.id === editInput.anchorId);
+    if (!choice) {
+      return {
+        status: 'rejected',
+        code: 'PRESENTATION_NLE_ANCHOR_INVALID',
+        clipId,
+        frameMs: editInput.frameMs,
+        anchorId: editInput.anchorId ?? null,
+        basis,
+      };
+    }
+    let offsetMs = choice.anchor.offsetMs + editInput.frameMs - choice.timeMs;
+    return {
+      status: 'command',
+      command: {
+        schemaVersion: PRESENTATION_AUTHORING_COMMAND_SCHEMA_VERSION,
+        id,
+        base: { revision: project.revision, authoringProjectHash: project.hash },
+        type: 'audio-clip.move',
+        payload: {
+          cellId: cell.id,
+          timing: { at: { anchor: choice.anchor.anchor, offsetMs } },
+        },
+      },
+      anchor: clone(choice),
+      basis,
+    };
   }
   let turnChoices = nle.anchors
     .filter((anchor) => anchor.turnId === cell.turnId)

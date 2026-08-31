@@ -403,10 +403,11 @@ narration projection. `normalizePresentationProject()` reconstructs and verifies
 the same hash. This provenance API and the mutable Authoring Project API have
 distinct names and reject each other's schema instead of dispatching by shape.
 
-`workspace-presentation-authoring-project-v1` is the sole mutable presentation
+`workspace-presentation-authoring-project-v2` is the sole mutable presentation
 authoring aggregate. It is distinct from immutable presentation-provenance
 contracts and owns stable layer/cell identities, semantic timing, dependencies,
-and one exclusive presenter collision domain; timeline v3, schedule v2, and NLE
+immutable audio-asset identity, half-open audio source ranges, and one exclusive
+presenter collision domain; timeline v3, schedule v2, and NLE
 remain derived projections. Schedule v2 barrier times are deterministic planning
 evidence, not runtime completion. A host must wait for the matching successful
 settlement receipt before starting dependent attention. Late or cancelled work
@@ -442,6 +443,11 @@ let pack = createPresentationAuthoringToolPack({
   },
 });
 ```
+
+The command registry also exposes strict `audio-clip.split`, `audio-clip.trim`,
+`audio-clip.move`, `audio-clip.link`, and `audio-clip.unlink` operations. Visual
+NLE editing, an agent MCP/CLI host, and headless playback must all mutate or execute
+this Project-derived graph; a host-specific audio-cut list is invalid.
 
 The strict authority snapshot has one of two explicit forms. Single-artifact
 hosts keep `{ project, alignment?, mediaAncestry? }`. Collection hosts use
@@ -548,9 +554,13 @@ sample. `seek()` advances the execution generation and clears generation-scoped
 barriers, while `pause()`, `seek()`, `stop()`, `dispose()`, and external abort
 cancel the active adapter signal.
 
-Adapters implement only `runInteraction`, `runAttention`, or `waitForState`.
-Each receives the frozen operation context `{ operationId, generation,
-scheduleCell, projectCell, signal, reportAdmission, reportReceipt }`. Attention
+Adapters implement only `playAudioClip`, `runInteraction`, `runAttention`, or
+`waitForState`. Each receives the frozen operation context `{ operationId,
+generation, scheduleCell, projectCell, signal, reportAdmission, reportReceipt }`.
+Audio also receives immutable `sourceAsset` and `playback` evidence, including the
+source position derived from the current presentation sample; its sole successful
+receipt is `ended` and must bind the exact clip, asset content hash, and half-open
+source range. Attention
 and semantic `select` interactions must call `reportAdmission()` once at zero
 progress, before reporting a visual milestone. Native scroll, navigation and
 panel reveal have no geometry-plan admission because their provider settlement

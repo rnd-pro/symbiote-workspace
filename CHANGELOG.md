@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Upgraded the mutable presentation authority to
+  `workspace-presentation-authoring-project-v2` with immutable audio assets,
+  first-class editable audio clips, strict split/trim/move/link/unlink commands,
+  authored NLE audio tracks, Schedule v2 source/presentation spans, and one shared
+  presentation executor for editor preview and headless playback. Added a pure
+  composition/delivery manifest that reuses approved source alignment without new
+  TTS or transcription.
+
 - Added a stateless, product-neutral presentation authoring tool pack with one
   strict tool descriptor per Authoring Project command, exact revision/hash CAS,
   inspection, receipt-bound inverse generation, derived timeline/Schedule v2/NLE

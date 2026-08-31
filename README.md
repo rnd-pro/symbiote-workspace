@@ -94,9 +94,12 @@ mode.
   `workspace-presentation-project-v7` hash. This provenance contract is separate
   from the mutable Authoring Project API and rejects Authoring Project inputs.
 - **Presentation Authoring Project authority** —
-  `workspace-presentation-authoring-project-v1` is the
+  `workspace-presentation-authoring-project-v2` is the
   sole mutable authoring aggregate for presentation scripts, layers, and stable
-  cells. It rejects runtime selectors, geometry, and receipts; validates dependency
+  cells. Immutable audio assets and editable `audio-clip` cells keep source ranges,
+  timeline placement, and event dependencies in that same Project. The NLE,
+  MCP/CLI tools, and headless playback all derive the same clip graph; there is no
+  player-only segmentation timeline. It rejects runtime selectors, geometry, and receipts; validates dependency
   graphs and one exclusive presenter collision domain before publication; and
   applies same-base command batches as one atomic revision. Timeline v3, aligned
   sequence v1, presenter schedule v2, and NLE are derived projections. Schedule v2
@@ -106,6 +109,8 @@ mode.
   Project/Schedule hashes.
   NLE frame edits are accepted only against the exact derived projection and map
   back to semantic anchors plus `leadMs`, never persisted absolute milliseconds.
+  First-class clip commands split, trim, timeline-move, link, and unlink audio with
+  exact revision/project-hash CAS while preserving approved source identity.
 - **Stateless presentation authoring tools** —
   `createPresentationAuthoringToolPack({ authority, regeneration })` exposes one
   strict product-neutral tool per Authoring Project command, plus inspect,
@@ -123,6 +128,16 @@ mode.
   `ready`. Only those actual receipts open dependency barriers; planned times do
   not. Completion never pumps another cell, so the next effect requires a fresh
   media sample, while expired cells are skipped without replay.
+- **Shared presentation execution** — authored audio clips project into an editable
+  NLE track and `workspace-presentation-playback-plan-v1`. The existing
+  `PresentationExecutionController` admits audio, interaction, attention, and state
+  cells from the same typed dependency graph, so `clip ended → event settled → next
+  clip` has one receipt and lifecycle contract in visual-editor preview and
+  hidden/headless playback.
+- **Deterministic audio composition** —
+  `workspace-presentation-audio-composition-v1` projects approved master ranges and
+  word evidence into presentation time without rerunning TTS or transcription, and
+  binds materialized delivery files back to the exact Project/composition hashes.
 
 ### Unified Agent Tooling
 

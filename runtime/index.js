@@ -158,6 +158,21 @@ export {
   planCaptionPlacements,
 } from './presentation-output.js';
 export {
+  PRESENTATION_PLAYBACK_PLAN_VERSION,
+  PresentationPlaybackPlanError,
+  createPresentationPlaybackPlan,
+  validatePresentationPlaybackPlan,
+} from './presentation/audio-execution.js';
+export {
+  PRESENTATION_AUDIO_COMPOSITION_VERSION,
+  PRESENTATION_AUDIO_DELIVERY_MANIFEST_VERSION,
+  PRESENTATION_AUDIO_DELIVERY_DURATION_TOLERANCE_MS,
+  PresentationAudioCompositionError,
+  createPresentationAudioComposition,
+  validatePresentationAudioComposition,
+  createPresentationAudioDeliveryManifest,
+} from './presentation/audio-composition.js';
+export {
   PRESENTATION_PLANNER_INPUT_MAX_BYTES,
   PRESENTATION_PLANNER_INPUT_SCHEMA_VERSION,
   createPresentationPlannerInput,

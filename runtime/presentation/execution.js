@@ -11,7 +11,7 @@ export const PRESENTATION_EFFECT_ADMISSION_VERSION =
   'workspace-presentation-effect-admission-v2';
 export const PRESENTATION_EFFECT_RECEIPT_VERSION = 'workspace-presentation-effect-receipt-v2';
 
-const EFFECT_KINDS = Object.freeze(['narration', 'interaction', 'attention', 'state']);
+const EFFECT_KINDS = Object.freeze(['narration', 'audio', 'interaction', 'attention', 'state']);
 const EFFECT_STATUSES = Object.freeze([
   'acted',
   'ready',
@@ -24,6 +24,7 @@ const EFFECT_STATUSES = Object.freeze([
   'stale',
 ]);
 const ACTUAL_RECEIPT_SEQUENCE = Object.freeze({
+  audio: Object.freeze(['ended']),
   interaction: Object.freeze(['acted', 'settled']),
   attention: Object.freeze(['first-frame', 'settled']),
   state: Object.freeze(['ready']),
@@ -32,6 +33,7 @@ const ADMISSION_EFFECT_KINDS = new Set(['interaction', 'attention']);
 const MILESTONE_STATUSES = new Set(['acted', 'ready', 'first-frame', 'settled']);
 const RECEIPT_STATUSES_BY_KIND = Object.freeze({
   narration: new Set(['ended', 'skipped', 'cancelled', 'failed', 'stale']),
+  audio: new Set(['ended', 'skipped', 'cancelled', 'failed', 'stale']),
   interaction: new Set(['acted', 'settled', 'ended', 'skipped', 'cancelled', 'failed', 'stale']),
   attention: new Set(['first-frame', 'settled', 'ended', 'skipped', 'cancelled', 'failed', 'stale']),
   state: new Set(['ready', 'ended', 'skipped', 'cancelled', 'failed', 'stale']),
@@ -49,6 +51,7 @@ const RECEIPT_KEYS = Object.freeze([
   'providerReceipt',
   'reason',
 ]);
+const AUDIO_OPERATION_GRACE_MS = 1000;
 const ADMISSION_KEYS = Object.freeze([
   'version',
   'operationId',
@@ -315,12 +318,14 @@ function createAdapterCompletion() {
 
 function effectKindForCell(cell) {
   if (cell.kind === 'narration') return 'narration';
+  if (cell.kind === 'audio-clip') return 'audio';
   if (cell.kind === 'interaction') return 'interaction';
   if (cell.kind === 'state') return 'state';
   return 'attention';
 }
 
 function operationMethodForKind(adapter, kind) {
+  if (kind === 'audio') return adapter.playAudioClip;
   if (kind === 'interaction') return adapter.runInteraction;
   if (kind === 'attention') return adapter.runAttention;
   if (kind === 'state') return adapter.waitForState;
@@ -333,8 +338,48 @@ function operationRequiresAdmission(kind, projectCell) {
 }
 
 function operationBudgetMs(kind, scheduleCell, projectCell) {
+  if (kind === 'audio') return scheduleCell.audio.durationMs + AUDIO_OPERATION_GRACE_MS;
   if (kind === 'state') return projectCell.cue.state.timeoutMs;
   return scheduleCell.gesture.endMs - scheduleCell.gesture.startMs;
+}
+
+function validateAudioProviderReceipt(value, operation) {
+  let code = 'PRESENTATION_AUDIO_RECEIPT_SOURCE_MISMATCH';
+  if (!isObject(value)) {
+    fail(code, 'audio completion requires exact portable source evidence');
+  }
+  knownKeys(
+    value,
+    ['clipId', 'assetId', 'sourceContentHash', 'sourceInMs', 'sourceOutMs', 'deliveryHash'],
+    'receipt.providerReceipt',
+    code,
+  );
+  let expected = {
+    clipId: operation.projectCell.id,
+    assetId: operation.projectCell.audio.assetId,
+    sourceContentHash: operation.sourceAsset.contentHash,
+    sourceInMs: operation.projectCell.audio.sourceInMs,
+    sourceOutMs: operation.projectCell.audio.sourceOutMs,
+  };
+  let received = {
+    clipId: value.clipId,
+    assetId: value.assetId,
+    sourceContentHash: value.sourceContentHash,
+    sourceInMs: value.sourceInMs,
+    sourceOutMs: value.sourceOutMs,
+  };
+  if (canonicalize(received) !== canonicalize(expected)) {
+    fail(
+      code,
+      `audio completion for clip "${operation.projectCell.id}" does not bind its exact source range`,
+      { expected, received },
+    );
+  }
+  if (value.deliveryHash !== undefined && (
+    typeof value.deliveryHash !== 'string' || !value.deliveryHash.trim()
+  )) {
+    fail(code, 'receipt.providerReceipt.deliveryHash must be nonempty text when provided');
+  }
 }
 
 function deadlineError(operation) {
@@ -353,6 +398,7 @@ function deadlineError(operation) {
 }
 
 function cellExpiry(cell) {
+  if (cell.audio) return cell.audio.endMs;
   if (cell.visibility) return cell.visibility.endMs;
   if (cell.gesture) return cell.gesture.endMs;
   return Number.POSITIVE_INFINITY;
@@ -865,7 +911,9 @@ export function validatePresentationEffectReceipt(receipt = {}, expected = {}) {
       },
     );
   }
-  if (MILESTONE_STATUSES.has(normalized.status)) {
+  let isActualReceipt = MILESTONE_STATUSES.has(normalized.status)
+    || (normalized.kind === 'audio' && normalized.status === 'ended');
+  if (isActualReceipt) {
     normalized.observedAt = validatePerformanceObservation(
       receipt.observedAt,
       'receipt.observedAt',
@@ -913,7 +961,7 @@ export function validatePresentationEffectReceipt(receipt = {}, expected = {}) {
     );
   }
   if (
-    !MILESTONE_STATUSES.has(normalized.status)
+    !isActualReceipt
     && !TERMINAL_REASON_STATUSES.has(normalized.status)
     && (receipt.observedAt !== undefined || receipt.providerReceipt !== undefined)
   ) {
@@ -982,7 +1030,7 @@ class PresentationExecutionController {
     }
     knownKeys(
       input.adapter,
-      ['runInteraction', 'runAttention', 'waitForState'],
+      ['playAudioClip', 'runInteraction', 'runAttention', 'waitForState'],
       'input.adapter',
     );
     this.#adapter = Object.freeze({ ...input.adapter });
@@ -999,7 +1047,9 @@ class PresentationExecutionController {
     for (let kind of requiredKinds) {
       let method = operationMethodForKind(this.#adapter, kind);
       if (typeof method !== 'function') {
-        let methodName = kind === 'interaction'
+        let methodName = kind === 'audio'
+          ? 'playAudioClip'
+          : kind === 'interaction'
           ? 'runInteraction'
           : kind === 'attention' ? 'runAttention' : 'waitForState';
         fail(
@@ -1247,6 +1297,9 @@ class PresentationExecutionController {
       kind,
       scheduleCell,
       projectCell,
+      sourceAsset: kind === 'audio'
+        ? this.#project.assets.find((asset) => asset.id === projectCell.audio.assetId)
+        : null,
       controller,
       requiresAdmission: operationRequiresAdmission(kind, projectCell),
       admission: null,
@@ -1271,6 +1324,21 @@ class PresentationExecutionController {
       generation: operation.generation,
       scheduleCell,
       projectCell: operation.projectCell,
+      ...(operation.kind === 'audio' ? { sourceAsset: immutableClone(operation.sourceAsset) } : {}),
+      ...(operation.kind === 'audio' ? {
+        playback: Object.freeze({
+          timelinePositionMs: this.#mediaTimeMs,
+          sourcePositionMs: operation.projectCell.audio.sourceInMs
+            + Math.max(0, Math.min(
+              operation.scheduleCell.audio.durationMs,
+              this.#mediaTimeMs - operation.scheduleCell.audio.startMs,
+            )),
+          remainingDurationMs: Math.max(
+            0,
+            operation.scheduleCell.audio.endMs - this.#mediaTimeMs,
+          ),
+        }),
+      } : {}),
       signal: controller.signal,
       reportAdmission: (admission) => this.#reportAdmission(operation, admission),
       reportReceipt: (receipt) => this.#reportReceipt(operation, receipt),
@@ -1502,6 +1570,9 @@ class PresentationExecutionController {
           'presentation effect provider reported a terminal failure',
           { observedAt, providerReceipt },
         );
+      }
+      if (operation.kind === 'audio' && value.status === 'ended') {
+        validateAudioProviderReceipt(value.providerReceipt, operation);
       }
       let index = operation.reportedReceipts.length;
       let expectedStatuses = ACTUAL_RECEIPT_SEQUENCE[operation.kind];
