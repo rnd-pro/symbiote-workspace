@@ -748,7 +748,7 @@ function buildTimeline(projectId, script, cells) {
       .map((item) => ({
         ...item.cue,
         at: item.timing.at,
-        ...(item.timing.until === null ? {} : { until: item.timing.until }),
+        until: item.timing.until,
       })),
   }));
   try {

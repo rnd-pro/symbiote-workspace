@@ -89,6 +89,10 @@ describe('browser entrypoint', () => {
     let onlyBrowser = Object.keys(browser).filter((key) => !(key in root)).sort();
 
     assert.deepEqual(onlyRoot, [
+      'PRESENTATION_OBSERVED_ALIGNED_SEQUENCE_VERSION',
+      'PRESENTATION_TRANSCRIPT_WORD_ANCHORING_VERSION',
+      'PresentationAuthoringFileError',
+      'PresentationObservedAlignmentError',
       'TOOLS',
       'assertCurrentCatalogProof',
       'broadcastDataChange',
@@ -100,6 +104,9 @@ describe('browser entrypoint', () => {
       'createConfigCatalogSource',
       'createDevCatalogSource',
       'createEngineCatalogSource',
+      'createPresentationAuthoringFileAuthority',
+      'createPresentationAuthoringFileHost',
+      'createPresentationObservedAlignment',
       'createRegistryCatalogSource',
       'createSession',
       'createStaticCatalogSource',
@@ -109,6 +116,7 @@ describe('browser entrypoint', () => {
       'needsConfirm',
       'toolConfirmPolicy',
       'validateCatalogProof',
+      'validatePresentationObservedAlignedSequence',
     ]);
     assert.deepEqual(onlyBrowser, [
       'applyWorkspaceTheme',

@@ -142,6 +142,28 @@ function projectFixture() {
   return { project, timeline, narration, event, asset, audioLayer, clips };
 }
 
+function alignmentFixture(timeline) {
+  return createPresentationAlignedSequence(timeline, {
+    media: { hash: 'sha256-narration-master', durationMs: 9000, locale: 'en-US' },
+    turns: [{
+      startMs: 0,
+      endMs: 9000,
+      transcript: timeline.turns[0].text,
+      words: [
+        { text: 'Show', startMs: 0, endMs: 500 },
+        { text: 'the', startMs: 600, endMs: 800 },
+        { text: 'first', startMs: 900, endMs: 1300 },
+        { text: 'result,', startMs: 1400, endMs: 1900 },
+        { text: 'then', startMs: 2200, endMs: 2600 },
+        { text: 'reveal', startMs: 2700, endMs: 3300 },
+        { text: 'the', startMs: 3400, endMs: 3600 },
+        { text: 'second', startMs: 3700, endMs: 4300 },
+        { text: 'result.', startMs: 4400, endMs: 5000 },
+      ],
+    }],
+  });
+}
+
 function assertMutation(before, application) {
   assert.equal(application.project.revision, before.revision + 1);
   assert.notEqual(application.project.hash, before.hash);
@@ -243,28 +265,89 @@ describe('workspace presentation authoring project v2 audio clips', () => {
     );
   });
 
+  it('preserves one canonical clip-event-clip dependency sequence across split and restore', () => {
+    let { project, timeline, narration, event, asset, audioLayer, clips } = projectFixture();
+    let prelude = {
+      id: 'audio-clip:overview:prelude',
+      kind: 'audio-clip',
+      layerId: audioLayer.id,
+      turnId: narration.turnId,
+      audio: {
+        assetId: asset.id,
+        sourceInMs: 0,
+        sourceOutMs: 500,
+      },
+      timing: { at: { anchor: 'turn-start', offsetMs: -500 } },
+      dependsOn: [],
+    };
+    let dependencyProject = createPresentationAuthoringProject({
+      ...project,
+      cells: [...project.cells.map((cell) => {
+        if (cell.id === clips[0].id) {
+          return { ...cell, dependsOn: [{ cellId: prelude.id, barrier: 'ended' }] };
+        }
+        if (cell.id === event.id) {
+          return { ...cell, dependsOn: [{ cellId: clips[0].id, barrier: 'ended' }] };
+        }
+        if (cell.id === clips[1].id) {
+          return { ...cell, dependsOn: [{ cellId: event.id, barrier: 'settled' }] };
+        }
+        return cell;
+      }), prelude],
+    });
+    let split = command(dependencyProject, 'split-dependent-overview-audio', 'audio-clip.split', {
+      cellId: clips[0].id,
+      sourceAtMs: 1500,
+      rightCellId: 'audio-clip:overview:1b',
+    });
+    let applied = applyPresentationAuthoringProjectCommand(dependencyProject, split);
+
+    let left = applied.project.cells.find((cell) => cell.id === clips[0].id);
+    let right = applied.project.cells.find((cell) => cell.id === 'audio-clip:overview:1b');
+    let rewiredEvent = applied.project.cells.find((cell) => cell.id === event.id);
+    let dependentClip = applied.project.cells.find((cell) => cell.id === clips[1].id);
+    assert.deepEqual(left.dependsOn, [{ cellId: prelude.id, barrier: 'ended' }]);
+    assert.deepEqual(right.dependsOn, [{ cellId: left.id, barrier: 'ended' }]);
+    assert.deepEqual(rewiredEvent.dependsOn, [{ cellId: right.id, barrier: 'ended' }]);
+    assert.deepEqual(dependentClip.dependsOn, [{ cellId: event.id, barrier: 'settled' }]);
+    assert.deepEqual(applied.change.dependencyRewrites, [{
+      dependentCellId: event.id,
+      dependencyIndex: 0,
+      before: { cellId: left.id, barrier: 'ended' },
+      after: { cellId: right.id, barrier: 'ended' },
+    }]);
+
+    let schedule = createPresentationScheduleV2(
+      applied.project,
+      alignmentFixture(timeline),
+    );
+    let scheduledById = new Map(schedule.cells.map((cell) => [cell.cellId, cell]));
+    let scheduledLeft = scheduledById.get(left.id);
+    let scheduledRight = scheduledById.get(right.id);
+    let scheduledEvent = scheduledById.get(event.id);
+    let scheduledDependent = scheduledById.get(clips[1].id);
+    assert.equal(scheduledRight.startMs, scheduledLeft.audio.endMs);
+    assert.equal(scheduledEvent.startMs, scheduledRight.audio.endMs);
+    assert.equal(scheduledDependent.startMs, scheduledEvent.plannedBarriers.settled);
+
+    let inverse = invertPresentationAuthoringProjectCommand(split, applied);
+    let mismatchedInverse = structuredClone(inverse);
+    mismatchedInverse.payload.dependencyRewrites[0].dependencyIndex = 1;
+    assert.throws(
+      () => applyPresentationAuthoringProjectCommand(applied.project, mismatchedInverse),
+      (error) => error.code === 'PRESENTATION_AUTHORING_COMMAND_INVALID',
+    );
+    let restored = applyPresentationAuthoringProjectCommand(applied.project, inverse);
+    assert.deepEqual(
+      withoutRevisionAndHash(restored.project),
+      withoutRevisionAndHash(dependencyProject),
+    );
+  });
+
   it('maps an audio clip drag in the visual NLE to the same audio-clip.move command exposed to MCP and CLI', () => {
     let { project, clips } = projectFixture();
     let timeline = createPresentationAuthoringTimelineProjection(project);
-    let alignment = createPresentationAlignedSequence(timeline, {
-      media: { hash: 'sha256-narration-master', durationMs: 9000, locale: 'en-US' },
-      turns: [{
-        startMs: 0,
-        endMs: 9000,
-        transcript: timeline.turns[0].text,
-        words: [
-          { text: 'Show', startMs: 0, endMs: 500 },
-          { text: 'the', startMs: 600, endMs: 800 },
-          { text: 'first', startMs: 900, endMs: 1300 },
-          { text: 'result,', startMs: 1400, endMs: 1900 },
-          { text: 'then', startMs: 2200, endMs: 2600 },
-          { text: 'reveal', startMs: 2700, endMs: 3300 },
-          { text: 'the', startMs: 3400, endMs: 3600 },
-          { text: 'second', startMs: 3700, endMs: 4300 },
-          { text: 'result.', startMs: 4400, endMs: 5000 },
-        ],
-      }],
-    });
+    let alignment = alignmentFixture(timeline);
     let schedule = createPresentationScheduleV2(project, alignment);
     let nle = projectPresentationNle(project, schedule);
     let result = createPresentationAuthoringCommandFromNleEdit(project, schedule, nle, {

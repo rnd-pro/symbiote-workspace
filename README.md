@@ -120,6 +120,12 @@ mode.
   changes preserve immutable lineage evidence but mark narration audio, alignment,
   and render stale until exact ordered regeneration receipts restore playability;
   timing and attention-only edits preserve media ancestry.
+  `createPresentationAuthoringFileHost({ projectFile })` binds that same tool pack
+  to one canonical Project or snapshot file with exact revision/hash CAS and an
+  atomic replacement write. `symbiote-workspace <presentation-authoring-command>
+  --project <file>` and `symbiote-workspace mcp --project <file>` therefore expose
+  the same commands used by the visual NLE; omitting `--project` leaves the normal
+  workspace CLI/MCP registry unchanged.
 - **Single-flight presentation execution** —
   `workspace-presentation-execution-v1` validates one exact Authoring Project,
   aligned-sequence, and Schedule v2 tuple, then admits one active effect and zero

@@ -54,6 +54,18 @@ const DEPENDENCY_SCHEMA = Object.freeze({
   additionalProperties: false,
 });
 
+const DEPENDENCY_REWRITE_SCHEMA = Object.freeze({
+  type: 'object',
+  properties: Object.freeze({
+    dependentCellId: { type: 'string', minLength: 1 },
+    dependencyIndex: { type: 'integer', minimum: 0 },
+    before: DEPENDENCY_SCHEMA,
+    after: DEPENDENCY_SCHEMA,
+  }),
+  required: Object.freeze(['dependentCellId', 'dependencyIndex', 'before', 'after']),
+  additionalProperties: false,
+});
+
 const SYNC_ANCHOR_SCHEMA = Object.freeze({
   type: 'object',
   properties: Object.freeze({
@@ -508,11 +520,15 @@ const COMMAND_DESCRIPTORS = Object.freeze([
 const INTERNAL_COMMAND_DESCRIPTORS = Object.freeze([
   {
     type: 'audio-clip.restore-split',
-    payloadKeys: ['leftCell', 'rightCellId'],
+    payloadKeys: ['leftCell', 'rightCellId', 'dependencyRewrites'],
     payloadSchema: payloadSchema({
       leftCell: AUDIO_CLIP_CELL_SCHEMA,
       rightCellId: { type: 'string', minLength: 1 },
-    }),
+      dependencyRewrites: {
+        type: 'array',
+        items: DEPENDENCY_REWRITE_SCHEMA,
+      },
+    }, ['leftCell', 'rightCellId']),
     invertible: false,
   },
   {
@@ -654,6 +670,81 @@ function dependencyBarrier(value, path) {
   return barrier;
 }
 
+function dependencyValue(value, path) {
+  let dependency = object(value, path);
+  knownKeys(dependency, ['cellId', 'barrier'], path);
+  return {
+    cellId: text(dependency.cellId, `${path}.cellId`),
+    barrier: dependencyBarrier(dependency.barrier, `${path}.barrier`),
+  };
+}
+
+function rewriteCellDependents(cells, fromCellId, toCellId) {
+  let rewrites = [];
+  for (let cell of cells) {
+    for (let [dependencyIndex, dependency] of cell.dependsOn.entries()) {
+      if (dependency.cellId !== fromCellId) continue;
+      let before = clone(dependency);
+      let after = { ...before, cellId: toCellId };
+      cell.dependsOn[dependencyIndex] = after;
+      rewrites.push({
+        dependentCellId: cell.id,
+        dependencyIndex,
+        before,
+        after: clone(after),
+      });
+    }
+  }
+  return rewrites;
+}
+
+function splitDependencyRewrites(value, leftCellId, rightCellId) {
+  if (!Array.isArray(value)) {
+    fail(
+      'PRESENTATION_AUTHORING_COMMAND_INVALID',
+      'command.payload.dependencyRewrites must be an array',
+      { path: 'command.payload.dependencyRewrites' },
+    );
+  }
+  let seen = new Set();
+  return value.map((rewriteValue, rewriteIndex) => {
+    let path = `command.payload.dependencyRewrites[${rewriteIndex}]`;
+    let rewrite = object(rewriteValue, path);
+    knownKeys(
+      rewrite,
+      ['dependentCellId', 'dependencyIndex', 'before', 'after'],
+      path,
+    );
+    let dependentCellId = text(rewrite.dependentCellId, `${path}.dependentCellId`);
+    let dependencyIndex = integerValue(rewrite.dependencyIndex, `${path}.dependencyIndex`, {
+      min: 0,
+    });
+    let before = dependencyValue(rewrite.before, `${path}.before`);
+    let after = dependencyValue(rewrite.after, `${path}.after`);
+    let key = `${dependentCellId}:${dependencyIndex}`;
+    if (seen.has(key)) {
+      fail(
+        'PRESENTATION_AUTHORING_COMMAND_INVALID',
+        `${path} duplicates dependency position "${key}"`,
+        { path, dependentCellId, dependencyIndex },
+      );
+    }
+    seen.add(key);
+    if (
+      before.cellId !== leftCellId
+      || after.cellId !== rightCellId
+      || before.barrier !== after.barrier
+    ) {
+      fail(
+        'PRESENTATION_AUTHORING_COMMAND_INVALID',
+        `${path} must describe the exact split dependency rewrite`,
+        { path, leftCellId, rightCellId, before, after },
+      );
+    }
+    return { dependentCellId, dependencyIndex, before, after };
+  });
+}
+
 function splitAudioClip(leftCell, sourceAtMs, rightCellId) {
   let left = clone(leftCell);
   let deltaMs = sourceAtMs - left.audio.sourceInMs;
@@ -672,10 +763,7 @@ function splitAudioClip(leftCell, sourceAtMs, rightCellId) {
         offsetMs: leftCell.timing.at.offsetMs + deltaMs,
       },
     },
-    dependsOn: [
-      ...clone(leftCell.dependsOn),
-      { cellId: leftCell.id, barrier: 'ended' },
-    ],
+    dependsOn: [{ cellId: leftCell.id, barrier: 'ended' }],
   };
   return { left, right };
 }
@@ -901,6 +989,7 @@ function applyAudioClipMutation(draft, command) {
     let before = clone(cell);
     let { left, right } = splitAudioClip(before, sourceAtMs, rightCellId);
     integerValue(right.timing.at.offsetMs, 'command.payload.sourceAtMs');
+    let dependencyRewrites = rewriteCellDependents(draft.cells, cellId, rightCellId);
     draft.cells.splice(cellIndex, 1, left, right);
     return {
       draft,
@@ -911,6 +1000,7 @@ function applyAudioClipMutation(draft, command) {
         before,
         left: clone(left),
         right: clone(right),
+        dependencyRewrites,
       },
     };
   }
@@ -941,6 +1031,10 @@ function applyAudioClipMutation(draft, command) {
     let leftCell = object(payload.leftCell, 'command.payload.leftCell');
     let { cellIndex, cell } = audioClipAt(draft, leftCell.id, 'command.payload.leftCell.id');
     let rightCellId = text(payload.rightCellId, 'command.payload.rightCellId');
+    let hasDependencyRewriteEvidence = payload.dependencyRewrites !== undefined;
+    let dependencyRewrites = hasDependencyRewriteEvidence
+      ? splitDependencyRewrites(payload.dependencyRewrites, leftCell.id, rightCellId)
+      : [];
     let rightIndex = findIndex(draft.cells, rightCellId, 'command.payload.rightCellId');
     if (rightIndex !== cellIndex + 1) {
       fail(
@@ -954,15 +1048,52 @@ function applyAudioClipMutation(draft, command) {
       cell.audio.sourceOutMs,
       rightCellId,
     );
+    let legacyExpectedRight = {
+      ...clone(expectedRight),
+      dependsOn: [
+        ...clone(leftCell.dependsOn),
+        { cellId: leftCell.id, barrier: 'ended' },
+      ],
+    };
+    let rightCell = draft.cells[rightIndex];
     if (
       canonicalize(cell) !== canonicalize(expectedLeft)
-      || canonicalize(draft.cells[rightIndex]) !== canonicalize(expectedRight)
+      || canonicalize(rightCell) !== canonicalize(
+        hasDependencyRewriteEvidence ? expectedRight : legacyExpectedRight,
+      )
     ) {
       fail(
         'PRESENTATION_AUTHORING_COMMAND_INVALID',
         'split restoration target no longer matches the exact generated split pair',
         { leftCellId: cell.id, rightCellId },
       );
+    }
+    let currentRewrites = [];
+    for (let dependentCell of draft.cells) {
+      for (let [dependencyIndex, dependency] of dependentCell.dependsOn.entries()) {
+        if (dependency.cellId !== rightCellId) continue;
+        currentRewrites.push({
+          dependentCellId: dependentCell.id,
+          dependencyIndex,
+          before: { ...clone(dependency), cellId: leftCell.id },
+          after: clone(dependency),
+        });
+      }
+    }
+    if (
+      hasDependencyRewriteEvidence
+        ? canonicalize(currentRewrites) !== canonicalize(dependencyRewrites)
+        : currentRewrites.length > 0
+    ) {
+      fail(
+        'PRESENTATION_AUTHORING_COMMAND_INVALID',
+        'split restoration dependencies no longer match the exact recorded rewrites',
+        { leftCellId: cell.id, rightCellId },
+      );
+    }
+    for (let rewrite of dependencyRewrites) {
+      let dependentCell = draft.cells.find((candidate) => candidate.id === rewrite.dependentCellId);
+      dependentCell.dependsOn[rewrite.dependencyIndex] = clone(rewrite.before);
     }
     draft.cells.splice(cellIndex, 2, clone(leftCell));
     return {
@@ -971,8 +1102,13 @@ function applyAudioClipMutation(draft, command) {
         type: command.type,
         leftCellId: leftCell.id,
         rightCellId,
-        before: [clone(cell), clone(expectedRight)],
+        before: [clone(cell), clone(rightCell)],
         after: clone(leftCell),
+        dependencyRewrites: dependencyRewrites.map((rewrite) => ({
+          ...rewrite,
+          before: clone(rewrite.after),
+          after: clone(rewrite.before),
+        })),
       },
     };
   }
@@ -1353,7 +1489,13 @@ export function invertPresentationAuthoringProjectCommand(commandInput, applicat
     };
   } else if (command.type === 'audio-clip.split') {
     inverseType = 'audio-clip.restore-split';
-    payload = { leftCell: change.before, rightCellId: change.rightCellId };
+    payload = {
+      leftCell: change.before,
+      rightCellId: change.rightCellId,
+      ...(change.dependencyRewrites === undefined
+        ? {}
+        : { dependencyRewrites: change.dependencyRewrites }),
+    };
   } else if (command.type === 'audio-clip.trim') {
     inverseType = command.type;
     payload = {

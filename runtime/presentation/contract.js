@@ -275,13 +275,17 @@ export function normalizePresentationCue(value = {}, turnText = '', path = 'cue'
   let targetId = text(source.targetId);
   if (!targetId && kind !== 'state') throw new TypeError(`${path}.targetId is required for ${kind} cues`);
   let at = normalizePresentationSyncAnchor(source.at || { anchor: 'turn-start' }, turnText, `${path}.at`);
-  let untilSource = source.until || ((kind === 'focus' || kind === 'annotation') ? { anchor: 'turn-end' } : undefined);
+  let untilSource = Object.hasOwn(source, 'until') && source.until !== undefined
+    ? source.until
+    : ((kind === 'focus' || kind === 'annotation') ? { anchor: 'turn-end' } : null);
   return compact({
     kind,
     targetId: targetId || undefined,
     tabId: source.tabId === undefined ? undefined : text(source.tabId),
     at,
-    until: untilSource ? normalizePresentationSyncAnchor(untilSource, turnText, `${path}.until`) : undefined,
+    until: untilSource === null
+      ? null
+      : (untilSource ? normalizePresentationSyncAnchor(untilSource, turnText, `${path}.until`) : undefined),
     ...normalizeCuePayload(kind, source, path),
   });
 }

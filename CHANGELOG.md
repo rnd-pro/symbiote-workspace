@@ -11,6 +11,11 @@ All notable changes to this project will be documented in this file.
   presentation executor for editor preview and headless playback. Added a pure
   composition/delivery manifest that reuses approved source alignment without new
   TTS or transcription.
+- Added an atomic file-backed Presentation Project authority and exposed the same
+  semantic authoring commands through direct CLI calls and optional
+  `mcp --project <file>` mode. Visual NLE edits, agent edits, and hidden/headless
+  playback now share one Project graph rather than maintaining host-specific audio
+  or event timelines.
 
 - Added a stateless, product-neutral presentation authoring tool pack with one
   strict tool descriptor per Authoring Project command, exact revision/hash CAS,

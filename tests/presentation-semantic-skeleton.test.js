@@ -114,6 +114,7 @@ test('action-bound pointer materializes a marker arrow before its registered int
     {
       kind: 'interaction', targetId: 'chat-input',
       at: { anchor: 'speech', quote: 'Agent chat', occurrence: 1, edge: 'start', offsetMs: 0 },
+      until: null,
       interaction: { type: 'input', binding: { source: 'host', tool: 'type', input: { targetId: 'chat-input' } } },
     },
   ]);

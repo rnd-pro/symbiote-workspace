@@ -449,6 +449,15 @@ The command registry also exposes strict `audio-clip.split`, `audio-clip.trim`,
 NLE editing, an agent MCP/CLI host, and headless playback must all mutate or execute
 this Project-derived graph; a host-specific audio-cut list is invalid.
 
+For a file-backed agent workflow, the Node API
+`createPresentationAuthoringFileHost({ projectFile })` supplies this authority
+without introducing another document model. The file may contain the raw Project
+or the authority snapshot envelope, and retains that shape after atomic updates.
+The CLI invokes individual semantic commands with `--project <file>`; `mcp
+--project <file>` publishes the identical descriptors and mutation path over MCP.
+The browser NLE remains an isomorphic Project/command consumer and does not import
+the Node-only filesystem adapter.
+
 The strict authority snapshot has one of two explicit forms. Single-artifact
 hosts keep `{ project, alignment?, mediaAncestry? }`. Collection hosts use
 `{ project, mediaCollection }` and cannot also supply an aggregate alignment or

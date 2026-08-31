@@ -338,3 +338,8 @@ export {
 } from './runtime/index.js';
 export * from './runtime/presentation/semantic-skeleton.js';
 export * from './runtime/presentation/presentation-project.js';
+export {
+  PresentationAuthoringFileError,
+  createPresentationAuthoringFileAuthority,
+  createPresentationAuthoringFileHost,
+} from './runtime/presentation/file-authoring.js';

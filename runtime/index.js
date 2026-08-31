@@ -6,6 +6,11 @@
 export { dispatch, TOOLS, TOOL_FAMILIES, TOOL_REGISTRY, getToolDefinition, isMutating } from './dispatch.js';
 export { createSession } from './session.js';
 export {
+  PresentationAuthoringFileError,
+  createPresentationAuthoringFileAuthority,
+  createPresentationAuthoringFileHost,
+} from './presentation/file-authoring.js';
+export {
   REBASED_OVER_CONCURRENT_EDIT,
   WorkspaceState,
   createConfigFingerprint,
