@@ -115,8 +115,16 @@ export {
   PRESENTATION_NLE_SCHEMA_VERSION,
   PresentationNleProjectionError,
   projectPresentationNle,
-  createPresentationAuthoringCommandFromNleEdit,
 } from './presentation/nle-projection.js';
+export {
+  PRESENTATION_TIMELINE_EDITOR_MODEL_VERSION,
+  createPresentationTimelineEditorModel,
+} from './presentation/nle-timeline-editor.js';
+export {
+  projectPresentationAuthoringNle,
+  createPresentationAuthoringCommandFromNleEdit,
+  bindPresentationNleTimelineEditor,
+} from './presentation/nle-authoring-adapter.js';
 export {
   PRESENTATION_PLAYBACK_PLAN_VERSION,
   PresentationPlaybackPlanError,

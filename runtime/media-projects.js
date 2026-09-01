@@ -1,8 +1,15 @@
 import {
+  PRESENTATION_AUTHORING_PROJECT_SCHEMA_VERSION,
+  createPresentationAuthoringTimelineProjection,
+  createPresentationPlaybackPlan,
+  createPresentationTimelineEditorModel,
   createPresentationTimelineContract,
   createPresentationTimelineHash,
   presentationTimelineHasTurns,
+  projectPresentationNle,
+  validatePresentationAuthoringProject,
   validatePresentationAlignedSequence,
+  validatePresentationScheduleV2,
 } from './presentation.js';
 import { presentationOutputOrientation } from './presentation-output.js';
 
@@ -489,7 +496,61 @@ function timelineClipEndFrame(clip = {}, fps = 30) {
   return 0;
 }
 
+function authoringTimelineSelectionInput(projectInput, options) {
+  let direct = isObject(projectInput)
+    && projectInput.schemaVersion === PRESENTATION_AUTHORING_PROJECT_SCHEMA_VERSION;
+  let wrapped = isObject(projectInput?.project)
+    && projectInput.project.schemaVersion === PRESENTATION_AUTHORING_PROJECT_SCHEMA_VERSION;
+  if (!direct && !wrapped) return null;
+  let project = direct ? projectInput : projectInput.project;
+  let alignedSequence = direct
+    ? options.alignedSequence
+    : projectInput.alignedSequence ?? options.alignedSequence;
+  let schedule = direct ? options.schedule : projectInput.schedule ?? options.schedule;
+  if (!alignedSequence || !schedule) {
+    throw new TypeError(
+      'presentation authoring timeline selection requires its exact alignedSequence and schedule',
+    );
+  }
+  return { project, alignedSequence, schedule };
+}
+
+function selectPresentationAuthoringTimeline(projectInput, options) {
+  let tuple = authoringTimelineSelectionInput(projectInput, options);
+  if (!tuple) return null;
+  let project = validatePresentationAuthoringProject(tuple.project);
+  let timeline = createPresentationAuthoringTimelineProjection(project);
+  let alignedSequence = validatePresentationAlignedSequence(tuple.alignedSequence, timeline);
+  let schedule = validatePresentationScheduleV2(tuple.schedule, project, alignedSequence);
+  let fps = positiveInteger(options.fps, 30);
+  let nle = projectPresentationNle(project, schedule);
+  let playbackPlan = createPresentationPlaybackPlan(project, schedule);
+  let editorModel = createPresentationTimelineEditorModel(project, schedule, { fps });
+  return Object.freeze({
+    authority: 'presentation-authoring-project',
+    legacy: false,
+    authoringProjectHash: project.hash,
+    timelineHash: timeline.hash,
+    alignedSequenceHash: alignedSequence.hash,
+    scheduleHash: schedule.hash,
+    nleHash: nle.hash,
+    playbackPlanHash: playbackPlan.hash,
+    editorModelHash: editorModel.hash,
+    fps: editorModel.fps,
+    durationFrames: editorModel.duration,
+    durationMs: schedule.totalDurationMs,
+    project,
+    alignedSequence,
+    schedule,
+    nle,
+    playbackPlan,
+    editorModel,
+  });
+}
+
 export function selectMediaProjectTimeline(projectInput = {}, options = {}) {
+  let authoringTimeline = selectPresentationAuthoringTimeline(projectInput, options);
+  if (authoringTimeline) return authoringTimeline;
   let project = normalizeMediaProject(projectInput);
   let renderJob = project.renderJob || {};
   let fps = positiveInteger(options.fps ?? project.renderSettings?.fps, 30);
@@ -517,6 +578,8 @@ export function selectMediaProjectTimeline(projectInput = {}, options = {}) {
   clips.push(...captionTimelineClips(renderJob));
   let durationFrames = positiveInteger(options.durationFrames, 0) || clips.reduce((max, clip) => Math.max(max, timelineClipEndFrame(clip, fps)), 0);
   return {
+    authority: 'legacy-media-project',
+    legacy: true,
     fps,
     durationFrames,
     durationMs: durationFrames > 0 ? Math.round((durationFrames / fps) * 1000) : 0,

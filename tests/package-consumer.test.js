@@ -349,9 +349,20 @@ describe('packed package consumer', () => {
           validateVirtualSequence,
           VIRTUAL_SEQUENCE_SCHEMA_VERSION,
           MEDIA_EVIDENCE_MANIFEST_SCHEMA_VERSION,
+          createPresentationTimelineEditorModel as createRootTimelineEditorModel,
+          bindPresentationNleTimelineEditor as bindRootTimelineEditor,
         } from 'symbiote-workspace';
-        import { projectVirtualSequenceAt, mediaToolFamily } from 'symbiote-workspace/runtime';
-        import { invalidateVirtualSequence } from 'symbiote-workspace/browser';
+        import {
+          projectVirtualSequenceAt,
+          mediaToolFamily,
+          createPresentationTimelineEditorModel as createRuntimeTimelineEditorModel,
+          bindPresentationNleTimelineEditor as bindRuntimeTimelineEditor,
+        } from 'symbiote-workspace/runtime';
+        import {
+          invalidateVirtualSequence,
+          createPresentationTimelineEditorModel as createBrowserTimelineEditorModel,
+          bindPresentationNleTimelineEditor as bindBrowserTimelineEditor,
+        } from 'symbiote-workspace/browser';
 
         if (VIRTUAL_SEQUENCE_SCHEMA_VERSION !== 'workspace-virtual-sequence-v1') {
           throw new Error('virtual sequence schema version drift');
@@ -361,6 +372,16 @@ describe('packed package consumer', () => {
         }
         for (let fn of [createVirtualSequence, validateVirtualSequence, projectVirtualSequenceAt, invalidateVirtualSequence]) {
           if (typeof fn !== 'function') throw new Error('virtual sequence export missing');
+        }
+        for (let fn of [
+          createRootTimelineEditorModel,
+          bindRootTimelineEditor,
+          createRuntimeTimelineEditorModel,
+          bindRuntimeTimelineEditor,
+          createBrowserTimelineEditorModel,
+          bindBrowserTimelineEditor,
+        ]) {
+          if (typeof fn !== 'function') throw new Error('presentation timeline editor export missing');
         }
         if (mediaToolFamily.name !== 'media' || mediaToolFamily.tools.length !== 4) {
           throw new Error('media tool family missing from packed runtime');
@@ -395,6 +416,7 @@ describe('packed package consumer', () => {
         'symbiote-ui/ui',
         'symbiote-engine',
         'symbiote-engine/contracts',
+        'symbiote-engine/',
       ]);
       assert.equal(previewContract.browser.themeAdapterModule, 'symbiote-ui/ui');
       assert.equal(previewContract.browser.themeAdapterExport, 'applyCascadeTheme');

@@ -188,6 +188,7 @@ export {
   PRESENTATION_EFFECT_ADMISSION_VERSION,
   PRESENTATION_EFFECT_RECEIPT_VERSION,
   PRESENTATION_NLE_SCHEMA_VERSION,
+  PRESENTATION_TIMELINE_EDITOR_MODEL_VERSION,
   PRESENTATION_PLAYBACK_PLAN_VERSION,
   PRESENTATION_AUDIO_COMPOSITION_VERSION,
   PRESENTATION_AUDIO_DELIVERY_MANIFEST_VERSION,
@@ -232,6 +233,8 @@ export {
   validatePresentationEffectReceipt,
   projectPresentationNle,
   createPresentationAuthoringCommandFromNleEdit,
+  createPresentationTimelineEditorModel,
+  bindPresentationNleTimelineEditor,
   createPresentationLessonAuditPacket,
   createPresentationContextSnapshot,
   createPresentationReplanRequest,
@@ -349,12 +352,21 @@ import { WORKSPACE_CONFIG_CHANNEL } from './schema/constants.js';
 import { broadcastDataChange } from './runtime/data-change.js';
 import { createRouter } from './runtime/router-lane.js';
 import {
+  PRESENTATION_AUTHORING_PROJECT_SCHEMA_VERSION,
+  createPresentationAuthoringTimelineProjection,
+  createPresentationExecutionController,
+  createPresentationPlaybackPlan,
   createPresentationContextSnapshot,
   createPresentationReplanRequest,
+  createPresentationTimelineEditorModel,
   createPresentationTimelineHash,
   createWorkspacePresentationTimeline,
   finalizePresentationReplan,
   normalizePresentationTimeline,
+  projectPresentationNle,
+  validatePresentationAlignedSequence,
+  validatePresentationAuthoringProject,
+  validatePresentationScheduleV2,
 } from './runtime/presentation.js';
 import {
   auditPresentationLessonContext,
@@ -1020,8 +1032,80 @@ async function executeTimelineAction(action, mounted, options, event) {
   return executor(action, event);
 }
 
+function presentationAuthoringPlaybackTuple(input, options) {
+  let direct = isObject(input)
+    && input.schemaVersion === PRESENTATION_AUTHORING_PROJECT_SCHEMA_VERSION;
+  let wrapped = isObject(input?.project)
+    && input.project.schemaVersion === PRESENTATION_AUTHORING_PROJECT_SCHEMA_VERSION;
+  if (!direct && !wrapped) return null;
+  let project = direct ? input : input.project;
+  let alignedSequence = direct
+    ? options.alignedSequence
+    : input.alignedSequence ?? options.alignedSequence;
+  let schedule = direct ? options.schedule : input.schedule ?? options.schedule;
+  if (!alignedSequence || !schedule) {
+    throw new TypeError(
+      'authoring playback requires its exact project, alignedSequence, and schedule tuple',
+    );
+  }
+  project = validatePresentationAuthoringProject(project);
+  let timeline = createPresentationAuthoringTimelineProjection(project);
+  alignedSequence = validatePresentationAlignedSequence(alignedSequence, timeline);
+  schedule = validatePresentationScheduleV2(schedule, project, alignedSequence);
+  return { project, timeline, alignedSequence, schedule };
+}
+
+function createPresentationAuthoringPlaybackSession(tuple, options) {
+  let receipts = [];
+  let onReceipt = (receipt) => {
+    receipts.push(receipt);
+    options.onReceipt?.(receipt);
+  };
+  let controller = createPresentationExecutionController({
+    project: tuple.project,
+    alignedSequence: tuple.alignedSequence,
+    schedule: tuple.schedule,
+    adapter: options.adapter || {},
+    onReceipt,
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
+  });
+  let nle = projectPresentationNle(tuple.project, tuple.schedule);
+  let playbackPlan = createPresentationPlaybackPlan(tuple.project, tuple.schedule);
+  let editorModel = createPresentationTimelineEditorModel(
+    tuple.project,
+    tuple.schedule,
+    { fps: options.fps },
+  );
+  return Object.freeze({
+    authority: 'presentation-authoring-project',
+    authoringProjectHash: tuple.project.hash,
+    timelineHash: tuple.timeline.hash,
+    alignedSequenceHash: tuple.alignedSequence.hash,
+    scheduleHash: tuple.schedule.hash,
+    nleHash: nle.hash,
+    playbackPlanHash: playbackPlan.hash,
+    editorModelHash: editorModel.hash,
+    project: tuple.project,
+    alignedSequence: tuple.alignedSequence,
+    schedule: tuple.schedule,
+    nle,
+    playbackPlan,
+    editorModel,
+    get snapshot() { return controller.snapshot; },
+    get receipts() { return Object.freeze([...receipts]); },
+    sample(value) { return controller.sample(value); },
+    whenIdle() { return controller.whenIdle(); },
+    pause() { return controller.pause(); },
+    resume() { return controller.resume(); },
+    seek() { return controller.seek(); },
+    stop() { return controller.stop(); },
+    dispose() { return controller.dispose(); },
+  });
+}
+
 /**
- * Execute a generated presentation timeline against a mounted workspace.
+ * Execute a generated presentation timeline against a mounted workspace, or
+ * bind an Authoring Project tuple to the canonical clock-driven controller.
  *
  * The player deliberately uses the same interface context as agents: if a cue
  * targets a hidden view/panel, declared reveal actions run before narration or
@@ -1036,6 +1120,10 @@ async function executeTimelineAction(action, mounted, options, event) {
 export async function playWorkspacePresentationTimeline(timeline, mounted, options = {}) {
   if (!mounted || typeof mounted.getInterfaceContext !== 'function') {
     throw new Error('playWorkspacePresentationTimeline requires a mounted workspace with getInterfaceContext().');
+  }
+  let authoringTuple = presentationAuthoringPlaybackTuple(timeline, options);
+  if (authoringTuple) {
+    return createPresentationAuthoringPlaybackSession(authoringTuple, options);
   }
   timeline = normalizePresentationTimeline(timeline);
   let events = [];

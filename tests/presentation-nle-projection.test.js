@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { computeIntegrity } from '../schema/canonical-json.js';
 
 import {
+  applyPresentationAuthoringProjectCommand,
   createPresentationAlignedSequence,
   createPresentationAuthoringCommandFromNleEdit,
   createPresentationAuthoringProject,
@@ -11,6 +12,8 @@ import {
   createPresentationScheduleV2,
   createPresentationTimelineContract,
   createPresentationAuthoringTimelineProjection,
+  createPresentationTimelineEditorModel,
+  bindPresentationNleTimelineEditor,
   projectPresentationNle,
 } from '../index.js';
 
@@ -114,7 +117,48 @@ function fixture() {
     }],
   });
   let schedule = createPresentationScheduleV2(project, alignment);
-  return { project, schedule, scroll, attention };
+  return { project, schedule, alignment, scroll, attention };
+}
+
+function turnEndAudioFixture() {
+  let { project: baseline, alignment } = fixture();
+  let narration = baseline.cells.find((cell) => cell.kind === 'narration');
+  let layer = {
+    id: 'semantic-nle:layer:audio',
+    kind: 'audio',
+    name: 'Narration audio',
+    visualOwnerId: null,
+    collisionDomainId: null,
+  };
+  let clip = {
+    id: 'semantic-nle:audio:ending',
+    kind: 'audio-clip',
+    layerId: layer.id,
+    turnId: narration.turnId,
+    audio: {
+      assetId: 'semantic-nle:asset:master',
+      sourceInMs: 1300,
+      sourceOutMs: 1800,
+    },
+    timing: { at: { anchor: 'turn-end', offsetMs: -500 } },
+    dependsOn: [],
+  };
+  let project = createPresentationAuthoringProject({
+    ...baseline,
+    assets: [{
+      id: 'semantic-nle:asset:master',
+      kind: 'audio',
+      mediaType: 'audio/wav',
+      durationMs: 1800,
+      contentHash: alignment.media.hash,
+      alignmentHash: alignment.hash,
+      sourceTimelineHash: alignment.timelineHash,
+    }],
+    layers: [...baseline.layers, layer],
+    cells: [...baseline.cells, clip],
+  });
+  let schedule = createPresentationScheduleV2(project, alignment);
+  return { project, schedule, alignment, clip };
 }
 
 function editBasis(nle) {
@@ -128,11 +172,18 @@ function editBasis(nle) {
 
 describe('workspace presentation NLE projection', () => {
   it('projects semantic tracks in layer order and marks generated tracks non-editable', () => {
-    let { project, schedule, attention } = fixture();
+    let { project, schedule, alignment, attention } = fixture();
     let nle = projectPresentationNle(project, schedule);
 
     assert.deepEqual(nle.tracks.map((track) => track.layerId), project.layers.map((layer) => layer.id));
-    assert.equal(nle.tracks.every((track) => track.editable && !track.generated), true);
+    assert.equal(nle.tracks.every((track) => !track.generated), true);
+    assert.equal(nle.tracks.find(({ kind }) => kind === 'narration').editable, false);
+    assert.equal(
+      nle.tracks.every((track) => (
+        track.editable === track.clips.some((clip) => clip.editable)
+      )),
+      true,
+    );
     assert.equal(nle.generatedTracks.length > 0, true);
     assert.equal(nle.generatedTracks.every((track) => !track.editable && track.generated), true);
     assert.equal(nle.authoringProjectHash, project.hash);
@@ -151,6 +202,151 @@ describe('workspace presentation NLE projection', () => {
       .flatMap((track) => track.clips)
       .find((clip) => clip.cellId === attention.id);
     assert.deepEqual(markerClip.cue, attention.cue);
+  });
+
+  it('projects the exact NLE graph into the visual timeline component model', () => {
+    let { project, schedule, alignment, attention } = fixture();
+    let nle = projectPresentationNle(project, schedule);
+    let model = createPresentationTimelineEditorModel(project, schedule, { fps: 25 });
+    let sourceTracks = [...nle.tracks, ...nle.generatedTracks];
+
+    assert.equal(model.schemaVersion, 'workspace-presentation-timeline-editor-model-v1');
+    assert.equal(model.authoringProjectHash, project.hash);
+    assert.equal(model.scheduleHash, schedule.hash);
+    assert.equal(model.nleHash, nle.hash);
+    assert.equal(model.fps, 25);
+    assert.deepEqual(model.tracks.map(({ id }) => id), sourceTracks.map(({ id }) => id));
+    assert.deepEqual(
+      model.tracks.flatMap(({ clips }) => clips.map(({ id }) => id)),
+      sourceTracks.flatMap(({ clips }) => clips.map(({ id }) => id)),
+    );
+    assert.ok(model.tracks.some(({ type }) => type === 'audio'));
+    assert.ok(model.tracks.some(({ type }) => type === 'actions'));
+    assert.ok(model.tracks.some(({ type }) => type === 'effect'));
+    let narrationTrack = model.tracks.find(({ kind }) => kind === 'narration');
+    assert.equal(narrationTrack.editable, false);
+    assert.equal(narrationTrack.clips.every(({ editable }) => editable === false), true);
+    let attentionNleClip = sourceTracks
+      .flatMap(({ clips }) => clips)
+      .find(({ id }) => id === attention.id);
+    let attentionEditorClip = model.tracks
+      .flatMap(({ clips }) => clips)
+      .find(({ id }) => id === attention.id);
+    assert.equal(attentionNleClip.span.endMs, attentionNleClip.visibility.endMs);
+    assert.deepEqual(attentionEditorClip.sourceSpan, attentionNleClip.span);
+    assert.deepEqual(attentionEditorClip.gestureSpan, attentionNleClip.gesture);
+    assert.deepEqual(attentionEditorClip.visibilitySpan, attentionNleClip.visibility);
+    assert.ok(model.tracks.flatMap(({ clips }) => clips).every(({ start, end }) => (
+      Number.isInteger(start) && Number.isInteger(end) && end > start
+    )));
+  });
+
+  it('binds the visual timeline drag to the same semantic command path used by MCP and CLI', () => {
+    let { project, schedule, alignment, clip } = turnEndAudioFixture();
+    let listeners = new Map();
+    let loaded = null;
+    let edits = [];
+    let editor = {
+      loadTimeline(model) { loaded = model; },
+      addEventListener(type, listener) { listeners.set(type, listener); },
+      removeEventListener(type, listener) {
+        if (listeners.get(type) === listener) listeners.delete(type);
+      },
+    };
+    let binding = bindPresentationNleTimelineEditor(editor, {
+      project,
+      schedule,
+      fps: 25,
+      onEdit: result => edits.push(result),
+    });
+    let audioClip = loaded.tracks
+      .flatMap(({ clips }) => clips)
+      .find(({ id }) => id === clip.id);
+
+    assert.equal(binding.model, loaded);
+    assert.equal(binding.nleHash, loaded.nleHash);
+    listeners.get('clip-move')({ detail: {
+      clipId: audioClip.id,
+      start: audioClip.start + 1,
+      fps: loaded.fps,
+      phase: 'commit',
+      source: 'pointer',
+    } });
+    assert.equal(edits.length, 1);
+    assert.equal(edits[0].status, 'command');
+    assert.equal(edits[0].command.type, 'audio-clip.move');
+    let originalNleHash = loaded.nleHash;
+    let applied = applyPresentationAuthoringProjectCommand(project, edits[0].command);
+    let nextSchedule = createPresentationScheduleV2(applied.project, alignment);
+    let nextModel = binding.rebind({ project: applied.project, schedule: nextSchedule });
+    assert.equal(nextModel.authoringProjectHash, applied.project.hash);
+    assert.equal(binding.model, nextModel);
+    assert.notEqual(nextModel.nleHash, originalNleHash);
+
+    let reboundAudioClip = loaded.tracks
+      .flatMap(({ clips }) => clips)
+      .find(({ id }) => id === clip.id);
+    listeners.get('clip-move')({ detail: {
+      clipId: reboundAudioClip.id,
+      start: reboundAudioClip.start + 1,
+      fps: loaded.fps,
+      phase: 'commit',
+    } });
+    assert.equal(edits.length, 2);
+    assert.equal(edits[1].status, 'command');
+    assert.equal(edits[1].command.base.authoringProjectHash, applied.project.hash);
+    assert.equal(edits[1].command.base.revision, applied.project.revision);
+
+    let narrationClip = loaded.tracks
+      .flatMap(({ clips }) => clips)
+      .find(({ kind }) => kind === 'narration');
+    listeners.get('clip-move')({ detail: {
+      clipId: narrationClip.id,
+      start: narrationClip.start + 1,
+      fps: loaded.fps,
+      phase: 'commit',
+    } });
+    assert.equal(edits.length, 2, 'read-only visual clips cannot enter the command translator');
+
+    listeners.get('clip-move')({ detail: {
+      clipId: reboundAudioClip.id,
+      start: reboundAudioClip.start + 2,
+      fps: loaded.fps,
+      phase: 'preview',
+    } });
+    assert.equal(edits.length, 2, 'preview movement cannot commit a semantic command');
+    assert.throws(
+      () => listeners.get('clip-move')({ detail: {
+        clipId: reboundAudioClip.id,
+        start: reboundAudioClip.start + 2,
+        fps: loaded.fps + 1,
+        phase: 'commit',
+      } }),
+      /FPS does not match/u,
+    );
+
+    binding.dispose();
+    assert.equal(listeners.has('clip-move'), false);
+  });
+
+  it('preserves an audio clip turn-end anchor when the visual editor moves it', () => {
+    let { project, schedule, clip } = turnEndAudioFixture();
+    let nle = projectPresentationNle(project, schedule);
+    let projected = nle.tracks.flatMap(({ clips }) => clips).find(({ id }) => id === clip.id);
+    let result = createPresentationAuthoringCommandFromNleEdit(project, schedule, nle, {
+      id: 'move-ending-audio',
+      type: 'clip.frame-drag',
+      clipId: clip.id,
+      frameMs: projected.span.startMs + 100,
+      basis: editBasis(nle),
+    });
+
+    assert.equal(result.status, 'command');
+    assert.equal(result.command.type, 'audio-clip.move');
+    assert.deepEqual(result.command.payload.timing.at, {
+      anchor: 'turn-end',
+      offsetMs: -400,
+    });
   });
 
   it('maps an exact unique frame only to a semantic anchor command', () => {

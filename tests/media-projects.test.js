@@ -15,6 +15,10 @@ import {
   applyMediaRenderEvent,
   normalizeBrowserAppearance,
   createPresentationAlignedSequence,
+  createPresentationAuthoringProjectFromTimeline,
+  createPresentationPlaybackPlan,
+  createPresentationScheduleV2,
+  createPresentationTimelineEditorModel,
   createPresentationTimelineContract,
   createMediaProject,
   createMediaRenderEvent,
@@ -30,6 +34,7 @@ import {
   normalizeMediaRenderSettings,
   normalizeMediaProject,
   parseMediaProjectRouteSearch,
+  projectPresentationNle,
   selectMediaProjectTimeline,
   updateMediaProjectRenderSettings,
 } from '../index.js';
@@ -130,11 +135,60 @@ describe('media project contract', () => {
 
     let selected = selectMediaProjectTimeline(project);
 
+    assert.equal(selected.authority, 'legacy-media-project');
+    assert.equal(selected.legacy, true);
     assert.equal(selected.fps, 30);
     assert.equal(selected.clips.length, 2);
     assert.deepEqual(selected.clips.map((clip) => clip.lane), ['actions', 'actions']);
     assert.equal(selected.clips.some((clip) => clip.lane === 'video'), false);
     assert.equal(selected.durationFrames, 63);
+  });
+
+  it('selects the exact Project-derived Schedule, NLE, playback, and editor projections for authoring v2', () => {
+    let source = createPresentationTimelineContract(timeline());
+    let { project } = createPresentationAuthoringProjectFromTimeline(source);
+    let alignment = alignedSequence(source, [1200, 900]);
+    let schedule = createPresentationScheduleV2(project, alignment);
+    let expectedNle = projectPresentationNle(project, schedule);
+    let expectedPlayback = createPresentationPlaybackPlan(project, schedule);
+    let expectedEditor = createPresentationTimelineEditorModel(project, schedule, { fps: 24 });
+
+    let selected = selectMediaProjectTimeline(project, {
+      alignedSequence: alignment,
+      schedule,
+      fps: 24,
+    });
+
+    assert.equal(selected.authority, 'presentation-authoring-project');
+    assert.equal(selected.legacy, false);
+    assert.equal(selected.authoringProjectHash, project.hash);
+    assert.equal(selected.timelineHash, schedule.timelineHash);
+    assert.equal(selected.scheduleHash, schedule.hash);
+    assert.equal(selected.nleHash, expectedNle.hash);
+    assert.equal(selected.playbackPlanHash, expectedPlayback.hash);
+    assert.equal(selected.editorModelHash, expectedEditor.hash);
+    assert.equal(selected.project, project);
+    assert.equal(selected.alignedSequence, alignment);
+    assert.equal(selected.schedule, schedule);
+    assert.deepEqual(selected.nle, expectedNle);
+    assert.deepEqual(selected.playbackPlan, expectedPlayback);
+    assert.deepEqual(selected.editorModel, expectedEditor);
+    assert.deepEqual(
+      selected.editorModel.tracks.flatMap(({ clips }) => clips.map(({ id }) => id)),
+      [...expectedNle.tracks, ...expectedNle.generatedTracks]
+        .flatMap(({ clips }) => clips.map(({ id }) => id)),
+    );
+    assert.equal('clips' in selected, false);
+  });
+
+  it('never falls back to a synthetic legacy timeline for an incomplete authoring tuple', () => {
+    let source = createPresentationTimelineContract(timeline());
+    let { project } = createPresentationAuthoringProjectFromTimeline(source);
+
+    assert.throws(
+      () => selectMediaProjectTimeline(project),
+      /alignedSequence.*schedule|schedule.*alignedSequence/i,
+    );
   });
 
   it('rejects an aligned sequence without its authored timeline', () => {

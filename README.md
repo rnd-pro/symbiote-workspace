@@ -109,6 +109,14 @@ mode.
   Project/Schedule hashes.
   NLE frame edits are accepted only against the exact derived projection and map
   back to semantic anchors plus `leadMs`, never persisted absolute milliseconds.
+  `createPresentationTimelineEditorModel(project, schedule)` projects that exact
+  NLE into the visual `sn-timeline-editor` tracks (audio, captions, actions,
+  effects, and focus/video), preserving Project layer/cell identities and hashes.
+  `bindPresentationNleTimelineEditor()` translates committed visual clip moves
+  back through the same semantic command translator used by CLI/MCP; the host
+  applies the command to its canonical Project authority and rebinds the new
+  revision. The visual editor therefore remains a view/controller over the same
+  Project rather than a second timeline document.
   First-class clip commands split, trim, timeline-move, link, and unlink audio with
   exact revision/project-hash CAS while preserving approved source identity.
 - **Stateless presentation authoring tools** —

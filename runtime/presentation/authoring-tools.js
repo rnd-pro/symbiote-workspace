@@ -6,7 +6,7 @@ import {
   invertPresentationAuthoringProjectCommand,
   listPresentationAuthoringProjectCommandDescriptors,
 } from './commands.js';
-import { projectPresentationNle } from './nle-projection.js';
+import { projectPresentationAuthoringNle } from './nle-authoring-adapter.js';
 import {
   createPresentationAuthoringProjectHashes,
   createPresentationAuthoringTimelineProjection,
@@ -669,7 +669,7 @@ function createProjections(project, alignment) {
   try {
     let validatedAlignment = validatePresentationAlignedSequence(alignment, timeline);
     let schedule = createPresentationScheduleV2(project, validatedAlignment);
-    let nle = projectPresentationNle(project, schedule);
+    let nle = projectPresentationAuthoringNle(project, schedule);
     return {
       timeline,
       schedule,

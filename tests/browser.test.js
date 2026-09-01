@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   applyWorkspaceTheme,
   collectWorkspaceInterfaceContext,
+  listPresentationCompositionCueSlots,
   mountWorkspace,
   normalizePresentationOutputSpec,
   prepareWorkspacePresentation,
@@ -59,23 +60,28 @@ function timelineV3(input = {}) {
 
 async function compositionFixture({ timeline, output, targetSnapshot }) {
   let viewport = output.presentationViewport;
+  let slots = listPresentationCompositionCueSlots(timeline);
   return {
     measuredViewport: { width: viewport.width, height: viewport.height, visualWidth: viewport.width, visualHeight: viewport.height, dpr: 1 },
     baselineStructuralHash: targetSnapshot.identityHash,
     restoredStructuralHash: targetSnapshot.identityHash,
     simulationFrozen: true,
-    steps: timeline.turns.map((turn, index) => {
+    steps: slots.map((slot, index) => {
       let y = 100 + index * 80;
       return {
-        turnId: turn.id,
-        slotIndex: 0,
-        targetId: turn.cues.find((cue) => cue.targetId)?.targetId,
+        turnId: slot.turnId,
+        slotIndex: slot.slotIndex,
+        cueId: slot.cueId,
+        cueIndex: slot.cueIndex,
+        cueKind: slot.kind,
+        targetId: slot.targetId,
         stateActions: [],
         scroll: [],
         measurement: {
           targetRect: { x: 80, y: y - 20, width: 600, height: 300 },
           focusRect: { x: 100, y, width: 160, height: 40 },
           visibleRect: { x: 100, y, width: 160, height: 40 },
+          criticalAttentionRect: { x: 100, y, width: 160, height: 40 },
           visibleRatio: 1,
           visible: true,
           reachable: true,
@@ -132,7 +138,7 @@ it('prepares a presentation with one bounded WebMCP deepening round', async () =
       let source = snapshot.dataSources[0];
       return {
         status: 'ready',
-        basis: { targetSnapshotHash: request.targetSnapshotHash, outputSpecHash: request.outputSpecHash, generation: request.generation },
+        basis: { requestHash: request.hash, targetSnapshotHash: request.targetSnapshotHash, outputSpecHash: request.outputSpecHash, generation: request.generation },
         timeline: timelineV3({
           title: 'Order detail',
           grounding: { sources: snapshot.dataSources },
@@ -176,7 +182,7 @@ it('prepares and snapshots against the inset page viewport while retaining final
     async plan(request) {
       return {
         status: 'ready',
-        basis: { targetSnapshotHash: request.targetSnapshotHash, outputSpecHash: request.outputSpecHash, generation: request.generation },
+        basis: { requestHash: request.hash, targetSnapshotHash: request.targetSnapshotHash, outputSpecHash: request.outputSpecHash, generation: request.generation },
         timeline: timelineV3({
           turns: [{
             id: 'queue',
@@ -271,6 +277,7 @@ function groundedDeepeningOptions(overrides = {}) {
       return {
         status: 'ready',
         basis: {
+          requestHash: request.hash,
           targetSnapshotHash: request.targetSnapshotHash,
           lessonContextHash: request.lessonContextHash,
           outputSpecHash: request.outputSpecHash,
@@ -375,7 +382,7 @@ it('allows one review-guided repair on the same target snapshot', async () => {
       let source = snapshot.dataSources[0];
       return {
         status: 'ready',
-        basis: { targetSnapshotHash: request.targetSnapshotHash, outputSpecHash: request.outputSpecHash, generation: request.generation },
+        basis: { requestHash: request.hash, targetSnapshotHash: request.targetSnapshotHash, outputSpecHash: request.outputSpecHash, generation: request.generation },
         timeline: timelineV3({
           profile: 'data-grounded',
           grounding: { sources: snapshot.dataSources },
@@ -421,7 +428,7 @@ it('reruns composition after one planner repair on the same output', async () =>
       planCalls += 1;
       return {
         status: 'ready',
-        basis: { targetSnapshotHash: request.targetSnapshotHash, outputSpecHash: request.outputSpecHash, generation: request.generation },
+        basis: { requestHash: request.hash, targetSnapshotHash: request.targetSnapshotHash, outputSpecHash: request.outputSpecHash, generation: request.generation },
         timeline: timelineV3({
           turns: [{
             id: 'queue',
@@ -553,7 +560,7 @@ it('does not permit a review repair to request another deepening round', async (
       let source = snapshot.dataSources[0];
       return {
         status: 'ready',
-        basis: { targetSnapshotHash: request.targetSnapshotHash, outputSpecHash: request.outputSpecHash, generation: request.generation },
+        basis: { requestHash: request.hash, targetSnapshotHash: request.targetSnapshotHash, outputSpecHash: request.outputSpecHash, generation: request.generation },
         timeline: timelineV3({
           grounding: { sources: snapshot.dataSources },
           turns: [{

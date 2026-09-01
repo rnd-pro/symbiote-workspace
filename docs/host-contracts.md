@@ -458,6 +458,17 @@ The CLI invokes individual semantic commands with `--project <file>`; `mcp
 The browser NLE remains an isomorphic Project/command consumer and does not import
 the Node-only filesystem adapter.
 
+The browser bridge is explicit: `createPresentationTimelineEditorModel(project,
+schedule)` derives the visual timeline model from the exact NLE hashes and keeps
+Project layer IDs and cell/clip IDs intact. `bindPresentationNleTimelineEditor()`
+loads that model into an `sn-timeline-editor`-compatible component and converts a
+committed clip move into the same semantic Authoring Project command used by the
+CLI/MCP tool pack. The callback does not mutate hidden state: the host must apply
+the returned command to its canonical Project authority, regenerate Schedule/NLE,
+and rebind. Audio, captions, focus/media presentation, annotations, interactions,
+and state events are therefore parallel visual tracks derived from one graph, not
+independent editor and player timelines.
+
 The strict authority snapshot has one of two explicit forms. Single-artifact
 hosts keep `{ project, alignment?, mediaAncestry? }`. Collection hosts use
 `{ project, mediaCollection }` and cannot also supply an aggregate alignment or

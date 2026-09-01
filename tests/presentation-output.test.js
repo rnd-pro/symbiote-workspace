@@ -12,6 +12,9 @@ function validStep(overrides = {}) {
   return {
     turnId: 'turn-1',
     slotIndex: 0,
+    cueId: '0.0',
+    cueIndex: 0,
+    cueKind: 'annotation',
     targetId: 'panel:orders',
     stateActions: [{ name: 'select_window', reversible: true }],
     scroll: [{ id: 'orders-scroll', before: { left: 0, top: 0 }, after: { left: 0, top: 120 }, changed: true, applied: true }],
@@ -33,13 +36,39 @@ function validStep(overrides = {}) {
   };
 }
 
+const SOURCE_COMPOSITION_HASH = 'composition:source';
+const TARGET_COMPOSITION_HASH = 'composition:target';
+const REQUIRED_CUE_SLOT = {
+  turnId: 'turn-1',
+  turnIndex: 0,
+  slotIndex: 0,
+  cueIndex: 0,
+  cueId: '0.0',
+  kind: 'annotation',
+  targetId: 'panel:orders',
+};
+
+function auditPlan(plan, overrides = {}) {
+  return auditPresentationCompositionPlan(plan, {
+    outputSpecHash: plan.outputSpecHash,
+    structuralHash: plan.structuralHash,
+    sourceCompositionHash: SOURCE_COMPOSITION_HASH,
+    targetCompositionHash: TARGET_COMPOSITION_HASH,
+    timelineHash: plan.timelineHash,
+    lessonIntentHash: plan.lessonIntentHash,
+    requiredCueSlots: [REQUIRED_CUE_SLOT],
+    requiredCueIds: [REQUIRED_CUE_SLOT.cueId],
+    ...overrides,
+  });
+}
+
 function validPlan(overrides = {}) {
   let output = normalizePresentationOutputSpec({ width: 1920, height: 1080, captionsMode: 'karaoke', locale: 'en-US' });
   return createPresentationCompositionPlan({
     output,
     structuralHash: 'snapshot-v2:structural',
-    sourceCompositionHash: 'composition:source',
-    targetCompositionHash: 'composition:target',
+    sourceCompositionHash: SOURCE_COMPOSITION_HASH,
+    targetCompositionHash: TARGET_COMPOSITION_HASH,
     timelineHash: 'timeline-v2:ready',
     lessonIntentHash: 'workspace-lesson-intent-v1:stable',
     measuredViewport: { width: 1920, height: 1080, visualWidth: 1920, visualHeight: 1080, dpr: 1 },
@@ -54,20 +83,21 @@ function validPlan(overrides = {}) {
 describe('presentation output and composition contracts', () => {
   it('normalizes all mandatory formats with explicit safe, caption, voice, language, and duration inputs', () => {
     let horizontal = normalizePresentationOutputSpec({ width: 1920, height: 1080, speakerMode: 'dialogue', locale: 'en-US', durationMs: 60000 });
-    let vertical = normalizePresentationOutputSpec({ width: 1080, height: 1920, speakerMode: 'single', locale: 'ru-RU', durationMs: 30000 });
+    let vertical = normalizePresentationOutputSpec({ width: 1080, height: 1920, speakerMode: 'single', speakerId: 'guide', locale: 'ru-RU', durationMs: 30000 });
     let square = normalizePresentationOutputSpec({ width: 1080, height: 1080, captionsMode: 'off', durationMs: 90000 });
 
     assert.equal(horizontal.orientation, 'horizontal');
     assert.equal(horizontal.aspectRatio, '16:9');
     assert.equal(horizontal.safeArea.top, 54);
-    assert.equal(horizontal.captions.reservePx, 194);
+    assert.equal(horizontal.captions.profile.preset, 'youtube');
     assert.equal(vertical.orientation, 'vertical');
     assert.equal(vertical.aspectRatio, '9:16');
     assert.equal(vertical.voice.mode, 'single');
+    assert.equal(vertical.voice.speakerId, 'guide');
     assert.equal(vertical.locale, 'ru-RU');
     assert.equal(square.orientation, 'square');
     assert.equal(square.aspectRatio, '1:1');
-    assert.equal(square.captions.rect, null);
+    assert.equal(square.captions.enabled, false);
     assert.notEqual(horizontal.hash, vertical.hash);
     assert.notEqual(vertical.hash, square.hash);
     assert.throws(() => normalizePresentationOutputSpec({ fps: 24 }), /constant 30 fps/);
@@ -80,8 +110,7 @@ describe('presentation output and composition contracts', () => {
 
     assert.deepEqual(base.frameInsets, { top: 0, right: 0, bottom: 0, left: 0 });
     assert.deepEqual(base.presentationViewport, { x: 0, y: 0, width: 1920, height: 1080 });
-    assert.deepEqual(base.contentRect, { x: 54, y: 54, width: 1812, height: 778 });
-    assert.equal(base.captions.rect.y, 1080 - 54 - 194);
+    assert.deepEqual(base.contentRect, { x: 54, y: 54, width: 1812, height: 972 });
     assert.equal(base.hash, explicitZero.hash);
   });
 
@@ -95,8 +124,7 @@ describe('presentation output and composition contracts', () => {
     assert.ok(horizontal.contentRect.x >= horizontal.presentationViewport.x);
     assert.ok(horizontal.contentRect.y >= horizontal.presentationViewport.y);
     assert.ok(horizontal.contentRect.x + horizontal.contentRect.width <= horizontal.presentationViewport.x + horizontal.presentationViewport.width);
-    assert.ok(horizontal.captions.rect.y + horizontal.captions.rect.height <= horizontal.presentationViewport.y + horizontal.presentationViewport.height);
-    assert.ok(horizontal.captions.rect.x >= horizontal.presentationViewport.x);
+    assert.equal(horizontal.captions.profile.preset, 'youtube');
 
     assert.deepEqual(vertical.presentationViewport, { x: 0, y: 87, width: 720, height: 1193 });
     assert.ok(vertical.contentRect.y >= 87);
@@ -121,6 +149,8 @@ describe('presentation output and composition contracts', () => {
     let accepted = createPresentationCompositionPlan({
       output,
       structuralHash: 'snapshot-v2:structural',
+      sourceCompositionHash: SOURCE_COMPOSITION_HASH,
+      targetCompositionHash: TARGET_COMPOSITION_HASH,
       timelineHash: 'timeline-v2:ready',
       lessonIntentHash: 'workspace-lesson-intent-v1:stable',
       measuredViewport: { width: 1820, height: 880, visualWidth: 1820, visualHeight: 880, dpr: 1 },
@@ -129,18 +159,23 @@ describe('presentation output and composition contracts', () => {
       simulationFrozen: true,
       steps: [pageLocalStep],
     });
-    let acceptAudit = auditPresentationCompositionPlan(accepted, { requiredTargetIds: ['panel:orders'] });
+    let acceptAudit = auditPlan(accepted);
     assert.equal(acceptAudit.verdict, 'accept', acceptAudit.issueCodes.join(', '));
 
     let fullOutputMeasure = createPresentationCompositionPlan({
       output,
+      structuralHash: 'snapshot-v2:structural',
+      sourceCompositionHash: SOURCE_COMPOSITION_HASH,
+      targetCompositionHash: TARGET_COMPOSITION_HASH,
+      timelineHash: 'timeline-v2:ready',
+      lessonIntentHash: 'workspace-lesson-intent-v1:stable',
       measuredViewport: { width: 1920, height: 1080, visualWidth: 1920, visualHeight: 1080, dpr: 1 },
       baselineStructuralHash: 'snapshot-v2:structural',
       restoredStructuralHash: 'snapshot-v2:structural',
       simulationFrozen: true,
       steps: [pageLocalStep],
     });
-    let rejectAudit = auditPresentationCompositionPlan(fullOutputMeasure, { requiredTargetIds: ['panel:orders'] });
+    let rejectAudit = auditPlan(fullOutputMeasure);
     assert.equal(rejectAudit.verdict, 'reject');
     assert.ok(rejectAudit.issueCodes.includes('output-viewport-mismatch'));
   });
@@ -150,6 +185,11 @@ describe('presentation output and composition contracts', () => {
     // A page-local focus at the page origin only fits final-frame content once translated by the viewport offset.
     let untranslatedWouldClip = createPresentationCompositionPlan({
       output,
+      structuralHash: 'snapshot-v2:structural',
+      sourceCompositionHash: SOURCE_COMPOSITION_HASH,
+      targetCompositionHash: TARGET_COMPOSITION_HASH,
+      timelineHash: 'timeline-v2:ready',
+      lessonIntentHash: 'workspace-lesson-intent-v1:stable',
       measuredViewport: { width: 1820, height: 880, visualWidth: 1820, visualHeight: 880, dpr: 1 },
       baselineStructuralHash: 'snapshot-v2:structural',
       restoredStructuralHash: 'snapshot-v2:structural',
@@ -159,11 +199,16 @@ describe('presentation output and composition contracts', () => {
         annotation: { placement: 'right', rect: { x: 300, y: 44, width: 120, height: 60 } },
       })],
     });
-    assert.equal(auditPresentationCompositionPlan(untranslatedWouldClip, { requiredTargetIds: ['panel:orders'] }).verdict, 'accept');
+    assert.equal(auditPlan(untranslatedWouldClip).verdict, 'accept');
 
     // A page-local focus near the bottom of the page falls outside final-frame content after translation.
     let translatedClips = createPresentationCompositionPlan({
       output,
+      structuralHash: 'snapshot-v2:structural',
+      sourceCompositionHash: SOURCE_COMPOSITION_HASH,
+      targetCompositionHash: TARGET_COMPOSITION_HASH,
+      timelineHash: 'timeline-v2:ready',
+      lessonIntentHash: 'workspace-lesson-intent-v1:stable',
       measuredViewport: { width: 1820, height: 880, visualWidth: 1820, visualHeight: 880, dpr: 1 },
       baselineStructuralHash: 'snapshot-v2:structural',
       restoredStructuralHash: 'snapshot-v2:structural',
@@ -172,7 +217,7 @@ describe('presentation output and composition contracts', () => {
         measurement: { ...validStep().measurement, focusRect: { x: 44, y: 860, width: 200, height: 60 }, visibleRect: { x: 44, y: 860, width: 200, height: 60 } },
       })],
     });
-    let clippedAudit = auditPresentationCompositionPlan(translatedClips, { requiredTargetIds: ['panel:orders'] });
+    let clippedAudit = auditPlan(translatedClips);
     assert.equal(clippedAudit.verdict, 'reject');
     assert.ok(clippedAudit.issueCodes.includes('target-clipped'));
   });
@@ -182,6 +227,11 @@ describe('presentation output and composition contracts', () => {
     // Focus stays valid after translation; only the annotation, once translated, overruns final-frame content.
     let plan = createPresentationCompositionPlan({
       output,
+      structuralHash: 'snapshot-v2:structural',
+      sourceCompositionHash: SOURCE_COMPOSITION_HASH,
+      targetCompositionHash: TARGET_COMPOSITION_HASH,
+      timelineHash: 'timeline-v2:ready',
+      lessonIntentHash: 'workspace-lesson-intent-v1:stable',
       measuredViewport: { width: 1820, height: 880, visualWidth: 1820, visualHeight: 880, dpr: 1 },
       baselineStructuralHash: 'snapshot-v2:structural',
       restoredStructuralHash: 'snapshot-v2:structural',
@@ -191,7 +241,7 @@ describe('presentation output and composition contracts', () => {
         annotation: { placement: 'below', rect: { x: 44, y: 860, width: 120, height: 60 } },
       })],
     });
-    let audit = auditPresentationCompositionPlan(plan, { requiredTargetIds: ['panel:orders'] });
+    let audit = auditPlan(plan);
     assert.equal(audit.verdict, 'reject');
     assert.ok(audit.issueCodes.includes('annotation-placement-unavailable'));
     assert.ok(!audit.issueCodes.includes('target-clipped'), audit.issueCodes.join(', '));
@@ -199,17 +249,11 @@ describe('presentation output and composition contracts', () => {
 
   it('accepts a restored, readable and collision-free per-turn composition plan', () => {
     let plan = validPlan();
-    let audit = auditPresentationCompositionPlan(plan, {
-      outputSpecHash: plan.outputSpecHash,
-      structuralHash: plan.structuralHash,
-      timelineHash: plan.timelineHash,
-      lessonIntentHash: plan.lessonIntentHash,
-      requiredTargetIds: ['panel:orders'],
-    });
+    let audit = auditPlan(plan);
 
     assert.equal(audit.verdict, 'accept');
-    assert.equal(audit.coverage.coveredTargetCount, 1);
-    assert.match(plan.hash, /^workspace-presentation-composition-v2:/);
+    assert.equal(audit.coverage.coveredCueCount, 1);
+    assert.match(plan.hash, /^workspace-presentation-composition-v4:/);
   });
 
   it('rejects every output and target composition failure with stable issue codes', () => {
@@ -228,7 +272,7 @@ describe('presentation output and composition contracts', () => {
 
     for (let [expectedCode, overrides] of cases) {
       let plan = validPlan(overrides);
-      let audit = auditPresentationCompositionPlan(plan, { requiredTargetIds: ['panel:orders'] });
+      let audit = auditPlan(plan);
       assert.equal(audit.verdict, 'reject', expectedCode);
       assert.ok(audit.issueCodes.includes(expectedCode), `${expectedCode}: ${audit.issueCodes.join(', ')}`);
     }

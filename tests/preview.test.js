@@ -183,6 +183,7 @@ describe('startPreview', () => {
         BROWSER_THEME_IMPORT,
         BROWSER_ENGINE_IMPORT,
         BROWSER_ENGINE_CONTRACTS_IMPORT,
+        'symbiote-engine/',
       ]);
       assert.deepEqual(contract.browser.errorSurfaces, [
         'import-map-support',

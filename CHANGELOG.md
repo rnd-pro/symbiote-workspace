@@ -16,6 +16,11 @@ All notable changes to this project will be documented in this file.
   `mcp --project <file>` mode. Visual NLE edits, agent edits, and hidden/headless
   playback now share one Project graph rather than maintaining host-specific audio
   or event timelines.
+- Added a browser-safe visual timeline bridge that projects the exact derived NLE
+  into `sn-timeline-editor` audio, caption, action, effect, and focus tracks while
+  preserving Project layer/cell identities. Committed visual moves translate back
+  through the same semantic command path as MCP/CLI and require the host to apply
+  them to the canonical Project authority before rebinding.
 
 - Added a stateless, product-neutral presentation authoring tool pack with one
   strict tool descriptor per Authoring Project command, exact revision/hash CAS,

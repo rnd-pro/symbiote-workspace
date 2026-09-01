@@ -5,26 +5,23 @@ import {
   PRESENTATION_PLANNER_INPUT_SCHEMA_VERSION,
   createPresentationPlannerInput,
 } from '../runtime/presentation-planner.js';
+import {
+  PRESENTATION_REPLAN_REQUEST_SCHEMA_VERSION,
+  normalizePresentationOutputSpec,
+  presentationReplanRequestHash,
+} from '../runtime/presentation-output.js';
 
 function fixture(overrides = {}) {
+  let output = normalizePresentationOutputSpec({
+    width: 1920,
+    height: 1080,
+    fps: 30,
+    locale: 'ru-RU',
+  });
   let snapshot = {
     identityHash: 'presentation-context-snapshot-v2:target',
     generation: 2,
-    output: {
-      schemaVersion: 'workspace-presentation-output-v2',
-      format: 'horizontal',
-      width: 1920,
-      height: 1080,
-      fps: 30,
-      dpr: 1,
-      frameInsets: { top: 0, right: 0, bottom: 0, left: 0 },
-      presentationViewport: { x: 0, y: 0, width: 1920, height: 1080 },
-      contentRect: { x: 54, y: 54, width: 1812, height: 778 },
-      captions: { enabled: true, rect: { x: 54, y: 832, width: 1812, height: 194 } },
-      voice: { mode: 'dialogue', sequenceMode: 'sequential' },
-      locale: 'ru-RU',
-      duration: { targetMs: 60000, minMs: 48000, maxMs: 72000 },
-    },
+    output,
     targets: [{
       address: 'panel:orders',
       title: 'Orders',
@@ -37,9 +34,10 @@ function fixture(overrides = {}) {
     ...overrides.snapshot,
   };
   let request = {
+    schemaVersion: PRESENTATION_REPLAN_REQUEST_SCHEMA_VERSION,
     targetSnapshotHash: snapshot.identityHash,
     lessonContextHash: 'workspace-lesson-context-v2:lesson',
-    outputSpecHash: 'workspace-presentation-output-v2:horizontal',
+    outputSpecHash: output.hash,
     generation: snapshot.generation,
     prompt: 'Explain the current orders.',
     profile: 'dialogue',
@@ -78,6 +76,7 @@ function fixture(overrides = {}) {
     },
     ...overrides.request,
   };
+  request.hash = presentationReplanRequestHash(request);
   return { request, snapshot };
 }
 
@@ -122,7 +121,7 @@ describe('presentation planner input projection', () => {
         hiddenReasons: ['mobile-dock'],
         composition: { visible: false, reachable: true, revealable: true, focusRect: { x: 54, y: 180, width: 972, height: 640 } },
       }],
-    }, request: { outputSpecHash: 'workspace-presentation-output-v2:vertical' } });
+    }, request: { outputSpecHash: 'workspace-presentation-output-v3:vertical' } });
     let left = createPresentationPlannerInput(horizontal.request, horizontal.snapshot);
     let right = createPresentationPlannerInput(vertical.request, vertical.snapshot);
     assert.notEqual(left.hash, right.hash);

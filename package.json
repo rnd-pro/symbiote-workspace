@@ -129,8 +129,8 @@
   "peerDependencies": {
     "@symbiotejs/symbiote": "3.8.0-webmcp.2",
     "linkedom": "^0.18.12",
-    "symbiote-engine": ">=0.3.0-alpha.12",
-    "symbiote-ui": ">=0.3.0-alpha.50"
+    "symbiote-engine": ">=0.3.0-alpha.13",
+    "symbiote-ui": ">=0.3.0-alpha.71"
   },
   "peerDependenciesMeta": {
     "@symbiotejs/symbiote": {
@@ -146,8 +146,8 @@
   "devDependencies": {
     "linkedom": "^0.18.12",
     "playwright": "1.61.0",
-    "symbiote-engine": "0.3.0-alpha.12",
-    "symbiote-ui": "0.3.0-alpha.50"
+    "symbiote-engine": "0.3.0-alpha.13",
+    "symbiote-ui": "0.3.0-alpha.71"
   },
   "repository": {
     "type": "git",

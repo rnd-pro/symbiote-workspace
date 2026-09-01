@@ -1,16 +1,26 @@
 import { canonicalize, computeIntegrity } from '../../schema/canonical-json.js';
 import {
-  PRESENTATION_AUTHORING_COMMAND_SCHEMA_VERSION,
-  listPresentationAuthoringProjectCommandDescriptors,
-} from './commands.js';
-import {
   createPresentationAuthoringTimelineProjection,
   validatePresentationAuthoringProject,
 } from './project.js';
 import { PRESENTATION_SCHEDULE_V2_VERSION } from './schedule-v2.js';
 
 export const PRESENTATION_NLE_SCHEMA_VERSION = 'workspace-presentation-nle-v1';
-const MAX_NLE_LEAD_MS = 120000;
+const CELL_COMMAND_TYPES = Object.freeze([
+  'cell.remove',
+  'cell.move',
+  'cell.set-content',
+  'cell.set-dependencies',
+]);
+const CUE_COMMAND_TYPES = Object.freeze([...CELL_COMMAND_TYPES, 'cell.set-timing']);
+const AUDIO_CLIP_COMMAND_TYPES = Object.freeze([
+  ...CELL_COMMAND_TYPES,
+  'audio-clip.split',
+  'audio-clip.trim',
+  'audio-clip.move',
+  'audio-clip.link',
+  'audio-clip.unlink',
+]);
 
 export class PresentationNleProjectionError extends Error {
   constructor(code, message, details = {}) {
@@ -101,33 +111,21 @@ function validateScheduleProjection(schedule, project, timeline) {
 }
 
 function commandTypesForCell(cell) {
-  let available = new Set(
-    listPresentationAuthoringProjectCommandDescriptors().map((descriptor) => descriptor.type),
-  );
-  let requested = [
-    'cell.remove',
-    'cell.move',
-    'cell.set-content',
-    'cell.set-dependencies',
-  ];
-  if (cell.kind === 'cue') requested.push('cell.set-timing');
-  if (cell.kind === 'audio-clip') {
-    requested.push(
-      'audio-clip.split',
-      'audio-clip.trim',
-      'audio-clip.move',
-      'audio-clip.link',
-      'audio-clip.unlink',
-    );
-  }
-  return requested.filter((type) => available.has(type));
+  if (cell.kind === 'cue') return [...CUE_COMMAND_TYPES];
+  if (cell.kind === 'audio-clip') return [...AUDIO_CLIP_COMMAND_TYPES];
+  return [...CELL_COMMAND_TYPES];
 }
 
 function clipSpan(scheduled) {
   if (scheduled.audio) return { startMs: scheduled.audio.startMs, endMs: scheduled.audio.endMs };
   if (scheduled.narration) return clone(scheduled.narration);
-  if (scheduled.gesture) return clone(scheduled.gesture);
-  if (scheduled.visibility) return clone(scheduled.visibility);
+  if (scheduled.gesture || scheduled.visibility) {
+    let spans = [scheduled.gesture, scheduled.visibility].filter(Boolean);
+    return {
+      startMs: Math.min(...spans.map(({ startMs }) => startMs)),
+      endMs: Math.max(...spans.map(({ endMs }) => endMs)),
+    };
+  }
   return { startMs: scheduled.startMs, endMs: scheduled.startMs };
 }
 
@@ -195,73 +193,6 @@ function createAnchors(project, scheduleById) {
   return anchors;
 }
 
-function validateNle(value, project, schedule) {
-  if (!isObject(value) || value.schemaVersion !== PRESENTATION_NLE_SCHEMA_VERSION) {
-    fail(
-      'PRESENTATION_NLE_INVALID',
-      `NLE edit requires ${PRESENTATION_NLE_SCHEMA_VERSION}`,
-    );
-  }
-  let expected = projectPresentationNle(project, schedule);
-  if (canonicalize(value) !== canonicalize(expected)) {
-    fail(
-      'PRESENTATION_NLE_STALE',
-      'NLE must exactly match the canonical authoring project and schedule projection',
-      {
-        expectedHash: expected.hash,
-        receivedHash: value.hash,
-        authoringProjectHash: project.hash,
-        scheduleHash: schedule.hash,
-      },
-    );
-  }
-  return expected;
-}
-
-function editBasis(project, schedule, nle) {
-  return {
-    authoringProjectHash: project.hash,
-    timelineHash: nle.timelineHash,
-    scheduleHash: schedule.hash,
-    nleHash: nle.hash,
-  };
-}
-
-function validateEditBasis(value, expected) {
-  if (!isObject(value)) {
-    fail(
-      'PRESENTATION_NLE_EDIT_INVALID',
-      'NLE frame drag requires an authoring-project/timeline/schedule/NLE basis',
-      { path: 'edit.basis' },
-    );
-  }
-  let keys = ['authoringProjectHash', 'timelineHash', 'scheduleHash', 'nleHash'];
-  for (let key of Object.keys(value)) {
-    if (!keys.includes(key)) {
-      fail(
-        'PRESENTATION_NLE_EDIT_INVALID',
-        `NLE edit basis field "${key}" is not supported`,
-        { path: `edit.basis.${key}` },
-      );
-    }
-  }
-  if (canonicalize(value) !== canonicalize(expected)) {
-    fail(
-      'PRESENTATION_NLE_STALE',
-      'NLE edit basis does not match the exact authoring project, timeline, schedule, and NLE',
-      { expected, received: clone(value) },
-    );
-  }
-}
-
-function anchorChoice(anchor, frameMs) {
-  return { ...clone(anchor), leadMs: anchor.timeMs - frameMs };
-}
-
-function leadIsValid(choice) {
-  return choice.leadMs >= 0 && choice.leadMs <= MAX_NLE_LEAD_MS;
-}
-
 /**
  * @param {object} projectInput
  * @param {object} scheduleInput
@@ -272,18 +203,12 @@ export function projectPresentationNle(projectInput = {}, scheduleInput = {}) {
   let timeline = createPresentationAuthoringTimelineProjection(project);
   let schedule = validateScheduleProjection(scheduleInput, project, timeline);
   let scheduleById = new Map(schedule.cells.map((cell) => [cell.cellId, cell]));
-  let tracks = project.layers.map((layer, order) => ({
-    id: layer.id,
-    layerId: layer.id,
-    kind: layer.kind,
-    name: layer.name,
-    order,
-    editable: true,
-    generated: false,
-    clips: project.cells
+  let tracks = project.layers.map((layer, order) => {
+    let clips = project.cells
       .filter((cell) => cell.layerId === layer.id)
       .map((cell) => {
         let scheduled = scheduleById.get(cell.id);
+        let editable = ['cue', 'audio-clip'].includes(cell.kind);
         return {
           id: cell.id,
           cellId: cell.id,
@@ -291,7 +216,7 @@ export function projectPresentationNle(projectInput = {}, scheduleInput = {}) {
           turnId: cell.turnId,
           kind: cell.kind,
           semanticKind: cell.kind === 'cue' ? cell.cue.kind : cell.kind,
-          editable: true,
+          editable,
           generated: false,
           commandTypes: commandTypesForCell(cell),
           timing: cell.kind === 'cue' || cell.kind === 'audio-clip' ? clone(cell.timing) : null,
@@ -301,8 +226,18 @@ export function projectPresentationNle(projectInput = {}, scheduleInput = {}) {
           gesture: scheduled.gesture,
           visibility: scheduled.visibility,
         };
-      }),
-  }));
+      });
+    return {
+      id: layer.id,
+      layerId: layer.id,
+      kind: layer.kind,
+      name: layer.name,
+      order,
+      editable: clips.some((clip) => clip.editable),
+      generated: false,
+      clips,
+    };
+  });
   let authoredAudioClips = project.cells.filter((cell) => cell.kind === 'audio-clip');
   let generatedTracks = authoredAudioClips.length ? [] : [{
     id: 'generated:narration-audio',
@@ -333,182 +268,5 @@ export function projectPresentationNle(projectInput = {}, scheduleInput = {}) {
   return {
     ...nle,
     hash: `${PRESENTATION_NLE_SCHEMA_VERSION}:${computeIntegrity(nle)}`,
-  };
-}
-
-/**
- * @param {object} projectInput
- * @param {object} scheduleInput
- * @param {object} nleInput
- * @param {object} editInput
- * @returns {object}
- */
-export function createPresentationAuthoringCommandFromNleEdit(
-  projectInput = {},
-  scheduleInput = {},
-  nleInput = {},
-  editInput = {},
-) {
-  let project = validatePresentationAuthoringProject(projectInput);
-  let timeline = createPresentationAuthoringTimelineProjection(project);
-  let schedule = validateScheduleProjection(scheduleInput, project, timeline);
-  let nle = validateNle(nleInput, project, schedule);
-  let basis = editBasis(project, schedule, nle);
-  if (!isObject(editInput)) {
-    fail('PRESENTATION_NLE_EDIT_INVALID', 'NLE edit must be an object');
-  }
-  let allowedKeys = ['id', 'type', 'clipId', 'frameMs', 'anchorId', 'basis'];
-  for (let key of Object.keys(editInput)) {
-    if (!allowedKeys.includes(key)) {
-      fail(
-        'PRESENTATION_NLE_EDIT_INVALID',
-        `NLE edit field "${key}" is not supported`,
-        { path: `edit.${key}` },
-      );
-    }
-  }
-  validateEditBasis(editInput.basis, basis);
-  if (editInput.type !== 'clip.frame-drag') {
-    fail(
-      'PRESENTATION_NLE_EDIT_INVALID',
-      'NLE edit type must be clip.frame-drag',
-      { type: editInput.type },
-    );
-  }
-  let id = String(editInput.id ?? '').trim();
-  let clipId = String(editInput.clipId ?? '').trim();
-  if (!id || !clipId) {
-    fail(
-      'PRESENTATION_NLE_EDIT_INVALID',
-      'NLE frame drag requires nonempty id and clipId',
-    );
-  }
-  if (
-    !Number.isInteger(editInput.frameMs)
-    || editInput.frameMs < 0
-    || editInput.frameMs > schedule.totalDurationMs
-  ) {
-    fail(
-      'PRESENTATION_NLE_EDIT_INVALID',
-      `NLE frame drag frameMs must be an integer between 0 and ${schedule.totalDurationMs}`,
-      { frameMs: editInput.frameMs, totalDurationMs: schedule.totalDurationMs },
-    );
-  }
-  let cell = project.cells.find((item) => item.id === clipId);
-  if (!cell || !['cue', 'audio-clip'].includes(cell.kind)) {
-    fail(
-      'PRESENTATION_NLE_EDIT_INVALID',
-      `NLE frame drag clipId "${clipId}" must name an editable cue or audio-clip cell`,
-      { clipId },
-    );
-  }
-  if (cell.kind === 'audio-clip') {
-    let turnAnchors = nle.anchors.filter((anchor) => (
-      anchor.turnId === cell.turnId
-      && ['turn-start', 'turn-end'].includes(anchor.edge)
-    ));
-    let choice = editInput.anchorId === undefined
-      ? turnAnchors.find((anchor) => anchor.edge === 'turn-start')
-      : turnAnchors.find((anchor) => anchor.id === editInput.anchorId);
-    if (!choice) {
-      return {
-        status: 'rejected',
-        code: 'PRESENTATION_NLE_ANCHOR_INVALID',
-        clipId,
-        frameMs: editInput.frameMs,
-        anchorId: editInput.anchorId ?? null,
-        basis,
-      };
-    }
-    let offsetMs = choice.anchor.offsetMs + editInput.frameMs - choice.timeMs;
-    return {
-      status: 'command',
-      command: {
-        schemaVersion: PRESENTATION_AUTHORING_COMMAND_SCHEMA_VERSION,
-        id,
-        base: { revision: project.revision, authoringProjectHash: project.hash },
-        type: 'audio-clip.move',
-        payload: {
-          cellId: cell.id,
-          timing: { at: { anchor: choice.anchor.anchor, offsetMs } },
-        },
-      },
-      anchor: clone(choice),
-      basis,
-    };
-  }
-  let turnChoices = nle.anchors
-    .filter((anchor) => anchor.turnId === cell.turnId)
-    .map((anchor) => anchorChoice(anchor, editInput.frameMs));
-  let validChoices = turnChoices.filter(leadIsValid);
-  let choice;
-  if (editInput.anchorId !== undefined) {
-    let selected = turnChoices.find((anchor) => anchor.id === editInput.anchorId);
-    if (!selected) {
-      return {
-        status: 'rejected',
-        code: 'PRESENTATION_NLE_ANCHOR_INVALID',
-        clipId,
-        frameMs: editInput.frameMs,
-        anchorId: editInput.anchorId,
-        basis,
-      };
-    }
-    if (!leadIsValid(selected)) {
-      return {
-        status: 'rejected',
-        code: 'PRESENTATION_NLE_LEAD_INVALID',
-        clipId,
-        frameMs: editInput.frameMs,
-        anchorId: selected.id,
-        leadMs: selected.leadMs,
-        allowedLeadMs: { min: 0, max: MAX_NLE_LEAD_MS },
-        basis,
-      };
-    }
-    choice = selected;
-  } else {
-    let exactChoices = validChoices.filter((anchor) => anchor.leadMs === 0);
-    let automaticChoices = exactChoices.length ? exactChoices : validChoices;
-    if (automaticChoices.length === 1) [choice] = automaticChoices;
-  }
-  if (!choice && !validChoices.length) {
-    return {
-      status: 'rejected',
-      code: 'PRESENTATION_NLE_LEAD_INVALID',
-      clipId,
-      frameMs: editInput.frameMs,
-      allowedLeadMs: { min: 0, max: MAX_NLE_LEAD_MS },
-      basis,
-    };
-  }
-  if (!choice) {
-    return {
-      status: 'anchor-choices',
-      code: 'PRESENTATION_NLE_ANCHOR_CHOICES',
-      clipId,
-      frameMs: editInput.frameMs,
-      choices: clone(validChoices),
-      basis,
-    };
-  }
-  return {
-    status: 'command',
-    command: {
-      schemaVersion: PRESENTATION_AUTHORING_COMMAND_SCHEMA_VERSION,
-      id,
-      base: { revision: project.revision, authoringProjectHash: project.hash },
-      type: 'cell.set-timing',
-      payload: {
-        cellId: cell.id,
-        timing: {
-          ...clone(cell.timing),
-          at: clone(choice.anchor),
-          leadMs: choice.leadMs,
-        },
-      },
-    },
-    anchor: clone(choice),
-    basis,
   };
 }
