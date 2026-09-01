@@ -207,6 +207,61 @@ function executionFixture({ failEvent = false } = {}) {
   };
 }
 
+function concurrentLayerFixture() {
+  const baseline = audioClipFixture();
+  const continuousAudio = {
+    ...baseline.clipA,
+    audio: {
+      ...baseline.clipA.audio,
+      sourceOutMs: 2000,
+    },
+  };
+  const timedEvent = {
+    ...baseline.event,
+    dependsOn: [],
+  };
+  const project = workspace.createPresentationAuthoringProject({
+    ...baseline.project,
+    cells: baseline.project.cells
+      .filter(({ id }) => ![baseline.clipA.id, baseline.clipB.id, baseline.event.id].includes(id))
+      .concat(continuousAudio, timedEvent),
+  });
+  const timeline = workspace.createPresentationAuthoringTimelineProjection(project);
+  const alignment = workspace.validatePresentationAlignedSequence(baseline.alignment, timeline);
+  const schedule = workspace.createPresentationScheduleV2(project, alignment);
+  const audio = deferred();
+  const event = deferred();
+  const audioInputs = [];
+  const eventInputs = [];
+  const execution = workspace.createPresentationExecutionController({
+    project,
+    alignedSequence: alignment,
+    schedule,
+    adapter: {
+      playAudioClip(input) {
+        audioInputs.push(input);
+        return audio.promise;
+      },
+      runInteraction(input) {
+        eventInputs.push(input);
+        return event.promise;
+      },
+    },
+  });
+  return {
+    project,
+    alignment,
+    schedule,
+    continuousAudio,
+    timedEvent,
+    execution,
+    audio,
+    event,
+    audioInputs,
+    eventInputs,
+  };
+}
+
 function observation() {
   return {
     domain: 'performance',
@@ -243,6 +298,29 @@ function settleInteraction(input) {
 }
 
 describe('presentation audio clips share one authoring, NLE, and headless execution graph', () => {
+  it('runs a speech-timed visual on its own layer without interrupting active narration', async () => {
+    const fixture = concurrentLayerFixture();
+
+    fixture.execution.sample({ mediaTimeMs: 0, reason: 'playing' });
+    assert.equal(fixture.audioInputs.length, 1);
+    assert.equal(fixture.execution.snapshot.activeCount, 1);
+
+    fixture.execution.sample({ mediaTimeMs: 800, reason: 'timeupdate' });
+    assert.equal(fixture.eventInputs.length, 1, 'the visual starts while narration remains active');
+    assert.equal(fixture.audioInputs[0].signal.aborted, false);
+    assert.equal(fixture.execution.snapshot.activeCount, 2);
+
+    settleInteraction(fixture.eventInputs[0]);
+    fixture.event.resolve();
+    await Promise.resolve();
+    assert.equal(fixture.audioInputs[0].signal.aborted, false);
+
+    finishAudio(fixture.audioInputs[0]);
+    fixture.audio.resolve();
+    await fixture.execution.whenIdle();
+    assert.equal(fixture.execution.snapshot.activeCount, 0);
+  });
+
   it('projects authored audio clips into NLE and playback with identical IDs and source ranges', () => {
     let fixture = audioClipFixture();
     let nle = workspace.projectPresentationNle(fixture.project, fixture.schedule);

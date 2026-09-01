@@ -985,7 +985,7 @@ class PresentationExecutionController {
   #visualCells;
   #barriers = new Map();
   #terminal = new Map();
-  #active = null;
+  #active = new Map();
   #state = 'running';
   #generation = 0;
   #sequence = 0;
@@ -1063,6 +1063,8 @@ class PresentationExecutionController {
   }
 
   get snapshot() {
+    let activeOperations = [...this.#active.values()];
+    let primaryActive = activeOperations[0] || null;
     let barrierEntries = this.#scheduleCells
       .filter((cell) => this.#barriers.has(cell.cellId))
       .map((cell) => Object.freeze({
@@ -1081,10 +1083,10 @@ class PresentationExecutionController {
       generation: this.#generation,
       mediaTimeMs: this.#mediaTimeMs,
       lastSampleReason: this.#lastSampleReason,
-      activeCount: this.#active ? 1 : 0,
+      activeCount: activeOperations.length,
       pendingCount: 0,
-      activeOperationId: this.#active?.operationId || '',
-      activeCellId: this.#active?.scheduleCell.cellId || '',
+      activeOperationId: primaryActive?.operationId || '',
+      activeCellId: primaryActive?.scheduleCell.cellId || '',
       sampleCount: this.#sampleCount,
       busySampleCount: this.#busySampleCount,
       ignoredSampleCount: this.#ignoredSampleCount,
@@ -1120,23 +1122,24 @@ class PresentationExecutionController {
     this.#lastSampleReason = reason;
     this.#observeMediaEndings(previousMediaTimeMs, nextMediaTimeMs);
     this.#skipExpiredCells(nextMediaTimeMs);
-    if (this.#active) {
-      this.#busySampleCount += 1;
-      return this.snapshot;
-    }
-    let candidate = this.#visualCells.find((cell) => (
+    if (this.#active.size) this.#busySampleCount += 1;
+    let candidates = this.#visualCells.filter((cell) => (
       cell.startMs <= nextMediaTimeMs
       && !this.#terminal.has(cell.cellId)
+      && !this.#active.has(cell.cellId)
       && nextMediaTimeMs < cellExpiry(cell)
       && this.#dependenciesSatisfied(cell)
     ));
-    if (candidate) this.#start(candidate);
+    for (let candidate of candidates) this.#start(candidate);
     return this.snapshot;
   }
 
   whenIdle() {
-    let active = this.#active;
-    return active ? active.done.then(() => this.snapshot) : Promise.resolve(this.snapshot);
+    let active = [...this.#active.values()];
+    if (!active.length) return Promise.resolve(this.snapshot);
+    return Promise.all(active.map(({ done }) => done)).then(() => (
+      this.#active.size ? this.whenIdle() : this.snapshot
+    ));
   }
 
   pause() {
@@ -1241,7 +1244,7 @@ class PresentationExecutionController {
     for (let cell of this.#visualCells) {
       if (cell.startMs > mediaTimeMsValue) continue;
       if (this.#terminal.has(cell.cellId)) continue;
-      if (this.#active?.scheduleCell.cellId === cell.cellId) continue;
+      if (this.#active.has(cell.cellId)) continue;
       let expiryMs = cellExpiry(cell);
       if (mediaTimeMsValue < expiryMs) continue;
       let kind = effectKindForCell(cell);
@@ -1317,8 +1320,8 @@ class PresentationExecutionController {
     operation.deadlineSignal.addEventListener('abort', operation.onDeadline, { once: true });
     let adapterCompletion = createAdapterCompletion();
     operation.done = this.#execute(operation, adapterCompletion.promise);
-    this.#active = operation;
-    this.#maxInFlight = Math.max(this.#maxInFlight, 1);
+    this.#active.set(scheduleCell.cellId, operation);
+    this.#maxInFlight = Math.max(this.#maxInFlight, this.#active.size);
     let input = Object.freeze({
       operationId,
       generation: operation.generation,
@@ -1415,7 +1418,9 @@ class PresentationExecutionController {
       }
     } finally {
       operation.deadlineSignal.removeEventListener('abort', operation.onDeadline);
-      if (this.#active === operation) this.#active = null;
+      if (this.#active.get(operation.scheduleCell.cellId) === operation) {
+        this.#active.delete(operation.scheduleCell.cellId);
+      }
     }
   }
 
@@ -1646,7 +1651,8 @@ class PresentationExecutionController {
   }
 
   #operationIsCurrent(operation) {
-    return this.#active === operation && operation.generation === this.#generation;
+    return this.#active.get(operation.scheduleCell.cellId) === operation
+      && operation.generation === this.#generation;
   }
 
   #emitTerminal(operation, status, reason) {
@@ -1673,12 +1679,14 @@ class PresentationExecutionController {
   }
 
   async #cancelActive(reason) {
-    let operation = this.#active;
-    if (!operation) return this.snapshot;
-    if (!operation.controller.signal.aborted) {
-      operation.controller.abort(abortError(reason));
+    let operations = [...this.#active.values()];
+    if (!operations.length) return this.snapshot;
+    for (let operation of operations) {
+      if (!operation.controller.signal.aborted) {
+        operation.controller.abort(abortError(reason));
+      }
     }
-    await operation.done;
+    await Promise.all(operations.map(({ done }) => done));
     return this.snapshot;
   }
 }
