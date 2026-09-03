@@ -52,6 +52,7 @@ const RECEIPT_KEYS = Object.freeze([
   'reason',
 ]);
 const AUDIO_OPERATION_GRACE_MS = 1000;
+const EFFECT_OPERATION_GRACE_MS = 1000;
 const ADMISSION_KEYS = Object.freeze([
   'version',
   'operationId',
@@ -341,6 +342,17 @@ function operationBudgetMs(kind, scheduleCell, projectCell) {
   if (kind === 'audio') return scheduleCell.audio.durationMs + AUDIO_OPERATION_GRACE_MS;
   if (kind === 'state') return projectCell.cue.state.timeoutMs;
   return scheduleCell.gesture.endMs - scheduleCell.gesture.startMs;
+}
+
+function effectDeadlineMs(kind, budgetMs) {
+  // Visual budgets are authored choreography windows measured against the
+  // audio timeline, but the hard deadline is wall-clock. Host main-thread
+  // stalls (mobile backgrounding, article mounts, heavy re-renders) must not
+  // fail an otherwise healthy effect by a few milliseconds, so the abort
+  // deadline carries the same completion grace audio operations already
+  // receive. Provider plan validation and admission budgets stay strict.
+  if (kind === 'audio' || kind === 'state') return budgetMs;
+  return budgetMs + EFFECT_OPERATION_GRACE_MS;
 }
 
 function validateAudioProviderReceipt(value, operation) {
@@ -1308,12 +1320,12 @@ class PresentationExecutionController {
       admission: null,
       budgetMs,
       activatedAtMonotonicTimeMs,
-      deadlineMonotonicTimeMs: activatedAtMonotonicTimeMs + budgetMs,
+      deadlineMonotonicTimeMs: activatedAtMonotonicTimeMs + effectDeadlineMs(kind, budgetMs),
       deadlineSignal: null,
       onDeadline: null,
       reportedReceipts: [],
     };
-    operation.deadlineSignal = AbortSignal.timeout(budgetMs);
+    operation.deadlineSignal = AbortSignal.timeout(effectDeadlineMs(kind, budgetMs));
     operation.onDeadline = () => {
       if (!controller.signal.aborted) controller.abort(deadlineError(operation));
     };

@@ -615,7 +615,12 @@ stable `PRESENTATION_EFFECT_PROVIDER_FAILED` Workspace outcome with its exact
 provider receipt.
 
 Every visual activation creates one `AbortSignal.timeout()` hard-deadline owner
-from authored `gestureDurationMs`, or `state.timeoutMs` for state readiness. It
+from authored `gestureDurationMs` plus a fixed `EFFECT_OPERATION_GRACE_MS`
+completion grace (audio budgets already embed `AUDIO_OPERATION_GRACE_MS`, and
+`state.timeoutMs` readiness limits stay exact), or `state.timeoutMs` for state
+readiness. The grace only widens the wall-clock abort backstop so host
+main-thread stalls cannot fail a healthy effect by milliseconds; provider plan
+validation and admission budgets remain strictly authored-window. It
 begins before the adapter is invoked, aborts the existing operation controller
 once with `PRESENTATION_EFFECT_DEADLINE_MISSED`, and detaches its listener in
 the operation `finally`. It therefore covers missing admission, an admitted

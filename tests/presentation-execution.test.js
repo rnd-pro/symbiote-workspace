@@ -775,7 +775,7 @@ describe('workspace presentation execution v1', () => {
       ));
 
       controller.sample({ mediaTimeMs: 0, reason: 'playing' });
-      await waitForIdleDeadline(controller);
+      await waitForIdleDeadline(controller, 2500);
 
       assert.equal(input.signal.aborted, true, admissionMode);
       assert.equal(controller.snapshot.activeCount, 0, admissionMode);
@@ -1316,7 +1316,7 @@ describe('workspace presentation execution v1', () => {
             input,
             'interaction',
             'settled',
-            performance.now() + input.scheduleCell.gesture.endMs + 1000,
+            performance.now() + input.scheduleCell.gesture.endMs + 2500,
           ));
           return Promise.resolve();
         },
