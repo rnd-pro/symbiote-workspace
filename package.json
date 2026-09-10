@@ -157,7 +157,7 @@
     "mime": "4.1.0",
     "playwright": "1.61.0",
     "symbiote-engine": "0.3.0-alpha.12",
-    "symbiote-ui": "0.3.0-alpha.50",
+    "symbiote-ui": "https://codeload.github.com/rnd-pro/symbiote-ui/tar.gz/fee0dbb",
     "symbiote-ui-docs": "npm:symbiote-ui@^0.3.0-alpha.67"
   },
   "repository": {
