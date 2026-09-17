@@ -258,6 +258,10 @@ export {
   summarizePresentationTimeline,
 } from './runtime/presentation.js';
 export {
+  ENSURE_STATUS,
+  createEnsureController,
+} from './runtime/presentation/ensure.js';
+export {
   MEDIA_PROJECT_DEFAULT_SURFACE,
   MEDIA_PROJECT_ROUTE_JOB_PARAM,
   MEDIA_PROJECT_ROUTE_PREVIEW_FRAME_PARAM,

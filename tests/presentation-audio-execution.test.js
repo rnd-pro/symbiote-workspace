@@ -447,4 +447,48 @@ describe('presentation audio clips share one authoring, NLE, and headless execut
     fixture.execution.sample({ mediaTimeMs: 550, reason: 'seeked' });
     assert.equal(fixture.audioInputs[2].playback.sourcePositionMs, 550);
   });
+
+  it('keeps audio alive on a slow host while the media clock advances', { timeout: 15_000 }, async () => {
+    let fixture = executionFixture();
+    fixture.execution.sample({ mediaTimeMs: 0, reason: 'playing' });
+    assert.equal(fixture.audioInputs.length, 1);
+    const start = Date.now();
+    // Keep the media clock advancing past the original wall-clock deadline
+    // (700ms clip + 1000ms grace); the re-arming audio deadline must let the
+    // clip survive.
+    while (Date.now() - start < 2200) {
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      fixture.execution.sample({
+        mediaTimeMs: Math.min(660, Math.floor((Date.now() - start) * 0.3)),
+        reason: 'timeupdate',
+      });
+    }
+    assert.equal(
+      fixture.execution.snapshot.terminal.some(({ cellId, status }) => (
+        cellId === fixture.clipA.id && status === 'failed'
+      )),
+      false,
+      'progressing audio must not deadline out',
+    );
+    assert.equal(fixture.execution.snapshot.activeCellId, fixture.clipA.id);
+    finishAudio(fixture.audioInputs[0]);
+    fixture.audioA.resolve();
+    await fixture.execution.whenIdle();
+  });
+
+  it('still fails a genuinely stalled audio operation after the budget', { timeout: 15_000 }, async () => {
+    let fixture = executionFixture();
+    fixture.execution.sample({ mediaTimeMs: 0, reason: 'playing' });
+    assert.equal(fixture.audioInputs.length, 1);
+    // No progress at all: the clip hands mid-flight.
+    await new Promise((resolve) => setTimeout(resolve, 2100));
+    assert.equal(
+      fixture.execution.snapshot.terminal.some(({ cellId, status }) => (
+        cellId === fixture.clipA.id && status === 'failed'
+      )),
+      true,
+      'stalled audio must be reported as failed',
+    );
+  });
+
 });

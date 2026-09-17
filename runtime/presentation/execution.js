@@ -1329,6 +1329,38 @@ class PresentationExecutionController {
     operation.onDeadline = () => {
       if (!controller.signal.aborted) controller.abort(deadlineError(operation));
     };
+    if (kind === 'audio') {
+      // Audio deadlines supervise a media clock, not wall time: playback on
+      // a slow or briefly backgrounded host emits media progress slower than
+      // wall time, and killing the clip would stop otherwise healthy
+      // narration. Replace the blind timeout with a progress-checked timer:
+      // whenever the shared media clock advanced since the last check, the
+      // deadline re-arms for the remaining clip budget; only a real stall
+      // aborts the operation.
+      const deadlineController = new AbortController();
+      operation.deadlineSignal = deadlineController.signal;
+      operation.lastProgressMediaTimeMs = Number.isFinite(this.#mediaTimeMs)
+        ? this.#mediaTimeMs
+        : null;
+      const deadlineMs = effectDeadlineMs(kind, budgetMs);
+      const tick = () => {
+        if (controller.signal.aborted || deadlineController.signal.aborted) return;
+        const mediaTimeMs = this.#mediaTimeMs;
+        const progressed = Number.isFinite(mediaTimeMs)
+          && (!Number.isFinite(operation.lastProgressMediaTimeMs)
+            || mediaTimeMs > operation.lastProgressMediaTimeMs);
+        if (progressed) {
+          operation.lastProgressMediaTimeMs = mediaTimeMs;
+          operation.deadlineMonotonicTimeMs = performance.now() + deadlineMs;
+          operation.deadlineTimer = setTimeout(tick, deadlineMs);
+          if (operation.deadlineTimer?.unref) operation.deadlineTimer.unref();
+          return;
+        }
+        deadlineController.abort();
+      };
+      operation.deadlineTimer = setTimeout(tick, deadlineMs);
+      if (operation.deadlineTimer?.unref) operation.deadlineTimer.unref();
+    }
     operation.deadlineSignal.addEventListener('abort', operation.onDeadline, { once: true });
     let adapterCompletion = createAdapterCompletion();
     operation.done = this.#execute(operation, adapterCompletion.promise);
@@ -1430,6 +1462,10 @@ class PresentationExecutionController {
       }
     } finally {
       operation.deadlineSignal.removeEventListener('abort', operation.onDeadline);
+      if (operation.deadlineTimer) {
+        clearTimeout(operation.deadlineTimer);
+        operation.deadlineTimer = null;
+      }
       if (this.#active.get(operation.scheduleCell.cellId) === operation) {
         this.#active.delete(operation.scheduleCell.cellId);
       }

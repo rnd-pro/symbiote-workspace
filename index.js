@@ -339,6 +339,7 @@ export {
   validatePresentationJourney,
   validatePortableReadinessReceipt,
 } from './runtime/index.js';
+export { ENSURE_STATUS, createEnsureController } from './runtime/index.js';
 export * from './runtime/presentation/semantic-skeleton.js';
 export * from './runtime/presentation/presentation-project.js';
 export {

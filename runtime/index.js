@@ -10,6 +10,7 @@ export {
   createPresentationAuthoringFileAuthority,
   createPresentationAuthoringFileHost,
 } from './presentation/file-authoring.js';
+export { ENSURE_STATUS, createEnsureController } from './presentation/ensure.js';
 export {
   REBASED_OVER_CONCURRENT_EDIT,
   WorkspaceState,
