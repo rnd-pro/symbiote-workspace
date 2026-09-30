@@ -24,6 +24,8 @@ export {
   validatePlugin,
 } from './plugin-registry.js';
 
+export { createConnectionManager } from './connection-manager.js';
+
 export {
   collectPluginModuleCapabilities,
   listPluginModuleCapabilities,

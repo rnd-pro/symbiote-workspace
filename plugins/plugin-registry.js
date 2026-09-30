@@ -26,13 +26,25 @@ import { validatePluginDefinition } from './plugin-schema.js';
 let plugins = new Map();
 
 /**
+ * In-flight activations, keyed by plugin name. The status guard below is checked
+ * before `activate()` is awaited, so without this memo two concurrent callers
+ * both pass the guard and the hook runs twice.
+ * @type {Map<string, Promise<any>>}
+ */
+let activations = new Map();
+
+/**
  * Register a plugin in the registry.
  * Validates the plugin definition before registration.
- * If a plugin with the same name is already registered, it will be replaced
- * (previous plugin's deactivate() is NOT called — use unregisterPlugin first).
+ * If a plugin with the same name is already registered, it is replaced and the
+ * previous plugin's deactivate() is invoked. Because this function is
+ * synchronous while deactivate() is not, the release is returned as a promise
+ * for the caller to await; it is never fired and forgotten, which would leak
+ * whatever the replaced plugin still holds.
  *
  * @param {import('./plugin-schema.js').PluginDefinition} plugin
- * @returns {{ ok: boolean, errors?: Array<{ path: string, message: string }> }}
+ * @returns {{ ok: boolean, errors?: Array<{ path: string, message: string }>,
+ *            replaced?: boolean, released?: Promise<void> | null }}
  */
 export function registerPlugin(plugin) {
   let validation = validatePluginDefinition(plugin);
@@ -40,13 +52,29 @@ export function registerPlugin(plugin) {
     return { ok: false, errors: validation.errors };
   }
 
+  let previous = plugins.get(plugin.name);
   plugins.set(plugin.name, {
     definition: plugin,
     status: 'pending',
     registeredAt: Date.now(),
   });
 
-  return { ok: true };
+  if (!previous) {
+    return { ok: true, replaced: false, released: null };
+  }
+
+  let release = null;
+  if (previous.status === 'active' && typeof previous.definition.deactivate === 'function') {
+    release = (async () => {
+      try {
+        await previous.definition.deactivate();
+      } catch (err) {
+        console.warn(`[symbiote-workspace] Replaced plugin "${plugin.name}" deactivate error: ${err.message}`);
+      }
+    })();
+  }
+
+  return { ok: true, replaced: true, released: release };
 }
 
 /**
@@ -67,17 +95,27 @@ export async function activatePlugin(name, context = {}) {
     return { ok: true };
   }
 
-  try {
-    if (typeof entry.definition.activate === 'function') {
-      await entry.definition.activate(context);
+  let inFlight = activations.get(name);
+  if (inFlight) return inFlight;
+
+  let attempt = (async () => {
+    try {
+      if (typeof entry.definition.activate === 'function') {
+        await entry.definition.activate(context);
+      }
+      entry.status = 'active';
+      return { ok: true };
+    } catch (err) {
+      entry.status = 'error';
+      entry.error = err.message;
+      return { ok: false, error: err.message };
+    } finally {
+      activations.delete(name);
     }
-    entry.status = 'active';
-    return { ok: true };
-  } catch (err) {
-    entry.status = 'error';
-    entry.error = err.message;
-    return { ok: false, error: err.message };
-  }
+  })();
+
+  activations.set(name, attempt);
+  return attempt;
 }
 
 /**
