@@ -17,6 +17,14 @@ requirements, and browser assembly. The package
 gives agents a direct path from user intent to a relaunchable workspace without
 forking a product app, hardcoding a host, or generating one-off UI code first.
 
+#### Entry points
+
+The root entry point provides the selected primary APIs. Specialised APIs are
+available through documented subpaths; **the root is not a union of every export
+in the package.** `symbiote-workspace/runtime` and `symbiote-workspace/browser`
+carry the runtime and browser surfaces, and importing a specialised symbol from
+the root is not a supported import.
+
 #### What a config carries, and what it does not
 
 A configuration carries composition. Everything else depends on connected

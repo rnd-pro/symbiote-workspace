@@ -428,8 +428,6 @@ describe('packed package consumer', () => {
           validateVirtualSequence,
           VIRTUAL_SEQUENCE_SCHEMA_VERSION,
           MEDIA_EVIDENCE_MANIFEST_SCHEMA_VERSION,
-          createPresentationTimelineEditorModel as createRootTimelineEditorModel,
-          bindPresentationNleTimelineEditor as bindRootTimelineEditor,
         } from 'symbiote-workspace';
         import {
           projectVirtualSequenceAt,
@@ -469,8 +467,6 @@ describe('packed package consumer', () => {
           if (typeof fn !== 'function') throw new Error('virtual sequence export missing');
         }
         for (let fn of [
-          createRootTimelineEditorModel,
-          bindRootTimelineEditor,
           createRuntimeTimelineEditorModel,
           bindRuntimeTimelineEditor,
           createBrowserTimelineEditorModel,
