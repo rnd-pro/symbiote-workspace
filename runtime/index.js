@@ -384,3 +384,11 @@ export * from './presentation/script-lineage.js';
 export * from './presentation/inspection.js';
 
 export { createCompositionRegistry, RESOLUTION_STATUSES } from './composition-registry.js';
+
+export {
+  UPDATE_STATUSES,
+  UPDATE_STRATEGIES,
+  applyCompositionUpdate,
+  planCompositionUpdate,
+  planSlotMigration,
+} from './composition-update.js';

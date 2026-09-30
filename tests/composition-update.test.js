@@ -1,0 +1,213 @@
+import { describe, it } from 'node:test';
+import assert from 'node:assert/strict';
+
+import {
+  UPDATE_STATUSES,
+  applyCompositionUpdate,
+  planCompositionUpdate,
+  planSlotMigration,
+} from '../runtime/composition-update.js';
+
+// Update without losing state. The order of operations is the guarantee: the old
+// mount stays live until a new one has been prepared and restored, so any
+// failure leaves the previous composition working rather than replacing it with
+// nothing.
+
+function descriptor(overrides = {}) {
+  return {
+    id: 'documents.viewer',
+    state: { slots: [{ id: 'body', kind: 'persistent' }, { id: 'scroll', kind: 'view-local' }] },
+    dependencies: { required: ['storage.collection.default'], optional: [] },
+    restoration: {
+      version: 1,
+      restore: async (saved) => ({ ...saved, restored: true }),
+    },
+    updates: { strategy: 'checkpoint' },
+    ...overrides,
+  };
+}
+
+describe('slot migration plan', () => {
+  it('preserves, migrates, re-acquires, and reports what disappeared', () => {
+    let plan = planSlotMigration(
+      [{ id: 'body', kind: 'persistent' }, { id: 'scroll', kind: 'view-local' }, { id: 'gone', kind: 'session' }],
+      [{ id: 'body', kind: 'persistent' }, { id: 'scroll', kind: 'persistent' }, { id: 'new', kind: 'cache' }],
+    );
+
+    assert.deepEqual(plan.preserve, ['body']);
+    assert.deepEqual(plan.migrate, [{ id: 'scroll', from: 'view-local', to: 'persistent' }]);
+    assert.deepEqual(plan.reacquire, ['new']);
+    assert.deepEqual(plan.dropped, ['gone'], 'a disappearing slot must be reported, not silently lost');
+  });
+});
+
+describe('update plan', () => {
+  it('plans a clean update when nothing is dirty', () => {
+    let plan = planCompositionUpdate(descriptor(), descriptor(), {
+      available: ['storage.collection.default'],
+    });
+    assert.equal(plan.status, 'ready');
+    assert.equal(plan.requiresMigration, false);
+  });
+
+  it('blocks rather than discarding dirty work it cannot checkpoint', () => {
+    let plan = planCompositionUpdate(descriptor(), descriptor(), {
+      available: ['storage.collection.default'],
+      dirtySlots: ['body'],
+      checkpointableSlots: [],
+    });
+
+    assert.equal(plan.status, UPDATE_STATUSES.blocked);
+    assert.equal(plan.reason, 'unsavable-dirty-state');
+    assert.deepEqual(plan.unsavable, ['body']);
+    assert.equal(plan.strategy, 'deferred');
+  });
+
+  it('carries dirty work that can be checkpointed', () => {
+    let plan = planCompositionUpdate(descriptor(), descriptor(), {
+      available: ['storage.collection.default'],
+      dirtySlots: ['body'],
+      checkpointableSlots: ['body'],
+    });
+    assert.equal(plan.status, 'ready', 'checkpointable dirty state is safe to carry across');
+  });
+
+  it('blocks a switch that would destroy ephemeral dirty state even if checkpointable', () => {
+    let previous = descriptor({ state: { slots: [{ id: 'scratch', kind: 'ephemeral' }] } });
+    let next = descriptor({ state: { slots: [{ id: 'scratch', kind: 'ephemeral' }] } });
+    let plan = planCompositionUpdate(previous, next, {
+      available: ['storage.collection.default'],
+      dirtySlots: ['scratch'],
+      checkpointableSlots: ['scratch'],
+    });
+    assert.equal(plan.status, UPDATE_STATUSES.blocked, 'ephemeral state cannot be carried by definition');
+  });
+
+  it('blocks on a missing required dependency instead of half-updating', () => {
+    let plan = planCompositionUpdate(descriptor(), descriptor(), { available: [] });
+    assert.equal(plan.status, UPDATE_STATUSES.blocked);
+    assert.equal(plan.reason, 'missing-dependency');
+    assert.equal(plan.retryable, true);
+  });
+
+  it('treats a different composition as not an update', () => {
+    let plan = planCompositionUpdate(
+      descriptor(),
+      descriptor({ id: 'other.thing' }),
+      { available: ['storage.collection.default'] },
+    );
+    assert.equal(plan.status, UPDATE_STATUSES.blocked);
+    assert.equal(plan.reason, 'different-composition');
+  });
+
+  it('blocks an unauthorised restoration-version change', () => {
+    let plan = planCompositionUpdate(
+      descriptor({ restoration: { version: 1, restore: async () => ({}) } }),
+      descriptor({ restoration: { version: 2, restore: async () => ({}) } }),
+      { available: ['storage.collection.default'] },
+    );
+    assert.equal(plan.status, UPDATE_STATUSES.blocked);
+    assert.equal(plan.reason, 'restoration-version-changed');
+  });
+});
+
+describe('applying an update', () => {
+  it('prepares, restores, switches, then releases — in that order', async () => {
+    let order = [];
+    let plan = planCompositionUpdate(descriptor(), descriptor(), {
+      available: ['storage.collection.default'],
+    });
+
+    let result = await applyCompositionUpdate({
+      plan,
+      previous: descriptor(),
+      next: descriptor(),
+      prepare: async (context) => {
+        order.push('prepare');
+        assert.equal(context.replayEffects, false, 'preparation must not replay external effects');
+        return { session: { body: 'carried' } };
+      },
+      switchMount: async () => order.push('switch'),
+      release: async () => order.push('release'),
+    });
+
+    assert.equal(result.status, UPDATE_STATUSES.applied);
+    assert.deepEqual(order, ['prepare', 'switch', 'release']);
+  });
+
+  it('leaves the previous mount live when preparation fails', async () => {
+    let released = false;
+    let plan = planCompositionUpdate(descriptor(), descriptor(), {
+      available: ['storage.collection.default'],
+    });
+
+    let result = await applyCompositionUpdate({
+      plan,
+      previous: descriptor(),
+      next: descriptor(),
+      prepare: async () => { throw new Error('module incompatible'); },
+      switchMount: async () => { throw new Error('must not switch'); },
+      release: async () => { released = true; },
+    });
+
+    assert.equal(result.status, UPDATE_STATUSES.failed);
+    assert.equal(result.stage, 'prepare');
+    assert.equal(result.previousStillMounted, true);
+    assert.equal(released, false, 'the working mount must not be released on failure');
+  });
+
+  it('leaves the previous mount live when restore fails after a successful prepare', async () => {
+    let released = false;
+    let switched = false;
+    let plan = planCompositionUpdate(descriptor(), descriptor(), {
+      available: ['storage.collection.default'],
+    });
+
+    let result = await applyCompositionUpdate({
+      plan,
+      previous: descriptor(),
+      next: descriptor({
+        restoration: { version: 1, restore: async () => { throw new Error('state shape changed'); } },
+      }),
+      prepare: async () => ({ session: {} }),
+      switchMount: async () => { switched = true; },
+      release: async () => { released = true; },
+    });
+
+    assert.equal(result.status, UPDATE_STATUSES.failed);
+    assert.equal(result.stage, 'restore');
+    assert.equal(switched, false);
+    assert.equal(released, false, 'release happens last, and only after a successful switch');
+  });
+
+  it('reports a release failure without undoing a successful switch', async () => {
+    let plan = planCompositionUpdate(descriptor(), descriptor(), {
+      available: ['storage.collection.default'],
+    });
+    let result = await applyCompositionUpdate({
+      plan,
+      previous: descriptor(),
+      next: descriptor(),
+      prepare: async () => ({ session: {} }),
+      switchMount: async () => {},
+      release: async () => { throw new Error('teardown incomplete'); },
+    });
+
+    assert.equal(result.status, UPDATE_STATUSES.applied, 'the new composition is live');
+    assert.equal(result.releaseFailure, 'teardown incomplete', 'the leak is reported, not hidden');
+  });
+
+  it('does nothing at all without a ready plan', async () => {
+    let prepared = false;
+    let plan = planCompositionUpdate(descriptor(), descriptor(), { available: [] });
+    let result = await applyCompositionUpdate({
+      plan,
+      previous: descriptor(),
+      next: descriptor(),
+      prepare: async () => { prepared = true; },
+    });
+
+    assert.equal(result.status, UPDATE_STATUSES.blocked);
+    assert.equal(prepared, false, 'a blocked update must not touch the live mount');
+  });
+});
