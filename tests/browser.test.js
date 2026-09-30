@@ -4,9 +4,98 @@ import assert from 'node:assert/strict';
 import {
   applyWorkspaceTheme,
   collectWorkspaceInterfaceContext,
+  listPresentationCompositionCueSlots,
   mountWorkspace,
+  normalizePresentationOutputSpec,
   prepareWorkspacePresentation,
 } from '../browser.js';
+
+function timelineV3(input = {}) {
+  let turns = (input.turns || []).map((turn, index) => {
+    let cues = turn.cues || [];
+    if (turn.cue) {
+      cues.push({
+        kind: 'focus',
+        targetId: turn.cue.targetId,
+        ...(turn.cue.tabId ? { tabId: turn.cue.tabId } : {}),
+        at: { anchor: 'turn-start' },
+        until: { anchor: 'turn-end' },
+        focus: { mode: 'cursor' },
+      });
+    }
+    for (let action of turn.actions || []) {
+      cues.push({
+        kind: 'interaction',
+        targetId: action.target,
+        at: { anchor: 'turn-start' },
+        interaction: {
+          type: /reveal/i.test(action.name || '') ? 'panel-reveal' : 'click',
+          binding: { source: action.source || 'workspace', tool: action.name, input: action.input || {} },
+        },
+      });
+    }
+    return {
+      id: turn.id || `turn-${index + 1}`,
+      persona: turn.persona || 'guide',
+      dialogueAct: turn.dialogueAct || 'explain',
+      ...(turn.addressee ? { addressee: turn.addressee } : {}),
+      ...(turn.replyTo ? { replyTo: turn.replyTo } : {}),
+      text: turn.text,
+      sourceRefs: turn.sourceRefs || [],
+      claims: turn.claims || [],
+      cues,
+    };
+  });
+  let personaIds = [...new Set(turns.map((turn) => turn.persona))];
+  return {
+    contractVersion: 'presentation-timeline-v3',
+    title: input.title || 'Presentation',
+    locale: input.locale || 'en-US',
+    profile: input.profile || 'task-specific',
+    personas: Object.fromEntries(personaIds.map((id) => [id, { name: id, role: id === 'guide' ? 'lesson guide' : 'domain operator', locale: input.locale || 'en-US' }])),
+    grounding: input.grounding || { sources: [] },
+    turns,
+  };
+}
+
+async function compositionFixture({ timeline, output, targetSnapshot }) {
+  let viewport = output.presentationViewport;
+  let slots = listPresentationCompositionCueSlots(timeline);
+  return {
+    measuredViewport: { width: viewport.width, height: viewport.height, visualWidth: viewport.width, visualHeight: viewport.height, dpr: 1 },
+    baselineStructuralHash: targetSnapshot.identityHash,
+    restoredStructuralHash: targetSnapshot.identityHash,
+    simulationFrozen: true,
+    steps: slots.map((slot, index) => {
+      let y = 100 + index * 80;
+      return {
+        turnId: slot.turnId,
+        slotIndex: slot.slotIndex,
+        cueId: slot.cueId,
+        cueIndex: slot.cueIndex,
+        cueKind: slot.kind,
+        targetId: slot.targetId,
+        stateActions: [],
+        scroll: [],
+        measurement: {
+          targetRect: { x: 80, y: y - 20, width: 600, height: 300 },
+          focusRect: { x: 100, y, width: 160, height: 40 },
+          visibleRect: { x: 100, y, width: 160, height: 40 },
+          criticalAttentionRect: { x: 100, y, width: 160, height: 40 },
+          visibleRatio: 1,
+          visible: true,
+          reachable: true,
+          hasText: true,
+          fontSizePx: 14,
+          textTruncated: false,
+          occluders: [],
+          pointerTransparentOccluders: [],
+        },
+        annotation: { placement: 'right', rect: { x: 280, y, width: 120, height: 40 } },
+      };
+    }),
+  };
+}
 
 it('prepares a presentation with one bounded WebMCP deepening round', async () => {
   let revealed = false;
@@ -32,6 +121,7 @@ it('prepares a presentation with one bounded WebMCP deepening round', async () =
     request: { prompt: 'Explain the order detail', profile: 'data-grounded' },
     async rehydrate() {},
     async waitForSettlement() {},
+    inspectComposition: compositionFixture,
     collectContext,
     async executeSafeAction(action) {
       executed.push(action.tool);
@@ -48,8 +138,8 @@ it('prepares a presentation with one bounded WebMCP deepening round', async () =
       let source = snapshot.dataSources[0];
       return {
         status: 'ready',
-        basis: { targetSnapshotHash: request.targetSnapshotHash, generation: request.generation },
-        timeline: {
+        basis: { requestHash: request.hash, targetSnapshotHash: request.targetSnapshotHash, outputSpecHash: request.outputSpecHash, generation: request.generation },
+        timeline: timelineV3({
           title: 'Order detail',
           grounding: { sources: snapshot.dataSources },
           turns: [{
@@ -60,7 +150,7 @@ it('prepares a presentation with one bounded WebMCP deepening round', async () =
             cue: { targetId: 'panel:orders:detail', tabId: 'orders' },
             sourceRefs: [{ sourceId: source.id, targetId: 'panel:orders:detail', hash: source.contentHash }],
           }],
-        },
+        }),
       };
     },
     reviewIntent: { requireGrounding: true },
@@ -75,6 +165,199 @@ it('prepares a presentation with one bounded WebMCP deepening round', async () =
   assert.ok(events.includes('tour.deepening.action.done'));
 });
 
+it('prepares and snapshots against the inset page viewport while retaining final output geometry', async () => {
+  let rehydrateInput;
+  let settlementInput;
+  let output = normalizePresentationOutputSpec({ width: 1280, height: 720, fps: 30, frameInsets: { top: 87 } });
+  let result = await prepareWorkspacePresentation({
+    output,
+    source: { surface: 'orders', tabId: 'orders' },
+    request: { prompt: 'Explain the queue', profile: 'brief' },
+    async rehydrate(input) { rehydrateInput = input; },
+    async waitForSettlement(input) { settlementInput = input; },
+    async executeSafeAction() {},
+    collectContext() {
+      return { targets: [{ address: 'panel:orders:queue', tabId: 'orders', visible: true }] };
+    },
+    async plan(request) {
+      return {
+        status: 'ready',
+        basis: { requestHash: request.hash, targetSnapshotHash: request.targetSnapshotHash, outputSpecHash: request.outputSpecHash, generation: request.generation },
+        timeline: timelineV3({
+          turns: [{
+            id: 'queue',
+            persona: 'guide',
+            dialogueAct: 'explain',
+            text: 'The visible queue contains the current work.',
+            cue: { targetId: 'panel:orders:queue', tabId: 'orders' },
+          }],
+        }),
+      };
+    },
+    inspectComposition: compositionFixture,
+  });
+
+  assert.deepEqual(rehydrateInput.viewport, { x: 0, y: 87, width: 1280, height: 633, fps: 30, dpr: 1, orientation: 'horizontal' });
+  assert.deepEqual(settlementInput.viewport, rehydrateInput.viewport);
+  assert.deepEqual(result.targetSnapshot.viewport, { width: 1280, height: 633, fps: 30, orientation: 'horizontal', aspectRatio: '1280:633' });
+  assert.equal(result.output.width, 1280);
+  assert.equal(result.output.height, 720);
+});
+
+function groundedDeepeningOptions(overrides = {}) {
+  let revealed = false;
+  let ordersId = 'panel:orders:list';
+  let detailsId = 'panel:orders:detail';
+  let collectContext = () => {
+    let targets = [
+      { address: ordersId, id: ordersId, title: 'Orders', visible: true, rendered: true },
+      {
+        address: detailsId,
+        id: detailsId,
+        title: 'Details',
+        visible: revealed,
+        rendered: revealed,
+        webmcpTools: [{
+          name: 'orders.reveal-detail',
+          description: 'Reveal order details',
+          inputSchema: { type: 'object', additionalProperties: false },
+          annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+        }],
+      },
+    ];
+    let facts = [{ id: 'status', kind: 'enum', label: 'status', value: 'queued', evidenceRefs: ['e-status'], targetRefs: [ordersId] }];
+    let evidence = [{ id: 'e-status', source: 'fixture', path: 'order.status', value: 'queued', targetRefs: [ordersId] }];
+    if (revealed) {
+      facts.push({ id: 'detail', kind: 'enum', label: 'detail', value: 'approved', evidenceRefs: ['e-detail'], targetRefs: [detailsId] });
+      evidence.push({ id: 'e-detail', source: 'fixture', path: 'order.detail', value: 'approved', targetRefs: [detailsId] });
+    }
+    return {
+      targets,
+      facts,
+      evidence,
+      relations: [{ id: 'order-detail', kind: 'affects', from: ordersId, to: detailsId }],
+      dataContext: { liveData: { revealed } },
+    };
+  };
+  let calls = 0;
+  return {
+    viewport: { width: 1080, height: 1920, fps: 30 },
+    source: { surface: 'orders', tabId: 'orders' },
+    lesson: {
+      type: 'operational-task',
+      title: 'Approve an order',
+      objective: 'Explain the approval task',
+      locale: 'en-US',
+      requiredFactIds: ['status', 'detail'],
+      requiredTargetIds: [ordersId, detailsId],
+    },
+    request: { prompt: 'Explain the approval task', profile: 'task-specific' },
+    async rehydrate() {},
+    async waitForSettlement() {},
+    inspectComposition: compositionFixture,
+    collectContext,
+    async executeSafeAction() {
+      revealed = true;
+      return { content: [{ type: 'text', text: 'Detail revealed' }] };
+    },
+    async plan(request) {
+      calls += 1;
+      if (calls === 1) {
+        return {
+          status: 'needs-context',
+          requestedActions: [{
+            source: 'webmcp',
+            tool: 'orders.reveal-detail',
+            target: detailsId,
+            input: {},
+            requestedGaps: ['detail'],
+          }],
+        };
+      }
+      return {
+        status: 'ready',
+        basis: {
+          requestHash: request.hash,
+          targetSnapshotHash: request.targetSnapshotHash,
+          lessonContextHash: request.lessonContextHash,
+          outputSpecHash: request.outputSpecHash,
+          generation: request.generation,
+        },
+        timeline: timelineV3({
+          title: 'Approve an order',
+          grounding: {
+            sources: [
+              { id: 'e-status', kind: 'fixture', path: 'order.status', targetId: ordersId },
+              { id: 'e-detail', kind: 'fixture', path: 'order.detail', targetId: detailsId },
+            ],
+          },
+          turns: [
+            {
+              id: 'status',
+              persona: 'guide',
+              dialogueAct: 'explain',
+              text: 'Orders status queued',
+              cue: { targetId: ordersId },
+              sourceRefs: [{ sourceId: 'e-status', targetId: ordersId }],
+              claims: [{ id: 'c-status', kind: 'state', text: 'Orders status queued', factRefs: ['status'], evidenceRefs: ['e-status'], targetRefs: [ordersId] }],
+              actions: [{ source: 'webmcp', name: 'orders.reveal-detail', target: detailsId, input: {} }],
+            },
+            {
+              id: 'outcome',
+              persona: 'guide',
+              dialogueAct: 'explain',
+              text: 'Details outcome approved',
+              cue: { targetId: detailsId },
+              sourceRefs: [{ sourceId: 'e-detail', targetId: detailsId }],
+              claims: [{ id: 'c-detail', kind: 'outcome', text: 'Details outcome approved', factRefs: ['detail'], evidenceRefs: ['e-detail'], targetRefs: [detailsId] }],
+            },
+          ],
+        }),
+      };
+    },
+    ...overrides,
+  };
+}
+
+it('binds planning to a full lesson packet and records per-action deepening evidence', async () => {
+  let result = await prepareWorkspacePresentation(groundedDeepeningOptions());
+  assert.equal(result.status, 'ready');
+  assert.equal(result.lessonContext.lesson.type, 'operational-task');
+  assert.equal(result.lessonContext.deepening.actions.length, 1);
+  assert.deepEqual(result.lessonContext.deepening.actions[0].satisfiedGaps, ['detail']);
+  assert.ok(result.lessonContext.deepening.actions[0].changedRefs.includes('facts:detail'));
+  assert.equal(result.review.verdict, 'accept');
+});
+
+it('rejects invalid or irrelevant grounded deepening before final planning', async () => {
+  let invalid = groundedDeepeningOptions();
+  let originalPlan = invalid.plan;
+  invalid.plan = async (...args) => {
+    let result = await originalPlan(...args);
+    if (result.status === 'needs-context') result.requestedActions[0].input = { unexpected: true };
+    return result;
+  };
+  await assert.rejects(prepareWorkspacePresentation(invalid), { code: 'DEEPENING_INPUT_INVALID' });
+
+  let irrelevant = groundedDeepeningOptions();
+  let irrelevantPlan = irrelevant.plan;
+  irrelevant.plan = async (...args) => {
+    let result = await irrelevantPlan(...args);
+    if (result.status === 'needs-context') result.requestedActions[0].requestedGaps = ['missing-other-fact'];
+    return result;
+  };
+  await assert.rejects(prepareWorkspacePresentation(irrelevant), { code: 'DEEPENING_IRRELEVANT_CHANGE' });
+
+  let partial = groundedDeepeningOptions();
+  let partialPlan = partial.plan;
+  partial.plan = async (...args) => {
+    let result = await partialPlan(...args);
+    if (result.status === 'needs-context') result.requestedActions[0].requestedGaps = ['e'];
+    return result;
+  };
+  await assert.rejects(prepareWorkspacePresentation(partial), { code: 'DEEPENING_IRRELEVANT_CHANGE' });
+});
+
 it('allows one review-guided repair on the same target snapshot', async () => {
   let planCalls = 0;
   let requests = [];
@@ -85,6 +368,7 @@ it('allows one review-guided repair on the same target snapshot', async () => {
     request: { prompt: 'Explain the API graph', profile: 'data-grounded' },
     async rehydrate() {},
     async waitForSettlement() {},
+    inspectComposition: compositionFixture,
     async executeSafeAction() {},
     collectContext() {
       return {
@@ -98,8 +382,8 @@ it('allows one review-guided repair on the same target snapshot', async () => {
       let source = snapshot.dataSources[0];
       return {
         status: 'ready',
-        basis: { targetSnapshotHash: request.targetSnapshotHash, generation: request.generation },
-        timeline: {
+        basis: { requestHash: request.hash, targetSnapshotHash: request.targetSnapshotHash, outputSpecHash: request.outputSpecHash, generation: request.generation },
+        timeline: timelineV3({
           profile: 'data-grounded',
           grounding: { sources: snapshot.dataSources },
           turns: [{
@@ -110,7 +394,7 @@ it('allows one review-guided repair on the same target snapshot', async () => {
             cue: { targetId: 'panel:api:graph', tabId: 'tab-1' },
             sourceRefs: [{ sourceId: source.id, targetId: 'panel:api:graph', hash: source.contentHash }],
           }],
-        },
+        }),
       };
     },
     reviewIntent: { requireGrounding: true },
@@ -126,6 +410,81 @@ it('allows one review-guided repair on the same target snapshot', async () => {
   assert.ok(events.includes('tour.replan.review-repair.done'));
 });
 
+it('reruns composition after one planner repair on the same output', async () => {
+  let planCalls = 0;
+  let inspectCalls = 0;
+  let events = [];
+  let result = await prepareWorkspacePresentation({
+    viewport: { width: 1080, height: 1080, fps: 30 },
+    source: { surface: 'orders', tabId: 'orders' },
+    request: { prompt: 'Explain the queue', profile: 'brief' },
+    async rehydrate() {},
+    async waitForSettlement() {},
+    async executeSafeAction() {},
+    collectContext() {
+      return { targets: [{ address: 'panel:orders:queue', tabId: 'orders', visible: true }] };
+    },
+    async plan(request) {
+      planCalls += 1;
+      return {
+        status: 'ready',
+        basis: { requestHash: request.hash, targetSnapshotHash: request.targetSnapshotHash, outputSpecHash: request.outputSpecHash, generation: request.generation },
+        timeline: timelineV3({
+          turns: [{
+            id: 'queue',
+            persona: 'guide',
+            dialogueAct: 'explain',
+            text: planCalls === 1 ? 'Explain the queue.' : 'Explain the visible queue.',
+            cue: { targetId: 'panel:orders:queue', tabId: 'orders' },
+          }],
+        }),
+      };
+    },
+    async inspectComposition(input) {
+      inspectCalls += 1;
+      let fixture = await compositionFixture(input);
+      if (inspectCalls === 1) fixture.steps[0].measurement.visible = false;
+      return fixture;
+    },
+    reviewRepairAttempts: 1,
+    onEvent(event) { events.push(event.type); },
+  });
+
+  assert.equal(planCalls, 2);
+  assert.equal(inspectCalls, 2);
+  assert.equal(result.output.orientation, 'square');
+  assert.equal(result.compositionAudit.verdict, 'accept');
+  assert.ok(events.includes('tour.composition.review-repair.done'));
+});
+
+it('allows a composition repair to revise claims without changing lesson requirements', async () => {
+  let options = groundedDeepeningOptions();
+  let originalPlan = options.plan;
+  let readyCalls = 0;
+  options.reviewRepairAttempts = 1;
+  options.plan = async (...args) => {
+    let candidate = await originalPlan(...args);
+    if (candidate.status !== 'ready') return candidate;
+    readyCalls += 1;
+    if (readyCalls === 2) candidate.timeline.turns[0].claims[0].kind = 'procedure';
+    return candidate;
+  };
+  let inspectCalls = 0;
+  options.inspectComposition = async (input) => {
+    inspectCalls += 1;
+    let fixture = await compositionFixture(input);
+    if (inspectCalls === 1) fixture.steps[0].measurement.visible = false;
+    return fixture;
+  };
+
+  let result = await prepareWorkspacePresentation(options);
+
+  assert.equal(readyCalls, 2);
+  assert.equal(inspectCalls, 2);
+  assert.equal(result.timeline.turns[0].claims[0].kind, 'procedure');
+  assert.equal(result.compositionAudit.verdict, 'accept');
+});
+
 function deepeningFailureOptions({ plan, executeSafeAction = async () => {} } = {}) {
   return {
     viewport: { width: 1080, height: 1920, fps: 30 },
@@ -133,6 +492,7 @@ function deepeningFailureOptions({ plan, executeSafeAction = async () => {} } = 
     request: { prompt: 'Explain the order detail', profile: 'data-grounded' },
     async rehydrate() {},
     async waitForSettlement() {},
+    inspectComposition: compositionFixture,
     executeSafeAction,
     collectContext() {
       return {
@@ -200,8 +560,8 @@ it('does not permit a review repair to request another deepening round', async (
       let source = snapshot.dataSources[0];
       return {
         status: 'ready',
-        basis: { targetSnapshotHash: request.targetSnapshotHash, generation: request.generation },
-        timeline: {
+        basis: { requestHash: request.hash, targetSnapshotHash: request.targetSnapshotHash, outputSpecHash: request.outputSpecHash, generation: request.generation },
+        timeline: timelineV3({
           grounding: { sources: snapshot.dataSources },
           turns: [{
             id: 'unsafe-turn',
@@ -211,7 +571,7 @@ it('does not permit a review repair to request another deepening round', async (
             cue: { targetId: 'panel:orders:detail', tabId: 'orders' },
             sourceRefs: [{ sourceId: source.id, targetId: 'panel:orders:detail', hash: source.contentHash }],
           }],
-        },
+        }),
       };
     },
   }), { code: 'DEEPENING_BUDGET_EXHAUSTED' });
@@ -736,20 +1096,21 @@ describe('mountWorkspace', () => {
       prompt: 'сделай полную презентацию интерфейса',
       revision: 1,
     });
-    assert.equal(generated.summary.profile, 'full');
-    assert.ok(generated.summary.targetCoverage.includes('panel:detail:detail-node'));
+    assert.equal(generated.metadata.presentationSummary.profile, 'full');
+    assert.ok(generated.metadata.presentationSummary.targetCoverage.includes('panel:detail:detail-node'));
 
     let callbackOrder = [];
-    let events = await mounted.playPresentationTimeline({
-      id: 'detail-tour',
-      segments: [{
+    let events = await mounted.playPresentationTimeline(timelineV3({
+      title: 'Detail tour',
+      turns: [{
         id: 'show-detail',
-        target: 'panel:detail:detail-node',
-        narration: 'This is the detail panel.',
-        cues: [{ kind: 'highlight', target: 'panel:detail:detail-node' }],
+        persona: 'guide',
+        dialogueAct: 'explain',
+        text: 'This is the detail panel.',
+        cue: { targetId: 'panel:detail:detail-node' },
         actions: [{ source: 'webmcp', name: 'demo--detail_focus', target: 'panel:detail:detail-node' }],
       }],
-    }, {
+    }), {
       onFocus: async () => {
         callbackOrder.push('focus');
         assert.equal(mounted.router.getState('state:route.view'), 'detail');
@@ -757,7 +1118,7 @@ describe('mountWorkspace', () => {
       onCue: async () => callbackOrder.push('cue'),
       executeAction: async (action) => {
         callbackOrder.push(`action:${action.source}`);
-        assert.equal(action.name, 'demo--detail_focus');
+        assert.equal(action.tool, 'demo--detail_focus');
       },
       onNarration: async () => {
         callbackOrder.push('narration');
@@ -765,15 +1126,15 @@ describe('mountWorkspace', () => {
       },
     });
 
-    assert.deepEqual(events.map((event) => event.type), ['reveal', 'focus', 'cue', 'action', 'narration']);
-    assert.deepEqual(callbackOrder, ['focus', 'cue', 'action:webmcp', 'narration']);
+    assert.deepEqual(events.map((event) => event.type), ['reveal', 'focus', 'interaction', 'narration']);
+    assert.deepEqual(callbackOrder, ['focus', 'cue', 'action:webmcp', 'cue', 'narration']);
     assert.equal(mounted.router.getState('state:route.view'), 'detail');
 
     await assert.rejects(
       () => mounted.playPresentationTimeline({
-        segments: [{ id: 'bad-action', actions: [{ source: 'dom', name: 'click' }] }],
+        ...timelineV3({ turns: [{ id: 'bad-action', persona: 'guide', text: 'Bad action.', actions: [{ source: 'dom', name: 'click', target: 'panel:detail:detail-node' }] }] }),
       }, { executeAction: async () => {} }),
-      /Unsupported presentation action source/,
+      /unsupported value "dom"/,
     );
     mounted.destroy();
   });

@@ -23,6 +23,7 @@ symbiote-workspace is the construction and orchestration package between Symbiot
 - [`symbiote-workspace`](https://github.com/rnd-pro/symbiote-workspace/blob/main/index.js): Node-safe schema, loader, constructor, catalog, sharing, validation, plugins, runtime, and handlers
 - [`symbiote-workspace/browser`](https://github.com/rnd-pro/symbiote-workspace/blob/main/browser.js): browser mounting, theme application, mounted updates, and browser-safe isomorphic APIs
 - [`symbiote-workspace/runtime`](https://github.com/rnd-pro/symbiote-workspace/tree/main/runtime): unified dispatch registry, session state, and tool metadata
+- [`runtime/media-sequence.js`](https://github.com/rnd-pro/symbiote-workspace/blob/main/runtime/media-sequence.js): portable `workspace-virtual-sequence-v1` contract — required `executionTier` (`sequential-realtime`/`replayable-segment`/`checkpointed-deterministic`), encoded master segments/proxies/scrub/sprites, keyframe/timestamp seek indexes, audio/waveform refs, invalidatable layers, deterministic projection, and range-aware invalidation, with a canonical content hash proof-linked into media-evidence v3 through a `workspace-media-artifact-graph-v2` `virtual-sequence` node
 - [`symbiote-workspace/catalog`](https://github.com/rnd-pro/symbiote-workspace/tree/main/catalog): module-id catalog search, summary/contract/full describe, deterministic fingerprinting, registry sources, and inline creation proof
 - [`symbiote-workspace/server`](https://github.com/rnd-pro/symbiote-workspace/tree/main/server): workspace HTTP server, plugin loader, ingress, triggers, jobs, and data-change broadcast helpers
 - [`symbiote-workspace/ssr`](https://github.com/rnd-pro/symbiote-workspace/tree/main/ssr): optional build-time workspace shell rendering
@@ -46,6 +47,7 @@ symbiote-workspace is the construction and orchestration package between Symbiot
 - Use `mountWorkspace().updateConfig()` or `mountWorkspace().applyPatch()` for no-reload browser updates instead of replacing the app shell.
 - Use `catalog_search`, `catalog_describe`, and `catalog_proof` before inline free creation.
 - Use `module_workflow_kanban` for portable workflow-board panels backed by provider-owned Symbiote UI board components.
+- Use the read-only media tools `media_sequence_validate`, `media_sequence_project`, `media_sequence_invalidate`, and `media_evidence_validate` to validate a virtual sequence and its derived identity, project it at a media tick, run range-aware layer invalidation, and validate a media evidence manifest.
 
 ## Release and package proof
 

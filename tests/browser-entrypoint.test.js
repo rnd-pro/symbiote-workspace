@@ -56,16 +56,43 @@ describe('browser entrypoint', () => {
     assert.equal(typeof browser.applyWorkspaceTheme, 'function');
     assert.equal(typeof browser.collectWorkspaceInterfaceContext, 'function');
     assert.equal(typeof browser.createWorkspacePresentationTimeline, 'function');
+    assert.equal(
+      browser.PRESENTATION_EXECUTION_VERSION,
+      'workspace-presentation-execution-v1',
+    );
+    assert.equal(
+      browser.PRESENTATION_EFFECT_ADMISSION_VERSION,
+      'workspace-presentation-effect-admission-v2',
+    );
+    assert.equal(
+      browser.PRESENTATION_EFFECT_RECEIPT_VERSION,
+      'workspace-presentation-effect-receipt-v2',
+    );
+    assert.equal(typeof browser.createPresentationExecutionController, 'function');
+    assert.equal(typeof browser.validatePresentationEffectAdmission, 'function');
+    assert.equal(typeof browser.validatePresentationEffectReceipt, 'function');
     assert.equal(typeof browser.playWorkspacePresentationTimeline, 'function');
   });
 
   it('differs from the root entrypoint only by intentional runtime and DOM APIs', async () => {
     let root = await import('../index.js');
     let browser = await import('../browser.js');
+    assert.equal(
+      browser.PRESENTATION_EFFECT_ADMISSION_VERSION,
+      root.PRESENTATION_EFFECT_ADMISSION_VERSION,
+    );
+    assert.equal(
+      browser.PRESENTATION_EFFECT_RECEIPT_VERSION,
+      root.PRESENTATION_EFFECT_RECEIPT_VERSION,
+    );
     let onlyRoot = Object.keys(root).filter((key) => !(key in browser)).sort();
     let onlyBrowser = Object.keys(browser).filter((key) => !(key in root)).sort();
 
     assert.deepEqual(onlyRoot, [
+      'PRESENTATION_OBSERVED_ALIGNED_SEQUENCE_VERSION',
+      'PRESENTATION_TRANSCRIPT_WORD_ANCHORING_VERSION',
+      'PresentationAuthoringFileError',
+      'PresentationObservedAlignmentError',
       'TOOLS',
       'assertCurrentCatalogProof',
       'broadcastDataChange',
@@ -77,6 +104,9 @@ describe('browser entrypoint', () => {
       'createConfigCatalogSource',
       'createDevCatalogSource',
       'createEngineCatalogSource',
+      'createPresentationAuthoringFileAuthority',
+      'createPresentationAuthoringFileHost',
+      'createPresentationObservedAlignment',
       'createRegistryCatalogSource',
       'createSession',
       'createStaticCatalogSource',
@@ -86,6 +116,7 @@ describe('browser entrypoint', () => {
       'needsConfirm',
       'toolConfirmPolicy',
       'validateCatalogProof',
+      'validatePresentationObservedAlignedSequence',
     ]);
     assert.deepEqual(onlyBrowser, [
       'applyWorkspaceTheme',

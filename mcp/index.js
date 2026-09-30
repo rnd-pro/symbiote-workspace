@@ -13,7 +13,27 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { createSession, dispatch, TOOLS } from '../runtime/index.js';
+import {
+  createPresentationAuthoringFileHost,
+  createSession,
+  dispatch,
+  listPresentationAuthoringToolDescriptors,
+  TOOLS,
+} from '../runtime/index.js';
+
+function commandLineOption(name) {
+  let index = process.argv.indexOf(name);
+  if (index < 0) return null;
+  let value = process.argv[index + 1];
+  return value && !value.startsWith('--') ? value : null;
+}
+
+let presentationProjectFile = commandLineOption('--project');
+let presentationHost = presentationProjectFile
+  ? createPresentationAuthoringFileHost({ projectFile: presentationProjectFile })
+  : null;
+let presentationTools = presentationHost ? listPresentationAuthoringToolDescriptors() : [];
+let presentationToolNames = new Set(presentationTools.map((tool) => tool.name));
 
 let session = createSession({ actor: 'agent-gated', principal: { kind: 'agent', id: 'mcp' } });
 let sessions = new Map();
@@ -133,7 +153,7 @@ async function handleMessage(body) {
     sendResponse({
       jsonrpc: '2.0',
       id,
-      result: { tools: TOOLS.map(publicToolDefinition) },
+      result: { tools: [...TOOLS, ...presentationTools].map(publicToolDefinition) },
     });
     return;
   }
@@ -143,7 +163,9 @@ async function handleMessage(body) {
     let { session_id: sessionId, actor: _ignoredActor, ...args } = params?.arguments || {};
 
     try {
-      let result = await dispatch(toolName, args, sessionFor(sessionId), { actor: 'agent-gated' });
+      let result = presentationHost && presentationToolNames.has(toolName)
+        ? await presentationHost.invoke(toolName, args)
+        : await dispatch(toolName, args, sessionFor(sessionId), { actor: 'agent-gated' });
       let isDispatchError = result?.status === 'error';
       sendResponse({
         jsonrpc: '2.0',

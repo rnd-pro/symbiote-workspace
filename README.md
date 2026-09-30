@@ -62,10 +62,102 @@ mode.
   required to relaunch the workspace.
 - **No-reload browser updates** — mounted workspaces can apply validated config
   updates and patches without replacing the browser runtime.
+- **Portable media evidence** — versioned media evidence manifests bind a
+  content-addressed artifact DAG to render metrics, provenance, quality gates,
+  and a fail-closed publication verdict without storing host paths or secrets.
+  The v3 identity binds an optional virtual sequence into the canonical manifest
+  id, backed by a `workspace-media-artifact-graph-v2` `virtual-sequence` node
+  that a passing publication proof must transitively depend on. See
+  [Media Evidence and Artifact Invalidation](./docs/media-evidence.md).
+- **Portable virtual media sequence** — an indexed playback model with a required
+  `executionTier`, carrying encoded master segments (video codecs only), playback
+  and scrub proxies, sparse sprites, keyframe/timestamp seek indexes,
+  audio/waveform references, and separately-invalidatable
+  `base`/`overlay`/`caption`/`audio` layers over a frame-aligned integer
+  timebase, with deterministic timeline projection, range-aware invalidation, and
+  a canonical content hash proof-linked into the v3 media-evidence identity.
+- **Portable browser appearance** — `workspace-media-render-settings-v3` carries a
+  normalized `browserAppearance` that independently controls browser chrome
+  visibility (`hidden` default), chrome theme (`system`/`light`/`dark`/`tinted`
+  with a required `#RRGGBB` tint only when tinted), and page `pageColorScheme`.
+  Hidden chrome accepts only the `system` theme, invalid combinations fail with
+  actionable errors, and any appearance change invalidates cached frames, the
+  preview sequence, and the final output. Host-native chrome mechanics stay in the
+  product layer.
+- **Presentation viewport geometry** — `workspace-presentation-output-v2` adds
+  neutral final-frame `frameInsets` and derives a positive `presentationViewport`.
+  Content and captions are laid out inside that viewport, while
+  `workspace-presentation-composition-v2` measurement is checked against the
+  presentation viewport and translates page-local focus/annotation rectangles into
+  final-frame coordinates before containment and collision checks.
+- **Immutable Presentation Project v7** — `createPresentationProject({ skeleton,
+  projection })` binds a `workspace-presentation-semantic-skeleton-v7` and
+  `presentation-narration-projection-v7` to one reconstructed timeline and
+  `workspace-presentation-project-v7` hash. This provenance contract is separate
+  from the mutable Authoring Project API and rejects Authoring Project inputs.
+- **Presentation Authoring Project authority** —
+  `workspace-presentation-authoring-project-v2` is the
+  sole mutable authoring aggregate for presentation scripts, layers, and stable
+  cells. Immutable audio assets and editable `audio-clip` cells keep source ranges,
+  timeline placement, and event dependencies in that same Project. The NLE,
+  MCP/CLI tools, and headless playback all derive the same clip graph; there is no
+  player-only segmentation timeline. It rejects runtime selectors, geometry, and receipts; validates dependency
+  graphs and one exclusive presenter collision domain before publication; and
+  applies same-base command batches as one atomic revision. Timeline v3, aligned
+  sequence v1, presenter schedule v2, and NLE are derived projections. Schedule v2
+  records deterministic planned barriers only: runtime consumers must wait for an
+  actual completed settlement receipt before starting dependent attention, and a
+  late or cancelled receipt must not queue work or rewrite Authoring
+  Project/Schedule hashes.
+  NLE frame edits are accepted only against the exact derived projection and map
+  back to semantic anchors plus `leadMs`, never persisted absolute milliseconds.
+  `createPresentationTimelineEditorModel(project, schedule)` projects that exact
+  NLE into the visual `sn-timeline-editor` tracks (audio, captions, actions,
+  effects, and focus/video), preserving Project layer/cell identities and hashes.
+  `bindPresentationNleTimelineEditor()` translates committed visual clip moves
+  back through the same semantic command translator used by CLI/MCP; the host
+  applies the command to its canonical Project authority and rebinds the new
+  revision. The visual editor therefore remains a view/controller over the same
+  Project rather than a second timeline document.
+  First-class clip commands split, trim, timeline-move, link, and unlink audio with
+  exact revision/project-hash CAS while preserving approved source identity.
+- **Stateless presentation authoring tools** —
+  `createPresentationAuthoringToolPack({ authority, regeneration })` exposes one
+  strict product-neutral tool per Authoring Project command, plus inspect,
+  receipt-bound inverse, and abortable regeneration request/inspection. The host
+  injects atomic session storage through exact revision/project-hash CAS; the pack
+  keeps no project copy, queue, timer, DOM state, or media bytes. Narration-cell
+  changes preserve immutable lineage evidence but mark narration audio, alignment,
+  and render stale until exact ordered regeneration receipts restore playability;
+  timing and attention-only edits preserve media ancestry.
+  `createPresentationAuthoringFileHost({ projectFile })` binds that same tool pack
+  to one canonical Project or snapshot file with exact revision/hash CAS and an
+  atomic replacement write. `symbiote-workspace <presentation-authoring-command>
+  --project <file>` and `symbiote-workspace mcp --project <file>` therefore expose
+  the same commands used by the visual NLE; omitting `--project` leaves the normal
+  workspace CLI/MCP registry unchanged.
+- **Single-flight presentation execution** —
+  `workspace-presentation-execution-v1` validates one exact Authoring Project,
+  aligned-sequence, and Schedule v2 tuple, then admits one active effect and zero
+  queued effects. Injected host adapters return ordered portable receipts:
+  interaction `acted → settled`, attention `first-frame → settled`, or state
+  `ready`. Only those actual receipts open dependency barriers; planned times do
+  not. Completion never pumps another cell, so the next effect requires a fresh
+  media sample, while expired cells are skipped without replay.
+- **Shared presentation execution** — authored audio clips project into an editable
+  NLE track and `workspace-presentation-playback-plan-v1`. The existing
+  `PresentationExecutionController` admits audio, interaction, attention, and state
+  cells from the same typed dependency graph, so `clip ended → event settled → next
+  clip` has one receipt and lifecycle contract in visual-editor preview and
+  hidden/headless playback.
+- **Deterministic audio composition** —
+  `workspace-presentation-audio-composition-v1` projects approved master ranges and
+  word evidence into presentation time without rerunning TTS or transcription, and
+  binds materialized delivery files back to the exact Project/composition hashes.
 
 ### Unified Agent Tooling
 
-- **85 tools over CLI/MCP** — one `runtime/dispatch.js` registry drives CLI commands,
+- **89 tools over CLI/MCP** — one `runtime/dispatch.js` registry drives CLI commands,
   MCP JSON-RPC, tests, and package-consumer verification.
 - **Workflow kanban tool** — `module_workflow_kanban` registers portable workflow-board
   panels backed by provider-owned `symbiote-ui` board components.
@@ -134,6 +226,16 @@ All CLI and MCP tools route through the same dispatch registry. The full tool
 list and CLI command naming rule live in [Getting Started and Preview](./docs/getting-started.md)
 and [Host Contracts and Construction Protocol](./docs/host-contracts.md).
 
+## Evidence-backed Lessons
+
+`symbiote-workspace/runtime` and the browser entrypoint export
+`createPresentationLessonContext()`, `auditPresentationLessonContext()`, and
+`reviewPresentationTimelineAgainstLessonContext()`. Hosts use these APIs to bind
+a lesson plan to live targets, portable WebMCP descriptors, domain facts,
+evidence, relations, prior actions, and bounded deepening results. Malformed,
+stale, unsafe, ungrounded, generic, duplicate, or under-depth lessons fail
+before a TTS projection is accepted.
+
 ## Visual Demo
 
 ```sh
@@ -158,6 +260,8 @@ smoke options and CI-friendly write-only mode.
 - [Plugins, Portability, and Templates](./docs/plugins-and-templates.md) —
   plugin format, module capabilities, portability rules, templates, and
   workspace packages.
+- [Media Evidence and Artifact Invalidation](./docs/media-evidence.md) — strict
+  evidence manifests, cache identity, DAG invalidation, and privacy rules.
 
 ## License
 

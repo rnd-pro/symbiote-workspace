@@ -15,6 +15,35 @@ import {
 import { createCatalog } from '../catalog/index.js';
 import { createToolRegistry, defineToolFamily } from '../runtime/tools/registry.js';
 import { WORKSPACE_SCHEMA_VERSION } from '../schema/value-classes.js';
+import { computeIntegrity } from '../schema/canonical-json.js';
+
+function mediaSequenceFixture() {
+  return {
+    schemaVersion: 'workspace-virtual-sequence-v1',
+    executionTier: 'sequential-realtime',
+    timebase: { num: 1, den: 30 },
+    frameRate: { num: 30, den: 1 },
+    duration: 2,
+    masters: [{
+      id: 'm0',
+      path: 'masters/0.mp4',
+      contentHash: computeIntegrity('m0'),
+      codec: 'h264',
+      container: 'mp4',
+      range: { startTick: 0, endTick: 2 },
+      keyframes: [0],
+    }],
+    index: { keyframes: [0], timestamps: [0] },
+    layers: [{
+      id: 'base',
+      kind: 'base',
+      invalidation: 'opaque',
+      range: { startTick: 0, endTick: 2 },
+      dependsOn: [],
+      affectedRanges: [{ startTick: 0, endTick: 2 }],
+    }],
+  };
+}
 
 const legacyToolNames = [
   'bridge_event',
@@ -70,6 +99,10 @@ describe('dispatch registry composition', () => {
     assert.ok(names.includes('hook_add'));
     assert.ok(names.includes('grant_revoke'));
     assert.ok(names.includes('execution_submit'));
+    assert.ok(names.includes('media_sequence_validate'));
+    assert.ok(names.includes('media_sequence_project'));
+    assert.ok(names.includes('media_sequence_invalidate'));
+    assert.ok(names.includes('media_evidence_validate'));
     assert.ok(names.includes('catalog_search'));
   });
 
@@ -423,5 +456,35 @@ describe('renamed dispatch tools', () => {
     assert.equal(result.code, 'tool-contract');
     assert.match(result.hint, /title/);
     assert.match(result.hint, /component/);
+  });
+});
+
+describe('media dispatch tools', () => {
+  it('validates and projects a virtual sequence through the composed registry', async () => {
+    let session = createSession();
+
+    let validated = await dispatch('media_sequence_validate', { sequence: mediaSequenceFixture() }, session, {
+      actor: 'agent-gated',
+    });
+    assert.equal(validated.status, 'ok');
+    assert.equal(validated.valid, true);
+    assert.match(validated.id, /^virtual-sequence:/);
+    assert.equal(session.config, null);
+
+    let projected = await dispatch('media_sequence_project', { sequence: mediaSequenceFixture(), tick: 1 }, session, {
+      actor: 'agent-gated',
+    });
+    assert.equal(projected.status, 'ok');
+    assert.equal(projected.projection.master.id, 'm0');
+    assert.equal(projected.projection.keyframe, 0);
+  });
+
+  it('returns a media-contract error for malformed media dispatch input', async () => {
+    let session = createSession();
+    let bad = await dispatch('media_sequence_project', { sequence: {}, tick: 0 }, session, {
+      actor: 'agent-gated',
+    });
+    assert.equal(bad.status, 'error');
+    assert.equal(bad.code, 'media-contract');
   });
 });

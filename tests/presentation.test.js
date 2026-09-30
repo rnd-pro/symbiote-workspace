@@ -8,14 +8,15 @@ import {
   PRESENTATION_LESSON_AUDIT_SCHEMA_VERSION,
   createPresentationLessonAuditPacket,
   createPresentationReplanRequest,
-  createPresentationTimelineContract,
-  createPresentationTimelineHash,
+  createPresentationTimelineContract as createPresentationTimelineContractV3,
+  createPresentationTimelineHash as createPresentationTimelineHashV3,
+  createPresentationAlignedSequence,
   createPresentationTtsProjection,
   createWorkspacePresentationTimeline,
   finalizePresentationReplan,
-  alignPresentationTimelineToAudio,
+  normalizePresentationOutputSpec,
   normalizePresentationPrompt,
-  normalizePresentationTimeline,
+  normalizePresentationTimeline as normalizePresentationTimelineV3,
   presentationTimelineHasTurns,
   reviewPresentationTimeline,
   reviewPresentationTimelineAgainstSnapshot,
@@ -28,6 +29,80 @@ import {
 import behaviorSection from '../schema/sections/behavior.js';
 
 const VERSION = '1.0.0';
+
+function timelineV3(input = {}) {
+  if (input.contractVersion === PRESENTATION_CONTRACT_VERSION) return input;
+  let turns = (input.turns || []).map((turn, index) => {
+    let cues = [...(turn.cues || [])];
+    if (turn.cue) {
+      cues.push({
+        kind: 'focus',
+        targetId: turn.cue.targetId,
+        ...(turn.cue.tabId ? { tabId: turn.cue.tabId } : {}),
+        at: { anchor: 'turn-start' },
+        until: { anchor: 'turn-end' },
+        focus: { mode: 'cursor' },
+      });
+    }
+    let actions = [...(turn.actions || []), ...(turn.webmcp ? [{ source: 'webmcp', name: turn.webmcp.tool, input: turn.webmcp.input }] : [])];
+    for (let action of actions) {
+      cues.push({
+        kind: 'interaction',
+        targetId: action.target || turn.cue?.targetId,
+        at: { anchor: 'turn-start' },
+        interaction: {
+          type: 'click',
+          binding: { source: action.source || 'workspace', tool: action.name || action.tool, input: action.input || {} },
+        },
+      });
+    }
+    return {
+      id: turn.id || `turn-${index + 1}`,
+      persona: turn.persona || 'guide',
+      dialogueAct: turn.dialogueAct || 'explain',
+      ...(turn.addressee ? { addressee: turn.addressee } : {}),
+      ...(turn.replyTo ? { replyTo: turn.replyTo } : {}),
+      text: turn.text,
+      sourceRefs: turn.sourceRefs || [],
+      claims: turn.claims || [],
+      ...(turn.delivery ? { delivery: turn.delivery } : {}),
+      ...(turn.transition ? { transition: turn.transition } : {}),
+      cues,
+    };
+  });
+  let personaIds = [...new Set(turns.map((turn) => turn.persona))];
+  let personas = Object.fromEntries(personaIds.map((id) => {
+    let source = input.personas?.[id] || {};
+    return [id, {
+      name: source.name || id,
+      role: source.role || (id === 'guide' ? 'lesson guide' : 'domain expert'),
+      locale: source.locale || source.lang || input.locale || 'en-US',
+      ...(source.delivery ? { delivery: source.delivery } : {}),
+    }];
+  }));
+  return {
+    contractVersion: PRESENTATION_CONTRACT_VERSION,
+    id: input.id,
+    title: input.title || 'Presentation',
+    locale: input.locale || 'en-US',
+    profile: input.profile || 'brief',
+    personas,
+    grounding: input.grounding || { sources: [] },
+    turns,
+  };
+}
+
+function createPresentationTimelineContract(input, options) {
+  return createPresentationTimelineContractV3(timelineV3(input), options);
+}
+
+function createPresentationTimelineHash(input, options) {
+  return createPresentationTimelineHashV3(timelineV3(input), options);
+}
+
+function normalizePresentationTimeline(input, options) {
+  return normalizePresentationTimelineV3(timelineV3(input), options);
+}
 
 function validationReport(timelines) {
   clearRegisteredSections();
@@ -135,20 +210,20 @@ describe('presentation timeline generation', () => {
       revision: 4,
     });
 
-    assert.equal(brief.summary.profile, 'brief');
-    assert.equal(full.summary.profile, 'full');
-    assert.equal(data.summary.profile, 'data-grounded');
-    assert.equal(brief.segments.length, 1);
-    assert.ok(full.segments.length > brief.segments.length);
-    assert.ok(full.summary.targetCoverage.includes('panel:home:audit-node'));
-    assert.ok(full.summary.targetCoverage.includes('panel:detail:detail-node'));
-    assert.equal(full.summary.narrationDensity, 'detailed');
-    assert.equal(data.summary.narrationDensity, 'contextual');
-    assert.ok(data.summary.dataRefCount > 0);
-    assert.ok(data.segments.some((segment) => segment.target === 'element:queue-row-wo-1'));
-    assert.ok(data.segments.every((segment) => segment.dataRefs.length > 0));
-    assert.notDeepEqual(brief.summary.targetCoverage, full.summary.targetCoverage);
-    assert.notDeepEqual(full.summary.targetCoverage, data.summary.targetCoverage);
+    assert.equal(brief.metadata.presentationSummary.profile, 'brief');
+    assert.equal(full.metadata.presentationSummary.profile, 'full');
+    assert.equal(data.metadata.presentationSummary.profile, 'data-grounded');
+    assert.equal(brief.turns.length, 1);
+    assert.ok(full.turns.length > brief.turns.length);
+    assert.ok(full.metadata.presentationSummary.targetCoverage.includes('panel:home:audit-node'));
+    assert.ok(full.metadata.presentationSummary.targetCoverage.includes('panel:detail:detail-node'));
+    assert.equal(full.metadata.presentationSummary.narrationDensity, 'detailed');
+    assert.equal(data.metadata.presentationSummary.narrationDensity, 'contextual');
+    assert.ok(data.metadata.presentationSummary.dataRefCount > 0);
+    assert.ok(data.turns.some((turn) => turn.cues.some((cue) => cue.targetId === 'element:queue-row-wo-1')));
+    assert.ok(data.turns.every((turn) => turn.sourceRefs.length > 0));
+    assert.notDeepEqual(brief.metadata.presentationSummary.targetCoverage, full.metadata.presentationSummary.targetCoverage);
+    assert.notDeepEqual(full.metadata.presentationSummary.targetCoverage, data.metadata.presentationSummary.targetCoverage);
 
     let report = validationReport([brief, full, data]);
     assert.equal(report.ok, true, JSON.stringify(report.errors));
@@ -201,10 +276,10 @@ describe('presentation timeline generation', () => {
       maxWordsPerTurn: 24,
     });
 
-    assert.equal(timeline.summary.profile, 'task-specific');
-    assert.equal(timeline.summary.narrationDensity, 'focused');
-    assert.equal(timeline.segments[0].target, 'panel:home:crew-node');
-    assert.equal(contract.turns[0].cue.tabId, 'home');
+    assert.equal(timeline.metadata.presentationSummary.profile, 'task-specific');
+    assert.equal(timeline.metadata.presentationSummary.narrationDensity, 'focused');
+    assert.equal(timeline.turns[0].cues[0].targetId, 'panel:home:crew-node');
+    assert.equal(contract.turns[0].cues[0].tabId, 'home');
     assert.ok(contract.turns[0].text.includes('crew'));
     assert.ok(contract.turns[0].text.includes('feeder'));
     assert.equal(review.verdict, 'pass');
@@ -235,10 +310,10 @@ describe('presentation timeline generation', () => {
       turnBudget: { min: 4, max: 4 },
     });
 
-    assert.equal(timeline.summary.profile, 'dialogue');
-    assert.equal(timeline.summary.narrationDensity, 'conversational');
+    assert.equal(timeline.metadata.presentationSummary.profile, 'dialogue');
+    assert.equal(timeline.metadata.presentationSummary.narrationDensity, 'conversational');
     assert.deepEqual(contract.turns.map((turn) => turn.persona), ['guide', 'analyst', 'guide', 'analyst']);
-    assert.deepEqual(contract.turns.map((turn) => turn.cue.tabId), ['home', 'home', 'home', 'detail']);
+    assert.deepEqual(contract.turns.map((turn) => turn.cues[0].tabId), ['home', 'home', 'home', 'detail']);
     assert.equal(review.verdict, 'pass');
     assert.equal(review.coverage.handoffCount >= 1, true);
     assert.equal(review.coverage.longestPersonaRun, 1);
@@ -256,8 +331,8 @@ describe('presentation timeline generation', () => {
       revision: 4,
     });
 
-    assert.equal(timeline.summary.profile, 'data-grounded');
-    assert.equal(timeline.summary.targetCoverage.includes('element:queue-row-WO-1'), false);
+    assert.equal(timeline.metadata.presentationSummary.profile, 'data-grounded');
+    assert.equal(timeline.metadata.presentationSummary.targetCoverage.includes('element:queue-row-WO-1'), false);
     let report = validationReport([timeline]);
     assert.equal(report.ok, true, JSON.stringify(report.errors));
   });
@@ -274,7 +349,6 @@ describe('canonical presentation timeline contract', () => {
         ops: { rate: 0.96, lang: 'en-US', name: 'Operations' },
         guide: { name: 'Guide', lang: 'en-US', rate: 1 },
       },
-      summary: { ignored: true },
       turns: [
         {
           webmcp: { tool: 'select_window', input: { boardId: 'orders' } },
@@ -298,17 +372,22 @@ describe('canonical presentation timeline contract', () => {
     assert.equal(contract.id, 'maximo-tour');
     assert.equal(contract.title, 'Adaptive Maximo Workbench');
     assert.equal(contract.turns.length, 2);
-    assert.deepEqual(contract.turns[0].cue, {
-      marker: 'box',
+    assert.deepEqual(contract.turns[0].cues[0], {
+      at: { anchor: 'turn-start', offsetMs: 0 },
+      focus: { mode: 'cursor' },
+      kind: 'focus',
       tabId: 'orders',
       targetId: 'panel:orders:queue',
+      until: { anchor: 'turn-end', offsetMs: 0 },
     });
-    assert.deepEqual(contract.turns[0].webmcp, { tool: 'select_window', input: { boardId: 'orders' } });
-    assert.deepEqual(contract.turns[0].actions, [
-      { source: 'webmcp', name: 'select_window', target: 'panel:orders:queue' },
-    ]);
-    assert.deepEqual(contract.turns[0].renderCue, { durationMs: 1800 });
-    assert.match(contract.hash, /^presentation-timeline-v2:sha256-/);
+    assert.equal(contract.turns[0].cues.filter((cue) => cue.kind === 'interaction').length, 2);
+    assert.deepEqual(contract.turns[0].cues[1].interaction.binding, {
+      source: 'webmcp',
+      tool: 'select_window',
+      input: {},
+    });
+    assert.equal('renderCue' in contract.turns[0], false);
+    assert.match(contract.hash, /^presentation-timeline-v3:sha256-/);
     assert.equal(contract.hash, createPresentationTimelineHash(input));
     assert.equal(presentationTimelineHasTurns(contract), true);
   });
@@ -356,39 +435,39 @@ describe('canonical presentation timeline contract', () => {
       createPresentationTimelineHash(a),
       createPresentationTimelineHash({
         ...a,
-        turns: [{ ...a.turns[0], renderCue: { startMs: 300, durationMs: 900 } }],
+        turns: [{
+          ...a.turns[0],
+          cues: [{
+            kind: 'annotation',
+            targetId: 'a',
+            at: { anchor: 'turn-start' },
+            annotation: { intent: 'emphasize', marker: 'underline' },
+          }],
+        }],
       }),
     );
   });
 
-  it('derives turns from semantic segments when no authored turns are present', () => {
+  it('generates authored turns directly from semantic workspace targets', () => {
     let generated = createWorkspacePresentationTimeline(context(), {
       prompt: 'сделай полную подробную презентацию интерфейса',
       revision: 4,
     });
     let contract = createPresentationTimelineContract(generated);
 
-    assert.equal(contract.turns.length, generated.segments.length);
-    assert.equal(contract.turns[0].text, generated.segments[0].narration);
-    assert.equal(contract.turns[0].cue.targetId, generated.segments[0].focusTarget);
-    assert.equal(contract.summary.segmentCount, generated.segments.length);
+    assert.equal(contract.turns.length, generated.turns.length);
+    assert.equal(contract.turns[0].text, generated.turns[0].text);
+    assert.equal(contract.turns[0].cues[0].targetId, generated.turns[0].cues[0].targetId);
+    assert.equal(generated.metadata.presentationSummary.turnCount, generated.turns.length);
     assert.equal(contract.hash, createPresentationTimelineHash(generated));
   });
 
-  it('filters non-text turns and fails loud when no narrated turns remain', () => {
-    let normalized = normalizePresentationTimeline({
-      id: 'empty',
-      turns: [
-        { persona: 'guide', text: '   ', cue: { targetId: 'a' } },
-        { persona: 'guide', cue: { targetId: 'b' } },
-      ],
-    });
-
-    assert.equal(normalized.turns.length, 0);
-    assert.equal(presentationTimelineHasTurns(normalized), false);
+  it('fails fast when any authored turn has no narration', () => {
+    let invalid = timelineV3({ id: 'empty', turns: [{ persona: 'guide', text: '   ', cue: { targetId: 'a' } }] });
+    assert.equal(presentationTimelineHasTurns(invalid), false);
     assert.throws(
-      () => createPresentationTimelineContract(normalized),
-      /presentation timeline requires at least one narrated turn/,
+      () => normalizePresentationTimelineV3(invalid),
+      /turns\[0\]\.text must be nonempty/,
     );
   });
 
@@ -410,7 +489,7 @@ describe('canonical presentation timeline contract', () => {
           persona: 'ops',
           dialogueAct: 'respond',
           replyTo: 'orders-open',
-          text: 'The asset panel confirms the feeder location and crew state.',
+          text: 'The work order asset panel confirms the feeder location and crew state.',
           cue: { targetId: 'panel:orders:asset', tabId: 'orders' },
         },
       ],
@@ -772,14 +851,14 @@ describe('canonical presentation timeline contract', () => {
         contextSummary: { scenario: scenario.name, targetCount: allowedTargetIds.length },
       });
 
-      assert.equal(timeline.summary.profile, scenario.profile, scenario.name);
+      assert.equal(timeline.metadata.presentationSummary.profile, scenario.profile, scenario.name);
       assert.equal(contract.turns.length, scenario.maxSegments, scenario.name);
       assert.equal(review.verdict, 'pass', `${scenario.name}: ${JSON.stringify(review.issues)}`);
       assert.deepEqual(review.coverage.missingRequestedSurfaceIds, [], scenario.name);
       assert.deepEqual(review.coverage.missingSelectedTabIds, [], scenario.name);
       assert.equal(audit.review.verdict, 'pass', scenario.name);
       assert.equal(audit.ttsProjection.items.length, contract.turns.length, scenario.name);
-      assert.equal(contract.turns.every((turn) => turn.cue?.targetId && turn.cue?.tabId), true, scenario.name);
+      assert.equal(contract.turns.every((turn) => turn.cues[0]?.targetId && turn.cues[0]?.tabId), true, scenario.name);
       assert.equal(contract.turns.every((turn) => !/^(guide|ops)\s*:/i.test(turn.text)), true, scenario.name);
       if (scenario.requireDialogue) {
         assert.deepEqual(contract.turns.map((turn) => turn.persona), ['guide', 'analyst', 'guide', 'analyst']);
@@ -832,7 +911,7 @@ describe('canonical presentation timeline contract', () => {
 
     assert.equal(review.verdict, 'reject');
     assert.deepEqual(
-      review.issues.map((issue) => issue.code).sort(),
+      [...new Set(review.issues.map((issue) => issue.code))].sort(),
       ['disallowed-target', 'disallowed-tool', 'missing-requested-surface', 'missing-requested-tab'].sort(),
     );
   });
@@ -901,12 +980,11 @@ describe('canonical presentation timeline contract', () => {
         {
           persona: 'guide',
           text: 'First guide line.',
-          renderCue: { startMs: 0, durationMs: 1500 },
         },
         {
           persona: 'guide',
           text: 'This overlapping line is much too long for a natural interruption.',
-          renderCue: { startMs: 500, durationMs: 1000 },
+          transition: { overlapMs: 1000 },
         },
       ],
     });
@@ -927,7 +1005,7 @@ describe('canonical presentation timeline contract', () => {
       title: 'Audit tour',
       turns: [
         { id: 'audit-open', persona: 'guide', dialogueAct: 'open', text: 'Open the queue.', cue: { targetId: 'panel:orders:queue', tabId: 'orders' } },
-        { id: 'audit-answer', persona: 'ops', dialogueAct: 'respond', replyTo: 'audit-open', text: 'Right, the asset panel confirms the crew.', cue: { targetId: 'panel:orders:asset', tabId: 'orders' } },
+        { id: 'audit-answer', persona: 'ops', dialogueAct: 'respond', replyTo: 'audit-open', text: 'Right, the queue asset panel confirms the crew.', cue: { targetId: 'panel:orders:asset', tabId: 'orders' } },
       ],
     });
     let options = {
@@ -973,7 +1051,7 @@ describe('canonical presentation timeline contract', () => {
           persona: 'guide',
           text: 'This gives a generic introduction.',
           cue: { targetId: 'panel:orders:queue', tabId: 'orders' },
-          actions: [{ source: 'dom-click', name: 'click', target: 'panel:orders:queue' }],
+          actions: [{ source: 'webmcp', name: 'dangerous_tool', target: 'panel:orders:queue' }],
         },
         {
           persona: 'ops',
@@ -984,6 +1062,7 @@ describe('canonical presentation timeline contract', () => {
 
     let review = reviewPresentationTimeline(timeline, {
       allowedTargetIds: ['panel:orders:queue'],
+      allowedToolNames: ['safe_tool'],
       requestKeywords: ['feeder', 'crew'],
       requireRequestKeywords: true,
       requiredPersonas: ['guide', 'ops', 'planner'],
@@ -991,7 +1070,7 @@ describe('canonical presentation timeline contract', () => {
 
     assert.equal(review.verdict, 'reject');
     assert.ok(review.issues.some((issue) => issue.code === 'request-keyword-missing'));
-    assert.ok(review.issues.some((issue) => issue.code === 'unsupported-action-source'));
+    assert.ok(review.issues.some((issue) => issue.code === 'disallowed-tool'));
     assert.ok(review.issues.some((issue) => issue.code === 'missing-required-persona'));
     assert.equal(review.issues.find((issue) => issue.code === 'missing-cue-target')?.severity, 'error');
     assert.deepEqual(review.coverage.missingRequiredPersonas, ['planner']);
@@ -1023,56 +1102,67 @@ describe('canonical presentation timeline contract', () => {
     assert.deepEqual(review.coverage.missingRequestKeywords, []);
   });
 
-  it('aligns render cues to audio authority without estimating missing overlap starts', () => {
-    let sequential = alignPresentationTimelineToAudio({
+  it('treats generic Russian and Spanish tour commands like their English equivalents', () => {
+    let timeline = createPresentationTimelineContract({
+      id: 'multilingual-overview-tour',
+      title: 'Workspace overview',
+      turns: [{
+        persona: 'guide',
+        text: 'The operations board and agent dock are ready for review.',
+        cue: { targetId: 'panel:workspace:overview', tabId: 'home' },
+      }],
+    });
+    for (let requestPrompt of [
+      'Проведи полный тур по текущему UI',
+      'Haz un recorrido completo por la interfaz actual',
+    ]) {
+      let review = reviewPresentationTimeline(timeline, {
+        allowedTargetIds: ['panel:workspace:overview'],
+        requestedSurfaceIds: ['panel:workspace:overview'],
+        requestPrompt,
+        requireRequestFit: true,
+      });
+      assert.equal(review.verdict, 'pass', requestPrompt);
+      assert.deepEqual(review.coverage.requestKeywords, [], requestPrompt);
+      assert.deepEqual(review.coverage.missingRequestKeywords, [], requestPrompt);
+    }
+  });
+
+  it('creates a separate complete aligned sequence from audio authority', () => {
+    let timeline = createPresentationTimelineContract({
       id: 'audio-authority-tour',
       title: 'Audio authority tour',
       turns: [
         { persona: 'guide', text: 'First turn.', cue: { targetId: 'panel:a' } },
         { persona: 'ops', text: 'Second turn.', cue: { targetId: 'panel:b' } },
       ],
-    }, {
-      audioItems: [{ durationMs: 1200 }, { durationMs: 900 }],
-      sequenceMode: 'sequential',
+    });
+    let sequential = createPresentationAlignedSequence(timeline, {
+      media: { hash: 'sha256-audio', durationMs: 2100, locale: 'en-US' },
+      turns: [
+        { startMs: 0, endMs: 1200, transcript: 'First turn.', words: [] },
+        { startMs: 1200, endMs: 2100, transcript: 'Second turn.', words: [] },
+      ],
     });
 
     assert.deepEqual(
-      sequential.turns.map((turn) => turn.renderCue),
+      sequential.turns,
       [
-        { startMs: 0, durationMs: 1200, endMs: 1200, source: 'audio' },
-        { startMs: 1200, durationMs: 900, endMs: 2100, source: 'audio' },
+        { turnIndex: 0, startMs: 0, endMs: 1200 },
+        { turnIndex: 1, startMs: 1200, endMs: 2100 },
       ],
     );
-    assert.equal(sequential.metadata.audioAuthority.durationMs, 2100);
-    assert.equal(sequential.metadata.audioAuthority.sequenceMode, 'sequential');
-
-    let overlap = alignPresentationTimelineToAudio({
-      id: 'overlap-tour',
-      title: 'Overlap tour',
-      turns: [
-        { persona: 'guide', text: 'Guide.', renderCue: { startMs: 0 } },
-        { persona: 'ops', text: 'Ops.', renderCue: { startMs: 500 } },
-      ],
-    }, {
-      audioItems: [{ durationMs: 1000 }, { durationMs: 800 }],
-      sequenceMode: 'overlap',
-    });
-
-    assert.deepEqual(overlap.turns.map((turn) => turn.renderCue.startMs), [0, 500]);
-    assert.equal(overlap.metadata.audioAuthority.durationMs, 1300);
+    assert.deepEqual(sequential.events.map((event) => event.cueId), ['0.0', '1.0']);
+    assert.equal(sequential.timelineHash, timeline.hash);
     assert.throws(
-      () => alignPresentationTimelineToAudio({
-        id: 'bad-overlap-tour',
-        title: 'Bad overlap tour',
+      () => createPresentationAlignedSequence(timeline, {
+        media: { hash: 'sha256-audio', durationMs: 2100 },
         turns: [
-          { persona: 'guide', text: 'Guide.', renderCue: { startMs: 0 } },
-          { persona: 'ops', text: 'Ops.' },
+          { startMs: 1200, endMs: 1500, transcript: 'First turn.', words: [] },
+          { startMs: 500, endMs: 2100, transcript: 'Second turn.', words: [] },
         ],
-      }, {
-        audioItems: [{ durationMs: 1000 }, { durationMs: 800 }],
-        sequenceMode: 'overlap',
       }),
-      /audio authority overlap timing requires renderCue.startMs/,
+      /turn spans must be monotonic/,
     );
   });
 });
@@ -1116,6 +1206,31 @@ describe('presentation replan contracts', () => {
     assert.equal(first.source.url, 'https://demo.test/workbench');
   });
 
+  it('keeps final output identity while snapshotting the inset page viewport', () => {
+    let output = normalizePresentationOutputSpec({
+      width: 1280,
+      height: 720,
+      fps: 30,
+      frameInsets: { top: 87 },
+    });
+    let snapshot = createPresentationContextSnapshot(context(), {
+      output,
+      viewport: output.presentationViewport,
+      stability: { settled: true },
+    });
+
+    assert.deepEqual(snapshot.viewport, {
+      width: 1280,
+      height: 633,
+      fps: 30,
+      orientation: 'horizontal',
+      aspectRatio: '1280:633',
+    });
+    assert.equal(snapshot.output.width, 1280);
+    assert.equal(snapshot.output.height, 720);
+    assert.deepEqual(snapshot.output.presentationViewport, { x: 0, y: 87, width: 1280, height: 633 });
+  });
+
   it('finalizes only a current, grounded planner result', () => {
     let snapshot = createPresentationContextSnapshot(context(), {
       generation: 2,
@@ -1132,8 +1247,13 @@ describe('presentation replan contracts', () => {
     assert.deepEqual(request.turnBudget, { minTurns: 1, maxTurns: 6 });
     let candidate = {
       status: 'ready',
-      basis: { targetSnapshotHash: snapshot.identityHash, generation: 2 },
-      timeline: {
+      basis: {
+        requestHash: request.hash,
+        targetSnapshotHash: snapshot.identityHash,
+        outputSpecHash: request.outputSpecHash,
+        generation: 2,
+      },
+      timeline: timelineV3({
         title: 'Grounded queue',
         grounding: { sources: snapshot.dataSources },
         turns: [{
@@ -1144,11 +1264,12 @@ describe('presentation replan contracts', () => {
           cue: { targetId: 'panel:home:queue-node', tabId: 'home' },
           sourceRefs: [{ sourceId: source.id, targetId: 'panel:home:queue-node', hash: source.contentHash }],
         }],
-      },
+      }),
     };
     let result = finalizePresentationReplan(candidate, request, {
       snapshot,
       intent: { requireGrounding: true },
+      requireComposition: false,
     });
 
     assert.equal(result.status, 'ready');
@@ -1157,8 +1278,13 @@ describe('presentation replan contracts', () => {
     assert.throws(
       () => finalizePresentationReplan({
         ...candidate,
-        basis: { targetSnapshotHash: snapshot.identityHash, generation: 1 },
-      }, request, { snapshot }),
+        basis: {
+          requestHash: request.hash,
+          targetSnapshotHash: snapshot.identityHash,
+          outputSpecHash: request.outputSpecHash,
+          generation: 1,
+        },
+      }, request, { snapshot, requireComposition: false }),
       (error) => error.code === 'TARGET_CONTEXT_STALE',
     );
     assert.equal(reviewPresentationTimelineAgainstSnapshot(result.timeline, snapshot).verdict, 'pass');
@@ -1175,5 +1301,186 @@ describe('presentation replan contracts', () => {
     assert.equal(projection.status, 'blocked');
     assert.equal(projection.readyForTts, false);
     assert.deepEqual(projection.items, []);
+  });
+});
+
+describe('presentation dialogue handoff detection', () => {
+  const localizedExchanges = {
+    'en-US': [
+      'Start with the work order queue so the viewer sees the source records.',
+      'The queue shows three open orders waiting on parts.',
+      'The detail panel then explains why those parts are delayed.',
+      'The audit log confirms the delay came from a late shipment.',
+    ],
+    'ru-RU': [
+      'Начнём с очереди рабочих заданий, чтобы зритель увидел исходные записи.',
+      'В очереди три открытых задания ожидают поступления деталей.',
+      'Панель деталей объясняет, почему поставка этих деталей задержалась.',
+      'Журнал аудита подтверждает задержку из-за позднего отгруза.',
+    ],
+    'es-ES': [
+      'Empezamos con la cola de órdenes para que el espectador vea los registros.',
+      'La cola muestra tres órdenes abiertas que esperan repuestos.',
+      'El panel de detalle explica por qué se retrasaron esos repuestos.',
+      'El registro de auditoría confirma el retraso por un envío tardío.',
+    ],
+  };
+
+  function structuredExchange(locale, texts) {
+    return createPresentationTimelineContract({
+      id: `handoff-${locale.toLowerCase()}`,
+      title: `Localized handoff ${locale}`,
+      locale,
+      turns: texts.map((text, index) => ({
+        id: `turn-${index + 1}`,
+        persona: index % 2 ? 'analyst' : 'guide',
+        dialogueAct: index === 0 ? 'open' : 'respond',
+        ...(index > 0 ? { replyTo: `turn-${index}` } : {}),
+        text,
+        cue: { targetId: 'panel:home:queue', tabId: 'home' },
+      })),
+    });
+  }
+
+  for (let [locale, texts] of Object.entries(localizedExchanges)) {
+    it(`counts structured handoffs for ${locale} without lexical markers`, () => {
+      let review = reviewPresentationTimeline(structuredExchange(locale, texts), {
+        requireDialogueHandoffs: true,
+      });
+
+      assert.equal(review.verdict, 'pass', `${locale}: ${JSON.stringify(review.issues)}`);
+      assert.equal(review.coverage.handoffCount, 3, locale);
+      assert.equal(review.issues.some((issue) => issue.code === 'missing-dialogue-handoff'), false, locale);
+    });
+  }
+
+  const lexicalExchanges = {
+    'en-US': [
+      'Start with the open work order queue.',
+      'Yes, the queue contains three delayed orders.',
+      'Then inspect the asset detail for each order.',
+      'Correct, the detail confirms the late shipment.',
+    ],
+    'ru-RU': [
+      'Начнем с очереди открытых рабочих заданий.',
+      'Да, в очереди три задержанных задания.',
+      'Тогда проверим карточку актива для каждого задания.',
+      'Верно, карточка подтверждает задержку поставки.',
+    ],
+    'es-ES': [
+      'Empecemos con la cola de órdenes abiertas.',
+      'Sí, la cola contiene tres órdenes retrasadas.',
+      'Entonces revisemos el detalle del activo para cada orden.',
+      'Correcto, el detalle confirma el retraso del envío.',
+    ],
+  };
+
+  for (let [locale, texts] of Object.entries(lexicalExchanges)) {
+    it(`retains the supplementary lexical handoff signal for ${locale}`, () => {
+      let timeline = createPresentationTimelineContract({
+        id: `lexical-handoff-${locale.toLowerCase()}`,
+        title: `Lexical handoff ${locale}`,
+        locale,
+        turns: texts.map((text, index) => ({
+          id: `turn-${index + 1}`,
+          persona: index % 2 ? 'analyst' : 'guide',
+          dialogueAct: index === 0 ? 'open' : 'explain',
+          text,
+          cue: { targetId: 'panel:home:queue', tabId: 'home' },
+        })),
+      });
+      let review = reviewPresentationTimeline(timeline, { requireDialogueHandoffs: true });
+
+      assert.equal(review.verdict, 'pass', `${locale}: ${JSON.stringify(review.issues)}`);
+      assert.equal(review.coverage.handoffCount, 3, locale);
+    });
+  }
+
+  it('flags an alternating monologue that omits structured reply links', () => {
+    let timeline = createPresentationTimelineContract({
+      id: 'monologue-handoff',
+      title: 'Alternating monologue',
+      turns: [
+        { id: 'turn-1', persona: 'guide', dialogueAct: 'explain', text: 'The queue lists the open work orders for today.', cue: { targetId: 'panel:home:queue', tabId: 'home' } },
+        { id: 'turn-2', persona: 'analyst', dialogueAct: 'explain', text: 'The detail panel shows the parts each order needs.', cue: { targetId: 'panel:home:detail', tabId: 'home' } },
+        { id: 'turn-3', persona: 'guide', dialogueAct: 'explain', text: 'The map places every crew near its assigned site.', cue: { targetId: 'panel:home:map', tabId: 'home' } },
+        { id: 'turn-4', persona: 'analyst', dialogueAct: 'explain', text: 'The audit log records who approved each dispatch.', cue: { targetId: 'panel:home:audit', tabId: 'home' } },
+      ],
+    });
+
+    let review = reviewPresentationTimeline(timeline, { requireDialogueHandoffs: true });
+
+    assert.equal(review.coverage.handoffCount, 0);
+    assert.ok(review.issues.some((issue) => issue.code === 'missing-dialogue-handoff'));
+  });
+
+  it('does not count a reply that resolves to the same persona', () => {
+    let timeline = createPresentationTimelineContract({
+      id: 'same-persona-reply',
+      title: 'Same persona reply',
+      turns: [
+        { id: 'turn-1', persona: 'guide', dialogueAct: 'open', text: 'The queue lists the open work orders for today.', cue: { targetId: 'panel:home:queue', tabId: 'home' } },
+        { id: 'turn-2', persona: 'analyst', dialogueAct: 'explain', text: 'The detail panel shows the parts each order needs.', cue: { targetId: 'panel:home:detail', tabId: 'home' } },
+        { id: 'turn-3', persona: 'guide', dialogueAct: 'respond', replyTo: 'turn-1', text: 'The map places every crew near its assigned site.', cue: { targetId: 'panel:home:map', tabId: 'home' } },
+        { id: 'turn-4', persona: 'analyst', dialogueAct: 'respond', replyTo: 'turn-2', text: 'The audit log records who approved each dispatch.', cue: { targetId: 'panel:home:audit', tabId: 'home' } },
+      ],
+    });
+
+    let review = reviewPresentationTimeline(timeline, { requireDialogueHandoffs: true });
+
+    assert.equal(review.coverage.handoffCount, 0);
+    assert.ok(review.issues.some((issue) => issue.code === 'missing-dialogue-handoff'));
+  });
+
+  it('does not count an opposite-persona reply when the speaker did not change', () => {
+    let timeline = createPresentationTimelineContract({
+      id: 'reply-without-speaker-change',
+      title: 'Reply without speaker change',
+      turns: [
+        { id: 'turn-1', persona: 'analyst', dialogueAct: 'open', text: 'The queue lists the delayed work orders for today.', cue: { targetId: 'panel:home:queue', tabId: 'home' } },
+        { id: 'turn-2', persona: 'guide', dialogueAct: 'explain', text: 'The asset detail contains the shipment record.', cue: { targetId: 'panel:home:detail', tabId: 'home' } },
+        { id: 'turn-3', persona: 'guide', dialogueAct: 'respond', replyTo: 'turn-1', text: 'The shipment record names the delayed supplier.', cue: { targetId: 'panel:home:detail', tabId: 'home' } },
+        { id: 'turn-4', persona: 'guide', dialogueAct: 'explain', text: 'The audit log records the approval date.', cue: { targetId: 'panel:home:audit', tabId: 'home' } },
+      ],
+    });
+
+    let review = reviewPresentationTimeline(timeline, { requireDialogueHandoffs: true });
+
+    assert.equal(review.coverage.handoffCount, 0);
+    assert.ok(review.issues.some((issue) => issue.code === 'missing-dialogue-handoff'));
+  });
+
+  it('rejects an unknown replyTo reference at the contract boundary', () => {
+    assert.throws(() => reviewPresentationTimeline(timelineV3({
+      id: 'unknown-reply',
+      title: 'Unknown reply',
+      turns: [
+        { id: 'turn-1', persona: 'guide', dialogueAct: 'open', text: 'The queue lists the open work orders for today.', cue: { targetId: 'panel:home:queue', tabId: 'home' } },
+        { id: 'turn-2', persona: 'analyst', dialogueAct: 'respond', replyTo: 'turn-missing', text: 'The detail panel shows the parts each order needs.', cue: { targetId: 'panel:home:detail', tabId: 'home' } },
+      ],
+    }), { requireDialogueHandoffs: true }), /replyTo must name an earlier turn/);
+  });
+
+  it('rejects a forward replyTo reference at the contract boundary', () => {
+    assert.throws(() => reviewPresentationTimeline(timelineV3({
+      id: 'forward-reply',
+      title: 'Forward reply',
+      turns: [
+        { id: 'turn-1', persona: 'guide', dialogueAct: 'open', text: 'The queue lists the open work orders for today.', cue: { targetId: 'panel:home:queue', tabId: 'home' } },
+        { id: 'turn-2', persona: 'analyst', dialogueAct: 'respond', replyTo: 'turn-3', text: 'The detail panel shows the parts each order needs.', cue: { targetId: 'panel:home:detail', tabId: 'home' } },
+        { id: 'turn-3', persona: 'guide', dialogueAct: 'respond', replyTo: 'turn-2', text: 'The map places every crew near its assigned site.', cue: { targetId: 'panel:home:map', tabId: 'home' } },
+      ],
+    }), { requireDialogueHandoffs: true }), /replyTo must name an earlier turn/);
+  });
+
+  it('rejects a self replyTo reference at the contract boundary', () => {
+    assert.throws(() => reviewPresentationTimeline(timelineV3({
+      id: 'self-reply',
+      title: 'Self reply',
+      turns: [
+        { id: 'turn-1', persona: 'guide', dialogueAct: 'open', text: 'The queue lists the open work orders for today.', cue: { targetId: 'panel:home:queue', tabId: 'home' } },
+        { id: 'turn-2', persona: 'analyst', dialogueAct: 'respond', replyTo: 'turn-2', text: 'The detail panel shows the parts each order needs.', cue: { targetId: 'panel:home:detail', tabId: 'home' } },
+      ],
+    }), { requireDialogueHandoffs: true }), /replyTo must name an earlier turn/);
   });
 });

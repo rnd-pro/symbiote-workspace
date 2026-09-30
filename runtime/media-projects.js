@@ -1,8 +1,17 @@
 import {
+  PRESENTATION_AUTHORING_PROJECT_SCHEMA_VERSION,
+  createPresentationAuthoringTimelineProjection,
+  createPresentationPlaybackPlan,
+  createPresentationTimelineEditorModel,
   createPresentationTimelineContract,
   createPresentationTimelineHash,
   presentationTimelineHasTurns,
+  projectPresentationNle,
+  validatePresentationAuthoringProject,
+  validatePresentationAlignedSequence,
+  validatePresentationScheduleV2,
 } from './presentation.js';
+import { presentationOutputOrientation } from './presentation-output.js';
 
 export const MEDIA_PROJECT_SCHEMA_VERSION = 'workspace-media-project-v1';
 export const MEDIA_PROJECT_ROUTE_PARAM = 'mediaProject';
@@ -17,7 +26,7 @@ export const MEDIA_PROJECT_ROUTE_JOB_PARAM = 'mediaProjectJob';
 export const MEDIA_PROJECT_ROUTE_SOURCE_URL_PARAM = 'mediaProjectSourceUrl';
 export const MEDIA_PROJECT_ROUTE_TIMELINE_CURSOR_PARAM = 'mediaProjectCursorMs';
 export const MEDIA_PROJECT_ROUTE_TIMELINE_PARAM = 'mediaProjectTimeline';
-export const MEDIA_RENDER_SETTINGS_SCHEMA_VERSION = 'workspace-media-render-settings-v1';
+export const MEDIA_RENDER_SETTINGS_SCHEMA_VERSION = 'workspace-media-render-settings-v3';
 export const MEDIA_RENDER_EVENT_SCHEMA_VERSION = 'workspace-media-render-event-v1';
 export const MEDIA_RENDER_READINESS_SCHEMA_VERSION = 'workspace-media-render-readiness-v1';
 
@@ -76,9 +85,17 @@ export const MEDIA_RENDER_DIRTY_SCOPES = Object.freeze([
   'final-output',
 ]);
 
+export const BROWSER_CHROME_VISIBILITIES = Object.freeze(['hidden', 'visible']);
+export const BROWSER_CHROME_THEMES = Object.freeze(['system', 'light', 'dark', 'tinted']);
+export const BROWSER_PAGE_COLOR_SCHEMES = Object.freeze(['system', 'light', 'dark']);
+
 const MEDIA_RENDER_EVENT_TYPE_SET = new Set(MEDIA_RENDER_EVENT_TYPES);
 const MEDIA_RENDER_DIRTY_SCOPE_SET = new Set(MEDIA_RENDER_DIRTY_SCOPES);
 const MEDIA_PROJECT_PREVIEW_MODE_SET = new Set(['sequence', 'output']);
+const BROWSER_CHROME_VISIBILITY_SET = new Set(BROWSER_CHROME_VISIBILITIES);
+const BROWSER_CHROME_THEME_SET = new Set(BROWSER_CHROME_THEMES);
+const BROWSER_PAGE_COLOR_SCHEME_SET = new Set(BROWSER_PAGE_COLOR_SCHEMES);
+const BROWSER_CHROME_TINT_PATTERN = /^#[0-9a-f]{6}$/i;
 
 function isObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -173,22 +190,62 @@ function normalizeCaptionStyle(input = {}) {
   });
 }
 
+export function normalizeBrowserAppearance(input = {}) {
+  let source = isObject(input) ? input : {};
+  let chromeSource = isObject(source.chrome) ? source.chrome : {};
+  let visibility = cleanString(chromeSource.visibility, 'hidden');
+  if (!BROWSER_CHROME_VISIBILITY_SET.has(visibility)) {
+    throw new Error(`invalid browser chrome visibility: ${visibility}; expected one of ${BROWSER_CHROME_VISIBILITIES.join(', ')}`);
+  }
+  let theme = cleanString(chromeSource.theme, 'system');
+  if (!BROWSER_CHROME_THEME_SET.has(theme)) {
+    throw new Error(`invalid browser chrome theme: ${theme}; expected one of ${BROWSER_CHROME_THEMES.join(', ')}`);
+  }
+  let hasTint = chromeSource.tint !== undefined && chromeSource.tint !== null && cleanString(chromeSource.tint) !== '';
+  if (theme === 'tinted' && !hasTint) {
+    throw new Error('browser chrome theme "tinted" requires a "#RRGGBB" tint');
+  }
+  if (theme !== 'tinted' && hasTint) {
+    throw new Error(`browser chrome tint is only valid with theme "tinted", not "${theme}"`);
+  }
+  let tint;
+  if (theme === 'tinted') {
+    let raw = cleanString(chromeSource.tint);
+    if (!BROWSER_CHROME_TINT_PATTERN.test(raw)) {
+      throw new Error(`invalid browser chrome tint: ${raw}; expected "#RRGGBB"`);
+    }
+    tint = raw.toLowerCase();
+  }
+  if (visibility === 'hidden' && theme !== 'system') {
+    throw new Error(`hidden browser chrome accepts only the "system" theme; "${theme}" cannot change hidden chrome pixels`);
+  }
+  let pageColorScheme = cleanString(source.pageColorScheme, 'system');
+  if (!BROWSER_PAGE_COLOR_SCHEME_SET.has(pageColorScheme)) {
+    throw new Error(`invalid page color scheme: ${pageColorScheme}; expected one of ${BROWSER_PAGE_COLOR_SCHEMES.join(', ')}`);
+  }
+  return {
+    chrome: compactObject({ visibility, theme, tint }),
+    pageColorScheme,
+  };
+}
+
 export function normalizeMediaRenderSettings(input = {}) {
   let source = isObject(input) ? input : {};
-  let explicitVertical = source.vertical === true;
-  let vertical = explicitVertical ||
+  let requestedVertical = source.vertical === true ||
     source.orientation === 'vertical' ||
     source.aspectRatio === '9:16' ||
     source.aspectRatio === 'vertical';
+  let requestedSquare = source.orientation === 'square' || source.aspectRatio === '1:1' || source.aspectRatio === 'square';
   let resolution = isObject(source.resolution) ? source.resolution : {};
-  let width = positiveInteger(source.width ?? resolution.width, vertical ? 1080 : 1280);
-  let height = positiveInteger(source.height ?? resolution.height, vertical ? 1920 : 720);
+  let width = positiveInteger(source.width ?? resolution.width, requestedSquare ? 1080 : requestedVertical ? 1080 : 1920);
+  let height = positiveInteger(source.height ?? resolution.height, requestedSquare ? 1080 : requestedVertical ? 1920 : 1080);
+  let orientation = presentationOutputOrientation(width, height);
   let captionsMode = cleanString(source.captionsMode, source.captionsEnabled === false ? 'off' : 'karaoke');
   return compactObject({
-    schemaVersion: cleanString(source.schemaVersion, MEDIA_RENDER_SETTINGS_SCHEMA_VERSION),
+    schemaVersion: MEDIA_RENDER_SETTINGS_SCHEMA_VERSION,
     autoRender: source.autoRender !== false,
-    orientation: explicitVertical ? 'vertical' : cleanString(source.orientation, vertical ? 'vertical' : 'horizontal'),
-    aspectRatio: explicitVertical ? '9:16' : cleanString(source.aspectRatio, vertical ? '9:16' : '16:9'),
+    orientation,
+    aspectRatio: orientation === 'square' ? '1:1' : orientation === 'vertical' ? '9:16' : '16:9',
     width,
     height,
     fps: positiveInteger(source.fps ?? source.frameRate, 30),
@@ -198,6 +255,13 @@ export function normalizeMediaRenderSettings(input = {}) {
     captionsEnabled: source.captionsEnabled !== undefined ? Boolean(source.captionsEnabled) : captionsMode !== 'off',
     captionsMode,
     captionStyle: normalizeCaptionStyle(source.captionStyle || source.captionsStyle),
+    browserAppearance: normalizeBrowserAppearance(source.browserAppearance),
+    safeArea: clonePortable(source.safeArea),
+    language: cleanString(source.language || source.locale),
+    durationMs: positiveInteger(source.durationMs || source.duration?.targetMs),
+    minDurationMs: positiveInteger(source.minDurationMs || source.duration?.minMs),
+    maxDurationMs: positiveInteger(source.maxDurationMs || source.duration?.maxMs),
+    outputSpecHash: cleanString(source.outputSpecHash),
     speakerMode: cleanString(source.speakerMode, 'single'),
     sequenceMode: cleanString(source.sequenceMode, 'sequential'),
     providerId: cleanString(source.providerId || source.audioProvider || source.provider),
@@ -325,14 +389,13 @@ function frameSequenceSamples(frames = [], frameCount = 0) {
   return samples;
 }
 
-function presentationActionTimelineClips(timeline = {}) {
+function presentationActionTimelineClips(timeline = {}, alignedSequence = null) {
   let turns = Array.isArray(timeline?.turns) ? timeline.turns : [];
   let cursorMs = 0;
   return turns.map((turn = {}, index) => {
-    let cue = isObject(turn.renderCue) ? turn.renderCue : {};
-    let explicitStart = cue.startMs ?? turn.startMs;
-    let durationMs = Math.max(1, finiteNumber(cue.durationMs ?? turn.durationMs, 1000) || 1000);
-    let startMs = explicitStart === undefined ? cursorMs : Math.max(0, finiteNumber(explicitStart, cursorMs) || cursorMs);
+    let aligned = alignedSequence?.turns?.[index];
+    let startMs = aligned ? aligned.startMs : cursorMs;
+    let durationMs = aligned ? Math.max(1, aligned.endMs - aligned.startMs) : 1000;
     cursorMs = Math.max(cursorMs, startMs + durationMs);
     return timelineMsClip({
       id: `action:${turn.id || turn.turnId || index + 1}`,
@@ -347,23 +410,21 @@ function presentationActionTimelineClips(timeline = {}) {
   });
 }
 
-function voiceItemTiming(item = {}, turn = {}, cursorMs = 0) {
-  let renderCue = isObject(turn.renderCue) ? turn.renderCue : {};
-  let cue = isObject(turn.cue) ? turn.cue : {};
-  let startMs = finiteNumber(item.startMs ?? renderCue.startMs ?? renderCue.start ?? cue.startMs ?? turn.startMs, cursorMs);
-  let durationMs = Math.max(1, finiteNumber(item.durationMs ?? renderCue.durationMs ?? cue.durationMs ?? turn.durationMs, 1000) || 1000);
-  let endMs = finiteNumber(item.endMs ?? renderCue.endMs ?? cue.endMs ?? turn.endMs, startMs + durationMs);
+function voiceItemTiming(item = {}, alignedTurn = null, cursorMs = 0) {
+  let startMs = finiteNumber(item.startMs ?? alignedTurn?.startMs, cursorMs);
+  let durationMs = Math.max(1, finiteNumber(item.durationMs ?? (alignedTurn ? alignedTurn.endMs - alignedTurn.startMs : undefined), 1000) || 1000);
+  let endMs = finiteNumber(item.endMs ?? alignedTurn?.endMs, startMs + durationMs);
   endMs = Math.max(startMs + 1, endMs);
   return { startMs, durationMs: endMs - startMs, endMs };
 }
 
-function voiceItemTimelineClips(renderJob = {}, timeline = {}) {
+function voiceItemTimelineClips(renderJob = {}, timeline = {}, alignedSequence = null) {
   let items = Array.isArray(renderJob.audio?.items) ? renderJob.audio.items : [];
   let turns = Array.isArray(timeline?.turns) ? timeline.turns : [];
   let cursorMs = 0;
   return items.map((item = {}, index) => {
     let turn = turns[index] || {};
-    let timing = voiceItemTiming(item, turn, cursorMs);
+    let timing = voiceItemTiming(item, alignedSequence?.turns?.[index], cursorMs);
     cursorMs = Math.max(cursorMs, timing.endMs);
     let persona = cleanString(item.persona || turn.persona || (index % 2 ? 'ops' : 'guide'), 'guide');
     let lane = `voice:${persona}`;
@@ -387,9 +448,9 @@ function voiceClipIndexKey(clip = {}, fallbackIndex = 0) {
   return Number.isFinite(itemIndex) ? Math.max(1, Math.round(itemIndex) + 1) : fallbackIndex + 1;
 }
 
-function voiceTimelineClips(renderJob = {}, timeline = {}) {
+function voiceTimelineClips(renderJob = {}, timeline = {}, alignedSequence = null) {
   let layers = Array.isArray(renderJob.audio?.speakerLayers) ? renderJob.audio.speakerLayers : [];
-  if (!layers.length) return voiceItemTimelineClips(renderJob, timeline);
+  if (!layers.length) return voiceItemTimelineClips(renderJob, timeline, alignedSequence);
   return layers.flatMap((layer = {}) => {
     let lane = `voice:${cleanString(layer.persona || layer.speaker, 'speaker')}`;
     return (Array.isArray(layer.clips) ? layer.clips : []).map((clip = {}, index) => timelineMsClip({
@@ -435,12 +496,66 @@ function timelineClipEndFrame(clip = {}, fps = 30) {
   return 0;
 }
 
+function authoringTimelineSelectionInput(projectInput, options) {
+  let direct = isObject(projectInput)
+    && projectInput.schemaVersion === PRESENTATION_AUTHORING_PROJECT_SCHEMA_VERSION;
+  let wrapped = isObject(projectInput?.project)
+    && projectInput.project.schemaVersion === PRESENTATION_AUTHORING_PROJECT_SCHEMA_VERSION;
+  if (!direct && !wrapped) return null;
+  let project = direct ? projectInput : projectInput.project;
+  let alignedSequence = direct
+    ? options.alignedSequence
+    : projectInput.alignedSequence ?? options.alignedSequence;
+  let schedule = direct ? options.schedule : projectInput.schedule ?? options.schedule;
+  if (!alignedSequence || !schedule) {
+    throw new TypeError(
+      'presentation authoring timeline selection requires its exact alignedSequence and schedule',
+    );
+  }
+  return { project, alignedSequence, schedule };
+}
+
+function selectPresentationAuthoringTimeline(projectInput, options) {
+  let tuple = authoringTimelineSelectionInput(projectInput, options);
+  if (!tuple) return null;
+  let project = validatePresentationAuthoringProject(tuple.project);
+  let timeline = createPresentationAuthoringTimelineProjection(project);
+  let alignedSequence = validatePresentationAlignedSequence(tuple.alignedSequence, timeline);
+  let schedule = validatePresentationScheduleV2(tuple.schedule, project, alignedSequence);
+  let fps = positiveInteger(options.fps, 30);
+  let nle = projectPresentationNle(project, schedule);
+  let playbackPlan = createPresentationPlaybackPlan(project, schedule);
+  let editorModel = createPresentationTimelineEditorModel(project, schedule, { fps });
+  return Object.freeze({
+    authority: 'presentation-authoring-project',
+    legacy: false,
+    authoringProjectHash: project.hash,
+    timelineHash: timeline.hash,
+    alignedSequenceHash: alignedSequence.hash,
+    scheduleHash: schedule.hash,
+    nleHash: nle.hash,
+    playbackPlanHash: playbackPlan.hash,
+    editorModelHash: editorModel.hash,
+    fps: editorModel.fps,
+    durationFrames: editorModel.duration,
+    durationMs: schedule.totalDurationMs,
+    project,
+    alignedSequence,
+    schedule,
+    nle,
+    playbackPlan,
+    editorModel,
+  });
+}
+
 export function selectMediaProjectTimeline(projectInput = {}, options = {}) {
+  let authoringTimeline = selectPresentationAuthoringTimeline(projectInput, options);
+  if (authoringTimeline) return authoringTimeline;
   let project = normalizeMediaProject(projectInput);
   let renderJob = project.renderJob || {};
   let fps = positiveInteger(options.fps ?? project.renderSettings?.fps, 30);
   let clips = [
-    ...presentationActionTimelineClips(project.timeline),
+    ...presentationActionTimelineClips(project.timeline, project.alignedSequence),
   ];
   let frameCount = positiveInteger(renderJob.frameCount, 0) || (Array.isArray(renderJob.frames) ? renderJob.frames.length : 0);
   if (frameCount > 0) {
@@ -459,10 +574,12 @@ export function selectMediaProjectTimeline(projectInput = {}, options = {}) {
       samples: frameSamples,
     }));
   }
-  clips.push(...voiceTimelineClips(renderJob, project.timeline));
+  clips.push(...voiceTimelineClips(renderJob, project.timeline, project.alignedSequence));
   clips.push(...captionTimelineClips(renderJob));
   let durationFrames = positiveInteger(options.durationFrames, 0) || clips.reduce((max, clip) => Math.max(max, timelineClipEndFrame(clip, fps)), 0);
   return {
+    authority: 'legacy-media-project',
+    legacy: true,
     fps,
     durationFrames,
     durationMs: durationFrames > 0 ? Math.round((durationFrames / fps) * 1000) : 0,
@@ -689,17 +806,38 @@ function normalizeRenderJob(input = {}) {
     renderMode: cleanString(source.renderMode || source.mode),
     status: cleanString(source.status),
     stage: cleanString(source.stage),
+    terminalStage: cleanString(source.terminalStage),
+    failureStage: cleanString(source.failureStage),
     progress: normalizeProgress(source.progress),
-    finalOutputStale: source.finalOutputStale === true ? true : undefined,
+    finalOutputStale: typeof source.finalOutputStale === 'boolean' ? source.finalOutputStale : undefined,
     outputUrl: cleanString(source.outputUrl),
     manifestUrl: cleanString(source.manifestUrl || source.proofUrl),
     proofUrl: cleanString(source.proofUrl || source.manifestUrl),
     captionsUrl: cleanString(source.captionsUrl),
+    output: clonePortable(source.output),
+    ffprobe: clonePortable(source.ffprobe),
+    avSync: clonePortable(source.avSync),
+    usesTrackDemoFrames: typeof source.usesTrackDemoFrames === 'boolean' ? source.usesTrackDemoFrames : undefined,
+    frameSequenceCleaned: typeof source.frameSequenceCleaned === 'boolean' ? source.frameSequenceCleaned : undefined,
+    timelineHash: cleanString(source.timelineHash),
+    timelineContractVersion: cleanString(source.timelineContractVersion),
+    providerId: cleanString(source.providerId || source.provider),
+    cacheKey: cleanString(source.cacheKey),
+    fps: finiteNumber(source.fps, undefined),
+    width: positiveInteger(source.width, 0) || undefined,
+    height: positiveInteger(source.height, 0) || undefined,
+    captureProgress: clonePortable(source.captureProgress),
     error: cleanString(source.error),
+    timeout: typeof source.timeout === 'boolean' ? source.timeout : undefined,
+    timeoutReason: cleanString(source.timeoutReason),
     audio: clonePortable(source.audio),
     captions: clonePortable(source.captions),
     frames: clonePortable(source.frames),
     frameCount: Number.isFinite(Number(source.frameCount)) ? Number(source.frameCount) : undefined,
+    progressTimeline: clonePortable(source.progressTimeline),
+    stageDurations: clonePortable(source.stageDurations),
+    events: clonePortable(source.events),
+    mediaEvents: clonePortable(source.mediaEvents),
     updatedAt: timestamp(source.updatedAt, new Date().toISOString()),
   });
 }
@@ -742,7 +880,7 @@ export function invalidateMediaProjectArtifacts(projectInput = {}, reason = 'fin
   let scopes = new Set(project.renderState?.dirty || []);
   for (let item of reasons) {
     if (MEDIA_RENDER_DIRTY_SCOPE_SET.has(item)) scopes.add(item);
-    if (item === 'format' || item === 'resolution' || item === 'geometry') {
+    if (item === 'format' || item === 'resolution' || item === 'geometry' || item === 'appearance') {
       scopes.add('frame-cache');
       scopes.add('preview-sequence');
       scopes.add('final-output');
@@ -788,6 +926,7 @@ export function updateMediaProjectRenderSettings(projectInput = {}, settings = {
     previous.speakerMode !== next.speakerMode ||
     previous.providerId !== next.providerId ||
     !portableEqual(previous.voiceRefs || {}, next.voiceRefs || {});
+  let appearanceChanged = !portableEqual(previous.browserAppearance || {}, next.browserAppearance || {});
   let updated = normalizeMediaProject({
     ...project,
     renderSettings: next,
@@ -795,6 +934,7 @@ export function updateMediaProjectRenderSettings(projectInput = {}, settings = {
   });
   let dirtyReasons = [];
   if (geometryChanged) dirtyReasons.push('format');
+  if (appearanceChanged) dirtyReasons.push('appearance');
   if (audioChanged) dirtyReasons.push('audio');
   return dirtyReasons.length ? invalidateMediaProjectArtifacts(updated, dirtyReasons, options) : updated;
 }
@@ -988,6 +1128,10 @@ export function normalizeMediaProject(input = {}, options = {}) {
   let timelineHash = timeline
     ? createPresentationTimelineHash(timeline)
     : cleanString(source.timelineHash || source.hash);
+  if (source.alignedSequence && !timeline) throw new Error('media project aligned sequence requires its authored timeline');
+  let alignedSequence = source.alignedSequence
+    ? validatePresentationAlignedSequence(source.alignedSequence, timeline)
+    : undefined;
   if (routeState && timeline?.id && !routeState.timelineId) {
     routeState = normalizeMediaRenderRouteState({ ...routeState, timelineId: timeline.id });
   }
@@ -999,6 +1143,7 @@ export function normalizeMediaProject(input = {}, options = {}) {
     status: cleanString(source.status || renderJob.status, timeline ? 'draft' : 'empty'),
     timeline,
     timelineHash,
+    alignedSequence,
     renderSettings,
     renderJob: Object.keys(renderJob).length ? renderJob : undefined,
     renderRequest: clonePortable(source.renderRequest || source.request),

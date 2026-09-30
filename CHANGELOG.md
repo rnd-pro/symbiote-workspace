@@ -4,12 +4,218 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
-- Upgraded render-time presentations to `presentation-timeline-v2` with
-  source-grounded turns, explicit dialogue acts/replies, complete lesson-review
-  codes, and fail-closed TTS projection. Added stable interface and volatile data
-  snapshot hashes plus a browser-owned target-viewport preparation loop with one
-  bounded safe WebMCP deepening round, one optional same-snapshot review repair,
-  and stale-result rejection.
+- Upgraded the mutable presentation authority to
+  `workspace-presentation-authoring-project-v2` with immutable audio assets,
+  first-class editable audio clips, strict split/trim/move/link/unlink commands,
+  authored NLE audio tracks, Schedule v2 source/presentation spans, and one shared
+  presentation executor for editor preview and headless playback. Added a pure
+  composition/delivery manifest that reuses approved source alignment without new
+  TTS or transcription.
+- Added an atomic file-backed Presentation Project authority and exposed the same
+  semantic authoring commands through direct CLI calls and optional
+  `mcp --project <file>` mode. Visual NLE edits, agent edits, and hidden/headless
+  playback now share one Project graph rather than maintaining host-specific audio
+  or event timelines.
+- Added a browser-safe visual timeline bridge that projects the exact derived NLE
+  into `sn-timeline-editor` audio, caption, action, effect, and focus tracks while
+  preserving Project layer/cell identities. Committed visual moves translate back
+  through the same semantic command path as MCP/CLI and require the host to apply
+  them to the canonical Project authority before rebinding.
+
+- Added a stateless, product-neutral presentation authoring tool pack with one
+  strict tool descriptor per Authoring Project command, exact revision/hash CAS,
+  inspection, receipt-bound inverse generation, derived timeline/Schedule v2/NLE
+  results, and typed zero-mutation failures for stale, generated/read-only,
+  unknown, or free-form edits. Injected regeneration remains abortable and
+  storage-free. Narration changes retain immutable prior hashes while invalidating
+  exactly narration audio, alignment, and render; timing/attention edits preserve
+  ancestry, and only exact ordered accepted regeneration receipts restore
+  playability.
+- Added `workspace-presentation-execution-v1`, a host-neutral controller bound to
+  the exact Authoring Project, aligned-sequence, and Schedule v2 hashes. It keeps
+  capacity at one active effect and zero queued effects, admits work only on fresh
+  media samples, opens barriers only from validated actual adapter receipts, skips
+  expired cells without replay, and aborts stale work on `pause()`, `seek()`,
+  `stop()`, `dispose()`, or external cancellation. Interaction receipts are strictly
+  `acted → settled`, attention receipts are `first-frame → settled`, and state
+  receipts are `ready`; planned Schedule v2 barrier times never count as runtime
+  settlement.
+- Added `workspace-presentation-authoring-project-v1` as the sole mutable
+  presentation authoring authority, with stable layer and cell identities,
+  deterministic
+  project/timeline/layer/cell hashes, atomic same-base command transactions with
+  final-project receipts, lossless frozen `presentation-timeline-v3` projection,
+  frozen `workspace-aligned-sequence-v1`, strict
+  `workspace-presenter-action-schedule-v2`, and a derived versioned NLE projection.
+  Authoring Project validation rejects runtime selectors/geometry/receipts, invalid
+  dependency graphs, unavailable barriers, and multiple presenter collision
+  domains. Schedule v2 separates active gesture spans from persistent visibility,
+  applies deterministic audio pre-roll, preserves prerequisite order, and exposes
+  planned barriers without treating them as runtime settlement. Runtime consumers
+  must gate dependent attention on completed settlement receipts without queuing
+  late work or rewriting
+  authored/derived hashes. Exact-derived NLE edits map back to semantic anchors and
+  `leadMs`; ambiguous drags return bounded anchor choices instead of absolute timing.
+- Added the exact-version `workspace-presentation-journey-v1` contract in
+  `runtime/presentation-journey.js`, exported from `symbiote-workspace`,
+  `symbiote-workspace/runtime`, and `symbiote-workspace/browser` as
+  `createPresentationJourney`, `validatePresentationJourney`,
+  `presentationJourneyReplayProjection`, `PRESENTATION_JOURNEY_SCHEMA_VERSION`,
+  `PRESENTATION_JOURNEY_OUTCOMES`, and `PRESENTATION_JOURNEY_PROVENANCE`. A
+  journey is the portable record of one live source execution: a portable source
+  binding (surface id, path-only route, locale, context hash), one ordered event
+  timeline that distinguishes operator-authored input (submitted text, relative
+  typing cadence, submit offset), observed tool/action progress, content-addressed
+  resource results, and gated assistant text, a terminal outcome
+  (`completed`/`soft-timeout`/`hard-timeout`/`error`/`canceled`), and an explicit
+  monotonic time map. Each event records observed `sourceOffsetMs` and
+  independently declares `presentationOffsetMs`; the time-map segments may compress
+  idle waits but never stretch, `presentationDurationMs` never exceeds
+  `sourceDurationMs`, and every event offset must equal the time-map projection of
+  its source offset, so any retiming is proven. Semantic action names are supplied
+  by the consumer as an allowlist, keeping host tool vocabularies out of the
+  package. The canonical `contentHash` is a `sha256-<base64>` integrity over the
+  replay projection and its `id` is `presentation-journey:<contentHash>`, so the
+  hash binds directly into the existing media-evidence `action-log` node without a
+  second evidence graph, and a tampered `id`/`contentHash` fails validation.
+- Extracted the portable-value scan shared by the evidence and journey contracts
+  into `runtime/portable-value.js` (`assertPortableValue`,
+  `assertPortableRoutePath`, `PORTABLE_SECRET_KEY_PATTERN`).
+  `runtime/media-evidence.js` now consumes it instead of a private copy, so there
+  is one implementation of the credential, URL, absolute-path, and private-key
+  rejection. The journey contract layers a stricter private-key pattern (cookie,
+  bearer, authorization, session id, reasoning/chain-of-thought, selector, xpath,
+  element id) over the same scan.
+- Moved media render settings to `workspace-media-render-settings-v3` with a
+  normalized, portable `browserAppearance`. It independently controls browser
+  `chrome.visibility` (`hidden` default), `chrome.theme`
+  (`system`/`light`/`dark`/`tinted`), an optional `chrome.tint` that is required
+  only for `tinted` and rejected otherwise, and an independent page
+  `pageColorScheme` (`system`/`light`/`dark`). Defaults are hidden/system/system.
+  Hidden chrome accepts only the `system` theme; any explicit non-system theme,
+  malformed `#RRGGBB` tint, tint outside `tinted`, or unknown enum fails with an
+  actionable error and no silent alias. Appearance is exported as
+  `normalizeBrowserAppearance`, `BROWSER_CHROME_VISIBILITIES`,
+  `BROWSER_CHROME_THEMES`, and `BROWSER_PAGE_COLOR_SCHEMES`; any appearance change
+  invalidates the frame cache, preview sequence, and final output so render/cache
+  identity tracks it. The `workspace-media-evidence-v3` manifest settings contract
+  now normalizes and retains `browserAppearance` through the same normalizer, so an
+  omitted value canonicalizes to hidden/system/system, invalid appearance fails
+  manifest validation, and changing appearance changes the canonical manifest
+  identity. Provider, Chromium, native-chrome, and product concerns stay out of the
+  package.
+- Moved the presentation output and composition contracts to
+  `workspace-presentation-output-v2` and `workspace-presentation-composition-v2`.
+  The output spec adds neutral, finite, non-negative final-frame `frameInsets`
+  (zero defaults) and derives a positive `presentationViewport {x,y,width,height}`;
+  frame insets that leave no positive viewport are rejected. Safe area, content
+  rectangle, and captions are now derived inside the presentation viewport rather
+  than the full output frame, so a zero-inset plan preserves the previous semantic
+  geometry exactly while the spec hash changes when insets change. Composition
+  `measuredViewport` must equal the presentation viewport (with the existing DPR
+  rules), so a non-zero-inset plan measured at full output fails closed. The
+  composition audit keeps browser DOM focus/annotation rectangles page-local and
+  explicitly translates them by the presentation viewport origin before
+  final-frame containment and caption-collision checks; output remains the final
+  video coordinate system. Presentation preparation, rehydration, settlement, and
+  context snapshots receive the page-local presentation viewport while retaining
+  the full output spec as the final-video identity.
+- Presentation review now proves responsive dialogue handoffs primarily from
+  structured turn relationships: after a speaker change, a valid `replyTo` must
+  resolve to an earlier turn by the other persona. The existing lexical signal
+  remains supplementary and is Unicode-aware for localized copy; malformed,
+  forward, self, and same-persona references still fail closed.
+- Added deterministic `presentation-dialogue-quality-v2` pre-TTS gates for
+  cross-turn n-gram/content repetition and balanced per-persona contribution,
+  with portable dependency, repetition, and contribution metrics for EN/RU/ES.
+- Added strict `workspace-media-evidence-v3` synthesis receipt coverage. Audio
+  turns now bind provider-attested receipts to artifact hashes, personas,
+  unique voice provenance, locale, and `versions.voice`, while rejecting
+  biometric claims, missing coverage, and private provider fields. Receipt
+  evidence additionally requires bounded acoustic-cluster speaker-probe verdicts
+  with enforced thresholds and portable loudness/true-peak normalization
+  evidence.
+- Added the portable `workspace-virtual-sequence-v1` contract
+  (`runtime/media-sequence.js`), exported from `symbiote-workspace`,
+  `symbiote-workspace/runtime`, and `symbiote-workspace/browser`. It is the
+  indexed playback/scrub/rerender model and declares a required `executionTier`,
+  exactly one of `sequential-realtime`, `replayable-segment`, or
+  `checkpointed-deterministic` (`VIRTUAL_SEQUENCE_EXECUTION_TIERS`). It carries
+  encoded master segments (video codecs/containers only), playback and scrub
+  proxies or bounded scrub chunks, sparse sprites/thumbnails, keyframe and
+  timestamp seek indexes, audio/waveform references, and separately-invalidatable
+  `base`/`overlay`/`caption`/`audio` layers with dependencies and affected ranges
+  over a rational integer timebase and frameRate. A sequence has exactly one
+  `base` layer covering the full duration; a `sequential-realtime` base must be
+  `opaque` and invalidates its full declared range, while the cooperative tiers
+  may declare a partial base range as an optimization declaration (no parallelism
+  is claimed for opaque surfaces). A derived integer `ticksPerFrame` aligns every
+  master range boundary, master keyframe, and encoded scrub-chunk boundary, while
+  caption/overlay/audio/layer ranges stay sub-frame-capable. `index.timestamps`
+  is a cheap PTS index (a complete one-entry-per-frame index is valid) that
+  rejects duplicate, non-monotonic, out-of-range, and off-grid values. Bounded
+  scrub chunks declare a positive `maxChunkDurationTicks` and reject any longer
+  chunk. Sprite cue counts may not exceed tile capacity (`columns * rows`), cue
+  ticks are globally unique, and the projection returns the selected `cueIndex`,
+  `column`, and `row`. The sequence exposes a canonical `contentHash` used by its
+  `id`, with layer/sprite/audio collections canonicalized so equivalent input
+  order yields one identity. `projectVirtualSequenceAt()` is a deterministic
+  projection at a media tick, and `invalidateVirtualSequence()` is range-aware,
+  returning merged affected ranges and per-layer recomputations with downstream
+  propagation stopping when a recomputation preserves a layer's output hash.
+  Strict validation rejects absolute paths, URLs, credentials, parent traversal,
+  unknown fields, duplicate identities/timestamps, non-monotonic seek indexes,
+  master-track gaps/overlaps, image-codec encoded segments, and incompatible
+  timebase/frameRate/duration data, while allowing repeated content hashes for
+  static scenes. When present on a manifest the sequence is validated and bound
+  into the `workspace-media-evidence-v3` canonical identity, with `frameRate`
+  matching `settings.fps` and audio requiring `settings.includeAudio`. Added the
+  four read-only media dispatch tools `media_sequence_validate`,
+  `media_sequence_project`, `media_sequence_invalidate`, and
+  `media_evidence_validate` over CLI and MCP.
+- Bumped the media artifact graph to `workspace-media-artifact-graph-v2`
+  (v1 is rejected outright) and added a `virtual-sequence` artifact kind. When a
+  media evidence manifest carries a `virtualSequence`, the graph must contain
+  exactly one ready `virtual-sequence` node whose `outputHash` equals the
+  sequence `contentHash`, and a passing publication's proof/evidence dependency
+  chain must transitively include that node — so a proof for one output cannot
+  publish a different sequence. Passing sequence publications also require
+  playback, scrub, sprite/thumbnail, and conditional audio/waveform assets, and
+  evidence must start from a `quality-proof` or `proof-manifest` node rather than
+  treating the sequence itself as proof. A `virtual-sequence` node with no
+  manifest `virtualSequence` is rejected.
+
+- Added the frozen `presentation-dialogue-quality-v1` review profile with shared
+  EN/RU tokenization, distinct-role and reply-cohesion checks, turn pacing,
+  punctuation and pronounceability gates, delivery continuity, useful semantic
+  handoffs, stable issue codes, and public Node/browser exports.
+- Replaced the render-time lesson contract with strict
+  `presentation-timeline-v3`: explicit provider-neutral personas, grounded
+  dialogue turns, any-earlier replies, ordered focus/interaction/annotation/state
+  cues, and semantic speech anchors. Legacy single cues/actions and authored
+  media milliseconds now fail closed. Added `workspace-aligned-sequence-v1` as a
+  separately hashed post-audio artifact with complete turn/cue coverage and
+  alignment provenance, and migrated browser playback, lesson audits, media
+  projects, and public Node/browser exports to the new contract.
+- Added a bounded, privacy-checked planner projection for responsive model
+  replanning without duplicated source and target snapshots.
+- Added the browser-safe `workspace-lesson-context-v2` packet, typed lesson
+  facts/claims/relations, normalized WebMCP descriptors and safety hints,
+  deterministic EN/RU grounding and depth audits, lesson-context-bound replans,
+  output constraints, and per-action safe deepening evidence before TTS.
+- Added `workspace-presentation-output-v1` and
+  `workspace-presentation-composition-v1`: horizontal, vertical, and square
+  30 FPS/DPR 1 output specs now define safe content and caption regions,
+  language, voice sequence, and duration bounds. Target-viewport preparation
+  measures real target geometry, clipping, occlusion, readability, reversible
+  UI state, and scroll projections; render adoption fails closed on stale or
+  rejected composition evidence, and one bounded repair must preserve lesson
+  intent.
+- Added strict browser-safe `workspace-media-evidence-v1` and
+  `workspace-media-artifact-graph-v2` contracts with canonical cache identity,
+  host-sensitive frame/encode keys, explicit timing artifacts, transitive
+  invalidation, early output-hash cutoff, provenance, metrics, publication
+  gates, and fail-closed privacy validation.
 - Documented and covered portable cascade `themeVariant`, `tabShape`,
   `tabRadius`, and `cellRadius` params so library theme variants, tab geometry,
   and animated `cell-bg` circle sizing round-trip through `cascade-theme-change`

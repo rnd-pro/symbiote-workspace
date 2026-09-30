@@ -133,8 +133,8 @@
   "peerDependencies": {
     "@symbiotejs/symbiote": "3.8.0-webmcp.2",
     "linkedom": "^0.18.12",
-    "symbiote-engine": ">=0.3.0-alpha.12",
-    "symbiote-ui": ">=0.3.0-alpha.50"
+    "symbiote-engine": ">=0.3.0-alpha.13",
+    "symbiote-ui": ">=0.3.0-alpha.71"
   },
   "peerDependenciesMeta": {
     "@symbiotejs/symbiote": {
@@ -156,8 +156,8 @@
     "marked": "18.0.6",
     "mime": "4.1.0",
     "playwright": "1.61.0",
-    "symbiote-engine": "0.3.0-alpha.12",
-    "symbiote-ui": "https://codeload.github.com/rnd-pro/symbiote-ui/tar.gz/fee0dbb",
+    "symbiote-engine": "0.3.0-alpha.13",
+    "symbiote-ui": "0.3.0-alpha.71",
     "symbiote-ui-docs": "npm:symbiote-ui@^0.3.0-alpha.67"
   },
   "repository": {
@@ -172,5 +172,10 @@
   "license": "MIT",
   "engines": {
     "node": ">=18.0.0"
+  },
+  "directories": {
+    "doc": "docs",
+    "example": "examples",
+    "test": "tests"
   }
 }

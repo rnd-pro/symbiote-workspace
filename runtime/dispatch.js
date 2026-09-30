@@ -17,6 +17,7 @@ import { documentToolFamily } from './tools/document-tools.js';
 import { executionToolFamily } from './tools/execution-tools.js';
 import { grantToolFamily } from './tools/grant-tools.js';
 import { hookToolFamily } from './tools/hook-tools.js';
+import { mediaToolFamily } from './tools/media-tools.js';
 import { packageToolFamily } from './tools/package-tools.js';
 import { createToolRegistry } from './tools/registry.js';
 import { routeToolFamily } from './tools/route-tools.js';
@@ -35,6 +36,7 @@ export const TOOL_FAMILIES = Object.freeze([
   hookToolFamily,
   grantToolFamily,
   executionToolFamily,
+  mediaToolFamily,
   createCatalogToolFamily((context) => context.catalog || createCatalog({ config: context.config })),
 ]);
 

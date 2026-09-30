@@ -11,7 +11,15 @@ import {
   MEDIA_PROJECT_SCHEMA_VERSION,
   MEDIA_RENDER_EVENT_SCHEMA_VERSION,
   MEDIA_RENDER_SETTINGS_SCHEMA_VERSION,
+  BROWSER_CHROME_THEMES,
   applyMediaRenderEvent,
+  normalizeBrowserAppearance,
+  createPresentationAlignedSequence,
+  createPresentationAuthoringProjectFromTimeline,
+  createPresentationPlaybackPlan,
+  createPresentationScheduleV2,
+  createPresentationTimelineEditorModel,
+  createPresentationTimelineContract,
   createMediaProject,
   createMediaRenderEvent,
   createMediaProjectRouteSearch,
@@ -24,25 +32,44 @@ import {
   normalizeMediaRenderReadiness,
   normalizeMediaRenderRouteState,
   normalizeMediaRenderSettings,
+  normalizeMediaProject,
   parseMediaProjectRouteSearch,
+  projectPresentationNle,
   selectMediaProjectTimeline,
   updateMediaProjectRenderSettings,
 } from '../index.js';
 
-function timeline() {
-  return {
+function timeline(turns) {
+  let source = {
+    contractVersion: 'presentation-timeline-v3',
     id: 'media-project-tour',
     title: 'Media project tour',
     locale: 'en-US',
     personas: {
-      guide: { name: 'Guide', lang: 'en-US' },
-      ops: { name: 'Operations', lang: 'en-US' },
+      guide: { name: 'Guide', role: 'lesson guide', locale: 'en-US' },
+      ops: { name: 'Operations', role: 'domain operator', locale: 'en-US' },
     },
-    turns: [
-      { persona: 'guide', text: 'Show the preview.', cue: { targetId: 'panel:media:preview' } },
-      { persona: 'ops', text: 'Confirm the timeline.', cue: { targetId: 'panel:media:timeline' } },
+    grounding: { sources: [] },
+    turns: turns || [
+      { id: 'turn-1', persona: 'guide', dialogueAct: 'open', text: 'Show the preview.', sourceRefs: [], claims: [], cues: [{ kind: 'focus', targetId: 'panel:media:preview', at: { anchor: 'turn-start' }, until: { anchor: 'turn-end' }, focus: { mode: 'cursor' } }] },
+      { id: 'turn-2', persona: 'ops', addressee: 'guide', dialogueAct: 'respond', replyTo: 'turn-1', text: 'Confirm the timeline.', sourceRefs: [], claims: [], cues: [{ kind: 'focus', targetId: 'panel:media:timeline', at: { anchor: 'turn-start' }, until: { anchor: 'turn-end' }, focus: { mode: 'cursor' } }] },
     ],
   };
+  return source;
+}
+
+function alignedSequence(source, durations) {
+  let contract = createPresentationTimelineContract(source);
+  let cursor = 0;
+  let turns = durations.map((durationMs) => {
+    let startMs = cursor;
+    cursor += durationMs;
+    return { startMs, endMs: cursor, transcript: '', words: [] };
+  });
+  return createPresentationAlignedSequence(contract, {
+    media: { hash: 'sha256-audio', durationMs: cursor, locale: contract.locale },
+    turns,
+  });
 }
 
 function memoryStorage() {
@@ -68,7 +95,7 @@ describe('media project contract', () => {
     assert.equal(project.id, 'project-a');
     assert.equal(project.surface, 'media-studio');
     assert.equal(project.timeline.turns.length, 2);
-    assert.match(project.timelineHash, /^presentation-timeline-v2:/);
+    assert.match(project.timelineHash, /^presentation-timeline-v3:/);
     assert.equal(project.renderSettings.includeAudio, true);
     assert.equal(project.renderSettings.autoRender, true);
     assert.equal(project.renderSettings.schemaVersion, MEDIA_RENDER_SETTINGS_SCHEMA_VERSION);
@@ -98,20 +125,18 @@ describe('media project contract', () => {
   });
 
   it('selects timeline skeleton clips without fabricating video before artifacts exist', () => {
+    let source = timeline();
     let project = createMediaProject({
       id: 'timeline-skeleton-project',
-      timeline: {
-        ...timeline(),
-        turns: [
-          { id: 'turn-1', persona: 'guide', text: 'Show the preview.', renderCue: { startMs: 0, durationMs: 1200 } },
-          { id: 'turn-2', persona: 'ops', text: 'Confirm the timeline.', renderCue: { startMs: 1200, durationMs: 900 } },
-        ],
-      },
+      timeline: source,
+      alignedSequence: alignedSequence(source, [1200, 900]),
       renderSettings: { fps: 30 },
     });
 
     let selected = selectMediaProjectTimeline(project);
 
+    assert.equal(selected.authority, 'legacy-media-project');
+    assert.equal(selected.legacy, true);
     assert.equal(selected.fps, 30);
     assert.equal(selected.clips.length, 2);
     assert.deepEqual(selected.clips.map((clip) => clip.lane), ['actions', 'actions']);
@@ -119,15 +144,67 @@ describe('media project contract', () => {
     assert.equal(selected.durationFrames, 63);
   });
 
+  it('selects the exact Project-derived Schedule, NLE, playback, and editor projections for authoring v2', () => {
+    let source = createPresentationTimelineContract(timeline());
+    let { project } = createPresentationAuthoringProjectFromTimeline(source);
+    let alignment = alignedSequence(source, [1200, 900]);
+    let schedule = createPresentationScheduleV2(project, alignment);
+    let expectedNle = projectPresentationNle(project, schedule);
+    let expectedPlayback = createPresentationPlaybackPlan(project, schedule);
+    let expectedEditor = createPresentationTimelineEditorModel(project, schedule, { fps: 24 });
+
+    let selected = selectMediaProjectTimeline(project, {
+      alignedSequence: alignment,
+      schedule,
+      fps: 24,
+    });
+
+    assert.equal(selected.authority, 'presentation-authoring-project');
+    assert.equal(selected.legacy, false);
+    assert.equal(selected.authoringProjectHash, project.hash);
+    assert.equal(selected.timelineHash, schedule.timelineHash);
+    assert.equal(selected.scheduleHash, schedule.hash);
+    assert.equal(selected.nleHash, expectedNle.hash);
+    assert.equal(selected.playbackPlanHash, expectedPlayback.hash);
+    assert.equal(selected.editorModelHash, expectedEditor.hash);
+    assert.equal(selected.project, project);
+    assert.equal(selected.alignedSequence, alignment);
+    assert.equal(selected.schedule, schedule);
+    assert.deepEqual(selected.nle, expectedNle);
+    assert.deepEqual(selected.playbackPlan, expectedPlayback);
+    assert.deepEqual(selected.editorModel, expectedEditor);
+    assert.deepEqual(
+      selected.editorModel.tracks.flatMap(({ clips }) => clips.map(({ id }) => id)),
+      [...expectedNle.tracks, ...expectedNle.generatedTracks]
+        .flatMap(({ clips }) => clips.map(({ id }) => id)),
+    );
+    assert.equal('clips' in selected, false);
+  });
+
+  it('never falls back to a synthetic legacy timeline for an incomplete authoring tuple', () => {
+    let source = createPresentationTimelineContract(timeline());
+    let { project } = createPresentationAuthoringProjectFromTimeline(source);
+
+    assert.throws(
+      () => selectMediaProjectTimeline(project),
+      /alignedSequence.*schedule|schedule.*alignedSequence/i,
+    );
+  });
+
+  it('rejects an aligned sequence without its authored timeline', () => {
+    let source = timeline();
+    assert.throws(
+      () => normalizeMediaProject({ alignedSequence: alignedSequence(source, [1200, 900]) }),
+      /requires its authored timeline/,
+    );
+  });
+
   it('selects frame, voice, caption, and action clips from folded project state', () => {
+    let source = timeline([timeline().turns[0]]);
     let project = createMediaProject({
       id: 'timeline-artifact-project',
-      timeline: {
-        ...timeline(),
-        turns: [
-          { id: 'turn-1', persona: 'guide', text: 'Show the preview.', renderCue: { startMs: 0, durationMs: 1000 } },
-        ],
-      },
+      timeline: source,
+      alignedSequence: alignedSequence(source, [1000]),
       renderSettings: { fps: 30 },
       renderJob: {
         id: 'job-1',
@@ -181,15 +258,14 @@ describe('media project contract', () => {
   });
 
   it('shows partial voice clips from generated audio items before final speaker layers exist', () => {
+    let source = timeline([
+      { ...timeline().turns[0], text: 'First generated line.' },
+      { ...timeline().turns[1], text: 'Second generated line.' },
+    ]);
     let project = createMediaProject({
       id: 'partial-audio-project',
-      timeline: {
-        ...timeline(),
-        turns: [
-          { id: 'turn-1', persona: 'guide', text: 'First generated line.', renderCue: { startMs: 0, durationMs: 1000 } },
-          { id: 'turn-2', persona: 'ops', text: 'Second generated line.', renderCue: { startMs: 1000, durationMs: 1500 } },
-        ],
-      },
+      timeline: source,
+      alignedSequence: alignedSequence(source, [1000, 1500]),
       renderSettings: { fps: 30 },
       renderJob: {
         id: 'partial-audio-job',
@@ -226,6 +302,7 @@ describe('media project contract', () => {
 
   it('normalizes render settings for vertical video and captions by default', () => {
     let settings = normalizeMediaRenderSettings({
+      schemaVersion: 'workspace-media-render-settings-v2',
       vertical: true,
       captionsMode: 'karaoke',
       providerId: 'local-model-service',
@@ -233,6 +310,7 @@ describe('media project contract', () => {
     });
 
     assert.equal(settings.autoRender, true);
+    assert.equal(settings.schemaVersion, MEDIA_RENDER_SETTINGS_SCHEMA_VERSION);
     assert.equal(settings.orientation, 'vertical');
     assert.equal(settings.aspectRatio, '9:16');
     assert.equal(settings.width, 1080);
@@ -241,6 +319,86 @@ describe('media project contract', () => {
     assert.equal(settings.captionStyle.preset, 'tiktok');
     assert.equal(settings.providerId, 'local-model-service');
     assert.equal(settings.sequenceMode, 'overlap');
+    assert.deepEqual(settings.browserAppearance, { chrome: { visibility: 'hidden', theme: 'system' }, pageColorScheme: 'system' });
+  });
+
+  it('normalizes default and every valid visible browser appearance variant', () => {
+    assert.deepEqual(normalizeBrowserAppearance(), { chrome: { visibility: 'hidden', theme: 'system' }, pageColorScheme: 'system' });
+    assert.deepEqual(
+      normalizeBrowserAppearance({ chrome: { visibility: 'visible', theme: 'system' }, pageColorScheme: 'dark' }),
+      { chrome: { visibility: 'visible', theme: 'system' }, pageColorScheme: 'dark' },
+    );
+    assert.deepEqual(normalizeBrowserAppearance({ chrome: { visibility: 'visible', theme: 'light' } }).chrome, { visibility: 'visible', theme: 'light' });
+    assert.deepEqual(normalizeBrowserAppearance({ chrome: { visibility: 'visible', theme: 'dark' } }).chrome, { visibility: 'visible', theme: 'dark' });
+    assert.deepEqual(
+      normalizeBrowserAppearance({ chrome: { visibility: 'visible', theme: 'tinted', tint: '#1A2B3C' } }).chrome,
+      { visibility: 'visible', theme: 'tinted', tint: '#1a2b3c' },
+    );
+    for (let theme of BROWSER_CHROME_THEMES) {
+      assert.equal(normalizeBrowserAppearance({ chrome: { visibility: 'visible', theme, ...(theme === 'tinted' ? { tint: '#ffffff' } : {}) } }).chrome.theme, theme);
+    }
+  });
+
+  it('rejects invalid browser appearance combinations with actionable errors', () => {
+    assert.throws(() => normalizeBrowserAppearance({ chrome: { visibility: 'shown' } }), /invalid browser chrome visibility: shown/);
+    assert.throws(() => normalizeBrowserAppearance({ chrome: { visibility: 'visible', theme: 'sepia' } }), /invalid browser chrome theme: sepia/);
+    assert.throws(() => normalizeBrowserAppearance({ pageColorScheme: 'sunlight' }), /invalid page color scheme: sunlight/);
+    assert.throws(() => normalizeBrowserAppearance({ chrome: { visibility: 'visible', theme: 'tinted', tint: '1a2b3c' } }), /invalid browser chrome tint/);
+    assert.throws(() => normalizeBrowserAppearance({ chrome: { visibility: 'visible', theme: 'tinted', tint: '#12g' } }), /invalid browser chrome tint/);
+    assert.throws(() => normalizeBrowserAppearance({ chrome: { visibility: 'visible', theme: 'tinted' } }), /theme "tinted" requires a "#RRGGBB" tint/);
+    assert.throws(() => normalizeBrowserAppearance({ chrome: { visibility: 'visible', theme: 'dark', tint: '#101010' } }), /tint is only valid with theme "tinted"/);
+    assert.throws(() => normalizeBrowserAppearance({ chrome: { visibility: 'hidden', theme: 'dark' } }), /hidden browser chrome accepts only the "system" theme/);
+    assert.throws(() => normalizeBrowserAppearance({ chrome: { visibility: 'hidden', theme: 'tinted', tint: '#101010' } }), /hidden browser chrome accepts only the "system" theme/);
+  });
+
+  it('does not mutate the browser appearance input', () => {
+    let input = { chrome: { visibility: 'visible', theme: 'tinted', tint: '#ABCDEF' }, pageColorScheme: 'light' };
+    let snapshot = JSON.parse(JSON.stringify(input));
+    let normalized = normalizeBrowserAppearance(input);
+
+    assert.deepEqual(input, snapshot);
+    assert.equal(normalized.chrome.tint, '#abcdef');
+    assert.notEqual(normalized.chrome, input.chrome);
+  });
+
+  it('invalidates rendered pixels and identity when browser appearance changes', () => {
+    let project = createMediaProject({
+      id: 'appearance-project',
+      timeline: timeline(),
+      renderSettings: { browserAppearance: { chrome: { visibility: 'visible', theme: 'light' } } },
+      renderState: { status: 'ready', settled: true, autoRenderReady: true },
+      preview: { status: 'ready', currentFrame: '/frames/frame-0001.png' },
+    });
+
+    assert.deepEqual(project.renderSettings.browserAppearance.chrome, { visibility: 'visible', theme: 'light' });
+
+    let updated = updateMediaProjectRenderSettings(project, {
+      browserAppearance: { chrome: { visibility: 'visible', theme: 'tinted', tint: '#204060' }, pageColorScheme: 'dark' },
+    });
+
+    assert.deepEqual(updated.renderSettings.browserAppearance, { chrome: { visibility: 'visible', theme: 'tinted', tint: '#204060' }, pageColorScheme: 'dark' });
+    assert.equal(updated.renderState.autoRenderReady, false);
+    assert.deepEqual(updated.renderState.dirty.sort(), ['final-output', 'frame-cache', 'preview-sequence'].sort());
+    assert.equal(updated.preview.status, 'dirty');
+
+    let unchanged = updateMediaProjectRenderSettings(project, {
+      browserAppearance: { chrome: { visibility: 'visible', theme: 'light' } },
+    });
+    assert.equal(unchanged.renderState.autoRenderReady, true);
+  });
+
+  it('treats a browser appearance settings update as a full-object replacement', () => {
+    let project = createMediaProject({
+      id: 'appearance-replace-project',
+      timeline: timeline(),
+      renderSettings: { browserAppearance: { chrome: { visibility: 'visible', theme: 'tinted', tint: '#204060' }, pageColorScheme: 'dark' } },
+    });
+
+    let updated = updateMediaProjectRenderSettings(project, {
+      browserAppearance: { chrome: { visibility: 'visible' } },
+    });
+
+    assert.deepEqual(updated.renderSettings.browserAppearance, { chrome: { visibility: 'visible', theme: 'system' }, pageColorScheme: 'system' });
   });
 
   it('owns a strict media render event vocabulary', () => {
@@ -698,8 +856,12 @@ describe('media project contract', () => {
         id: 'render-1',
         status: 'succeeded',
         progress: 1,
+        finalOutputStale: false,
         outputUrl: '/render-cache/jobs/render-1/render.mp4',
         manifestUrl: '/render-cache/jobs/render-1/manifest.json',
+        output: { url: '/render-cache/jobs/render-1/render.mp4', sha256: 'a'.repeat(64), bytes: 42 },
+        ffprobe: { format: { duration: '3.5' } },
+        avSync: { ok: true, driftsMs: { videoVsAudioMs: 0 } },
       },
     });
     let restored = store.load(project.id);
@@ -707,7 +869,11 @@ describe('media project contract', () => {
     assert.equal(updated.renderJob.id, 'render-1');
     assert.equal(restored.status, 'complete');
     assert.equal(restored.timeline.hash, project.timeline.hash);
+    assert.equal(restored.renderJob.finalOutputStale, false);
     assert.equal(restored.renderJob.outputUrl, '/render-cache/jobs/render-1/render.mp4');
+    assert.equal(restored.renderJob.output.sha256, 'a'.repeat(64));
+    assert.equal(restored.renderJob.ffprobe.format.duration, '3.5');
+    assert.equal(restored.renderJob.avSync.ok, true);
     assert.equal(restored.renderRequest.seed.url, '/workspace?surface=orders');
     assert.equal(restored.renderRequest.render.height, 1920);
     assert.deepEqual(store.list().map((item) => item.id), ['roundtrip-project']);

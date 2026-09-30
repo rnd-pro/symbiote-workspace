@@ -5,7 +5,7 @@
 ```
 ┌─────────────────────────────────────────────┐
 │                  Dispatch                   │
-│       85 registered tools, 1 registry       │
+│       89 registered tools, 1 registry       │
 │             runtime/dispatch.js             │
 ├──────────────────┬──────────────────────────┤
 │   CLI (argv)     │      MCP (JSON-RPC)      │

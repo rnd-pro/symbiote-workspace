@@ -45,6 +45,7 @@ export {
   WORKSPACE_PACKAGE_SCHEMA_VERSION,
   BROWSER_ENGINE_CONTRACTS_IMPORT,
   BROWSER_ENGINE_IMPORT,
+  BROWSER_ENGINE_PREFIX_IMPORT,
   BROWSER_REQUIRED_IMPORTS,
   BROWSER_THEME_IMPORT,
   exportConfig,
@@ -107,14 +108,133 @@ export {
 export { subscribeDataChange } from './runtime/data-change-client.js';
 
 export {
+  LESSON_CLAIM_KINDS,
+  LESSON_CONTEXT_SCHEMA_VERSION,
+  LESSON_RELATION_KINDS,
+  LESSON_TEXT_RULES_VERSION,
+  LESSON_TYPES,
+  auditPresentationLessonContext,
+  auditPresentationTimelineClaims,
+  createPresentationLessonContext,
+  lessonTextTokens,
+  lessonToolIsSafeForDeepening,
+  normalizeLessonToolDescriptor,
+  validateLessonToolInput,
+} from './runtime/lesson-context.js';
+
+export {
+  PRESENTATION_CAPTION_COMPOSITION_SCHEMA_VERSION,
+  PRESENTATION_CAPTION_TIMING_TOLERANCE_MS,
+  PRESENTATION_COMPOSITION_CUE_KINDS,
+  PRESENTATION_COMPOSITION_ISSUE_CODES,
+  PRESENTATION_COMPOSITION_PLAN_SCHEMA_VERSION,
+  PRESENTATION_OUTPUT_SPEC_SCHEMA_VERSION,
+  auditPresentationCompositionPlan,
+  bindCaptionCuesToAlignedSequence,
+  createLessonIntentHash,
+  createPresentationCompositionPlan,
+  listPresentationCompositionCueSlots,
+  normalizePresentationOutputSpec,
+  normalizePresentationRect,
+  normalizePresentationTargetComposition,
+  presentationOutputOrientation,
+  presentationReplanRequestHash,
+  presentationRectsIntersect,
+  planCaptionPlacements,
+} from './runtime/presentation-output.js';
+
+export {
+  PRESENTATION_PLANNER_INPUT_MAX_BYTES,
+  PRESENTATION_PLANNER_INPUT_SCHEMA_VERSION,
+  createPresentationPlannerInput,
+} from './runtime/presentation-planner.js';
+export * from './runtime/presentation/semantic-skeleton.js';
+export * from './runtime/presentation/presentation-project.js';
+
+export {
   PRESENTATION_CONTRACT_VERSION,
+  PRESENTATION_DIALOGUE_ACTS,
+  PRESENTATION_CUE_KINDS,
+  PRESENTATION_INTERACTION_TYPES,
+  PRESENTATION_ANNOTATION_INTENTS,
+  PRESENTATION_MARKERS,
+  PRESENTATION_SYMBOLS,
+  PRESENTATION_ANNOTATION_PLACEMENTS,
+  PRESENTATION_STATE_CONDITIONS,
+  PRESENTATION_SYNC_ANCHORS,
+  PRESENTATION_DELIVERY_EMOTIONS,
+  PRESENTATION_DELIVERY_PACES,
+  PRESENTATION_DIALOGUE_ISSUE_CODES,
+  PRESENTATION_DIALOGUE_QUALITY_PROFILE,
+  PRESENTATION_DIALOGUE_QUALITY_PROFILE_VERSION,
+  PRESENTATION_ALIGNED_SEQUENCE_VERSION,
+  PRESENTATION_ALIGNMENT_RESOLUTIONS,
+  SEMANTIC_SCRIPT_SCHEMA_VERSION,
+  VOICE_PLAN_SCHEMA_VERSION,
+  COMPOSITION_SCHEMA_VERSION,
+  PRESENTATION_SEMANTIC_SCRIPT_MISMATCH,
+  PresentationSemanticScriptMismatchError,
+  PRESENTER_ACTION_SCHEDULE_VERSION,
+  PRESENTATION_AUTHORING_PROJECT_SCHEMA_VERSION,
+  PRESENTATION_AUTHORING_PROJECT_LAYER_KINDS,
+  PRESENTATION_AUTHORING_PROJECT_SETTLE_POLICIES,
+  PresentationAuthoringProjectValidationError,
+  PRESENTATION_AUTHORING_COMMAND_SCHEMA_VERSION,
+  PRESENTATION_AUTHORING_COMMAND_RECEIPT_VERSION,
+  PresentationAuthoringProjectCommandError,
+  PRESENTATION_SCHEDULE_V2_VERSION,
+  PresentationScheduleV2Error,
+  PRESENTATION_EXECUTION_VERSION,
+  PRESENTATION_EFFECT_ADMISSION_VERSION,
+  PRESENTATION_EFFECT_RECEIPT_VERSION,
+  PRESENTATION_NLE_SCHEMA_VERSION,
+  PRESENTATION_TIMELINE_EDITOR_MODEL_VERSION,
+  PRESENTATION_PLAYBACK_PLAN_VERSION,
+  PRESENTATION_AUDIO_COMPOSITION_VERSION,
+  PRESENTATION_AUDIO_DELIVERY_MANIFEST_VERSION,
+  PRESENTATION_AUDIO_DELIVERY_DURATION_TOLERANCE_MS,
+  PresentationPlaybackPlanError,
+  PresentationAudioCompositionError,
+  createPresentationPlaybackPlan,
+  validatePresentationPlaybackPlan,
+  createPresentationAudioComposition,
+  validatePresentationAudioComposition,
+  createPresentationAudioDeliveryManifest,
+  PresentationNleProjectionError,
   PRESENTATION_CONTEXT_SNAPSHOT_SCHEMA_VERSION,
   PRESENTATION_LESSON_AUDIT_SCHEMA_VERSION,
   PRESENTATION_LESSON_REVIEW_CODES,
   PRESENTATION_PROMPT_PROFILES,
   PRESENTATION_REPLAN_REQUEST_SCHEMA_VERSION,
   PRESENTATION_REPLAN_RESULT_SCHEMA_VERSION,
-  alignPresentationTimelineToAudio,
+  createPresentationAlignedSequence,
+  assertPresentationSemanticScriptEquality,
+  createSemanticScript,
+  createVoicePlan,
+  createComposition,
+  createPresenterActionSchedule,
+  createPresentationAuthoringProject,
+  createPresentationAuthoringProjectFromTimeline,
+  validatePresentationAuthoringProject,
+  createPresentationAuthoringProjectHashes,
+  createPresentationAuthoringTimelineProjection,
+  presentationAuthoringProjectCanonicalProjection,
+  listPresentationAuthoringProjectCommandDescriptors,
+  applyPresentationAuthoringProjectCommand,
+  applyPresentationAuthoringProjectCommands,
+  invertPresentationAuthoringProjectCommand,
+  PresentationAuthoringToolError,
+  listPresentationAuthoringToolDescriptors,
+  createPresentationAuthoringToolPack,
+  createPresentationScheduleV2,
+  validatePresentationScheduleV2,
+  createPresentationExecutionController,
+  validatePresentationEffectAdmission,
+  validatePresentationEffectReceipt,
+  projectPresentationNle,
+  createPresentationAuthoringCommandFromNleEdit,
+  createPresentationTimelineEditorModel,
+  bindPresentationNleTimelineEditor,
   createPresentationLessonAuditPacket,
   createPresentationContextSnapshot,
   createPresentationReplanRequest,
@@ -125,11 +245,22 @@ export {
   finalizePresentationReplan,
   normalizePresentationPrompt,
   normalizePresentationTimeline,
+  normalizePresentationCue,
+  normalizePresentationSyncAnchor,
+  presentationTimelineHashProjection,
   presentationTimelineHasTurns,
+  validatePresentationAlignedSequence,
+  validatePresenterActionSchedule,
   reviewPresentationTimeline,
+  reviewPresentationDialogue,
+  reviewPresentationTimelineAgainstLessonContext,
   reviewPresentationTimelineAgainstSnapshot,
   summarizePresentationTimeline,
 } from './runtime/presentation.js';
+export {
+  ENSURE_STATUS,
+  createEnsureController,
+} from './runtime/presentation/ensure.js';
 export {
   MEDIA_PROJECT_DEFAULT_SURFACE,
   MEDIA_PROJECT_ROUTE_JOB_PARAM,
@@ -149,6 +280,9 @@ export {
   MEDIA_RENDER_EVENT_TYPES,
   MEDIA_RENDER_READINESS_SCHEMA_VERSION,
   MEDIA_RENDER_SETTINGS_SCHEMA_VERSION,
+  BROWSER_CHROME_VISIBILITIES,
+  BROWSER_CHROME_THEMES,
+  BROWSER_PAGE_COLOR_SCHEMES,
   applyMediaRenderEvent,
   createMediaProject,
   createMediaProjectId,
@@ -160,6 +294,7 @@ export {
   isMediaRenderEventType,
   mapRenderJobEventToMediaRenderEvents,
   mapRenderJobStageToMediaRenderEventType,
+  normalizeBrowserAppearance,
   normalizeMediaProject,
   normalizeMediaRenderEvent,
   normalizeMediaRenderReadiness,
@@ -169,6 +304,43 @@ export {
   selectMediaProjectTimeline,
   updateMediaProjectRenderSettings,
 } from './runtime/media-projects.js';
+export {
+  AUDIO_SYNTHESIS_RECEIPT_VERSION,
+  MEDIA_ARTIFACT_GRAPH_SCHEMA_VERSION,
+  MEDIA_ARTIFACT_KINDS,
+  MEDIA_ARTIFACT_VERSION_INPUTS,
+  MEDIA_EVIDENCE_MANIFEST_SCHEMA_VERSION,
+  MEDIA_SPEAKER_IDENTITY_CLAIMS,
+  createMediaArtifactCacheKey,
+  createMediaArtifactGraph,
+  createMediaEvidenceManifest,
+  createMediaSynthesisEvidence,
+  invalidateMediaArtifactGraph,
+  validateMediaArtifactGraph,
+  validateMediaEvidenceManifest,
+  validateMediaSynthesisEvidence,
+} from './runtime/media-evidence.js';
+export {
+  VIRTUAL_SEQUENCE_EXECUTION_TIERS,
+  VIRTUAL_SEQUENCE_INVALIDATION_MODES,
+  VIRTUAL_SEQUENCE_LAYER_KINDS,
+  VIRTUAL_SEQUENCE_SCHEMA_VERSION,
+  createVirtualSequence,
+  invalidateVirtualSequence,
+  projectVirtualSequenceAt,
+  validateVirtualSequence,
+} from './runtime/media-sequence.js';
+export {
+  PRESENTATION_JOURNEY_SCHEMA_VERSION,
+  PRESENTATION_JOURNEY_OUTCOMES,
+  PRESENTATION_JOURNEY_PROVENANCE,
+  PORTABLE_READINESS_RECEIPT_VERSION,
+  createPresentationJourney,
+  createPortableReadinessReceipt,
+  presentationJourneyReplayProjection,
+  validatePresentationJourney,
+  validatePortableReadinessReceipt,
+} from './runtime/presentation-journey.js';
 
 import {
   extractThemeOverrides,
@@ -184,11 +356,32 @@ import { WORKSPACE_CONFIG_CHANNEL } from './schema/constants.js';
 import { broadcastDataChange } from './runtime/data-change.js';
 import { createRouter } from './runtime/router-lane.js';
 import {
+  PRESENTATION_AUTHORING_PROJECT_SCHEMA_VERSION,
+  createPresentationAuthoringTimelineProjection,
+  createPresentationExecutionController,
+  createPresentationPlaybackPlan,
   createPresentationContextSnapshot,
   createPresentationReplanRequest,
+  createPresentationTimelineEditorModel,
+  createPresentationTimelineHash,
   createWorkspacePresentationTimeline,
   finalizePresentationReplan,
+  normalizePresentationTimeline,
+  projectPresentationNle,
+  validatePresentationAlignedSequence,
+  validatePresentationAuthoringProject,
+  validatePresentationScheduleV2,
 } from './runtime/presentation.js';
+import {
+  auditPresentationLessonContext,
+  createPresentationLessonContext,
+  lessonToolIsSafeForDeepening,
+  validateLessonToolInput,
+} from './runtime/lesson-context.js';
+import {
+  createPresentationCompositionPlan,
+  normalizePresentationOutputSpec,
+} from './runtime/presentation-output.js';
 import { createWorkspaceState } from './runtime/workspace-state.js';
 
 function isObject(value) {
@@ -805,14 +998,12 @@ function collectPresentationDataContext(options, router) {
   });
 }
 
-function timelineSegments(timeline) {
-  if (Array.isArray(timeline?.segments)) return timeline.segments;
-  if (Array.isArray(timeline)) return timeline;
-  return [];
+function timelineTurns(timeline) {
+  return Array.isArray(timeline?.turns) ? timeline.turns : [];
 }
 
-function segmentTarget(segment) {
-  return segment?.target || segment?.focusTarget || segment?.cues?.find?.((cue) => cue?.target)?.target || '';
+function turnTarget(turn) {
+  return turn?.cues?.find?.((cue) => cue?.targetId)?.targetId || '';
 }
 
 function findContextTarget(context, address) {
@@ -845,10 +1036,82 @@ async function executeTimelineAction(action, mounted, options, event) {
   return executor(action, event);
 }
 
+function presentationAuthoringPlaybackTuple(input, options) {
+  let direct = isObject(input)
+    && input.schemaVersion === PRESENTATION_AUTHORING_PROJECT_SCHEMA_VERSION;
+  let wrapped = isObject(input?.project)
+    && input.project.schemaVersion === PRESENTATION_AUTHORING_PROJECT_SCHEMA_VERSION;
+  if (!direct && !wrapped) return null;
+  let project = direct ? input : input.project;
+  let alignedSequence = direct
+    ? options.alignedSequence
+    : input.alignedSequence ?? options.alignedSequence;
+  let schedule = direct ? options.schedule : input.schedule ?? options.schedule;
+  if (!alignedSequence || !schedule) {
+    throw new TypeError(
+      'authoring playback requires its exact project, alignedSequence, and schedule tuple',
+    );
+  }
+  project = validatePresentationAuthoringProject(project);
+  let timeline = createPresentationAuthoringTimelineProjection(project);
+  alignedSequence = validatePresentationAlignedSequence(alignedSequence, timeline);
+  schedule = validatePresentationScheduleV2(schedule, project, alignedSequence);
+  return { project, timeline, alignedSequence, schedule };
+}
+
+function createPresentationAuthoringPlaybackSession(tuple, options) {
+  let receipts = [];
+  let onReceipt = (receipt) => {
+    receipts.push(receipt);
+    options.onReceipt?.(receipt);
+  };
+  let controller = createPresentationExecutionController({
+    project: tuple.project,
+    alignedSequence: tuple.alignedSequence,
+    schedule: tuple.schedule,
+    adapter: options.adapter || {},
+    onReceipt,
+    ...(options.signal === undefined ? {} : { signal: options.signal }),
+  });
+  let nle = projectPresentationNle(tuple.project, tuple.schedule);
+  let playbackPlan = createPresentationPlaybackPlan(tuple.project, tuple.schedule);
+  let editorModel = createPresentationTimelineEditorModel(
+    tuple.project,
+    tuple.schedule,
+    { fps: options.fps },
+  );
+  return Object.freeze({
+    authority: 'presentation-authoring-project',
+    authoringProjectHash: tuple.project.hash,
+    timelineHash: tuple.timeline.hash,
+    alignedSequenceHash: tuple.alignedSequence.hash,
+    scheduleHash: tuple.schedule.hash,
+    nleHash: nle.hash,
+    playbackPlanHash: playbackPlan.hash,
+    editorModelHash: editorModel.hash,
+    project: tuple.project,
+    alignedSequence: tuple.alignedSequence,
+    schedule: tuple.schedule,
+    nle,
+    playbackPlan,
+    editorModel,
+    get snapshot() { return controller.snapshot; },
+    get receipts() { return Object.freeze([...receipts]); },
+    sample(value) { return controller.sample(value); },
+    whenIdle() { return controller.whenIdle(); },
+    pause() { return controller.pause(); },
+    resume() { return controller.resume(); },
+    seek() { return controller.seek(); },
+    stop() { return controller.stop(); },
+    dispose() { return controller.dispose(); },
+  });
+}
+
 /**
- * Execute a generated presentation timeline against a mounted workspace.
+ * Execute a generated presentation timeline against a mounted workspace, or
+ * bind an Authoring Project tuple to the canonical clock-driven controller.
  *
- * The player deliberately uses the same interface context as agents: if a segment
+ * The player deliberately uses the same interface context as agents: if a cue
  * targets a hidden view/panel, declared reveal actions run before narration or
  * focus callbacks. Timeline actions are never executed directly; hosts must supply
  * an action executor for declared `webmcp`, `host`, or `workspace` safe actions.
@@ -862,6 +1125,11 @@ export async function playWorkspacePresentationTimeline(timeline, mounted, optio
   if (!mounted || typeof mounted.getInterfaceContext !== 'function') {
     throw new Error('playWorkspacePresentationTimeline requires a mounted workspace with getInterfaceContext().');
   }
+  let authoringTuple = presentationAuthoringPlaybackTuple(timeline, options);
+  if (authoringTuple) {
+    return createPresentationAuthoringPlaybackSession(authoringTuple, options);
+  }
+  timeline = normalizePresentationTimeline(timeline);
   let events = [];
   let contextOptions = {
     targetCollector: options.targetCollector || options.collectComponentTargets,
@@ -871,36 +1139,33 @@ export async function playWorkspacePresentationTimeline(timeline, mounted, optio
   };
   let context = mounted.getInterfaceContext(contextOptions);
 
-  for (let segment of timelineSegments(timeline)) {
-    let targetAddress = segmentTarget(segment);
+  for (let turn of timelineTurns(timeline)) {
+    let targetAddress = turnTarget(turn);
     let target = findContextTarget(context, targetAddress);
     for (let revealAction of target?.revealActions || []) {
-      let event = { type: 'reveal', segment, action: revealAction, target, context };
+      let event = { type: 'reveal', turn, action: revealAction, target, context };
       await executeRevealAction(revealAction, mounted, options, event);
-      events.push({ type: 'reveal', segmentId: segment.id || '', action: clonePortable(revealAction) });
+      events.push({ type: 'reveal', turnId: turn.id || '', action: clonePortable(revealAction) });
       context = mounted.getInterfaceContext(contextOptions);
       target = findContextTarget(context, targetAddress);
     }
 
-    if (targetAddress) {
-      let event = { type: 'focus', segment, target, context };
-      await options.onFocus?.(event);
-      events.push({ type: 'focus', segmentId: segment.id || '', target: targetAddress });
-    }
-    for (let cue of segment.cues || []) {
-      let event = { type: 'cue', segment, cue, context };
+    for (let cue of turn.cues || []) {
+      let cueTarget = findContextTarget(context, cue.targetId) || target;
+      let event = { type: cue.kind, turn, cue, target: cueTarget, context };
+      if (cue.kind === 'focus') await options.onFocus?.(event);
+      if (cue.kind === 'interaction') {
+        let binding = cue.interaction?.binding;
+        if (binding) await executeTimelineAction({ ...binding, target: cue.targetId, type: cue.interaction.type }, mounted, options, event);
+      }
+      if (cue.kind === 'state') await options.onState?.(event);
       await options.onCue?.(event);
-      events.push({ type: 'cue', segmentId: segment.id || '', cue: clonePortable(cue) });
+      events.push({ type: cue.kind, turnId: turn.id || '', cue: clonePortable(cue) });
     }
-    for (let action of segment.actions || []) {
-      let event = { type: 'action', segment, action, context };
-      await executeTimelineAction(action, mounted, options, event);
-      events.push({ type: 'action', segmentId: segment.id || '', action: clonePortable(action) });
-    }
-    if (segment.narration !== undefined) {
-      let event = { type: 'narration', segment, context };
+    if (turn.text !== undefined) {
+      let event = { type: 'narration', turn, context };
       await options.onNarration?.(event);
-      events.push({ type: 'narration', segmentId: segment.id || '', narration: clonePortable(segment.narration) });
+      events.push({ type: 'narration', turnId: turn.id || '', narration: clonePortable(turn.text) });
     }
   }
   return events;
@@ -912,38 +1177,95 @@ function presentationPreparationError(code, message, cause) {
   return error;
 }
 
+function resolveCurrentLessonDefinition(explicitLesson, contextLesson, fallback) {
+  let explicit = isObject(explicitLesson) ? clonePortable(explicitLesson) : {};
+  let current = isObject(contextLesson) ? clonePortable(contextLesson) : {};
+  if (!hasKeys(explicit) && !hasKeys(current)) return fallback;
+  let lesson = { ...current, ...explicit };
+  for (let key of ['requiredFactIds', 'requiredTargetIds']) {
+    if (Array.isArray(current[key])) lesson[key] = current[key];
+  }
+  return lesson;
+}
+
+function contextRecordMap(records = []) {
+  return new Map(records.map((record) => [record?.id || record?.address || record?.path, JSON.stringify(clonePortable(record))]));
+}
+
+function changedContextRefs(beforeContext = {}, afterContext = {}) {
+  let changed = [];
+  for (let key of ['facts', 'evidence', 'targets', 'relations']) {
+    let before = contextRecordMap(beforeContext[key]);
+    let after = contextRecordMap(afterContext[key]);
+    for (let [id, value] of after) if (id && before.get(id) !== value) changed.push(`${key}:${id}`);
+  }
+  return [...new Set(changed)].sort();
+}
+
+function assertLessonContextAudit(packet, { allowResolvableDepth = false } = {}) {
+  let audit = auditPresentationLessonContext(packet);
+  let allowed = allowResolvableDepth ? new Set(['lesson-depth-insufficient', 'required-fact-missing']) : new Set();
+  let blocking = audit.issues.filter((issue) => issue.severity === 'error' && !allowed.has(issue.code));
+  if (!blocking.length) return audit;
+  let error = presentationPreparationError('LESSON_CONTEXT_REJECTED', `lesson context rejected: ${blocking[0].code}`);
+  error.audit = { ...audit, issues: blocking, issueCodes: [...new Set(blocking.map((issue) => issue.code))] };
+  throw error;
+}
+
 /**
  * Prepare a presentation inside the target viewport before audio generation.
  * The host owns all effects; this function owns the bounded, fail-closed order.
  */
 export async function prepareWorkspacePresentation(options = {}) {
-  for (let name of ['rehydrate', 'collectContext', 'plan', 'executeSafeAction', 'waitForSettlement']) {
+  for (let name of ['rehydrate', 'collectContext', 'plan', 'executeSafeAction', 'waitForSettlement', 'inspectComposition']) {
     if (typeof options[name] !== 'function') {
       throw presentationPreparationError('TOUR_REPLAN_UNAVAILABLE', `prepareWorkspacePresentation requires ${name}()`);
     }
   }
+  let output = normalizePresentationOutputSpec(options.output || { viewport: options.viewport, ...options.renderSettings });
+  let viewport = {
+    ...output.presentationViewport,
+    fps: output.fps,
+    dpr: output.dpr,
+    orientation: output.presentationViewport.width < output.presentationViewport.height ? 'vertical' : 'horizontal',
+  };
   let emit = async (type, detail = {}) => options.onEvent?.({ type, ...cloneJson(detail) });
   let collectSnapshot = async (generation) => {
-    let context = await options.collectContext({ generation });
-    return createPresentationContextSnapshot(context, {
+    let context = await options.collectContext({ generation, output: cloneJson(output) });
+    let snapshot = createPresentationContextSnapshot(context, {
       generation,
-      viewport: options.viewport,
+      viewport,
+      output,
       source: options.source,
       stability: { settled: true, waitedFor: options.waitedFor || [] },
     });
+    return { context, snapshot };
   };
 
   await emit('tour.context.rehydrate.started');
   try {
-    await options.rehydrate({ viewport: cloneJson(options.viewport), source: cloneJson(options.source) });
-    await options.waitForSettlement({ phase: 'rehydrate' });
+    await options.rehydrate({ viewport: cloneJson(viewport), output: cloneJson(output), source: cloneJson(options.source) });
+    await options.waitForSettlement({ phase: 'rehydrate', viewport: cloneJson(viewport), output: cloneJson(output) });
   } catch (cause) {
     if (cause?.code) throw cause;
     throw presentationPreparationError('TOUR_HYDRATION_TIMEOUT', 'target viewport did not finish rehydration', cause);
   }
   await emit('tour.context.rehydrate.done');
 
-  let sourceSnapshot = await collectSnapshot(0);
+  let sourceState = await collectSnapshot(0);
+  let sourceContext = sourceState.context;
+  let sourceSnapshot = sourceState.snapshot;
+  let lessonEnabled = Boolean(options.lessonContext || options.lesson || sourceContext.lesson);
+  let lessonContext = lessonEnabled
+    ? createPresentationLessonContext(sourceContext, {
+      lesson: resolveCurrentLessonDefinition(options.lesson, sourceContext.lesson, options.request),
+      constraints: options.lessonConstraints || sourceContext.constraints,
+      output,
+      sourceSnapshot,
+      targetSnapshot: sourceSnapshot,
+    })
+    : null;
+  if (lessonContext) assertLessonContextAudit(lessonContext, { allowResolvableDepth: true });
   await emit('tour.context.collected', {
     generation: sourceSnapshot.generation,
     identityHash: sourceSnapshot.identityHash,
@@ -958,10 +1280,12 @@ export async function prepareWorkspacePresentation(options = {}) {
     personaSpec: options.personaSpec,
     turnBudget: options.turnBudget,
     actionBudget: options.actionBudget,
+    output,
+    lessonContext,
   });
   let candidate;
   try {
-    candidate = await options.plan(request, sourceSnapshot);
+    candidate = await options.plan(request, sourceSnapshot, lessonContext, output);
   } catch (cause) {
     throw presentationPreparationError('TOUR_REPLAN_UNAVAILABLE', 'presentation planner is unavailable', cause);
   }
@@ -970,6 +1294,8 @@ export async function prepareWorkspacePresentation(options = {}) {
   }
 
   let targetSnapshot = sourceSnapshot;
+  let targetContext = sourceContext;
+  let deepeningRecords = [];
   let snapshotChain = [{ phase: 'source', generation: 0, identityHash: sourceSnapshot.identityHash, dataHash: sourceSnapshot.dataHash }];
   if (candidate.status === 'needs-context') {
     let actions = Array.isArray(candidate.requestedActions) ? candidate.requestedActions : [];
@@ -977,32 +1303,90 @@ export async function prepareWorkspacePresentation(options = {}) {
       throw presentationPreparationError('DEEPENING_BUDGET_EXHAUSTED', 'presentation deepening request exceeds its action budget');
     }
     let allowed = new Set(request.allowedActions.map((action) => `${action.source || 'webmcp'}:${action.tool}:${action.target}`));
-    for (let action of actions) {
+    for (let [actionIndex, action] of actions.entries()) {
       let source = String(action?.source || 'webmcp');
       let key = `${source}:${String(action?.tool || '')}:${String(action?.target || '')}`;
       if (!allowed.has(key)) {
         throw presentationPreparationError('DEEPENING_ACTION_UNSAFE', `presentation deepening action is not allowed: ${key}`);
       }
-      await emit('tour.deepening.action.started', { generation: 0, source, tool: action.tool, target: action.target });
+      let descriptor = lessonContext?.toolDescriptors?.find((item) => item.name === action.tool);
+      if (lessonContext) {
+        if (!descriptor || !lessonToolIsSafeForDeepening(descriptor)) {
+          throw presentationPreparationError('DEEPENING_ACTION_UNSAFE', `presentation deepening descriptor is unsafe: ${action.tool}`);
+        }
+        let inputIssues = validateLessonToolInput(descriptor.inputSchema, action.input || {});
+        if (inputIssues.length) {
+          let error = presentationPreparationError('DEEPENING_INPUT_INVALID', `presentation deepening input is invalid: ${action.tool}`);
+          error.issues = inputIssues;
+          throw error;
+        }
+        if (!Array.isArray(action.requestedGaps) || !action.requestedGaps.length) {
+          throw presentationPreparationError('DEEPENING_GAP_UNSPECIFIED', `presentation deepening action has no requested evidence gap: ${action.tool}`);
+        }
+      }
+      await emit('tour.deepening.action.started', { generation: targetSnapshot.generation, source, tool: action.tool, target: action.target });
+      let result;
       try {
-        await options.executeSafeAction(cloneJson(action), { snapshot: sourceSnapshot, request });
-        await options.waitForSettlement({ phase: 'deepening', action: cloneJson(action) });
+        result = await options.executeSafeAction(cloneJson(action), { snapshot: targetSnapshot, lessonContext, request });
+        await options.waitForSettlement({ phase: 'deepening', action: cloneJson(action), viewport: cloneJson(viewport), output: cloneJson(output) });
       } catch (cause) {
         throw presentationPreparationError('DEEPENING_ACTION_FAILED', `presentation deepening action failed: ${action.tool}`, cause);
       }
-      await emit('tour.deepening.action.done', { generation: 0, source, tool: action.tool, target: action.target });
+      let previousSnapshot = targetSnapshot;
+      let previousContext = targetContext;
+      let nextState = await collectSnapshot(actionIndex + 1);
+      targetSnapshot = nextState.snapshot;
+      targetContext = nextState.context;
+      let changedRefs = changedContextRefs(previousContext, targetContext);
+      let snapshotChanged = targetSnapshot.identityHash !== previousSnapshot.identityHash || targetSnapshot.dataHash !== previousSnapshot.dataHash;
+      if (!snapshotChanged || (lessonContext && !changedRefs.length)) {
+        throw presentationPreparationError('DEEPENING_NO_EFFECT', `presentation deepening action did not change attributable context: ${action.tool}`);
+      }
+      let requestedGaps = Array.isArray(action.requestedGaps) ? action.requestedGaps.map(String) : [];
+      let satisfiedGaps = requestedGaps.filter((gap) => changedRefs.some((ref) => ref === gap || ref.endsWith(`:${gap}`)));
+      if (lessonContext && satisfiedGaps.length !== requestedGaps.length) {
+        throw presentationPreparationError('DEEPENING_IRRELEVANT_CHANGE', `presentation deepening action did not satisfy its requested evidence gaps: ${action.tool}`);
+      }
+      let record = {
+        index: actionIndex,
+        source,
+        tool: action.tool,
+        target: action.target,
+        descriptorHash: descriptor?.hash,
+        input: clonePortable(action.input || {}),
+        safety: clonePortable(descriptor?.safety),
+        result: clonePortable(result),
+        sourceSnapshotHash: previousSnapshot.identityHash,
+        targetSnapshotHash: targetSnapshot.identityHash,
+        changedRefs,
+        requestedGaps,
+        satisfiedGaps,
+      };
+      deepeningRecords.push(record);
+      snapshotChain.push({
+        phase: 'deepening-action',
+        generation: targetSnapshot.generation,
+        identityHash: targetSnapshot.identityHash,
+        dataHash: targetSnapshot.dataHash,
+        action: record,
+      });
+      if (lessonContext) {
+        try {
+          lessonContext = createPresentationLessonContext(targetContext, {
+            lesson: resolveCurrentLessonDefinition(options.lesson, targetContext.lesson || sourceContext.lesson, options.request),
+            constraints: options.lessonConstraints || targetContext.constraints || sourceContext.constraints,
+            output,
+            sourceSnapshot,
+            targetSnapshot,
+            deepening: { remainingRounds: 0, remainingActions: actions.length - actionIndex - 1, requestedGaps, actions: deepeningRecords },
+          });
+        } catch (cause) {
+          throw presentationPreparationError('LESSON_CONTEXT_REJECTED', 'deepened lesson context is invalid', cause);
+        }
+        assertLessonContextAudit(lessonContext, { allowResolvableDepth: actionIndex < actions.length - 1 });
+      }
+      await emit('tour.deepening.action.done', { generation: targetSnapshot.generation, source, tool: action.tool, target: action.target, changedRefs });
     }
-    targetSnapshot = await collectSnapshot(1);
-    if (targetSnapshot.identityHash === sourceSnapshot.identityHash && targetSnapshot.dataHash === sourceSnapshot.dataHash) {
-      throw presentationPreparationError('DEEPENING_NO_EFFECT', 'presentation deepening actions did not change collected context');
-    }
-    snapshotChain.push({
-      phase: 'target',
-      generation: 1,
-      identityHash: targetSnapshot.identityHash,
-      dataHash: targetSnapshot.dataHash,
-      actions: actions.map((action) => ({ source: action.source || 'webmcp', tool: action.tool, target: action.target })),
-    });
     request = createPresentationReplanRequest({
       request: options.request,
       timeline: options.timeline,
@@ -1011,9 +1395,11 @@ export async function prepareWorkspacePresentation(options = {}) {
       personaSpec: options.personaSpec,
       turnBudget: options.turnBudget,
       actionBudget: { remainingRounds: 0, remainingActions: 0 },
+      output,
+      lessonContext,
     });
     try {
-      candidate = await options.plan(request, targetSnapshot);
+      candidate = await options.plan(request, targetSnapshot, lessonContext, output);
     } catch (cause) {
       throw presentationPreparationError('TOUR_REPLAN_UNAVAILABLE', 'final presentation planner call is unavailable', cause);
     }
@@ -1022,32 +1408,43 @@ export async function prepareWorkspacePresentation(options = {}) {
     }
   }
 
-  let finalize = () => finalizePresentationReplan(candidate, request, {
+  if (lessonContext) assertLessonContextAudit(lessonContext);
+
+  let finalize = (compositionPlan, requireComposition = true) => finalizePresentationReplan(candidate, request, {
     snapshot: targetSnapshot,
     snapshotChain,
     intent: options.reviewIntent || {},
+    compositionPlan,
+    requireComposition,
+  });
+  let withReviewFeedback = (reviewFeedback) => createPresentationReplanRequest({
+    request: { prompt: request.prompt, profile: request.profile },
+    sourceSnapshot,
+    targetSnapshot,
+    personaSpec: request.personaSpec,
+    turnBudget: request.turnBudget,
+    allowedActions: request.allowedActions,
+    actionBudget: { remainingRounds: 0, remainingActions: 0 },
+    output: request.output,
+    priorTimelineHash: createPresentationTimelineHash(candidate.timeline),
+    lessonContext: request.lessonContext,
+    reviewFeedback,
   });
   let result;
+  let repairUsed = false;
   try {
-    result = finalize();
+    result = finalize(null, false);
   } catch (cause) {
     let repairLimit = Math.min(1, Math.max(0, Math.floor(Number(options.reviewRepairAttempts) || 0)));
     if (!repairLimit || cause?.code !== 'TOUR_REPLAN_REJECTED' || !cause?.review?.issues?.length) throw cause;
-    request = {
-      ...request,
-      reviewFeedback: {
-        attempt: 1,
-        issues: cause.review.issues.map((issue) => ({
-          code: issue.code,
-          turnIndex: issue.turnIndex,
-          turnId: issue.turnId,
-          message: issue.message,
-        })),
-      },
-    };
+    request = withReviewFeedback({
+      attempt: 1,
+      issues: cause.review.issues.map((issue) => clonePortable(issue)),
+    });
+    repairUsed = true;
     await emit('tour.replan.review-repair.started', request.reviewFeedback);
     try {
-      candidate = await options.plan(request, targetSnapshot);
+      candidate = await options.plan(request, targetSnapshot, lessonContext, output);
     } catch (repairCause) {
       throw presentationPreparationError('TOUR_REPLAN_UNAVAILABLE', 'presentation review repair call is unavailable', repairCause);
     }
@@ -1057,8 +1454,61 @@ export async function prepareWorkspacePresentation(options = {}) {
         'presentation review repair did not return a ready timeline',
       );
     }
-    result = finalize();
+    result = finalize(null, false);
     await emit('tour.replan.review-repair.done', { timelineHash: result.timelineHash });
+  }
+  let compositionLessonIntentHash = result.lessonIntentHash;
+  let inspect = async () => {
+    await emit('tour.composition.review.started', { timelineHash: result.timelineHash, outputSpecHash: output.hash });
+    let raw;
+    try {
+      raw = await options.inspectComposition({
+        timeline: cloneJson(result.timeline),
+        output: cloneJson(output),
+        sourceSnapshot: cloneJson(sourceSnapshot),
+        targetSnapshot: cloneJson(targetSnapshot),
+        lessonContext: cloneJson(lessonContext),
+      });
+    } catch (cause) {
+      throw presentationPreparationError('PRESENTATION_COMPOSITION_REJECTED', 'presentation composition inspection failed', cause);
+    }
+    let compositionPlan = createPresentationCompositionPlan({
+      ...raw,
+      output,
+      structuralHash: targetSnapshot.identityHash,
+      sourceCompositionHash: sourceSnapshot.compositionHash,
+      targetCompositionHash: targetSnapshot.compositionHash,
+      timelineHash: result.timelineHash,
+      lessonIntentHash: compositionLessonIntentHash,
+    });
+    let finalized = finalize(compositionPlan, true);
+    await emit('tour.composition.review.done', { compositionHash: finalized.compositionHash, timelineHash: finalized.timelineHash });
+    return finalized;
+  };
+  try {
+    result = await inspect();
+  } catch (cause) {
+    let repairLimit = Math.min(1, Math.max(0, Math.floor(Number(options.reviewRepairAttempts) || 0)));
+    if (repairUsed || !repairLimit || cause?.code !== 'PRESENTATION_COMPOSITION_REJECTED' || !cause?.review?.issues?.length) throw cause;
+    request = withReviewFeedback({
+      attempt: 1,
+      issues: cause.review.issues.map((issue) => {
+        let stepIndex = Number(/^steps\[(\d+)\]/.exec(String(issue.path || ''))?.[1]);
+        let targetId = Number.isInteger(stepIndex) ? cause.compositionPlan?.steps?.[stepIndex]?.targetId : '';
+        return { ...clonePortable(issue), ...(targetId ? { targetId } : {}) };
+      }),
+    });
+    repairUsed = true;
+    await emit('tour.composition.review-repair.started', request.reviewFeedback);
+    try {
+      candidate = await options.plan(request, targetSnapshot, lessonContext, output);
+    } catch (repairCause) {
+      throw presentationPreparationError('TOUR_REPLAN_UNAVAILABLE', 'presentation composition repair call is unavailable', repairCause);
+    }
+    if (candidate?.status !== 'ready') throw presentationPreparationError('TOUR_REPLAN_REJECTED', 'presentation composition repair did not return a ready timeline');
+    result = finalize(null, false);
+    result = await inspect();
+    await emit('tour.composition.review-repair.done', { timelineHash: result.timelineHash, compositionHash: result.compositionHash });
   }
   await emit('tour.replan.done', {
     generation: targetSnapshot.generation,
@@ -1069,6 +1519,7 @@ export async function prepareWorkspacePresentation(options = {}) {
     ...result,
     sourceSnapshot,
     targetSnapshot,
+    lessonContext,
   };
 }
 
@@ -1206,6 +1657,12 @@ export function collectWorkspaceInterfaceContext(config, root = null, options = 
     runtimeTargets,
     targets,
     dataContext: collectPresentationDataContext(options, options.router),
+    lesson: clonePortable(options.lesson),
+    facts: clonePortable(options.facts || []),
+    evidence: clonePortable(options.evidence || []),
+    relations: clonePortable(options.relations || []),
+    priorActions: clonePortable(options.priorActions || []),
+    toolDescriptors: clonePortable(options.toolDescriptors || []),
     summary: {
       viewCount: viewRecords.length,
       stackCount: stacks.length,

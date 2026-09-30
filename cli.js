@@ -12,7 +12,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
-import { TOOLS } from './runtime/index.js';
+import { TOOLS, listPresentationAuthoringToolDescriptors } from './runtime/index.js';
 
 let argv = process.argv.slice(2);
 let command = argv[0];
@@ -30,6 +30,11 @@ function getToolCommandRows() {
   return TOOLS.map((tool) => [commandForTool(tool.name), tool.description]);
 }
 
+function getPresentationAuthoringCommandRows() {
+  return listPresentationAuthoringToolDescriptors()
+    .map((tool) => [commandForTool(tool.name), tool.description]);
+}
+
 function printUsage() {
   console.log(`
 symbiote-workspace CLI
@@ -41,8 +46,12 @@ Special Commands:
 Tool Commands:
 ${formatHelpRows(getToolCommandRows())}
 
+Presentation Authoring Commands (require --project):
+${formatHelpRows(getPresentationAuthoringCommandRows())}
+
 Global Options:
   --config <file>        Load config before command, auto-save after mutating commands
+  --project <file>       Edit one canonical Presentation Project or snapshot
   --base-revision <n>    Required for mutating commands
   --help, -h             Show this help
 
@@ -50,7 +59,8 @@ Examples:
   node cli.js construction-scaffold-blank --base-revision 0 --name "Draft" --config ws.json
   node cli.js module-register --config ws.json --base-revision 1 --name main --title Main --component sn-panel
   node cli.js workspace-describe --config ws.json
-  node cli.js mcp
+  node cli.js presentation-authoring-inspect --project presentation.json
+  node cli.js mcp --project presentation.json
   `);
 }
 
@@ -171,13 +181,17 @@ function isConstructionHandoffPositional(toolName, value) {
 async function runToolCommand() {
   let { flags, positionals } = parseArgs(argv.slice(1));
   let configFile = flags.config;
+  let presentationProjectFile = flags.project;
   delete flags.config;
+  delete flags.project;
 
   let cliCommand = command;
   let toolName = kebabToSnake(cliCommand);
   let { dispatch, isMutating, TOOLS: runtimeTools, createSession } = await import('./runtime/index.js');
+  let presentationTool = listPresentationAuthoringToolDescriptors()
+    .find((tool) => tool.name === toolName);
 
-  let toolExists = runtimeTools.some((tool) => tool.name === toolName);
+  let toolExists = presentationTool || runtimeTools.some((tool) => tool.name === toolName);
   if (!toolExists) {
     console.error(`Unknown command: ${cliCommand}`);
     console.error('Run `symbiote-workspace --help` for usage.');
@@ -190,6 +204,24 @@ async function runToolCommand() {
   }
 
   let toolArgs = flagsToCamelCase(flags);
+  if (presentationTool) {
+    if (!presentationProjectFile || presentationProjectFile === true) {
+      console.error(`Error: ${cliCommand} requires --project <file>`);
+      process.exit(1);
+    }
+    try {
+      let { createPresentationAuthoringFileHost } = await import('./runtime/presentation/file-authoring.js');
+      let host = createPresentationAuthoringFileHost({
+        projectFile: String(presentationProjectFile),
+      });
+      let result = await host.invoke(toolName, toolArgs);
+      console.log(JSON.stringify(result, null, 2));
+    } catch (err) {
+      console.error(`Error: ${err.message}`);
+      process.exit(1);
+    }
+    return;
+  }
   let outputFile = toolName === 'construction_scaffold' ? toolArgs.output : null;
   if (toolName === 'construction_scaffold') delete toolArgs.output;
 
