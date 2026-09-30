@@ -37,7 +37,12 @@ function describeAppliedWork(report) {
   if (Number.isInteger(report.appliedCount)) {
     return { reported: true, appliedNothing: report.appliedCount === 0, count: report.appliedCount };
   }
-  return { reported: false, appliedNothing: false, count: null };
+  // A switch that reports something else — `{ installed: true }`, a handle, an
+  // opaque result — has not said what it applied. That is not the same as having
+  // applied nothing, but it is equally unverifiable, and an unverifiable switch
+  // cannot be reported as a landed change. Being silent and being vague fail the
+  // same way.
+  return { reported: false, appliedNothing: true, count: null, unverifiable: true };
 }
 
 /**
@@ -393,7 +398,9 @@ export async function applyCompositionUpdate({ plan, previous, next, prepare, sw
     return {
       status: UPDATE_STATUSES.notApplied,
       stage: 'switch',
-      reason: 'the switch reported success but applied no declared change',
+      reason: appliedWork.unverifiable
+        ? 'the switch did not report what it applied, so the change cannot be verified'
+        : 'the switch reported success but applied no declared change',
       declaredWork,
       previousStillMounted: true,
     };
