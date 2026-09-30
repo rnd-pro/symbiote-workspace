@@ -87,6 +87,8 @@ describe('presentation planner input projection', () => {
     let second = createPresentationPlannerInput(structuredClone(request), structuredClone(snapshot));
 
     assert.equal(first.projection.schemaVersion, PRESENTATION_PLANNER_INPUT_SCHEMA_VERSION);
+    assert.equal(PRESENTATION_PLANNER_INPUT_SCHEMA_VERSION, 'presentation-planner-input-v2');
+    assert.equal(first.projection.basis.requestHash, request.hash);
     assert.equal(first.hash, second.hash);
     assert.equal(first.json, second.json);
     assert.equal(first.projection.allowedActions.length, 1);
@@ -137,6 +139,15 @@ describe('presentation planner input projection', () => {
     assert.throws(
       () => createPresentationPlannerInput({ ...request, targetSnapshotHash: 'presentation-context-snapshot-v2:stale' }, snapshot),
       /snapshot basis is stale/,
+    );
+  });
+
+  it('rejects request mutation after signing before provider submission', () => {
+    let { request, snapshot } = fixture();
+    request.prompt = 'A different lesson after signing.';
+    assert.throws(
+      () => createPresentationPlannerInput(request, snapshot),
+      /exact current replan request hash/,
     );
   });
 

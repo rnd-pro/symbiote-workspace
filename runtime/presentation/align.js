@@ -222,6 +222,7 @@ function normalizeEnrichedTurn(alignment, turnIndex, media, voice) {
 export function createPresentationAlignedSequence(timelineInput = {}, input = {}) {
   let timeline = createPresentationTimelineContract(timelineInput);
   let media = normalizeMedia(input.media);
+  let voice = normalizeVoice(input.voice || { mode: input.speakerMode, speakerId: input.speakerId });
   let alignments = Array.isArray(input.turns) ? input.turns : [];
   if (alignments.length !== timeline.turns.length) throw new TypeError('aligned sequence requires one alignment for every authored turn');
   let voice = normalizeVoice(input.voice, alignments.length);
@@ -284,6 +285,7 @@ export function validatePresentationAlignedSequence(value = {}, timelineInput = 
   if (value?.contractVersion !== PRESENTATION_ALIGNED_SEQUENCE_VERSION) throw new TypeError('unsupported aligned sequence version');
   if (value.timelineHash !== timeline.hash) throw new TypeError('aligned sequence timelineHash does not match authored timeline');
   let media = normalizeMedia(value.media);
+  let voice = normalizeVoice(value.voice);
   let expectedCueCount = timeline.turns.reduce((count, turn) => count + turn.cues.length, 0);
   if (!Array.isArray(value.turns) || value.turns.length !== timeline.turns.length) throw new TypeError('aligned sequence turn coverage is incomplete');
   let voice = normalizeVoice(value.voice, value.turns.length);
@@ -296,6 +298,9 @@ export function validatePresentationAlignedSequence(value = {}, timelineInput = 
       : ['turnIndex', 'startMs', 'endMs'];
     for (let key of Object.keys(span)) if (!permittedKeys.includes(key)) throw new TypeError(`aligned sequence turns[${index}].${key} is not supported`);
     if (span.turnIndex !== index) throw new TypeError(`aligned sequence turns[${index}].turnIndex is invalid`);
+    let expectedSpeaker = voice.mode === 'single' ? voice.speakerId : timeline.turns[index].persona;
+    if (!text(span.speaker) || text(span.speaker) !== expectedSpeaker) throw new TypeError(`aligned sequence turns[${index}].speaker does not match the declared voice identity`);
+    if (!text(span.transcript) || text(span.transcript) !== text(timeline.turns[index].text)) throw new TypeError(`aligned sequence turns[${index}].transcript does not match the authored turn`);
     let startMs = integer(span.startMs, `aligned sequence turns[${index}].startMs`, { max: media.durationMs });
     let endMs = integer(span.endMs, `aligned sequence turns[${index}].endMs`, { min: startMs, max: media.durationMs });
     if (voice) {

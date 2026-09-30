@@ -147,6 +147,22 @@ describe('portable presentation dialogue quality profile', () => {
     assert.equal(found.has(PRESENTATION_DIALOGUE_ISSUE_CODES.alternatingMonologues), true);
   });
 
+  it('rejects low-dependency two-voice dialogue even with one same-persona handoff', () => {
+    let review = reviewPresentationDialogue(timeline({
+      turns: [
+        { persona: 'guide', text: 'Routing starts in the dispatch adapter.' },
+        { persona: 'expert', text: 'Fresh oranges arrive before lunchtime today.', sourceRefs: [] },
+        { persona: 'guide', text: 'Database indexes improve lookup performance.', sourceRefs: [] },
+        { persona: 'expert', text: 'Winter trains cross the northern valley.', sourceRefs: [] },
+        { persona: 'expert', text: 'Coastal weather remains clear through evening.', sourceRefs: [] },
+      ],
+    }), { requireDialogue: true, strictDialogueQuality: true });
+
+    assert.equal(review.dependencyMetrics.alternations, 3);
+    assert.equal(review.dependencyMetrics.dependentAlternations, 0);
+    assert.equal(codes(review).has(PRESENTATION_DIALOGUE_ISSUE_CODES.alternatingMonologues), true);
+  });
+
   it('flags repeated interjections without treating duplicate narration as that issue', () => {
     let repeated = reviewPresentationDialogue(timeline({
       turns: [

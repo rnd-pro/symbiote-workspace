@@ -9,6 +9,7 @@ import { WORKSPACE_SCHEMA_VERSION } from '../schema/index.js';
 import {
   BROWSER_ENGINE_CONTRACTS_IMPORT,
   BROWSER_ENGINE_IMPORT,
+  BROWSER_ENGINE_PREFIX_IMPORT,
   BROWSER_THEME_IMPORT,
 } from '../sharing/browser-contract.js';
 

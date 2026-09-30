@@ -24,27 +24,27 @@ function resolveLocalModule(fromFile, specifier) {
   return file;
 }
 
-function collectBrowserGraph(file, seen = new Set(), nodeImports = []) {
-  if (seen.has(file)) return nodeImports;
+function collectBrowserGraph(file, seen = new Set(), unsafeImports = []) {
+  if (seen.has(file)) return unsafeImports;
   seen.add(file);
 
   let source = readFileSync(file, 'utf8');
   for (let specifier of collectStaticSpecifiers(source)) {
-    if (specifier.startsWith('node:')) {
-      nodeImports.push({ file, specifier });
+    if (specifier.startsWith('node:') || specifier === 'symbiote-engine') {
+      unsafeImports.push({ file, specifier });
       continue;
     }
     let local = resolveLocalModule(file, specifier);
-    if (local) collectBrowserGraph(local, seen, nodeImports);
+    if (local) collectBrowserGraph(local, seen, unsafeImports);
   }
 
-  return nodeImports;
+  return unsafeImports;
 }
 
 describe('browser entrypoint', () => {
-  it('has no statically reachable Node built-in imports', () => {
-    let nodeImports = collectBrowserGraph(resolve(ROOT, 'browser.js'));
-    assert.deepEqual(nodeImports, []);
+  it('has no statically reachable Node-only imports', () => {
+    let unsafeImports = collectBrowserGraph(resolve(ROOT, 'browser.js'));
+    assert.deepEqual(unsafeImports, []);
   });
 
   it('imports in Node without requiring DOM globals at module load', async () => {

@@ -97,6 +97,10 @@ describe('lesson context contract', () => {
     assert.deepEqual(string, object);
   });
 
+  it('matches speakable identifier parts without discarding the canonical token', () => {
+    assert.deepEqual(lessonTextTokens('dispatcher-board'), ['dispatcher-board', 'dispatcher', 'board']);
+  });
+
   it('normalizes safety fail closed and validates the supported schema subset', () => {
     let safe = normalizeLessonToolDescriptor(tool());
     let unknown = normalizeLessonToolDescriptor({ ...tool(), annotations: {} });

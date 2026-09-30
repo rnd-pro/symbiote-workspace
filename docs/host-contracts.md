@@ -34,8 +34,8 @@ portable config:
   `construction_plan`, `construction_construct`, `config_patch_validate`,
   `config_patch_apply`, `config_export`, and `config_import`;
 - standalone browser requirements: import-map entries for
-  `symbiote-workspace/browser`, `symbiote-ui/ui`, `symbiote-engine`, and
-  `symbiote-engine/contracts`, plus `mountWorkspace()` and
+  `symbiote-workspace/browser`, `symbiote-ui/ui`, `symbiote-engine`,
+  `symbiote-engine/`, and `symbiote-engine/contracts`, plus `mountWorkspace()` and
   `symbiote-ui/ui.applyCascadeTheme`;
 - persistence requirements from `requires.hostServices`;
 - module, runtime-slot, and package requirements from `modules[]` and

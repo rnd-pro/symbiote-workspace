@@ -105,7 +105,7 @@ All notable changes to this project will be documented in this file.
   identity. Provider, Chromium, native-chrome, and product concerns stay out of the
   package.
 - Moved the presentation output and composition contracts to
-  `workspace-presentation-output-v2` and `workspace-presentation-composition-v2`.
+  `workspace-presentation-output-v3` and `workspace-presentation-composition-v3`.
   The output spec adds neutral, finite, non-negative final-frame `frameInsets`
   (zero defaults) and derives a positive `presentationViewport {x,y,width,height}`;
   frame insets that leave no positive viewport are rejected. Safe area, content
@@ -117,7 +117,8 @@ All notable changes to this project will be documented in this file.
   composition audit keeps browser DOM focus/annotation rectangles page-local and
   explicitly translates them by the presentation viewport origin before
   final-frame containment and caption-collision checks; output remains the final
-  video coordinate system. Presentation preparation, rehydration, settlement, and
+  video coordinate system. Explicit obsolete schema versions are rejected instead
+  of being normalized and re-signed as current artifacts. Presentation preparation, rehydration, settlement, and
   context snapshots receive the page-local presentation viewport while retaining
   the full output spec as the final-video identity.
 - Presentation review now proves responsive dialogue handoffs primarily from
@@ -193,7 +194,7 @@ All notable changes to this project will be documented in this file.
   `presentation-timeline-v3`: explicit provider-neutral personas, grounded
   dialogue turns, any-earlier replies, ordered focus/interaction/annotation/state
   cues, and semantic speech anchors. Legacy single cues/actions and authored
-  media milliseconds now fail closed. Added `workspace-aligned-sequence-v1` as a
+  media milliseconds now fail closed. Added `workspace-aligned-sequence-v2` as a
   separately hashed post-audio artifact with complete turn/cue coverage and
   alignment provenance, and migrated browser playback, lesson audits, media
   projects, and public Node/browser exports to the new contract.

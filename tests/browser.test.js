@@ -329,6 +329,45 @@ it('binds planning to a full lesson packet and records per-action deepening evid
   assert.equal(result.review.verdict, 'accept');
 });
 
+it('rebinds explicit lesson identities to the context collected after rehydration', async () => {
+  let options = groundedDeepeningOptions();
+  let collectContext = options.collectContext;
+  let plan = options.plan;
+  let plannedLessons = [];
+  options.lesson = {
+    ...options.lesson,
+    objective: 'Preserve the authored approval objective',
+    requiredFactIds: ['stale-status', 'stale-detail'],
+    requiredTargetIds: ['panel:req-1:list', 'panel:req-1:detail'],
+  };
+  options.collectContext = (...args) => {
+    let context = collectContext(...args);
+    return {
+      ...context,
+      lesson: {
+        ...options.lesson,
+        objective: 'Generated from the current interface',
+        requiredFactIds: ['status', 'detail'],
+        requiredTargetIds: ['panel:orders:list', 'panel:orders:detail'],
+      },
+    };
+  };
+  options.plan = async (request, snapshot, lessonContext, output) => {
+    plannedLessons.push(structuredClone(lessonContext.lesson));
+    return plan(request, snapshot, lessonContext, output);
+  };
+
+  let result = await prepareWorkspacePresentation(options);
+
+  assert.equal(result.status, 'ready');
+  assert.equal(plannedLessons.length, 2);
+  for (let lesson of plannedLessons) {
+    assert.equal(lesson.objective, 'Preserve the authored approval objective');
+    assert.deepEqual(lesson.requiredFactIds, ['detail', 'status']);
+    assert.deepEqual(lesson.requiredTargetIds, ['panel:orders:detail', 'panel:orders:list']);
+  }
+});
+
 it('rejects invalid or irrelevant grounded deepening before final planning', async () => {
   let invalid = groundedDeepeningOptions();
   let originalPlan = invalid.plan;
@@ -361,6 +400,7 @@ it('rejects invalid or irrelevant grounded deepening before final planning', asy
 it('allows one review-guided repair on the same target snapshot', async () => {
   let planCalls = 0;
   let requests = [];
+  let plannedTimelineHashes = [];
   let events = [];
   let result = await prepareWorkspacePresentation({
     viewport: { width: 1920, height: 1080, fps: 30 },
@@ -380,6 +420,19 @@ it('allows one review-guided repair on the same target snapshot', async () => {
       planCalls += 1;
       requests.push(request);
       let source = snapshot.dataSources[0];
+      let timeline = timelineV3({
+        profile: 'data-grounded',
+        grounding: { sources: snapshot.dataSources },
+        turns: [{
+          id: 'api-explain',
+          persona: 'guide',
+          dialogueAct: 'explain',
+          text: planCalls === 1 ? 'Open https://example.test for the graph.' : 'The graph shows four connected API nodes.',
+          cue: { targetId: 'panel:api:graph', tabId: 'tab-1' },
+          sourceRefs: [{ sourceId: source.id, targetId: 'panel:api:graph', hash: source.contentHash }],
+        }],
+      });
+      plannedTimelineHashes.push(createPresentationTimelineHash(timeline));
       return {
         status: 'ready',
         basis: { requestHash: request.hash, targetSnapshotHash: request.targetSnapshotHash, outputSpecHash: request.outputSpecHash, generation: request.generation },
@@ -405,7 +458,11 @@ it('allows one review-guided repair on the same target snapshot', async () => {
   assert.equal(planCalls, 2);
   assert.equal(requests[1].targetSnapshotHash, requests[0].targetSnapshotHash);
   assert.equal(requests[1].generation, requests[0].generation);
+  assert.notEqual(requests[1].hash, requests[0].hash);
+  assert.deepEqual(requests[1].actionBudget, { remainingRounds: 0, remainingActions: 0 });
+  assert.equal(requests[1].priorTimelineHash, plannedTimelineHashes[0]);
   assert.deepEqual(requests[1].reviewFeedback.issues.map((issue) => issue.code), ['unsafe-tts-text']);
+  assert.equal(requests[1].reviewFeedback.issues[0].severity, 'error');
   assert.equal(result.review.verdict, 'pass');
   assert.ok(events.includes('tour.replan.review-repair.done'));
 });
@@ -413,6 +470,7 @@ it('allows one review-guided repair on the same target snapshot', async () => {
 it('reruns composition after one planner repair on the same output', async () => {
   let planCalls = 0;
   let inspectCalls = 0;
+  let requests = [];
   let events = [];
   let result = await prepareWorkspacePresentation({
     viewport: { width: 1080, height: 1080, fps: 30 },
@@ -426,6 +484,7 @@ it('reruns composition after one planner repair on the same output', async () =>
     },
     async plan(request) {
       planCalls += 1;
+      requests.push(request);
       return {
         status: 'ready',
         basis: { requestHash: request.hash, targetSnapshotHash: request.targetSnapshotHash, outputSpecHash: request.outputSpecHash, generation: request.generation },
@@ -452,6 +511,7 @@ it('reruns composition after one planner repair on the same output', async () =>
 
   assert.equal(planCalls, 2);
   assert.equal(inspectCalls, 2);
+  assert.equal(requests[1].reviewFeedback.issues[0].targetId, 'panel:orders:queue');
   assert.equal(result.output.orientation, 'square');
   assert.equal(result.compositionAudit.verdict, 'accept');
   assert.ok(events.includes('tour.composition.review-repair.done'));

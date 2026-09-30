@@ -84,10 +84,10 @@ mode.
   actionable errors, and any appearance change invalidates cached frames, the
   preview sequence, and the final output. Host-native chrome mechanics stay in the
   product layer.
-- **Presentation viewport geometry** — `workspace-presentation-output-v2` adds
+- **Presentation viewport geometry** — `workspace-presentation-output-v3` carries
   neutral final-frame `frameInsets` and derives a positive `presentationViewport`.
   Content and captions are laid out inside that viewport, while
-  `workspace-presentation-composition-v2` measurement is checked against the
+  `workspace-presentation-composition-v3` measurement is checked against the
   presentation viewport and translates page-local focus/annotation rectangles into
   final-frame coordinates before containment and collision checks.
 - **Immutable Presentation Project v7** — `createPresentationProject({ skeleton,
