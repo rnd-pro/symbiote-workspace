@@ -395,3 +395,10 @@ export {
 } from './composition-update.js';
 
 export { COMMIT_RESULTS, createCompositionCommitPoint } from './composition-commit-point.js';
+
+export {
+  READINESS_CODES,
+  READINESS_SEVERITIES,
+  assessUpdateReadiness,
+  updateRefusedError,
+} from './update-readiness.js';

@@ -354,6 +354,7 @@ import {
 } from './validation/index.js';
 import { WORKSPACE_CONFIG_CHANNEL } from './schema/constants.js';
 import { broadcastDataChange } from './runtime/data-change.js';
+import { updateRefusedError } from './runtime/update-readiness.js';
 import { createRouter } from './runtime/router-lane.js';
 import {
   PRESENTATION_AUTHORING_PROJECT_SCHEMA_VERSION,
@@ -1682,6 +1683,16 @@ const UPDATE_PATHS = Object.freeze({
   destroyRemount: 'destroy-remount',
 });
 
+// Destroy is called on a path that is about to fail; a throwing destroy must not
+// replace the real reason the update was refused.
+function safeDestroy(handle) {
+  try {
+    return handle.destroy();
+  } catch {
+    return null;
+  }
+}
+
 function reportUpdateFallback(detail) {
   let channel = globalThis?.__symbioteWorkspaceUpdateFallback;
   if (typeof channel === 'function') {
@@ -2023,6 +2034,21 @@ export function mountWorkspace(config, container, options = {}) {
     } else if (!runtimeMount && options.renderDefaultPreview !== false) {
       runtimeHandle = updateDefaultWorkspacePreview(nextConfig, wrapper, runtimeHandle, router);
     } else if (runtimeMount) {
+      // Strict mode refuses before anything is destroyed. Opt-in, because
+      // removing the fallback outright is a behaviour change and a preparatory
+      // release has to keep honouring the contract it already published.
+      if (options.strictUpdates) {
+        let refused = updateRefusedError(
+          `Refusing to update "${nextConfig?.name ?? 'workspace'}" in place: the runtime offers no update method, and remounting would lose state that lived only in the old mount.`,
+        );
+        reportUpdateFallback({
+          path: 'update-refused',
+          reason: refused.message,
+          revision: commitResult.revision,
+          strict: true,
+        });
+        throw refused;
+      }
       if (typeof runtimeHandle?.destroy === 'function') runtimeHandle.destroy();
       runtimeHandle = runtimeMount.call(options.runtimeController, {
         config: nextConfig,
