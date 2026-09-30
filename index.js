@@ -146,7 +146,6 @@ export {
   bindCaptionCuesToAlignedSequence,
   createLessonIntentHash,
   createPresentationCompositionPlan,
-  listPresentationCompositionCueSlots,
   normalizePresentationOutputSpec,
   normalizePresentationRect,
   normalizePresentationTargetComposition,

@@ -222,7 +222,6 @@ function normalizeEnrichedTurn(alignment, turnIndex, media, voice) {
 export function createPresentationAlignedSequence(timelineInput = {}, input = {}) {
   let timeline = createPresentationTimelineContract(timelineInput);
   let media = normalizeMedia(input.media);
-  let voice = normalizeVoice(input.voice || { mode: input.speakerMode, speakerId: input.speakerId });
   let alignments = Array.isArray(input.turns) ? input.turns : [];
   if (alignments.length !== timeline.turns.length) throw new TypeError('aligned sequence requires one alignment for every authored turn');
   let voice = normalizeVoice(input.voice, alignments.length);
@@ -285,7 +284,6 @@ export function validatePresentationAlignedSequence(value = {}, timelineInput = 
   if (value?.contractVersion !== PRESENTATION_ALIGNED_SEQUENCE_VERSION) throw new TypeError('unsupported aligned sequence version');
   if (value.timelineHash !== timeline.hash) throw new TypeError('aligned sequence timelineHash does not match authored timeline');
   let media = normalizeMedia(value.media);
-  let voice = normalizeVoice(value.voice);
   let expectedCueCount = timeline.turns.reduce((count, turn) => count + turn.cues.length, 0);
   if (!Array.isArray(value.turns) || value.turns.length !== timeline.turns.length) throw new TypeError('aligned sequence turn coverage is incomplete');
   let voice = normalizeVoice(value.voice, value.turns.length);
