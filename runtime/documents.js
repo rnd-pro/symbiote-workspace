@@ -436,15 +436,60 @@ function presentationKey(docAddress, scope = 'viewport') {
   return `${PRESENTATION_STORAGE_PREFIX}${docAddress}:${scope}`;
 }
 
+// Atomic document persistence.
+//
+// The contract a storage adapter must satisfy to take part in an acknowledged
+// document write. `atomicCommit` is declared, not inferred: a host adapter that
+// cannot compare-and-set must say so, and the runtime refuses it rather than
+// silently downgrading to read-then-write — the shape that loses a confirmed
+// write under concurrency.
+export const DOCUMENT_PERSISTENCE_CAPABILITIES = Object.freeze({
+  atomicCommit: 'atomicCommit',
+  compareAndSet: 'compareAndSet',
+});
+
+export function supportsAtomicCommit(adapter) {
+  return Boolean(
+    adapter
+    && adapter.capabilities?.[DOCUMENT_PERSISTENCE_CAPABILITIES.atomicCommit] === true
+    && typeof adapter[DOCUMENT_PERSISTENCE_CAPABILITIES.compareAndSet] === 'function',
+  );
+}
+
 export function createMemoryDocumentPersistence(initial = {}) {
   let store = new Map(Object.entries(initial).map(([key, value]) => [key, cloneJson(value)]));
   return {
+    capabilities: { atomicCommit: true },
+
     async get(key) {
       return cloneJson(store.get(key));
     },
     async set(key, value) {
       store.set(key, cloneJson(value));
       return cloneJson(value);
+    },
+
+    /**
+     * Applies the record write and its mutation receipt as one indivisible step.
+     *
+     * The body contains no `await`, so no other task in this process can
+     * interleave between the revision check and the store mutation. That is what
+     * makes the single-process guarantee hold. The multi-process guarantee is
+     * the adapter's to provide by delegating this same step to the storage
+     * engine — a conditional update, an ETag write, or a transaction.
+     */
+    async compareAndSet(key, { expectedRevision, value, receiptKey, receipt }) {
+      let current = store.get(key);
+      let currentRevision = current && Number.isInteger(current.revision) ? current.revision : null;
+      if (currentRevision !== expectedRevision) {
+        return { status: 'conflict', reason: 'revision', currentRevision, current: cloneJson(current) };
+      }
+      if (receiptKey !== undefined && store.has(receiptKey)) {
+        return { status: 'conflict', reason: 'receipt-present', currentRevision, current: cloneJson(current) };
+      }
+      store.set(key, cloneJson(value));
+      if (receiptKey !== undefined) store.set(receiptKey, cloneJson(receipt));
+      return { status: 'committed', revision: value?.revision ?? null, currentRevision };
     },
     async delete(key) {
       return store.delete(key);
@@ -456,6 +501,13 @@ export function createMemoryDocumentPersistence(initial = {}) {
       return Object.fromEntries([...store.entries()].map(([key, value]) => [key, cloneJson(value)]));
     },
   };
+}
+
+// A mutation receipt is written in the same atomic step as the record it
+// produced, so a retry after a lost response replays the recorded result
+// instead of applying the change a second time.
+function receiptAddressFor(docAddress, mutationId) {
+  return `${docAddress}#receipt/${mutationId}`;
 }
 
 export class DocumentRuntime {
@@ -691,6 +743,25 @@ export class DocumentRuntime {
     let block = await this.mutationBlock('document.commit', context.collection, options.actor);
     if (block) return block;
 
+    let adapter = this.adapterFor(context.collection);
+    if (!supportsAtomicCommit(adapter)) {
+      return {
+        rejected: true,
+        code: 'atomic_commit_unsupported',
+        collection: context.collectionId,
+        detail: 'This persistence adapter cannot compare-and-set. Declaring an acknowledged write without an atomic step would lose a confirmed write under concurrency.',
+      };
+    }
+
+    // A retry of the same mutation returns the recorded result instead of
+    // applying the change twice, so a lost response is safe to repeat.
+    let mutationId = typeof options.mutationId === 'string' ? options.mutationId.trim() : '';
+    let receiptKey = mutationId ? receiptAddressFor(context.docAddress, mutationId) : undefined;
+    if (receiptKey !== undefined) {
+      let existing = await adapter.get(receiptKey);
+      if (existing) return { ...existing.result, replayed: true };
+    }
+
     let record = await this.readRecord(context.docAddress);
     if (!record) {
       throw new Error(`Document "${context.docAddress}" does not exist.`);
@@ -727,7 +798,30 @@ export class DocumentRuntime {
         },
       ],
     };
-    await this.writeRecord(context.docAddress, nextRecord);
+    let appliedResult = await adapter.compareAndSet(context.docAddress, {
+      expectedRevision: record.revision,
+      value: nextRecord,
+      receiptKey,
+      receipt: receiptKey === undefined
+        ? undefined
+        : {
+            mutationId,
+            result: {
+              status: 'committed',
+              revision: nextRevision,
+              docAddress: context.docAddress,
+              baseRevision,
+            },
+          },
+    });
+
+    if (appliedResult.status === 'conflict') {
+      if (appliedResult.reason === 'receipt-present') {
+        let receipt = await adapter.get(receiptKey);
+        if (receipt) return { ...receipt.result, replayed: true };
+      }
+      return { conflict: true, revision: appliedResult.currentRevision ?? null };
+    }
     this.recordHistory(context.docAddress, context.collection, {
       ops: applied.ops,
       inverseOps: applied.inverseOps,

@@ -27,6 +27,8 @@ export {
   DocumentRuntime,
   createDocumentRuntime,
   createMemoryDocumentPersistence,
+  supportsAtomicCommit,
+  DOCUMENT_PERSISTENCE_CAPABILITIES,
   documentWriteCapability,
   isMutatingDocumentAction,
 } from './documents.js';
