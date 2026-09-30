@@ -639,6 +639,7 @@ function actionName(action) {
 }
 
 function interactionType(name, target) {
+  if (/(?:text|range)[._:\s-]*(?:select|selection)|(?:select|selection)[._:\s-]*(?:text|range)/i.test(name)) return 'text-select';
   if (/double/i.test(name)) return 'double-click';
   if (/hover/i.test(name)) return 'hover';
   if (/drag/i.test(name)) return 'drag';

@@ -5,6 +5,8 @@ import { PRESENTATION_CONTRACT_VERSION } from '../runtime/presentation/contract.
 import { reviewPresentationTimeline } from '../runtime/presentation.js';
 
 const ARC = Object.freeze({
+  openingRequired: true,
+  closureRequired: true,
   subjectSourceIds: ['subject'],
   outcomeSourceIds: ['outcome'],
   requiredFactIds: ['fact-routing', 'fact-result'],
@@ -132,6 +134,24 @@ describe('strict lesson-arc review policy', () => {
     let timeline = makeTimeline([{ dialogueAct: 'explain', text: 'Welcome to the workspace.', sourceRefs: [ref('subject')] }]);
     let result = review(timeline);
     assert.ok(result.issues.some((issue) => issue.code === 'lesson-arc-start-invalid'));
+  });
+
+  it('treats opening and closure as optional unless the authoring contract requires them', () => {
+    let timeline = makeTimeline([
+      { dialogueAct: 'explain' },
+      null,
+      null,
+      null,
+      { dialogueAct: 'explain' },
+    ]);
+    let result = review(timeline, {
+      lessonArc: { ...ARC, openingRequired: false, closureRequired: false },
+    });
+    assert.equal(result.issues.some((issue) => [
+      'lesson-arc-start-invalid',
+      'lesson-arc-closure-invalid',
+      'lesson-arc-final-invalid',
+    ].includes(issue.code)), false);
   });
 
   it('reports exact missing facts, targets, and ordered target violations', () => {
