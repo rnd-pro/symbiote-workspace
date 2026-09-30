@@ -136,6 +136,32 @@ export function validateCompositionDefinition(definition) {
     }
   }
 
+  // Views are what a composition offers, and the sidebar shows them. They live on
+  // the descriptor rather than on the tab, so a tab is a container and the
+  // surface it holds comes from the declaration.
+  if (Array.isArray(definition.views)) {
+    let ids = new Set();
+    for (let [index, view] of definition.views.entries()) {
+      if (!isPlainObject(view)) {
+        add(`views[${index}]`, 'each view must be an object.');
+        continue;
+      }
+      try {
+        normalizeId(view.id, `views[${index}].id`);
+      } catch (err) {
+        add(`views[${index}].id`, err.message);
+        continue;
+      }
+      if (ids.has(view.id)) add(`views[${index}].id`, 'view ids must be unique within a composition.');
+      ids.add(view.id);
+      if (typeof view.label !== 'string' || !view.label.trim()) {
+        add(`views[${index}].label`, 'a view must carry a label the sidebar can show.');
+      }
+    }
+  } else if (definition.views !== undefined) {
+    add('views', 'views must be an array when present.');
+  }
+
   if (!isPlainObject(definition.lifecycle)) {
     add('lifecycle', 'lifecycle must declare prepare, mount, beforeClose, and dispose.');
   } else {
