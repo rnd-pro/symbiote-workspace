@@ -1,27 +1,18 @@
 import { isIntegrityString } from '../../schema/canonical-json.js';
 
-export const AUDIO_SYNTHESIS_RECEIPT_VERSION = 'symbiote-audio-synthesis-receipt-v2';
-export const MEDIA_SPEAKER_IDENTITY_CLAIMS = Object.freeze([
-  'provider-attested+acoustic-cluster',
+export const AUDIO_SYNTHESIS_RECEIPT_VERSION = 'symbiote-audio-synthesis-receipt-v3';
+export const MEDIA_VOICE_BINDING_CLAIMS = Object.freeze([
+  'signed-voice-binding+audio-quality',
 ]);
 
 const SYNTHESIS_KEYS = new Set(['identityClaim', 'turns', 'receipts']);
 const TURN_KEYS = new Set(['turnId', 'persona', 'artifactRef', 'receiptRef']);
 const RECEIPT_KEYS = new Set([
   'receiptVersion', 'requestHash', 'requestedVoiceRef', 'resolvedVoiceRef',
-  'speakerAttestation', 'model', 'language', 'sampleRate', 'durationMs',
-  'artifactHash', 'receiptHmac', 'speakerProbe', 'normalization',
+  'voiceBindingAttestation', 'model', 'language', 'sampleRate', 'durationMs',
+  'artifactHash', 'receiptHmac', 'normalization',
 ]);
 const MODEL_KEYS = new Set(['family', 'versionToken']);
-const SPEAKER_PROBE_KEYS = new Set([
-  'probeFamily', 'probeVersionToken', 'enrollmentRevision',
-  'segmentationRevision', 'segmentCount', 'enrolledVoiceMatch',
-  'segmentsConsistent', 'maxEnrolledDistance', 'minOtherVoiceMargin',
-  'maxSegmentDistance', 'thresholds',
-]);
-const SPEAKER_THRESHOLD_KEYS = new Set([
-  'enrolledDistanceMax', 'otherVoiceMarginMin', 'segmentDistanceMax',
-]);
 const NORMALIZATION_KEYS = new Set(['version', 'applied', 'targetLufs', 'truePeakLimitDbfs']);
 const SHA256_HEX = /^[a-f0-9]{64}$/;
 const SAFE_TOKEN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
@@ -112,41 +103,6 @@ function positiveInteger(value, path) {
   return value;
 }
 
-function normalizeSpeakerProbe(value, path) {
-  assertKnownKeys(value, SPEAKER_PROBE_KEYS, path);
-  assertKnownKeys(value.thresholds, SPEAKER_THRESHOLD_KEYS, `${path}.thresholds`);
-  let thresholds = {
-    enrolledDistanceMax: numberInRange(value.thresholds.enrolledDistanceMax, 0, 2, `${path}.thresholds.enrolledDistanceMax`),
-    otherVoiceMarginMin: numberInRange(value.thresholds.otherVoiceMarginMin, -2, 2, `${path}.thresholds.otherVoiceMarginMin`),
-    segmentDistanceMax: numberInRange(value.thresholds.segmentDistanceMax, 0, 2, `${path}.thresholds.segmentDistanceMax`),
-  };
-  let result = {
-    probeFamily: safeToken(value.probeFamily, `${path}.probeFamily`),
-    probeVersionToken: digest(value.probeVersionToken, `${path}.probeVersionToken`),
-    enrollmentRevision: digest(value.enrollmentRevision, `${path}.enrollmentRevision`),
-    segmentationRevision: safeToken(value.segmentationRevision, `${path}.segmentationRevision`),
-    segmentCount: positiveInteger(value.segmentCount, `${path}.segmentCount`),
-    enrolledVoiceMatch: requiredBoolean(value.enrolledVoiceMatch, `${path}.enrolledVoiceMatch`),
-    segmentsConsistent: requiredBoolean(value.segmentsConsistent, `${path}.segmentsConsistent`),
-    maxEnrolledDistance: numberInRange(value.maxEnrolledDistance, 0, 2, `${path}.maxEnrolledDistance`),
-    minOtherVoiceMargin: numberInRange(value.minOtherVoiceMargin, -2, 2, `${path}.minOtherVoiceMargin`),
-    maxSegmentDistance: numberInRange(value.maxSegmentDistance, 0, 2, `${path}.maxSegmentDistance`),
-    thresholds,
-  };
-  if (!result.enrolledVoiceMatch) throw new TypeError(`${path}.enrolledVoiceMatch must be true`);
-  if (!result.segmentsConsistent) throw new TypeError(`${path}.segmentsConsistent must be true`);
-  if (result.maxEnrolledDistance > thresholds.enrolledDistanceMax) {
-    throw new TypeError(`${path}.maxEnrolledDistance must not exceed thresholds.enrolledDistanceMax`);
-  }
-  if (result.minOtherVoiceMargin < thresholds.otherVoiceMarginMin) {
-    throw new TypeError(`${path}.minOtherVoiceMargin must meet thresholds.otherVoiceMarginMin`);
-  }
-  if (result.maxSegmentDistance > thresholds.segmentDistanceMax) {
-    throw new TypeError(`${path}.maxSegmentDistance must not exceed thresholds.segmentDistanceMax`);
-  }
-  return result;
-}
-
 function normalizeNormalization(value, path) {
   assertKnownKeys(value, NORMALIZATION_KEYS, path);
   return {
@@ -186,7 +142,7 @@ function normalizeReceipt(value, index) {
     ...(value.resolvedVoiceRef === undefined ? {} : {
       resolvedVoiceRef: requiredString(value.resolvedVoiceRef, `${path}.resolvedVoiceRef`),
     }),
-    speakerAttestation: requiredString(value.speakerAttestation, `${path}.speakerAttestation`),
+    voiceBindingAttestation: requiredString(value.voiceBindingAttestation, `${path}.voiceBindingAttestation`),
     model: {
       family: requiredString(value.model.family, `${path}.model.family`),
       versionToken: requiredString(value.model.versionToken, `${path}.model.versionToken`),
@@ -196,7 +152,6 @@ function normalizeReceipt(value, index) {
     durationMs: positiveInteger(value.durationMs, `${path}.durationMs`),
     artifactHash: digest(value.artifactHash, `${path}.artifactHash`),
     receiptHmac: digest(value.receiptHmac, `${path}.receiptHmac`),
-    speakerProbe: normalizeSpeakerProbe(value.speakerProbe, `${path}.speakerProbe`),
     normalization: normalizeNormalization(value.normalization, `${path}.normalization`),
   };
 }
@@ -204,7 +159,7 @@ function normalizeReceipt(value, index) {
 export function createMediaSynthesisEvidence(input = {}, context = {}) {
   assertKnownKeys(input, SYNTHESIS_KEYS, 'manifest.synthesisEvidence');
   let identityClaim = requiredString(input.identityClaim, 'manifest.synthesisEvidence.identityClaim');
-  if (!MEDIA_SPEAKER_IDENTITY_CLAIMS.includes(identityClaim)) {
+  if (!MEDIA_VOICE_BINDING_CLAIMS.includes(identityClaim)) {
     throw new TypeError(`manifest.synthesisEvidence.identityClaim has unsupported value "${identityClaim}"`);
   }
   if (!Array.isArray(input.turns)) throw new TypeError('manifest.synthesisEvidence.turns must be an array');

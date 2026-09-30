@@ -143,8 +143,14 @@ export function createSemanticScript(input) {
     };
   });
 
+  let journeyHash = null;
+  if (source.journeyHash) {
+    journeyHash = identityHash(source.journeyHash, 'workspace-presentation-journey-v1', 'semanticScript.journeyHash');
+  }
+
   return hashRecord(SEMANTIC_SCRIPT_SCHEMA_VERSION, {
     schemaVersion: SEMANTIC_SCRIPT_SCHEMA_VERSION,
+    journeyHash,
     locale: source.locale,
     turns,
     styleRefs: orderedReferences(source.styleRefs, 'semanticScript.styleRefs'),

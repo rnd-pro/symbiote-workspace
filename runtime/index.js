@@ -335,7 +335,7 @@ export {
   MEDIA_ARTIFACT_KINDS,
   MEDIA_ARTIFACT_VERSION_INPUTS,
   MEDIA_EVIDENCE_MANIFEST_SCHEMA_VERSION,
-  MEDIA_SPEAKER_IDENTITY_CLAIMS,
+  MEDIA_VOICE_BINDING_CLAIMS,
   createMediaArtifactCacheKey,
   createMediaArtifactGraph,
   createMediaEvidenceManifest,
@@ -370,3 +370,14 @@ export {
   mediaToolFamily,
   tools as mediaToolDefinitions,
 } from './tools/media-tools.js';
+
+export * from './presentation/semantic-skeleton.js';
+export * from './presentation/presentation-project.js';
+export * from './presentation/flow.js';
+export * from './presentation/flow-authoring.js';
+export * from './presentation/flow-bridge.js';
+export * from './presentation/transcript-word-anchoring.js';
+export * from './presentation/production-revision.js';
+export * from './presentation/script-lineage.js';
+export * from './presentation/inspection.js';
+export { listPresentationCompositionCueSlots } from './presentation-output.js';

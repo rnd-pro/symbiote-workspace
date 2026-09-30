@@ -5,7 +5,7 @@ import { createVirtualSequence } from './media-sequence.js';
 import { normalizeBrowserAppearance } from './media-projects.js';
 
 const PORTABLE_VALUE_OPTIONS = Object.freeze({
-  exemptKeys: new Set(['versionToken', 'probeVersionToken']),
+  exemptKeys: new Set(['versionToken']),
   allowPathAt: (path) => path === 'manifest.source.routePath',
 });
 
@@ -15,7 +15,7 @@ function plainValue(value, path) {
 
 export {
   AUDIO_SYNTHESIS_RECEIPT_VERSION,
-  MEDIA_SPEAKER_IDENTITY_CLAIMS,
+  MEDIA_VOICE_BINDING_CLAIMS,
   createMediaSynthesisEvidence,
   validateMediaSynthesisEvidence,
 } from './media-evidence/synthesis-receipts.js';

@@ -1,8 +1,12 @@
 import { computeIntegrity } from '../../schema/canonical-json.js';
 import { createPresentationTimelineContract } from './contract.js';
 
-export const PRESENTATION_ALIGNED_SEQUENCE_VERSION = 'workspace-aligned-sequence-v1';
-export const PRESENTATION_ALIGNMENT_RESOLUTIONS = Object.freeze(['exact', 'occurrence', 'fuzzy', 'proportional']);
+// v3 adds confidence-bound, deterministic interpolation for speech anchors
+// that Whisper cannot resolve exactly. Production revision, captions, and live
+// playback consume the same enriched artifact; v2 has no confidence evidence.
+export const PRESENTATION_ALIGNED_SEQUENCE_VERSION = 'workspace-aligned-sequence-v3';
+export const PRESENTATION_ALIGNMENT_RESOLUTIONS = Object.freeze(['exact', 'occurrence', 'interpolated']);
+const PRESENTATION_ALIGNMENT_CONFIDENCES = Object.freeze(['high', 'medium', 'low']);
 
 function text(value) {
   return String(value ?? '').normalize('NFC').replace(/\s+/g, ' ').trim();
@@ -29,12 +33,6 @@ function tokenList(value) {
   return text(value).toLocaleLowerCase().match(/[\p{L}\p{N}]+/gu) || [];
 }
 
-function tokenSimilarity(left, right) {
-  if (!left.length || !right.length) return 0;
-  let same = left.reduce((count, token, index) => count + (token === right[index] ? 1 : 0), 0);
-  return same / Math.max(left.length, right.length);
-}
-
 function wordTimingIndex(turnAlignment) {
   let words = Array.isArray(turnAlignment.words) ? turnAlignment.words : [];
   return words.map((word, index) => ({
@@ -44,8 +42,18 @@ function wordTimingIndex(turnAlignment) {
   }));
 }
 
-function resolveSpeechAnchor(anchor, authoredText, alignment, turnStartMs, turnEndMs) {
-  let words = wordTimingIndex(alignment);
+function authoredSpeechPosition(anchor, authoredText) {
+  let normalizedAuthored = text(authoredText);
+  let offsets = quoteOffsets(normalizedAuthored, text(anchor.quote));
+  let sourceOffset = offsets[anchor.occurrence - 1];
+  if (sourceOffset === undefined) {
+    throw new TypeError('speech anchor quote is absent from authored turn text');
+  }
+  if (anchor.edge === 'end') sourceOffset += text(anchor.quote).length;
+  return normalizedAuthored.length ? sourceOffset / normalizedAuthored.length : 0;
+}
+
+function exactSpeechAnchor(anchor, words) {
   let quoteTokens = tokenList(anchor.quote);
   let transcriptTokens = words.flatMap((word, wordIndex) => tokenList(word.text).map((token) => ({ token, wordIndex })));
   let matches = [];
@@ -59,42 +67,101 @@ function resolveSpeechAnchor(anchor, authoredText, alignment, turnStartMs, turnE
       ? transcriptTokens[matchIndex + quoteTokens.length - 1]
       : transcriptTokens[matchIndex];
     let word = words[token.wordIndex];
-    return { timeMs: (anchor.edge === 'end' ? word.endMs : word.startMs) + anchor.offsetMs, resolution: matches.length === 1 ? 'exact' : 'occurrence' };
+    return {
+      timeMs: anchor.edge === 'end' ? word.endMs : word.startMs,
+      resolution: matches.length === 1 ? 'exact' : 'occurrence',
+      confidence: 'high',
+    };
   }
-
-  let best = null;
-  for (let index = 0; index <= transcriptTokens.length - quoteTokens.length; index += 1) {
-    let candidate = transcriptTokens.slice(index, index + quoteTokens.length).map((item) => item.token);
-    let score = tokenSimilarity(quoteTokens, candidate);
-    if (!best || score > best.score) best = { index, score };
-  }
-  if (best?.score >= 0.6 && words.length) {
-    let token = anchor.edge === 'end'
-      ? transcriptTokens[best.index + quoteTokens.length - 1]
-      : transcriptTokens[best.index];
-    let word = words[token.wordIndex];
-    return { timeMs: (anchor.edge === 'end' ? word.endMs : word.startMs) + anchor.offsetMs, resolution: 'fuzzy' };
-  }
-
-  let normalizedAuthored = text(authoredText);
-  let offsets = quoteOffsets(normalizedAuthored, text(anchor.quote));
-  let sourceOffset = offsets[anchor.occurrence - 1] ?? 0;
-  if (anchor.edge === 'end') sourceOffset += text(anchor.quote).length;
-  let progress = normalizedAuthored.length ? sourceOffset / normalizedAuthored.length : 0;
-  return {
-    timeMs: Math.round(turnStartMs + (turnEndMs - turnStartMs) * progress) + anchor.offsetMs,
-    resolution: 'proportional',
-  };
+  return null;
 }
 
-function resolveAnchor(anchor, authoredText, alignment, turnStartMs, turnEndMs) {
-  if (anchor.anchor === 'turn-start') return { timeMs: turnStartMs + anchor.offsetMs, resolution: 'exact' };
-  if (anchor.anchor === 'turn-end') return { timeMs: turnEndMs + anchor.offsetMs, resolution: 'exact' };
-  return resolveSpeechAnchor(anchor, authoredText, alignment, turnStartMs, turnEndMs);
+function clamp(value, minimum, maximum) {
+  return Math.min(maximum, Math.max(minimum, value));
 }
 
 function resolutionRank(value) {
   return PRESENTATION_ALIGNMENT_RESOLUTIONS.indexOf(value);
+}
+
+function confidenceRank(value) {
+  return PRESENTATION_ALIGNMENT_CONFIDENCES.indexOf(value);
+}
+
+function worstResolution(left, right) {
+  return resolutionRank(left) >= resolutionRank(right) ? left : right;
+}
+
+function worstConfidence(left, right) {
+  return confidenceRank(left) >= confidenceRank(right) ? left : right;
+}
+
+function resolveTurnAnchors(turn, alignment, span) {
+  let words = wordTimingIndex(alignment);
+  let endpoints = turn.cues.flatMap((cue, cueIndex) => [
+    { cueIndex, endpoint: 'at', anchor: cue.at },
+    ...(cue.until ? [{ cueIndex, endpoint: 'until', anchor: cue.until }] : []),
+  ]).map((entry) => ({
+    ...entry,
+    key: `${entry.cueIndex}.${entry.endpoint}`,
+    offsetMs: entry.anchor.offsetMs,
+  }));
+
+  let observed = [];
+  for (let entry of endpoints) {
+    if (entry.anchor.anchor === 'turn-start') {
+      entry.result = { timeMs: span.startMs + entry.offsetMs, resolution: 'exact', confidence: 'high' };
+      continue;
+    }
+    if (entry.anchor.anchor === 'turn-end') {
+      entry.result = { timeMs: span.endMs + entry.offsetMs, resolution: 'exact', confidence: 'high' };
+      continue;
+    }
+    entry.position = authoredSpeechPosition(entry.anchor, turn.text);
+    let exact = exactSpeechAnchor(entry.anchor, words);
+    if (exact) observed.push({ entry, key: entry.key, position: entry.position, baseTimeMs: exact.timeMs, exact });
+  }
+
+  // Keep an increasing subsequence of exact observed anchors. A crossed
+  // Whisper match is unreliable evidence, so it is excluded and falls back to
+  // interpolation rather than making the presenter schedule non-monotonic.
+  let usableObserved = [];
+  let hasOrderConflict = false;
+  for (let candidate of observed.sort((left, right) => left.position - right.position || left.key.localeCompare(right.key))) {
+    let prior = usableObserved.at(-1);
+    if (prior && candidate.baseTimeMs < prior.baseTimeMs) {
+      hasOrderConflict = true;
+      continue;
+    }
+    usableObserved.push(candidate);
+    candidate.entry.result = {
+      timeMs: candidate.baseTimeMs + candidate.entry.offsetMs,
+      resolution: candidate.exact.resolution,
+      confidence: candidate.exact.confidence,
+    };
+  }
+
+  let trusted = [
+    { position: 0, timeMs: span.startMs },
+    ...usableObserved.map((entry) => ({ position: entry.position, timeMs: entry.baseTimeMs })),
+    { position: 1, timeMs: span.endMs },
+  ].sort((left, right) => left.position - right.position || left.timeMs - right.timeMs);
+
+  for (let entry of endpoints.filter((candidate) => candidate.anchor.anchor === 'speech' && !candidate.result)) {
+    let position = clamp(entry.position, 0, 1);
+    let before = trusted.filter((point) => point.position <= position).at(-1) || trusted[0];
+    let after = trusted.find((point) => point.position >= position) || trusted.at(-1);
+    let denominator = after.position - before.position;
+    let progress = denominator > 0 ? (position - before.position) / denominator : 0;
+    let interpolated = before.timeMs + (after.timeMs - before.timeMs) * progress;
+    entry.result = {
+      timeMs: clamp(Math.round(interpolated) + entry.offsetMs, span.startMs, span.endMs),
+      resolution: 'interpolated',
+      confidence: usableObserved.length && !hasOrderConflict ? 'medium' : 'low',
+    };
+  }
+
+  return new Map(endpoints.map((entry) => [entry.key, entry.result]));
 }
 
 function normalizeMedia(value = {}) {
@@ -109,29 +176,77 @@ function normalizeMedia(value = {}) {
   };
 }
 
+function normalizeVoice(value, turnCount) {
+  if (value === undefined) return null;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError('aligned sequence voice must be an object');
+  let mode = text(value.mode);
+  if (mode === 'single') {
+    for (let key of Object.keys(value)) if (!['mode', 'speakerId'].includes(key)) throw new TypeError(`aligned sequence voice.${key} is not supported`);
+    let speakerId = text(value.speakerId);
+    if (!speakerId) throw new TypeError('aligned sequence voice.speakerId must be nonempty');
+    return { mode, speakerId };
+  }
+  if (mode === 'dialogue') {
+    for (let key of Object.keys(value)) if (!['mode', 'speakerIds'].includes(key)) throw new TypeError(`aligned sequence voice.${key} is not supported`);
+    if (!Array.isArray(value.speakerIds) || value.speakerIds.length !== turnCount) {
+      throw new TypeError('aligned sequence dialogue voice requires one speakerId per turn');
+    }
+    let speakerIds = value.speakerIds.map((speakerId, index) => {
+      let normalized = text(speakerId);
+      if (!normalized) throw new TypeError(`aligned sequence voice.speakerIds[${index}] must be nonempty`);
+      return normalized;
+    });
+    return { mode, speakerIds };
+  }
+  throw new TypeError('aligned sequence voice.mode is unsupported');
+}
+
+function normalizeEnrichedTurn(alignment, turnIndex, media, voice) {
+  let supportedKeys = ['startMs', 'endMs', 'transcript', 'words', 'speaker'];
+  for (let key of Object.keys(alignment)) if (!supportedKeys.includes(key)) throw new TypeError(`aligned sequence turns[${turnIndex}].${key} is not supported`);
+  let startMs = integer(alignment.startMs, `aligned sequence turns[${turnIndex}].startMs`, { max: media.durationMs });
+  let endMs = integer(alignment.endMs, `aligned sequence turns[${turnIndex}].endMs`, { min: startMs, max: media.durationMs });
+  let expectedSpeaker = voice.mode === 'single' ? voice.speakerId : voice.speakerIds[turnIndex];
+  let speaker = text(alignment.speaker);
+  if (!speaker || speaker !== expectedSpeaker) throw new TypeError(`aligned sequence turns[${turnIndex}].speaker does not match voice ownership`);
+  if (typeof alignment.transcript !== 'string') throw new TypeError(`aligned sequence turns[${turnIndex}].transcript must be a string`);
+  let words = wordTimingIndex(alignment);
+  for (let [wordIndex, word] of words.entries()) {
+    if (!word.text || word.endMs < word.startMs || word.startMs < startMs || word.endMs > endMs) {
+      throw new TypeError(`aligned sequence turns[${turnIndex}].words[${wordIndex}] is outside its turn span`);
+    }
+  }
+  return { turnIndex, startMs, endMs, speaker, transcript: text(alignment.transcript), words };
+}
+
 export function createPresentationAlignedSequence(timelineInput = {}, input = {}) {
   let timeline = createPresentationTimelineContract(timelineInput);
   let media = normalizeMedia(input.media);
   let alignments = Array.isArray(input.turns) ? input.turns : [];
   if (alignments.length !== timeline.turns.length) throw new TypeError('aligned sequence requires one alignment for every authored turn');
+  let voice = normalizeVoice(input.voice, alignments.length);
   let priorStartMs = -1;
   let turns = alignments.map((alignment, turnIndex) => {
     if (!alignment || typeof alignment !== 'object' || Array.isArray(alignment)) throw new TypeError(`aligned sequence turns[${turnIndex}] must be an object`);
-    for (let key of Object.keys(alignment)) if (!['startMs', 'endMs', 'transcript', 'words'].includes(key)) throw new TypeError(`aligned sequence turns[${turnIndex}].${key} is not supported`);
-    let startMs = integer(alignment.startMs, `aligned sequence turns[${turnIndex}].startMs`, { max: media.durationMs });
-    let endMs = integer(alignment.endMs, `aligned sequence turns[${turnIndex}].endMs`, { min: startMs, max: media.durationMs });
+    let enriched = voice ? normalizeEnrichedTurn(alignment, turnIndex, media, voice) : null;
+    if (!voice) {
+      for (let key of Object.keys(alignment)) if (!['startMs', 'endMs', 'transcript', 'words'].includes(key)) throw new TypeError(`aligned sequence turns[${turnIndex}].${key} is not supported`);
+    }
+    let startMs = enriched?.startMs ?? integer(alignment.startMs, `aligned sequence turns[${turnIndex}].startMs`, { max: media.durationMs });
+    let endMs = enriched?.endMs ?? integer(alignment.endMs, `aligned sequence turns[${turnIndex}].endMs`, { min: startMs, max: media.durationMs });
     if (startMs < priorStartMs) throw new TypeError('aligned sequence turn spans must be monotonic');
     priorStartMs = startMs;
-    return { turnIndex, startMs, endMs };
+    return enriched || { turnIndex, startMs, endMs };
   });
   let events = [];
   for (let [turnIndex, turn] of timeline.turns.entries()) {
     let alignment = alignments[turnIndex];
     let span = turns[turnIndex];
+    let anchors = resolveTurnAnchors(turn, alignment, span);
     for (let [cueIndex, cue] of turn.cues.entries()) {
-      let start = resolveAnchor(cue.at, turn.text, alignment, span.startMs, span.endMs);
+      let start = anchors.get(`${cueIndex}.at`);
       let end = cue.until
-        ? resolveAnchor(cue.until, turn.text, alignment, span.startMs, span.endMs)
+        ? anchors.get(`${cueIndex}.until`)
         : start;
       let startMs = Math.min(media.durationMs, Math.max(0, Math.round(start.timeMs)));
       let endMs = Math.min(media.durationMs, Math.max(startMs, Math.round(end.timeMs)));
@@ -141,7 +256,8 @@ export function createPresentationAlignedSequence(timelineInput = {}, input = {}
         kind: cue.kind,
         startMs,
         endMs,
-        resolution: resolutionRank(start.resolution) >= resolutionRank(end.resolution) ? start.resolution : end.resolution,
+        resolution: worstResolution(start.resolution, end.resolution),
+        confidence: worstConfidence(start.confidence, end.confidence),
       });
     }
   }
@@ -150,6 +266,7 @@ export function createPresentationAlignedSequence(timelineInput = {}, input = {}
     contractVersion: PRESENTATION_ALIGNED_SEQUENCE_VERSION,
     timelineHash: timeline.hash,
     media,
+    ...(voice ? { voice } : {}),
     turns,
     events,
   };
@@ -160,7 +277,7 @@ export function validatePresentationAlignedSequence(value = {}, timelineInput = 
   let timeline = createPresentationTimelineContract(timelineInput);
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError('aligned sequence must be an object');
   for (let key of Object.keys(value)) {
-    if (!['contractVersion', 'timelineHash', 'media', 'turns', 'events', 'hash'].includes(key)) {
+    if (!['contractVersion', 'timelineHash', 'media', 'voice', 'turns', 'events', 'hash'].includes(key)) {
       throw new TypeError(`aligned sequence.${key} is not supported`);
     }
   }
@@ -169,14 +286,30 @@ export function validatePresentationAlignedSequence(value = {}, timelineInput = 
   let media = normalizeMedia(value.media);
   let expectedCueCount = timeline.turns.reduce((count, turn) => count + turn.cues.length, 0);
   if (!Array.isArray(value.turns) || value.turns.length !== timeline.turns.length) throw new TypeError('aligned sequence turn coverage is incomplete');
+  let voice = normalizeVoice(value.voice, value.turns.length);
   if (!Array.isArray(value.events) || value.events.length !== expectedCueCount) throw new TypeError('aligned sequence cue coverage is incomplete');
   let priorStartMs = -1;
   for (let [index, span] of value.turns.entries()) {
     if (!span || typeof span !== 'object' || Array.isArray(span)) throw new TypeError(`aligned sequence turns[${index}] must be an object`);
-    for (let key of Object.keys(span)) if (!['turnIndex', 'startMs', 'endMs'].includes(key)) throw new TypeError(`aligned sequence turns[${index}].${key} is not supported`);
+    let permittedKeys = voice
+      ? ['turnIndex', 'startMs', 'endMs', 'speaker', 'transcript', 'words']
+      : ['turnIndex', 'startMs', 'endMs'];
+    for (let key of Object.keys(span)) if (!permittedKeys.includes(key)) throw new TypeError(`aligned sequence turns[${index}].${key} is not supported`);
     if (span.turnIndex !== index) throw new TypeError(`aligned sequence turns[${index}].turnIndex is invalid`);
     let startMs = integer(span.startMs, `aligned sequence turns[${index}].startMs`, { max: media.durationMs });
-    integer(span.endMs, `aligned sequence turns[${index}].endMs`, { min: startMs, max: media.durationMs });
+    let endMs = integer(span.endMs, `aligned sequence turns[${index}].endMs`, { min: startMs, max: media.durationMs });
+    if (voice) {
+      let expectedSpeaker = voice.mode === 'single' ? voice.speakerId : voice.speakerIds[index];
+      if (text(span.speaker) !== expectedSpeaker || typeof span.transcript !== 'string') {
+        throw new TypeError(`aligned sequence turns[${index}] does not match voice ownership`);
+      }
+      let words = wordTimingIndex(span);
+      for (let [wordIndex, word] of words.entries()) {
+        if (!word.text || word.endMs < word.startMs || word.startMs < startMs || word.endMs > endMs) {
+          throw new TypeError(`aligned sequence turns[${index}].words[${wordIndex}] is outside its turn span`);
+        }
+      }
+    }
     if (startMs < priorStartMs) throw new TypeError('aligned sequence turn spans must be monotonic');
     priorStartMs = startMs;
   }
@@ -188,13 +321,14 @@ export function validatePresentationAlignedSequence(value = {}, timelineInput = 
   let priorEvent = null;
   for (let [index, event] of value.events.entries()) {
     if (!event || typeof event !== 'object' || Array.isArray(event)) throw new TypeError(`aligned sequence events[${index}] must be an object`);
-    for (let key of Object.keys(event)) if (!['cueId', 'turnIndex', 'kind', 'startMs', 'endMs', 'resolution'].includes(key)) throw new TypeError(`aligned sequence events[${index}].${key} is not supported`);
+    for (let key of Object.keys(event)) if (!['cueId', 'turnIndex', 'kind', 'startMs', 'endMs', 'resolution', 'confidence'].includes(key)) throw new TypeError(`aligned sequence events[${index}].${key} is not supported`);
     let expected = expectedEvents.get(event.cueId);
     if (!expected || seen.has(event.cueId)) throw new TypeError(`aligned sequence events[${index}].cueId is invalid or duplicated`);
     if (event.turnIndex !== expected.turnIndex || event.kind !== expected.kind) throw new TypeError(`aligned sequence events[${index}] does not match its authored cue`);
     let startMs = integer(event.startMs, `aligned sequence events[${index}].startMs`, { max: media.durationMs });
     integer(event.endMs, `aligned sequence events[${index}].endMs`, { min: startMs, max: media.durationMs });
     if (!PRESENTATION_ALIGNMENT_RESOLUTIONS.includes(event.resolution)) throw new TypeError(`aligned sequence events[${index}].resolution is invalid`);
+    if (!PRESENTATION_ALIGNMENT_CONFIDENCES.includes(event.confidence)) throw new TypeError(`aligned sequence events[${index}].confidence is invalid`);
     if (priorEvent && (startMs < priorEvent.startMs || (startMs === priorEvent.startMs && event.cueId.localeCompare(priorEvent.cueId) < 0))) {
       throw new TypeError('aligned sequence events must be deterministically ordered');
     }
@@ -205,6 +339,7 @@ export function validatePresentationAlignedSequence(value = {}, timelineInput = 
     contractVersion: value.contractVersion,
     timelineHash: value.timelineHash,
     media,
+    ...(voice ? { voice } : {}),
     turns: value.turns,
     events: value.events,
   })}`;

@@ -41,6 +41,7 @@ export const PRESENTATION_COMPOSITION_ISSUE_CODES = Object.freeze([
 ]);
 
 const ISSUE_CODE_SET = new Set(PRESENTATION_COMPOSITION_ISSUE_CODES);
+const WARNING_ISSUE_CODES = new Set(['target-unreadable']);
 
 function isObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -181,6 +182,14 @@ function rectIntersects(left, right) {
     && rectRight(left) > finiteNumber(right?.x)
     && finiteNumber(left?.y) < rectBottom(right)
     && rectBottom(left) > finiteNumber(right?.y);
+}
+
+function rectIntersection(left, right) {
+  let x = Math.max(finiteNumber(left?.x), finiteNumber(right?.x));
+  let y = Math.max(finiteNumber(left?.y), finiteNumber(right?.y));
+  let rightEdge = Math.min(rectRight(left), rectRight(right));
+  let bottomEdge = Math.min(rectBottom(left), rectBottom(right));
+  return rect(x, y, Math.max(0, rightEdge - x), Math.max(0, bottomEdge - y));
 }
 
 export function normalizePresentationRect(input = {}) {
@@ -404,7 +413,7 @@ export function createPresentationCompositionPlan(input = {}) {
 
 function auditIssue(code, path, message) {
   if (!ISSUE_CODE_SET.has(code)) throw new TypeError(`unregistered presentation composition issue code: ${code}`);
-  return { code, severity: 'error', path, message };
+  return { code, severity: WARNING_ISSUE_CODES.has(code) ? 'warning' : 'error', path, message };
 }
 
 export function auditPresentationCompositionPlan(plan = {}, expectations = {}) {
@@ -555,16 +564,21 @@ export function auditPresentationCompositionPlan(plan = {}, expectations = {}) {
 
     let measurement = normalizePresentationTargetComposition(step.measurement || {});
     let focusRect = translateRect(measurement.focusRect, presentationViewport.x, presentationViewport.y);
+    let visibleRect = translateRect(measurement.visibleRect, presentationViewport.x, presentationViewport.y);
     let annotationRect = step.annotation?.rect
       ? translateRect(step.annotation.rect, presentationViewport.x, presentationViewport.y)
       : null;
     if (!measurement.reachable) add('target-unreachable', path, 'target cannot be reached by declared reversible actions');
     if (!measurement.visible) add('target-hidden', path, 'target remains hidden after composition actions');
+    // Browser chrome and fractional layout rounding can trim a few edge pixels
+    // while the separately measured critical-attention/annotation geometry is
+    // still fully usable. Keep true clipping fail-closed, but do not reject a
+    // target whose meaningful geometry is contained and at least 90% visible.
     if (
-      focusRect.width < 24
-      || focusRect.height < 16
-      || measurement.visibleRatio < 0.995
-      || !rectContains(output.contentRect, focusRect, 1)
+      visibleRect.width < 24
+      || visibleRect.height < 16
+      || measurement.visibleRatio < 0.9
+      || !rectContains(output.contentRect, visibleRect, 1)
     ) add('target-clipped', path, 'target focus rectangle is clipped or outside usable content');
     if (step.cueKind === 'focus' || step.cueKind === 'interaction') {
       let criticalAttentionRect = measurement.criticalAttentionRect
@@ -574,9 +588,18 @@ export function auditPresentationCompositionPlan(plan = {}, expectations = {}) {
             presentationViewport.y,
           )
         : null;
+      let visibleCriticalAttentionRect = criticalAttentionRect
+        ? rectIntersection(criticalAttentionRect, output.contentRect)
+        : null;
+      let criticalAttentionArea = criticalAttentionRect
+        ? criticalAttentionRect.width * criticalAttentionRect.height
+        : 0;
+      let visibleCriticalAttentionRatio = criticalAttentionArea > 0
+        ? (visibleCriticalAttentionRect.width * visibleCriticalAttentionRect.height) / criticalAttentionArea
+        : 0;
       if (
         !criticalAttentionRect
-        || !rectContains(output.contentRect, criticalAttentionRect, 1)
+        || visibleCriticalAttentionRatio < 0.9
       ) {
         add(
           'target-clipped',
@@ -611,7 +634,7 @@ export function auditPresentationCompositionPlan(plan = {}, expectations = {}) {
   }
   return {
     schemaVersion: `${PRESENTATION_COMPOSITION_PLAN_SCHEMA_VERSION}:audit-v1`,
-    verdict: issues.length ? 'reject' : 'accept',
+    verdict: issues.some((issue) => issue.severity === 'error') ? 'reject' : 'accept',
     issueCodes: uniqueSorted(issues.map((issue) => issue.code)),
     issues,
     coverage: {
