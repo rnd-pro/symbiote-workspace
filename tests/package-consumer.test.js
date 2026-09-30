@@ -14,11 +14,39 @@ let ROOT = resolve(import.meta.dirname, '..');
 let TMP_ROOT = resolve(ROOT, 'tmp');
 let PACKAGE_META = JSON.parse(readFileSync(resolve(ROOT, 'package.json'), 'utf8'));
 
+// The meaningful invariant is the relationship, not a frozen literal: the
+// version developed against must satisfy the range declared to consumers.
+// Hardcoded numbers drift on every dependency bump and prove nothing about
+// behaviour — they only ever fail mechanically.
+function satisfiesRange(version, range) {
+  let floor = String(range).replace(/^>=\s*/, '').trim();
+  let parse = (value) => {
+    let match = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/.exec(value);
+    return match ? [Number(match[1]), Number(match[2]), Number(match[3]), match[4] || null] : null;
+  };
+  let left = parse(version);
+  let right = parse(floor);
+  if (!left || !right) return false;
+  for (let index = 0; index < 3; index += 1) {
+    if (left[index] !== right[index]) return left[index] > right[index];
+  }
+  if (left[3] === right[3]) return true;
+  if (left[3] === null) return true;
+  if (right[3] === null) return false;
+  return left[3] > right[3];
+}
+
 it('requires and develops against the presentation dependency releases', () => {
-  assert.equal(PACKAGE_META.devDependencies['symbiote-engine'], '0.3.0-alpha.13');
-  assert.equal(PACKAGE_META.devDependencies['symbiote-ui'], '0.3.0-alpha.63');
-  assert.equal(PACKAGE_META.peerDependencies['symbiote-engine'], '>=0.3.0-alpha.13');
-  assert.equal(PACKAGE_META.peerDependencies['symbiote-ui'], '>=0.3.0-alpha.63');
+  for (let name of ['symbiote-engine', 'symbiote-ui']) {
+    let peerRange = PACKAGE_META.peerDependencies[name];
+    let developed = PACKAGE_META.devDependencies[name];
+    assert.ok(peerRange, `${name} must declare a peer range`);
+    assert.ok(developed, `${name} must be developed against a concrete release`);
+    assert.ok(
+      satisfiesRange(developed, peerRange),
+      `${name} devDependency ${developed} does not satisfy the peer range ${peerRange}`,
+    );
+  }
 });
 
 async function withTempConsumer(run) {
@@ -71,6 +99,17 @@ function withNpmEnv(options, npmEnv) {
   };
 }
 
+// `npm pack --json` changed shape: older npm printed an array of pack records,
+// npm 12 prints an object keyed by package name. Accept either so the suite
+// does not encode one CLI version's output format.
+function readPackRecord(stdout) {
+  let parsed = JSON.parse(stdout);
+  if (Array.isArray(parsed)) return parsed[0];
+  let entries = Object.values(parsed || {});
+  if (entries.length === 0) throw new Error('npm pack --json returned no pack record');
+  return entries[0];
+}
+
 async function packPackage(packagePath, artifactsDir, npmEnv) {
   let { stdout } = await run('npm', [
     'pack',
@@ -80,7 +119,7 @@ async function packPackage(packagePath, artifactsDir, npmEnv) {
     '--json',
     '--ignore-scripts',
   ], withNpmEnv({ cwd: ROOT }, npmEnv));
-  let [pack] = JSON.parse(stdout);
+  let pack = readPackRecord(stdout);
   return {
     pack,
     tarball: join(artifactsDir, pack.filename),

@@ -4,14 +4,39 @@
 
 [Documentation and live demo](https://rnd-pro.github.io/symbiote-workspace/)
 
-**symbiote-workspace turns chat intent into portable, executable Symbiote
-workspaces. Fast.**
+**Build portable agent workspaces from JSON, modules, and plugins.**
 
-Build professional agent workspaces from plain JSON configs: views, layouts,
-panels, modules, actions, wires, Cascade themes, plugin metadata, runtime
-slots, host requirements, and browser assembly. The package
+symbiote-workspace wires interface, data, and actions together through explicit
+state and lifecycle contracts. A compatible host provides the execution and
+storage services; connected modules supply the capabilities of a specific
+application.
+
+Assemble workspaces from plain JSON configs: views, layouts, panels, modules,
+actions, wires, Cascade themes, plugin metadata, runtime slots, host
+requirements, and browser assembly. The package
 gives agents a direct path from user intent to a relaunchable workspace without
 forking a product app, hardcoding a host, or generating one-off UI code first.
+
+#### What a config carries, and what it does not
+
+A configuration carries composition. Everything else depends on connected
+modules and the host, and is not implied by the JSON:
+
+- **Portability is not data portability.** User data, credentials, and running
+  jobs do not travel with a config.
+- **Executability depends on available versions and host capabilities.** Check
+  the compatibility and readiness matrix for your host.
+- **State preservation covers declared slots.** Modules declare the state they
+  persist and the migrations they support; anything else is not guaranteed to
+  survive an update.
+- **Collaboration and offline are separate capabilities**, not a consequence of
+  having a JSON config.
+- **A successful document write has a defined atomicity scope.** One document
+  commit is the unit; transactions spanning documents are not provided.
+- **A cancel request is not a confirmed external effect stop.** Adapters report
+  when the executor has actually stopped.
+- **The legacy renderer-only runtime carries strictly weaker guarantees** and
+  gains none of the above.
 
 ![Realtime Symbiote workspace builder demo](./docs/assets/realtime-builder-demo.png)
 
