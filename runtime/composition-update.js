@@ -19,10 +19,35 @@
 // quietly discarded — losing a user's unsaved work is not an acceptable
 // default, even when the alternative is "the update does not happen".
 
+/**
+ * Reads what a switch actually claims to have applied.
+ *
+ * A switch may report in three ways: an explicit list, an explicit `applied`
+ * count, or nothing at all. Returning nothing while work was declared is the
+ * silent no-op this module exists to reject; a switch that wants to be trusted
+ * has to say what it did.
+ */
+function describeAppliedWork(report) {
+  if (report === null || report === undefined) {
+    return { reported: false, appliedNothing: true, count: 0 };
+  }
+  if (Array.isArray(report.applied)) {
+    return { reported: true, appliedNothing: report.applied.length === 0, count: report.applied.length };
+  }
+  if (Number.isInteger(report.appliedCount)) {
+    return { reported: true, appliedNothing: report.appliedCount === 0, count: report.appliedCount };
+  }
+  return { reported: false, appliedNothing: false, count: null };
+}
+
 export const UPDATE_STATUSES = Object.freeze({
   applied: 'applied',
   blocked: 'update_blocked',
   failed: 'failed',
+  // The switch reported success but changed nothing. This is its own status
+  // rather than a flavour of `failed`, because the distinction is what stops a
+  // host from mistaking "the call returned" for "the change landed".
+  notApplied: 'update_not_applied',
 });
 
 export const UPDATE_STRATEGIES = Object.freeze({
@@ -183,13 +208,31 @@ export async function applyCompositionUpdate({ plan, previous, next, prepare, sw
     };
   }
 
+  let switchReport = null;
   try {
-    await switchMount({ prepared: carried, restored, definition: next });
+    switchReport = await switchMount({ prepared: carried, restored, definition: next });
   } catch (err) {
     return {
       status: UPDATE_STATUSES.failed,
       stage: 'switch',
       reason: err?.message || String(err),
+      previousStillMounted: true,
+    };
+  }
+
+  // A switch that claims success while applying nothing must not be reported as
+  // an applied update. A host whose `updateConfig` is an empty stub returns
+  // undefined here, and that is the exact shape of a silent no-op.
+  let declaredWork = plan.slots.migrate.length
+    + plan.slots.reacquire.length
+    + (plan.dirty?.length ? 1 : 0);
+  let appliedWork = describeAppliedWork(switchReport);
+  if (declaredWork > 0 && appliedWork.appliedNothing) {
+    return {
+      status: UPDATE_STATUSES.notApplied,
+      stage: 'switch',
+      reason: 'the switch reported success but applied no declared change',
+      declaredWork,
       previousStillMounted: true,
     };
   }

@@ -211,3 +211,96 @@ describe('applying an update', () => {
     assert.equal(prepared, false, 'a blocked update must not touch the live mount');
   });
 });
+
+describe('a switch that applies nothing is not an applied update', () => {
+  // The Maximo demo's runtimeController returns `{ updateConfig() {}, destroy() {...} }`.
+  // That reports success while changing nothing, which is the exact outcome the
+  // contract must refuse to call an applied update.
+  it('refuses a switch that returns nothing while work was declared', async () => {
+    let plan = planCompositionUpdate(descriptor(), descriptor({
+      state: { slots: [{ id: 'body', kind: 'persistent' }] },
+    }), {
+      available: ['storage.collection.default'],
+      dirtySlots: ['body'],
+      checkpointableSlots: ['body'],
+    });
+    assert.equal(plan.status, 'ready');
+
+    let released = false;
+    let result = await applyCompositionUpdate({
+      plan,
+      previous: descriptor(),
+      next: descriptor({ state: { slots: [{ id: 'body', kind: 'persistent' }] } }),
+      prepare: async () => ({ session: { body: 'carried' } }),
+      // The empty stub: reports nothing at all.
+      switchMount: async () => undefined,
+      release: async () => { released = true; },
+    });
+
+    assert.equal(result.status, UPDATE_STATUSES.notApplied);
+    assert.match(result.reason, /applied no declared change/);
+    assert.equal(released, false, 'a switch that applied nothing must not release the old mount');
+  });
+
+  it('refuses a switch that explicitly reports zero applied items', async () => {
+    let plan = planCompositionUpdate(descriptor(), descriptor({
+      state: { slots: [{ id: 'body', kind: 'persistent' }] },
+    }), {
+      available: ['storage.collection.default'],
+      dirtySlots: ['body'],
+      checkpointableSlots: ['body'],
+    });
+
+    let result = await applyCompositionUpdate({
+      plan,
+      previous: descriptor(),
+      next: descriptor({ state: { slots: [{ id: 'body', kind: 'persistent' }] } }),
+      prepare: async () => ({ session: {} }),
+      switchMount: async () => ({ applied: [] }),
+    });
+
+    assert.equal(result.status, UPDATE_STATUSES.notApplied);
+  });
+
+  it('accepts a switch that reports what it applied', async () => {
+    let plan = planCompositionUpdate(descriptor(), descriptor({
+      state: { slots: [{ id: 'body', kind: 'persistent' }] },
+    }), {
+      available: ['storage.collection.default'],
+      dirtySlots: ['body'],
+      checkpointableSlots: ['body'],
+    });
+
+    let result = await applyCompositionUpdate({
+      plan,
+      previous: descriptor(),
+      next: descriptor({ state: { slots: [{ id: 'body', kind: 'persistent' }] } }),
+      prepare: async () => ({ session: {} }),
+      switchMount: async () => ({ applied: ['body'] }),
+    });
+
+    assert.equal(result.status, UPDATE_STATUSES.applied, 'a switch that says what it applied is trusted');
+  });
+
+  it('tolerates a silent switch when no change was declared', async () => {
+    let plan = planCompositionUpdate(descriptor(), descriptor(), {
+      available: ['storage.collection.default'],
+    });
+    assert.equal(plan.slots.migrate.length, 0, 'the plan declares no work in this case');
+    assert.equal(plan.dirty.length, 0);
+
+    let result = await applyCompositionUpdate({
+      plan,
+      previous: descriptor(),
+      next: descriptor(),
+      prepare: async () => ({ session: {} }),
+      switchMount: async () => undefined,
+    });
+
+    assert.equal(
+      result.status,
+      UPDATE_STATUSES.applied,
+      'a no-op update is legitimate when the plan genuinely declares no work',
+    );
+  });
+});

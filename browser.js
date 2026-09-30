@@ -1674,6 +1674,25 @@ export function collectWorkspaceInterfaceContext(config, root = null, options = 
   };
 }
 
+// How a committed configuration change reached the running workspace. Recorded on
+// the mounted handle so a host can assert which path it got instead of inferring
+// it from whether the call threw.
+const UPDATE_PATHS = Object.freeze({
+  runtimeUpdate: 'runtime-update',
+  destroyRemount: 'destroy-remount',
+});
+
+function reportUpdateFallback(detail) {
+  let channel = globalThis?.__symbioteWorkspaceUpdateFallback;
+  if (typeof channel === 'function') {
+    try {
+      channel(detail);
+    } catch {
+      // A reporting channel must never break the update it reports on.
+    }
+  }
+}
+
 function resolveRuntimeUpdate(runtimeController, runtimeHandle) {
   for (let name of ['updateConfig', 'updateWorkspace', 'applyConfig']) {
     if (typeof runtimeHandle?.[name] === 'function') {
@@ -1984,6 +2003,7 @@ export function mountWorkspace(config, container, options = {}) {
 
   function applyCommittedConfig(nextConfig, nextLoaderResult, updateOptions, commitResult, origin) {
     maybeResetRouter(nextConfig, updateOptions);
+      let updatePath = UPDATE_PATHS.runtimeUpdate;
     let runtimeUpdate = resolveRuntimeUpdate(options.runtimeController, runtimeHandle);
     if (runtimeUpdate) {
       runtimeUpdate.fn.call(runtimeUpdate.target, {
@@ -2012,6 +2032,16 @@ export function mountWorkspace(config, container, options = {}) {
         workspaceState,
         revision: commitResult.revision,
       });
+      updatePath = UPDATE_PATHS.destroyRemount;
+      // The runtime offered no update method, so the old mount was destroyed and
+      // replaced. Until that becomes an error it has to be observable: a host
+      // that assumed an in-place update must be able to see that it got a
+      // remount instead, and that state living only in the old mount is gone.
+      reportUpdateFallback({
+        path: updatePath,
+        reason: 'runtime provided no updateConfig/updateWorkspace/applyConfig',
+        revision: commitResult.revision,
+      });
     }
 
     currentConfig = nextConfig;
@@ -2028,6 +2058,7 @@ export function mountWorkspace(config, container, options = {}) {
       workspaceState,
       revision: workspaceState.revision,
       lastCommit: commitResult,
+      lastUpdatePath: updatePath,
     });
     return mounted;
   }
