@@ -40,6 +40,26 @@ function describeAppliedWork(report) {
   return { reported: false, appliedNothing: false, count: null };
 }
 
+/**
+ * Releases whatever a half-built candidate acquired. Never throws: it runs on
+ * the failure path, where a second failure would hide the first.
+ */
+async function releaseCandidateResources(carried, registered = []) {
+  let list = [...registered];
+  for (let release of Array.isArray(carried?.releases) ? carried.releases : []) {
+    if (!list.includes(release)) list.push(release);
+  }
+  if (list.length === 0) return false;
+  for (let release of list) {
+    try {
+      await release();
+    } catch {
+      // Reported by the caller's own accounting; this is best-effort cleanup.
+    }
+  }
+  return true;
+}
+
 export const UPDATE_STATUSES = Object.freeze({
   applied: 'applied',
   blocked: 'update_blocked',
@@ -48,6 +68,10 @@ export const UPDATE_STATUSES = Object.freeze({
   // rather than a flavour of `failed`, because the distinction is what stops a
   // host from mistaking "the call returned" for "the change landed".
   notApplied: 'update_not_applied',
+  // The world moved while this plan was being prepared: another update or a
+  // remount advanced the generation. Applying it now would overwrite newer
+  // state with an older reading of it.
+  stale: 'update_stale',
 });
 
 export const UPDATE_STRATEGIES = Object.freeze({
@@ -161,6 +185,9 @@ export function planCompositionUpdate(previous, next, options = {}) {
     dirty: [...dirty],
     strategy: next.updates?.strategy ?? UPDATE_STRATEGIES.checkpoint,
     requiresMigration: slots.migrate.length > 0,
+    // The reading this plan was built from. `applyCompositionUpdate` refuses to
+    // act once the live generation has moved past it.
+    baseGeneration: options.currentGeneration ?? null,
   };
 }
 
@@ -173,11 +200,32 @@ export function planCompositionUpdate(previous, next, options = {}) {
  * never a second execution of it. Modules that cannot honour that must refuse
  * the update rather than pretend.
  */
-export async function applyCompositionUpdate({ plan, previous, next, prepare, switchMount, release }) {
+export async function applyCompositionUpdate({ plan, previous, next, prepare, switchMount, release, currentGeneration }) {
   if (!plan || plan.status !== 'ready') {
     return { status: plan?.status ?? UPDATE_STATUSES.blocked, reason: plan?.reason ?? 'no-plan' };
   }
 
+  // A plan is a reading of the world at one generation. If the generation moved
+  // while it was being prepared, its reading is out of date and applying it
+  // would clobber whatever superseded it. This is checked before any work, so
+  // a stale plan costs nothing and touches nothing.
+  if (plan.baseGeneration !== undefined && plan.baseGeneration !== null) {
+    if (currentGeneration !== undefined && currentGeneration !== null
+      && currentGeneration !== plan.baseGeneration) {
+      return {
+        status: UPDATE_STATUSES.stale,
+        reason: 'the generation this plan was built against has moved on',
+        plannedAgainst: plan.baseGeneration,
+        currentGeneration,
+        previousStillMounted: true,
+      };
+    }
+  }
+
+  // The contract owns the release list rather than reading it off the prepared
+  // object: a prepare that throws never returns that object, so anything it had
+  // already acquired would otherwise be unreachable on the failure path.
+  let releases = [];
   let carried = null;
   try {
     carried = await prepare({
@@ -186,13 +234,23 @@ export async function applyCompositionUpdate({ plan, previous, next, prepare, sw
       slots: plan.slots,
       // Stated explicitly so a module cannot mistake this for a fresh mount.
       replayEffects: false,
+      // Register every acquired resource as it is acquired, so cleanup does not
+      // depend on preparation finishing.
+      registerRelease(fn) {
+        if (typeof fn === 'function') releases.push(fn);
+        return fn;
+      },
     });
   } catch (err) {
+    // A candidate that got as far as acquiring resources must not keep them
+    // because preparation failed. The old composition is untouched either way.
+    let released = await releaseCandidateResources(carried, releases);
     return {
       status: UPDATE_STATUSES.failed,
       stage: 'prepare',
       reason: err?.message || String(err),
       previousStillMounted: true,
+      candidateReleased: released,
     };
   }
 
@@ -200,11 +258,13 @@ export async function applyCompositionUpdate({ plan, previous, next, prepare, sw
   try {
     restored = await next.restoration.restore(carried?.session ?? {}, { owner: previous?.state });
   } catch (err) {
+    let released = await releaseCandidateResources(carried, releases);
     return {
       status: UPDATE_STATUSES.failed,
       stage: 'restore',
       reason: err?.message || String(err),
       previousStillMounted: true,
+      candidateReleased: released,
     };
   }
 
@@ -212,11 +272,15 @@ export async function applyCompositionUpdate({ plan, previous, next, prepare, sw
   try {
     switchReport = await switchMount({ prepared: carried, restored, definition: next });
   } catch (err) {
+    // The switch did not take, so the candidate is discarded rather than
+    // installed. Its acquired resources go with it; the old mount is untouched.
+    let released = await releaseCandidateResources(carried, releases);
     return {
       status: UPDATE_STATUSES.failed,
       stage: 'switch',
       reason: err?.message || String(err),
       previousStillMounted: true,
+      candidateReleased: released,
     };
   }
 

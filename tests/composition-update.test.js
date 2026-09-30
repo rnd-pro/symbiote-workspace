@@ -304,3 +304,116 @@ describe('a switch that applies nothing is not an applied update', () => {
     );
   });
 });
+
+describe('a plan from an old generation must not overwrite newer state', () => {
+  function planAt(generation) {
+    return planCompositionUpdate(descriptor(), descriptor({
+      state: { slots: [{ id: 'body', kind: 'persistent' }] },
+    }), {
+      available: ['storage.collection.default'],
+      dirtySlots: ['body'],
+      checkpointableSlots: ['body'],
+      currentGeneration: generation,
+    });
+  }
+
+  it('refuses a plan whose generation has moved on, before doing any work', async () => {
+    let prepared = false;
+    let switched = false;
+    let released = false;
+    let plan = planAt(4);
+
+    let result = await applyCompositionUpdate({
+      plan,
+      previous: descriptor(),
+      next: descriptor({ state: { slots: [{ id: 'body', kind: 'persistent' }] } }),
+      currentGeneration: 5,
+      prepare: async () => { prepared = true; return { session: {} }; },
+      switchMount: async () => { switched = true; },
+      release: async () => { released = true; },
+    });
+
+    assert.equal(result.status, UPDATE_STATUSES.stale);
+    assert.equal(result.plannedAgainst, 4);
+    assert.equal(result.currentGeneration, 5);
+    assert.equal(prepared, false, 'a stale plan must cost nothing');
+    assert.equal(switched, false);
+    assert.equal(released, false, 'the previous composition keeps its mount');
+  });
+
+  it('applies a plan whose generation is still current', async () => {
+    let plan = planAt(5);
+    let result = await applyCompositionUpdate({
+      plan,
+      previous: descriptor(),
+      next: descriptor({ state: { slots: [{ id: 'body', kind: 'persistent' }] } }),
+      currentGeneration: 5,
+      prepare: async () => ({ session: {} }),
+      switchMount: async () => ({ applied: ['body'] }),
+    });
+
+    assert.equal(result.status, UPDATE_STATUSES.applied);
+  });
+
+  it('applies a plan with no generation constraint at all', async () => {
+    let plan = planCompositionUpdate(descriptor(), descriptor({
+      state: { slots: [{ id: 'body', kind: 'persistent' }] },
+    }), {
+      available: ['storage.collection.default'],
+      dirtySlots: ['body'],
+      checkpointableSlots: ['body'],
+    });
+    assert.equal(plan.baseGeneration, null, 'an unconstrained plan opts out of the guard');
+
+    let result = await applyCompositionUpdate({
+      plan,
+      previous: descriptor(),
+      next: descriptor({ state: { slots: [{ id: 'body', kind: 'persistent' }] } }),
+      currentGeneration: 99,
+      prepare: async () => ({ session: {} }),
+      switchMount: async () => ({ applied: ['body'] }),
+    });
+
+    assert.equal(result.status, UPDATE_STATUSES.applied);
+  });
+});
+
+describe('a half-built candidate does not keep its resources', () => {
+  it('releases what the candidate acquired when preparation fails', async () => {
+    let freed = 0;
+    let plan = planCompositionUpdate(descriptor(), descriptor(), {
+      available: ['storage.collection.default'],
+    });
+
+    let result = await applyCompositionUpdate({
+      plan,
+      previous: descriptor(),
+      next: descriptor(),
+      prepare: async () => ({ session: {}, releases: [async () => { freed += 1; }] }),
+      switchMount: async () => { throw new Error('must not switch'); },
+    });
+
+    assert.equal(result.status, UPDATE_STATUSES.failed);
+    assert.equal(freed, 1, 'resources acquired by the failed candidate are handed back');
+    assert.equal(result.candidateReleased, true);
+  });
+
+  it('releases the candidate when restore fails after a successful prepare', async () => {
+    let freed = 0;
+    let plan = planCompositionUpdate(descriptor(), descriptor(), {
+      available: ['storage.collection.default'],
+    });
+
+    let result = await applyCompositionUpdate({
+      plan,
+      previous: descriptor(),
+      next: descriptor({
+        restoration: { version: 1, restore: async () => { throw new Error('incompatible'); } },
+      }),
+      prepare: async () => ({ session: {}, releases: [async () => { freed += 1; }] }),
+    });
+
+    assert.equal(result.stage, 'restore');
+    assert.equal(freed, 1);
+  });
+});
