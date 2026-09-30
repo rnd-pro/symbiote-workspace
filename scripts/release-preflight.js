@@ -25,7 +25,7 @@ function printUsage() {
     'Usage: npm run release:preflight -- [options]',
     '',
     'Options:',
-    '  --target-version <version>   Required package version for this run. Defaults to 1.0.0.',
+    '  --target-version <version>   Required package version for this run. Defaults to 1.1.0.',
     '  --skip-npm-ci                Skip npm ci --ignore-scripts.',
     '  --skip-tests                 Skip npm test.',
     '  --skip-package-consumer      Skip npm run test:package-consumer.',
@@ -57,9 +57,19 @@ for (let name of [
   if (hasFlag(`--skip-${name}`)) skip.add(name);
 }
 
-let targetVersion = readOption('--target-version', '1.0.0');
+let targetVersion = readOption('--target-version', '1.1.0');
 let allowNewPackageName = hasFlag('--allow-new-package-name');
 let failures = [];
+let requiredPresentationDependencies = Object.freeze({
+  'symbiote-engine': Object.freeze({
+    dev: '0.3.0-alpha.13',
+    peer: '>=0.3.0-alpha.13',
+  }),
+  'symbiote-ui': Object.freeze({
+    dev: '0.3.0-alpha.63',
+    peer: '>=0.3.0-alpha.63',
+  }),
+});
 
 function fail(message) {
   failures.push(message);
@@ -117,6 +127,33 @@ async function verifyReleaseMetadata() {
   let rootLockVersion = lockfile.packages?.['']?.version;
   if (rootLockVersion !== targetVersion) {
     fail(`package-lock.json root package version is ${rootLockVersion}; expected ${targetVersion}`);
+  }
+  for (let [name, expected] of Object.entries(requiredPresentationDependencies)) {
+    let packageDev = packageMeta.devDependencies?.[name];
+    let packagePeer = packageMeta.peerDependencies?.[name];
+    let lockDev = lockfile.packages?.['']?.devDependencies?.[name];
+    let lockPeer = lockfile.packages?.['']?.peerDependencies?.[name];
+    let resolvedPackage = lockfile.packages?.[`node_modules/${name}`];
+    if (packageDev !== expected.dev) {
+      fail(`package.json devDependency ${name} is ${packageDev}; expected ${expected.dev}`);
+    }
+    if (packagePeer !== expected.peer) {
+      fail(`package.json peerDependency ${name} is ${packagePeer}; expected ${expected.peer}`);
+    }
+    if (lockDev !== expected.dev) {
+      fail(`package-lock.json devDependency ${name} is ${lockDev}; expected ${expected.dev}`);
+    }
+    if (lockPeer !== expected.peer) {
+      fail(`package-lock.json peerDependency ${name} is ${lockPeer}; expected ${expected.peer}`);
+    }
+    if (resolvedPackage?.version !== expected.dev) {
+      fail(`package-lock.json resolved ${name} is ${resolvedPackage?.version}; expected ${expected.dev}`);
+    }
+  }
+  let resolvedUiEngine = lockfile.packages?.['node_modules/symbiote-ui']
+    ?.dependencies?.['symbiote-engine'];
+  if (resolvedUiEngine !== requiredPresentationDependencies['symbiote-engine'].dev) {
+    fail(`package-lock.json resolved symbiote-ui dependency symbiote-engine is ${resolvedUiEngine}; expected ${requiredPresentationDependencies['symbiote-engine'].dev}`);
   }
   if (isStableVersion(targetVersion)) {
     let escaped = targetVersion.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

@@ -69,6 +69,7 @@ async function compositionFixture({ timeline, output, targetSnapshot }) {
     steps: slots.map((slot, index) => {
       let y = 100 + index * 80;
       return {
+        id: `${slot.turnId}:${slot.slotIndex}`,
         turnId: slot.turnId,
         slotIndex: slot.slotIndex,
         cueId: slot.cueId,

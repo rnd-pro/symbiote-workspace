@@ -87,7 +87,7 @@ mode.
 - **Presentation viewport geometry** — `workspace-presentation-output-v3` carries
   neutral final-frame `frameInsets` and derives a positive `presentationViewport`.
   Content and captions are laid out inside that viewport, while
-  `workspace-presentation-composition-v3` measurement is checked against the
+  `workspace-presentation-composition-v4` measurement is checked against the
   presentation viewport and translates page-local focus/annotation rectangles into
   final-frame coordinates before containment and collision checks.
 - **Immutable Presentation Project v7** — `createPresentationProject({ skeleton,
@@ -170,6 +170,9 @@ mode.
 ```sh
 npm install symbiote-workspace symbiote-ui symbiote-engine
 ```
+
+Version 1.1 requires `symbiote-engine >=0.3.0-alpha.13` and
+`symbiote-ui >=0.3.0-alpha.63`.
 
 ```js
 import {

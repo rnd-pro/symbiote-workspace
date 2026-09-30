@@ -88,6 +88,14 @@ describe('browser entrypoint', () => {
     let onlyRoot = Object.keys(root).filter((key) => !(key in browser)).sort();
     let onlyBrowser = Object.keys(browser).filter((key) => !(key in root)).sort();
 
+    for (let name of [
+      'PRESENTER_ACTION_SCHEDULE_VERSION',
+      'createPresenterActionSchedule',
+      'validatePresenterActionSchedule',
+    ]) {
+      assert.equal(browser[name], root[name], `${name} must share one public implementation`);
+    }
+
     assert.deepEqual(onlyRoot, [
       'PRESENTATION_OBSERVED_ALIGNED_SEQUENCE_VERSION',
       'PRESENTATION_TRANSCRIPT_WORD_ANCHORING_VERSION',

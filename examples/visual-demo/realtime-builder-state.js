@@ -15,7 +15,7 @@ const DEMO_IMPORT_MAP_KEYS = Object.freeze([
   'symbiote-workspace/browser',
 ]);
 const PROFESSIONAL_COMPONENT_CONTRACT = Object.freeze({
-  symbioteUiVersion: '0.3.0-alpha.45',
+  symbioteUiVersion: '0.3.0-alpha.63',
   publicComponents: [
     'panel-layout',
     'chat-workspace',

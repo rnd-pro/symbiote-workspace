@@ -1841,6 +1841,7 @@ function renderWorkspace(stage) {
   workspace.dataset.hydratedPanelCount = String((assembly.hydratedPanelTypes || []).length);
   if (mounted) {
     mounted.updateConfig(config, {
+      baseRevision: mounted.revision,
       stage,
       reason: scenario ? \`professional-scenario:\${scenario.id}:progressive\` : 'realtime-stage',
     });
