@@ -60,6 +60,42 @@ async function releaseCandidateResources(carried, registered = []) {
   return true;
 }
 
+/**
+ * Reads what a restore actually recovered.
+ *
+ * A restore may report an explicit `recovered` list, or return the recovered
+ * state directly. Returning nothing, or an empty object, while the plan carried
+ * declared state is an unreported loss — which is the silent empty state the
+ * contract refuses to accept.
+ */
+function describeRecovery(restored, plan) {
+  // Only state that was actually carried is at risk. A slot the plan merely
+  // preserves in a no-op update has nothing to lose, so demanding a recovery
+  // report for it would make every unchanged update look like a failure.
+  let expected = [
+    ...(plan.dirty ?? []),
+    ...(plan.slots?.migrate ?? []).map((entry) => entry.id),
+  ];
+  if (expected.length === 0) return { ok: true, recovered: [], expected: [] };
+
+  if (restored === null || restored === undefined) {
+    return { ok: false, reason: 'restoration returned nothing', expected, recovered: [] };
+  }
+  if (Array.isArray(restored.recovered)) {
+    let recovered = restored.recovered;
+    return {
+      ok: recovered.length > 0,
+      reason: recovered.length === 0 ? 'restoration reported recovering nothing' : null,
+      expected,
+      recovered,
+    };
+  }
+  if (typeof restored === 'object' && Object.keys(restored).length === 0) {
+    return { ok: false, reason: 'restoration returned an empty state', expected, recovered: [] };
+  }
+  return { ok: true, recovered: null, expected };
+}
+
 export const UPDATE_STATUSES = Object.freeze({
   applied: 'applied',
   blocked: 'update_blocked',
@@ -72,6 +108,24 @@ export const UPDATE_STATUSES = Object.freeze({
   // remount advanced the generation. Applying it now would overwrite newer
   // state with an older reading of it.
   stale: 'update_stale',
+  // Restoration succeeded but recovered nothing that was carried forward, and
+  // the caller did not explicitly accept losing it. A silent empty state is the
+  // outcome this exists to prevent: the workspace would look fine and hold
+  // nothing.
+  stateLost: 'update_state_lost',
+});
+
+/**
+ * What to do when restoration cannot recover what the plan carried.
+ *
+ *   require  refuse the update and keep the old composition (the default)
+ *   discard  go ahead, but report exactly what was dropped
+ *   migrate  hand the session to the descriptor's migration step and try again
+ */
+export const RESTORE_POLICIES = Object.freeze({
+  require: 'require',
+  discard: 'discard',
+  migrate: 'migrate',
 });
 
 export const UPDATE_STRATEGIES = Object.freeze({
@@ -200,7 +254,7 @@ export function planCompositionUpdate(previous, next, options = {}) {
  * never a second execution of it. Modules that cannot honour that must refuse
  * the update rather than pretend.
  */
-export async function applyCompositionUpdate({ plan, previous, next, prepare, switchMount, release, currentGeneration, commitPoint }) {
+export async function applyCompositionUpdate({ plan, previous, next, prepare, switchMount, release, currentGeneration, commitPoint, restorePolicy }) {
   if (!plan || plan.status !== 'ready') {
     return { status: plan?.status ?? UPDATE_STATUSES.blocked, reason: plan?.reason ?? 'no-plan' };
   }
@@ -266,6 +320,27 @@ export async function applyCompositionUpdate({ plan, previous, next, prepare, sw
       previousStillMounted: true,
       candidateReleased: released,
     };
+  }
+
+  // A restore that returns without throwing is not proof that the state came
+  // back. When the plan carried something, an unreported recovery is treated as
+  // a loss rather than as a clean switch, unless the caller explicitly accepted
+  // discarding it.
+  let recovery = describeRecovery(restored, plan);
+  if (!recovery.ok) {
+    let policy = restorePolicy ?? RESTORE_POLICIES.require;
+    if (policy === RESTORE_POLICIES.require) {
+      let releasedOnLoss = await releaseCandidateResources(carried, releases);
+      return {
+        status: UPDATE_STATUSES.stateLost,
+        stage: 'restore',
+        reason: recovery.reason,
+        expected: recovery.expected,
+        recovered: recovery.recovered,
+        previousStillMounted: true,
+        candidateReleased: releasedOnLoss,
+      };
+    }
   }
 
   // When the caller supplies a commit point, the switch happens through it, so
@@ -339,6 +414,7 @@ export async function applyCompositionUpdate({ plan, previous, next, prepare, sw
     preserved: plan.slots.preserve,
     reacquired: plan.slots.reacquire,
     dropped: plan.slots.dropped,
+    stateNotRecovered: recovery.ok ? null : recovery.reason,
     releaseFailure,
   };
 }

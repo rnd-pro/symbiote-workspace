@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   UPDATE_STATUSES,
+  RESTORE_POLICIES,
   applyCompositionUpdate,
   planCompositionUpdate,
   planSlotMigration,
@@ -490,5 +491,115 @@ describe('update through a commit point', () => {
 
     assert.equal(result.status, UPDATE_STATUSES.stale, 'the commit point is the last gate');
     assert.equal(point.read().route, '/docs/n2', 'the competing commit stays authoritative');
+  });
+});
+
+describe('restoration that returns nothing is not a clean switch', () => {
+  function carryingPlan() {
+    return planCompositionUpdate(descriptor(), descriptor({
+      state: { slots: [{ id: 'body', kind: 'persistent' }] },
+    }), {
+      available: ['storage.collection.default'],
+      dirtySlots: ['body'],
+      checkpointableSlots: ['body'],
+    });
+  }
+
+  function nextThatRestoresTo(value) {
+    return descriptor({
+      state: { slots: [{ id: 'body', kind: 'persistent' }] },
+      restoration: { version: 1, restore: async () => value },
+    });
+  }
+
+  it('refuses by default when restoration returns nothing at all', async () => {
+    let released = false;
+    let result = await applyCompositionUpdate({
+      plan: carryingPlan(),
+      previous: descriptor(),
+      next: nextThatRestoresTo(undefined),
+      prepare: async () => ({ session: { body: 'carried' } }),
+      switchMount: async () => { throw new Error('must not switch'); },
+      release: async () => { released = true; },
+    });
+
+    assert.equal(result.status, UPDATE_STATUSES.stateLost);
+    assert.match(result.reason, /returned nothing/);
+    assert.deepEqual(result.expected, ['body'], 'the caller is told what was expected back');
+    assert.equal(released, false, 'the old composition keeps its mount');
+  });
+
+  it('refuses when restoration returns an empty object', async () => {
+    let result = await applyCompositionUpdate({
+      plan: carryingPlan(),
+      previous: descriptor(),
+      next: nextThatRestoresTo({}),
+      prepare: async () => ({ session: { body: 'carried' } }),
+      switchMount: async () => { throw new Error('must not switch'); },
+    });
+
+    assert.equal(result.status, UPDATE_STATUSES.stateLost);
+    assert.match(result.reason, /empty state/);
+  });
+
+  it('refuses when restoration reports recovering nothing', async () => {
+    let result = await applyCompositionUpdate({
+      plan: carryingPlan(),
+      previous: descriptor(),
+      next: nextThatRestoresTo({ recovered: [] }),
+      prepare: async () => ({ session: { body: 'carried' } }),
+      switchMount: async () => { throw new Error('must not switch'); },
+    });
+
+    assert.equal(result.status, UPDATE_STATUSES.stateLost);
+  });
+
+  it('proceeds and reports the loss when the caller explicitly discards', async () => {
+    let result = await applyCompositionUpdate({
+      plan: carryingPlan(),
+      previous: descriptor(),
+      next: nextThatRestoresTo(undefined),
+      restorePolicy: RESTORE_POLICIES.discard,
+      prepare: async () => ({ session: { body: 'carried' } }),
+      switchMount: async () => ({ applied: ['body'] }),
+    });
+
+    assert.equal(result.status, UPDATE_STATUSES.applied);
+    assert.ok(
+      typeof result.stateNotRecovered === 'string' && result.stateNotRecovered.length > 0,
+      'an explicit discard still has to say what was lost',
+    );
+  });
+
+  it('accepts a restoration that reports what it recovered', async () => {
+    let result = await applyCompositionUpdate({
+      plan: carryingPlan(),
+      previous: descriptor(),
+      next: nextThatRestoresTo({ recovered: ['body'] }),
+      prepare: async () => ({ session: { body: 'carried' } }),
+      switchMount: async () => ({ applied: ['body'] }),
+    });
+
+    assert.equal(result.status, UPDATE_STATUSES.applied);
+    assert.equal(result.stateNotRecovered, null);
+  });
+
+  it('does not object when the plan carried no state in the first place', async () => {
+    let plan = planCompositionUpdate(descriptor(), descriptor(), {
+      available: ['storage.collection.default'],
+    });
+    let result = await applyCompositionUpdate({
+      plan,
+      previous: descriptor(),
+      next: descriptor({ restoration: { version: 1, restore: async () => undefined } }),
+      prepare: async () => ({ session: {} }),
+      switchMount: async () => ({ applied: [] }),
+    });
+
+    assert.equal(
+      result.status,
+      UPDATE_STATUSES.applied,
+      'a plan with nothing to carry cannot lose anything on restore',
+    );
   });
 });

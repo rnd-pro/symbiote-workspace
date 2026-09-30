@@ -1,6 +1,8 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
+const UNSUPPLIED = Symbol('unsupplied');
+
 import {
   UPDATE_STATUSES,
   applyCompositionUpdate,
@@ -31,6 +33,8 @@ function definition(overrides = {}) {
   };
 }
 
+// The plan deliberately carries real state: a plan that carries nothing cannot
+// lose anything, and the loss properties would then pass vacuously.
 function planFor(generation) {
   return planCompositionUpdate(definition(), definition(), {
     available: ['storage.collection.default'],
@@ -120,6 +124,38 @@ export function runUpdateConformance(name, impl) {
       assert.equal(world.active(), 'new');
     });
 
+    it('refuses a restoration that silently returns nothing', async () => {
+      const world = impl();
+      let result = await world.attempt({ plan: planFor(1), failAt: null, restoreReturns: undefined });
+
+      assert.equal(result.status, UPDATE_STATUSES.stateLost);
+      assert.equal(world.active(), 'old', 'a silent empty state must never go live');
+    });
+
+    it('refuses a restoration that reports recovering nothing', async () => {
+      const world = impl();
+      let result = await world.attempt({ plan: planFor(1), failAt: null, restoreReturns: { recovered: [] } });
+
+      assert.equal(result.status, UPDATE_STATUSES.stateLost);
+      assert.equal(world.active(), 'old');
+    });
+
+    it('still reports what was lost when the caller explicitly discards', async () => {
+      const world = impl();
+      let result = await world.attempt({
+        plan: planFor(1),
+        failAt: null,
+        restoreReturns: undefined,
+        restorePolicy: 'discard',
+      });
+
+      assert.equal(result.status, UPDATE_STATUSES.applied);
+      assert.ok(
+        typeof result.stateNotRecovered === 'string' && result.stateNotRecovered.length > 0,
+        'an explicit discard must still name what was lost',
+      );
+    });
+
     it('distinguishes a refusal before the switch from a cleanup error after it', async () => {
       const world = impl();
       let cleanup = await world.attempt({
@@ -149,7 +185,12 @@ runUpdateConformance('library contract via applyCompositionUpdate', () => {
     outstandingCandidateResources: () => held,
     prepareCalls: () => prepareCalls,
     advanceGenerationTo: (value) => { generation = value; },
-    async attempt({ plan, failAt, reportApplied, failRelease }) {
+    // Taken as a bag rather than destructured: a default parameter cannot tell
+    // an explicit `undefined` from an omitted value, and `undefined` is itself
+    // one of the cases under test.
+    async attempt(options) {
+      let { plan, failAt, reportApplied, failRelease, restorePolicy } = options;
+      let restoreReturns = 'restoreReturns' in options ? options.restoreReturns : UNSUPPLIED;
       let result = await applyCompositionUpdate({
         plan,
         previous: definition(),
@@ -158,11 +199,15 @@ runUpdateConformance('library contract via applyCompositionUpdate', () => {
             version: 1,
             restore: async (saved) => {
               if (failAt === 'restore') throw new Error('restoration incompatible');
-              return { ...saved, restored: true };
+              // A sentinel is required: `undefined` is itself a case under test,
+              // so it cannot double as "not supplied".
+              if (restoreReturns !== UNSUPPLIED) return restoreReturns;
+              return { ...saved, restored: true, recovered: ['body'] };
             },
           },
         }),
         currentGeneration: generation,
+        restorePolicy,
         prepare: async ({ registerRelease }) => {
           prepareCalls += 1;
           // Acquire first, then fail, so the cleanup path is genuinely exercised.

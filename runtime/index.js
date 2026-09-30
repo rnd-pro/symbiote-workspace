@@ -386,6 +386,7 @@ export * from './presentation/inspection.js';
 export { createCompositionRegistry, RESOLUTION_STATUSES } from './composition-registry.js';
 
 export {
+  RESTORE_POLICIES,
   UPDATE_STATUSES,
   UPDATE_STRATEGIES,
   applyCompositionUpdate,
