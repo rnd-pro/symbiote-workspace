@@ -48,3 +48,6 @@ export {
   validateWorkspaceConfig,
   isCompatibleVersion,
 } from '../validation/core.js';
+
+export * from './ownership.js';
+export * from './composition-descriptor.js';

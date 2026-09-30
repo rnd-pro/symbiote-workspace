@@ -382,3 +382,5 @@ export * from './presentation/transcript-word-anchoring.js';
 export * from './presentation/production-revision.js';
 export * from './presentation/script-lineage.js';
 export * from './presentation/inspection.js';
+
+export { createCompositionRegistry, RESOLUTION_STATUSES } from './composition-registry.js';
