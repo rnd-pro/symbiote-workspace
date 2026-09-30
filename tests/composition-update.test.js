@@ -417,3 +417,78 @@ describe('a half-built candidate does not keep its resources', () => {
     assert.equal(freed, 1);
   });
 });
+
+describe('update through a commit point', () => {
+  it('moves route, state, and ownership as one act and advances the generation', async () => {
+    const { createCompositionCommitPoint } = await import('../runtime/composition-commit-point.js');
+    let point = createCompositionCommitPoint({
+      generation: 1,
+      route: '/docs/n1',
+      state: { tag: 'old' },
+      ownership: { mounted: 'mount:old' },
+    });
+
+    let plan = planCompositionUpdate(descriptor(), descriptor({
+      state: { slots: [{ id: 'body', kind: 'persistent' }] },
+    }), {
+      available: ['storage.collection.default'],
+      dirtySlots: ['body'],
+      checkpointableSlots: ['body'],
+      currentGeneration: 1,
+    });
+
+    let result = await applyCompositionUpdate({
+      plan,
+      previous: descriptor(),
+      next: descriptor({ state: { slots: [{ id: 'body', kind: 'persistent' }] } }),
+      currentGeneration: 1,
+      commitPoint: point,
+      prepare: async () => ({ session: { body: 'carried' } }),
+      switchMount: async () => ({ installed: true }),
+    });
+
+    assert.equal(result.status, UPDATE_STATUSES.applied);
+    let after = point.read();
+    assert.equal(after.generation, 2, 'the commit advanced the generation');
+    // The committed state is the restoration result, moved together with the
+    // route and the ownership that backs it.
+    assert.equal(after.state.restored, true, 'the restored state is what went live');
+    assert.equal(after.ownership, null, 'the descriptor declared no ownership of its own');
+    assert.equal(point.getLastCommit().result, 'committed');
+  });
+
+  it('refuses a stale update at the commit point even if the plan looked current', async () => {
+    const { createCompositionCommitPoint } = await import('../runtime/composition-commit-point.js');
+    let point = createCompositionCommitPoint({
+      generation: 5,
+      route: '/docs/n1',
+      state: { tag: 'live' },
+      ownership: { mounted: 'mount:live' },
+    });
+
+    let plan = planCompositionUpdate(descriptor(), descriptor({
+      state: { slots: [{ id: 'body', kind: 'persistent' }] },
+    }), {
+      available: ['storage.collection.default'],
+      dirtySlots: ['body'],
+      checkpointableSlots: ['body'],
+      currentGeneration: 5,
+    });
+
+    // Someone else commits first, so the live generation moves past the plan.
+    await point.commit({ next: { route: '/docs/n2', state: { tag: 'other' }, ownership: { mounted: 'mount:other' } } });
+
+    let result = await applyCompositionUpdate({
+      plan,
+      previous: descriptor(),
+      next: descriptor({ state: { slots: [{ id: 'body', kind: 'persistent' }] } }),
+      currentGeneration: 5,
+      commitPoint: point,
+      prepare: async () => ({ session: {} }),
+      switchMount: async () => ({ installed: true }),
+    });
+
+    assert.equal(result.status, UPDATE_STATUSES.stale, 'the commit point is the last gate');
+    assert.equal(point.read().route, '/docs/n2', 'the competing commit stays authoritative');
+  });
+});

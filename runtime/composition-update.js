@@ -200,7 +200,7 @@ export function planCompositionUpdate(previous, next, options = {}) {
  * never a second execution of it. Modules that cannot honour that must refuse
  * the update rather than pretend.
  */
-export async function applyCompositionUpdate({ plan, previous, next, prepare, switchMount, release, currentGeneration }) {
+export async function applyCompositionUpdate({ plan, previous, next, prepare, switchMount, release, currentGeneration, commitPoint }) {
   if (!plan || plan.status !== 'ready') {
     return { status: plan?.status ?? UPDATE_STATUSES.blocked, reason: plan?.reason ?? 'no-plan' };
   }
@@ -268,9 +268,32 @@ export async function applyCompositionUpdate({ plan, previous, next, prepare, sw
     };
   }
 
+  // When the caller supplies a commit point, the switch happens through it, so
+  // route, state, and ownership move as one act and readers only ever see a
+  // complete generation. Without one, the plain callback is still honoured.
   let switchReport = null;
   try {
-    switchReport = await switchMount({ prepared: carried, restored, definition: next });
+    if (commitPoint) {
+      let committed = await commitPoint.commit({
+        next: { route: next.route ?? null, state: restored, ownership: next.ownership ?? null },
+        expectGeneration: plan.baseGeneration ?? undefined,
+        reason: 'composition-update',
+        apply: async () => switchMount({ prepared: carried, restored, definition: next }),
+      });
+      if (committed.result !== 'committed') {
+        let releasedNow = await releaseCandidateResources(carried, releases);
+        return {
+          status: committed.result === 'commit_stale' ? UPDATE_STATUSES.stale : UPDATE_STATUSES.failed,
+          stage: 'switch',
+          reason: committed.reason ?? 'the switch was refused',
+          previousStillMounted: true,
+          candidateReleased: releasedNow,
+        };
+      }
+      switchReport = { applied: [committed.generation], generation: committed.generation };
+    } else {
+      switchReport = await switchMount({ prepared: carried, restored, definition: next });
+    }
   } catch (err) {
     // The switch did not take, so the candidate is discarded rather than
     // installed. Its acquired resources go with it; the old mount is untouched.

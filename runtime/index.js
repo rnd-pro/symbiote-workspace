@@ -392,3 +392,5 @@ export {
   planCompositionUpdate,
   planSlotMigration,
 } from './composition-update.js';
+
+export { COMMIT_RESULTS, createCompositionCommitPoint } from './composition-commit-point.js';
