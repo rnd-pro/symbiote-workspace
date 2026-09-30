@@ -41,6 +41,11 @@ export const COMPOSITION_STATE_SLOT_KINDS = Object.freeze([
 
 // Slots are owned, so a slot must name the axis that owns it. A slot that
 // cannot say who owns it is the same defect as a state with no owner.
+/**
+ * The ownership axis a slot kind implies. A descriptor may name its owner
+ * explicitly to override this, but the default lives here so products do not
+ * have to repeat the mapping — a duplicated mapping is a mapping that drifts.
+ */
 const SLOT_OWNERS = Object.freeze({
   persistent: 'documentRef',
   session: 'windowSessionId',
@@ -48,6 +53,16 @@ const SLOT_OWNERS = Object.freeze({
   cache: 'workspaceId',
   ephemeral: 'mountId',
 });
+
+/**
+ * The axis that owns a slot: the explicit one if declared, otherwise the one its
+ * kind implies.
+ */
+export function resolveSlotOwner(slot) {
+  if (!slot || typeof slot !== 'object') return null;
+  if (typeof slot.owner === 'string' && slot.owner) return slot.owner;
+  return SLOT_OWNERS[slot.kind] ?? null;
+}
 
 function isPlainObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -111,7 +126,7 @@ export function validateCompositionDefinition(definition) {
         add(`state.slots[${index}].kind`, `unknown slot kind "${kind}".`);
         continue;
       }
-      let owner = slot.owner || SLOT_OWNERS[kind];
+      let owner = resolveSlotOwner(slot);
       if (!OWNERSHIP_AXES.includes(owner)) {
         add(`state.slots[${index}].owner`, `slot owner "${owner}" is not a declared ownership axis.`);
       }
