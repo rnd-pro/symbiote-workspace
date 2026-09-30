@@ -1,6 +1,6 @@
 {
   "name": "symbiote-workspace",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "type": "module",
   "description": "Toolkit for turning chat intent into portable, executable Symbiote workspaces.",
   "main": "index.js",
@@ -129,7 +129,7 @@
   ],
   "dependencies": {
     "symbiote-engine": "0.3.0-alpha.15",
-    "symbiote-ui": "0.3.0-alpha.75",
+    "symbiote-ui": "0.3.0-alpha.76",
     "ws": "^8.21.0"
   },
   "peerDependencies": {
