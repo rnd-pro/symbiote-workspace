@@ -128,7 +128,9 @@
     "server"
   ],
   "dependencies": {
-    "ws": "^8.21.0"
+    "ws": "^8.21.0",
+    "symbiote-ui": "0.3.0-alpha.72",
+    "symbiote-engine": "0.3.0-alpha.14"
   },
   "peerDependencies": {
     "@symbiotejs/symbiote": "3.8.0-webmcp.2",
