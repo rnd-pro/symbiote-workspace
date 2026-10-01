@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## 2.0.1 - 2026-10-01
+
+### Fixed
+
+- **A word timing outside its turn was accepted.** `runtime/presentation/align.js`
+  bounded a word's start at `0` rather than at the turn's own start, and the guard
+  beneath it asked only whether the word and the turn overlapped. A word beginning
+  400ms before its turn passed both the builder and the validator. Word timings are
+  now contained in the turn, which is the property that makes them evidence about
+  it rather than about something else. Found in the closing review of 2.0.0 and
+  confirmed by reproduction; the regression that pins the minimal digest reads its
+  expected value out of the published 2.0.0, so a consistent change to builder and
+  validator together can no longer pass unnoticed.
+
 ## 2.0.0 - 2026-10-01
 
 ### Fixed
