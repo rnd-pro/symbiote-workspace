@@ -396,7 +396,7 @@ describe('planCaptionPlacements orchestration', () => {
     // Readability is reported, not refused. It is asserted separately below
     // because a warning reaches the plan and leaves the verdict alone: asserting
     // a rejection here would demand the behaviour the code was changed away from.
-    const unreadableCase = (step) => ({ ...step.measurement, hasText: true, fontSizePx: 8 });
+    let unreadableCase = (step) => ({ ...step.measurement, hasText: true, fontSizePx: 8 });
     for (let [issueCode, mutateMeasurement] of cases) {
       let input = fixture();
       let step0 = input.compositionPlan.steps[0];

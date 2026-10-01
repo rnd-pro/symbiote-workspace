@@ -117,9 +117,12 @@ function normalizeTurnEvidence(alignment, { voice, turn, turnIndex, startMs, end
     evidence.words = alignment.words.map((word, wordIndex) => {
       if (!word || typeof word !== 'object' || Array.isArray(word)) throw new TypeError(`${path}.words[${wordIndex}] must be an object`);
       for (let key of Object.keys(word)) if (!['text', 'startMs', 'endMs'].includes(key)) throw new TypeError(`${path}.words[${wordIndex}].${key} is not supported`);
-      let wordStart = integer(word.startMs, `${path}.words[${wordIndex}].startMs`, { min: 0 });
+      // Containment, not overlap. A word is evidence about this turn, so it has
+      // to sit inside the turn: bounding the start by the turn's own start is
+      // what makes that true. Checking only that the two overlap accepted a word
+      // beginning 400ms before the turn it claims to be evidence for.
+      let wordStart = integer(word.startMs, `${path}.words[${wordIndex}].startMs`, { min: startMs, max: endMs });
       let wordEnd = integer(word.endMs, `${path}.words[${wordIndex}].endMs`, { min: wordStart, max: endMs });
-      if (wordEnd < startMs || wordStart > endMs) throw new TypeError(`${path}.words[${wordIndex}] falls outside the turn span`);
       return { text: text(word.text), startMs: wordStart, endMs: wordEnd };
     });
   }

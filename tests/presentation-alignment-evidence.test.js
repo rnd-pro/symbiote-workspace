@@ -44,6 +44,14 @@ const MEDIA = { hash: 'sha256-alignment-evidence', durationMs: 1200, locale: 'en
 const SPAN = { startMs: 0, endMs: 1200 };
 const WORDS = [{ text: 'canonical', startMs: 100, endMs: 400 }];
 
+// The digest the published 2.0.0 produces for this exact minimal sequence,
+// read back out of the installed package rather than computed from the code
+// beside it. A turn that passes no evidence must produce the same bytes it always
+// did, or every sequence a consumer already holds becomes stale — and a test
+// comparing the builder only against its own validator would survive a change
+// made consistently to both.
+const MINIMAL_DIGEST_BEFORE_RETENTION = 'workspace-aligned-sequence-v1:sha256-7+bBZZA29gSBA9U5UAvszJGy/K1Tr5pr2B0IQiZ32+A=';
+
 const minimal = () => createPresentationAlignedSequence(timeline(), { media: MEDIA, turns: [SPAN] });
 
 const evidenced = (extra = {}) => createPresentationAlignedSequence(timeline(), {
@@ -54,15 +62,48 @@ const evidenced = (extra = {}) => createPresentationAlignedSequence(timeline(), 
 });
 
 describe('aligned sequence evidence', () => {
-  it('a minimal sequence keeps the shape and the hash it had before retention', () => {
-    const sequence = minimal();
+  it('a minimal sequence keeps the exact digest the previous contract produced', () => {
+    // The digest is pinned to the value computed before evidence retention
+    // existed. Asserting only that the builder and the validator agree would
+    // survive a change made consistently to both — which is precisely the change
+    // this contract must not make, because it would silently retarget every
+    // sequence a 2.0.0 consumer already holds.
+    let sequence = minimal();
     assert.deepEqual(Object.keys(sequence.turns[0]).sort(), ['endMs', 'startMs', 'turnIndex']);
     assert.equal('voice' in sequence, false, 'an undeclared voice must not be materialised');
+    assert.equal(sequence.hash, MINIMAL_DIGEST_BEFORE_RETENTION);
     assert.doesNotThrow(() => validatePresentationAlignedSequence(sequence, timeline()));
   });
 
+  it('refuses a word that starts before its turn, not merely one that overlaps it', () => {
+    // A turn that does not start at zero is the case that separates containment
+    // from overlap: with the turn at [500,1000], a word at [100,600] intersects it
+    // and is still not evidence about it.
+    let offsetTimeline = timeline();
+    let offset = createPresentationAlignedSequence(offsetTimeline, {
+      media: MEDIA,
+      turns: [{
+        startMs: 500,
+        endMs: 1200,
+        words: [{ text: 'inside', startMs: 500, endMs: 600 }],
+      }],
+    });
+    assert.doesNotThrow(() => validatePresentationAlignedSequence(offset, offsetTimeline), 'a word inside the turn is accepted');
+
+    for (let words of [[{ text: 'before', startMs: 100, endMs: 550 }], [{ text: 'after', startMs: 1100, endMs: 1300 }]]) {
+      assert.throws(
+        () => createPresentationAlignedSequence(offsetTimeline, {
+          media: MEDIA,
+          turns: [{ startMs: 500, endMs: 1200, words }],
+        }),
+        TypeError,
+        `expected ${JSON.stringify(words)} to be refused as outside the turn`,
+      );
+    }
+  });
+
   it('retains the evidence a turn carries', () => {
-    const sequence = evidenced();
+    let sequence = evidenced();
     assert.deepEqual(sequence.turns[0].speaker, 'guide');
     assert.equal(sequence.turns[0].transcript, TEXT);
     assert.equal(sequence.turns[0].words.length, 1);
@@ -98,7 +139,7 @@ describe('aligned sequence evidence', () => {
   });
 
   it('refuses word timings that are invalid, even where no anchor resolves them', () => {
-    const bad = [
+    let bad = [
       { text: 'x', startMs: -10, endMs: 20 },
       { text: 'x', startMs: 200, endMs: 100 },
       { text: 'x', startMs: 5000, endMs: 6000 },
@@ -121,11 +162,11 @@ describe('aligned sequence evidence', () => {
   });
 
   it('refuses evidence swapped after the fact, on the original hash', () => {
-    const sequence = evidenced();
-    const tampered = { ...sequence, turns: [{ ...sequence.turns[0], speaker: 'narrator' }] };
+    let sequence = evidenced();
+    let tampered = { ...sequence, turns: [{ ...sequence.turns[0], speaker: 'narrator' }] };
     assert.throws(() => validatePresentationAlignedSequence(tampered, timeline()), TypeError);
 
-    const stripped = { ...sequence, turns: [{ turnIndex: 0, ...SPAN }] };
+    let stripped = { ...sequence, turns: [{ turnIndex: 0, ...SPAN }] };
     assert.throws(() => validatePresentationAlignedSequence(stripped, timeline()), /hash is stale/);
   });
 
@@ -134,8 +175,8 @@ describe('aligned sequence evidence', () => {
     // consistent — the only thing wrong with it is what it claims the turn said.
     // This is the case the hash cannot catch on its own, and the reason the
     // transcript check exists beside it.
-    const sequence = evidenced();
-    const rehashed = {
+    let sequence = evidenced();
+    let rehashed = {
       contractVersion: sequence.contractVersion,
       timelineHash: sequence.timelineHash,
       media: sequence.media,
