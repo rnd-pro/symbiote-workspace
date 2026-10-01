@@ -198,6 +198,68 @@ mode.
   package contents, browser demo proof, npm registry state, and clean git state
   without publishing.
 
+## Public Surface
+
+The package publishes a **curated** entry-point list. Every importable path is
+named in `package.json#exports`; the internal file layout is not part of the
+contract.
+
+Earlier releases exported `./schema/*` and `./runtime/*`, which made roughly 3600
+internal files addressable by path. Those wildcards are gone. A file inside the
+package can now be renamed or moved without a major version, because nothing
+outside the package can name it.
+
+If you need a path that is not listed, that is a decision to make explicitly
+rather than one to inherit from a file layout — open an issue or add the entry
+with a reason.
+
+```js
+import { mountWorkspace } from 'symbiote-workspace';
+import { mountWorkspace as mountBrowser } from 'symbiote-workspace/browser';
+import { createCompositionRegistry } from 'symbiote-workspace/runtime';
+```
+
+Deep entries exist for the few contracts a host genuinely needs to reach — the
+composition descriptor and registry, workspace state, canonical JSON, portable
+values. Each is named explicitly.
+
+## Update Readiness
+
+A workspace update is applied in place by the runtime's own `updateConfig`,
+`updateWorkspace`, or `applyConfig`. A host that provides none of these cannot be
+updated safely: remounting destroys whatever state lived only in the old mount.
+
+Rather than discover that on the first update, ask in advance:
+
+```js
+import { assessUpdateReadiness } from 'symbiote-workspace';
+
+const readiness = assessUpdateReadiness({
+  runtimeUpdateMethods: typeof runtime.updateConfig === 'function',
+  persistence: { supportsAtomicCommit: true },
+  requiredCapabilities: ['storage.collection.default'],
+  availableCapabilities: host.capabilities,
+});
+
+if (!readiness.ready) {
+  console.error(readiness.blocking.map((f) => f.remedy));
+}
+```
+
+Findings carry a severity, so a host that only cares about blockers does not have
+to parse prose while a host that wants to warn early still sees the rest. A
+runtime that is present but not vouched for is a **warning**, not a blocker: the
+contract cannot tell a real update from a hopeful one.
+
+To refuse rather than remount:
+
+```js
+mountWorkspace(element, config, { strictUpdates: true });
+```
+
+Strict mode refuses with `workspace_update_refused` **before anything is
+destroyed**, so a strict host loses neither its mount nor its state.
+
 ## Quick Start
 
 ```sh

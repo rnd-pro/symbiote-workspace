@@ -4,6 +4,34 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Breaking
+
+- Removed the `./schema/*` and `./runtime/*` entry-point wildcards. They made
+  roughly 3600 internal files addressable by path and made the internal layout a
+  public contract. The handful of deep paths consumers actually import are now
+  named explicitly, so a file inside the package can be moved or renamed without
+  a major version.
+
+### Added
+
+- `assessUpdateReadiness` reports, before the first update, whether a host can be
+  updated in place. Findings carry severities, a detail, and a remedy; a runtime
+  that is present but not vouched for is a warning rather than a blocker.
+- `mountWorkspace` accepts `strictUpdates`, which refuses an update with
+  `workspace_update_refused` before anything is destroyed, instead of remounting
+  and losing state that lived only in the old mount.
+- `resolveSlotOwner` exports the ownership axis a composition state slot resolves
+  to, so consumers no longer repeat the mapping.
+- Composition descriptors may declare `views`; the contract validates a portable
+  id, a label a sidebar can show, and unique ids within a composition.
+
+### Changed
+
+- An update is no longer allowed to report success without applying anything
+  (`update_not_applied`), to run against a stale plan (`update_stale`), or to
+  restore into a lost state (`update_state_lost`). Route, state, and ownership
+  commit as one act through a single commit point.
+
 - Upgraded the mutable presentation authority to
   `workspace-presentation-authoring-project-v2` with immutable audio assets,
   first-class editable audio clips, strict split/trim/move/link/unlink commands,
