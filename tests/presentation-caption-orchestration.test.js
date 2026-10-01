@@ -352,10 +352,14 @@ describe('planCaptionPlacements orchestration', () => {
 
   it('rejects output drift and missing attention measurements', () => {
     let wrongOutput = fixture();
+    // The drift under test is the geometry. The speaker is carried over from the
+    // fixture so the voice check does not fire first and mask it.
     wrongOutput.output = normalizePresentationOutputSpec({
       width: 1080,
       height: 1920,
       fps: 30,
+      speakerMode: 'single',
+      speakerId: wrongOutput.alignedSequence.turns[0].speaker,
       captions: { enabled: true },
     });
     assert.throws(
@@ -635,6 +639,9 @@ describe('planCaptionPlacements orchestration', () => {
     });
     input.alignedSequence = createPresentationAlignedSequence(input.timeline, {
       media: { hash: 'audio:test', durationMs: 6000, locale: 'en-US' },
+      // Rebuilt for two turns, so the voice is declared again: the output on the
+      // other side names a speaker, and a speaker with no owner cannot be checked.
+      voice: { mode: 'single', speakerId: input.timeline.turns[0].persona },
       turns: [{
         startMs: 0,
         endMs: 6000,
@@ -703,6 +710,8 @@ describe('planCaptionPlacements orchestration', () => {
       height: 1920,
       fps: 30,
       dpr: 1,
+      speakerMode: 'single',
+      speakerId: fixture().alignedSequence.turns[0].speaker,
       safeArea: { top: 54, right: 54, bottom: 54, left: 54 },
       captions: {
         enabled: true,
@@ -712,6 +721,7 @@ describe('planCaptionPlacements orchestration', () => {
     });
     let alignedSequence = createPresentationAlignedSequence(timeline, {
       media: { hash: 'audio:test', durationMs: 3000, locale: 'en-US' },
+      voice: { mode: 'single', speakerId: timeline.turns[0].persona },
       turns: [{
         startMs: 0,
         endMs: 3000,
