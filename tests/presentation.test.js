@@ -1286,8 +1286,11 @@ describe('canonical presentation timeline contract', () => {
     assert.deepEqual(
       sequential.turns,
       [
-        { turnIndex: 0, speaker: 'guide', transcript: 'First turn.', startMs: 0, endMs: 1200 },
-        { turnIndex: 1, speaker: 'ops', transcript: 'Second turn.', startMs: 1200, endMs: 2100 },
+        // What a turn passed is what it keeps: speaker, transcript and the
+        // (empty) word timings come back with it, which is the point of
+        // retaining them. A turn that passed nothing extra gets nothing extra.
+        { turnIndex: 0, startMs: 0, endMs: 1200, speaker: 'guide', transcript: 'First turn.', words: [] },
+        { turnIndex: 1, startMs: 1200, endMs: 2100, speaker: 'ops', transcript: 'Second turn.', words: [] },
       ],
     );
     assert.deepEqual(sequential.events.map((event) => event.cueId), ['0.0', '1.0']);
