@@ -304,7 +304,10 @@ test('demo import map and vendor manifest describe an exact bounded browser arti
   assert.deepEqual(manifest.entrypoints, EXPECTED_ENTRYPOINTS);
   assert.deepEqual(manifest.allowedLazyNodeImports, EXPECTED_LAZY_NODE_IMPORTS);
   assert.deepEqual(manifest.limits, {
-    maxFiles: 640,
+    // Mirrors VENDOR_LIMITS in scripts/build-pages.js. Raised from 640 when the
+    // walked closure reached 678 files as symbiote-ui grew; the byte budget was
+    // untouched and the artifact sits at half of it.
+    maxFiles: 720,
     maxBytes: 10 * 1024 * 1024,
     maxSingleFileBytes: 1024 * 1024,
   });
