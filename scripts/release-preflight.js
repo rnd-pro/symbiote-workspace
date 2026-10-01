@@ -289,9 +289,21 @@ function verifyPackList(pack) {
   }
 }
 
+// `npm pack --json` changed shape: older npm printed an array of pack records,
+// npm 12 prints an object keyed by package name. Reading it as an array yields
+// `undefined`, so the pack check either crashes or — worse, if a future guard is
+// added — reports an empty package as a clean one. Accept either shape.
+function readPackRecord(stdout) {
+  let parsed = JSON.parse(stdout);
+  if (Array.isArray(parsed)) return parsed[0];
+  let entries = Object.values(parsed || {});
+  if (entries.length === 0) throw new Error('npm pack --json returned no pack record');
+  return entries[0];
+}
+
 async function verifyPack() {
   let { stdout } = await run('npm pack dry-run', 'npm', ['pack', '--dry-run', '--json'], { capture: true });
-  let [pack] = JSON.parse(stdout);
+  let pack = readPackRecord(stdout);
   verifyPackList(pack);
   console.log(JSON.stringify({
     name: pack.name,

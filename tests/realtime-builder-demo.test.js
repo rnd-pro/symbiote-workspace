@@ -792,7 +792,13 @@ describe('realtime builder demo', () => {
         let end = html.indexOf('</script>', start);
         let importMap = JSON.parse(html.slice(start, end));
 
-        assert.equal(preview.host.packages['symbiote-ui'].version, '0.3.0-alpha.63');
+        // Against the manifest, not a literal: this assertion has been correct
+        // against three different pinned versions in turn only by being edited,
+        // and wrong twice while nobody looked.
+        assert.equal(
+          preview.host.packages['symbiote-ui'].version,
+          JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')).devDependencies['symbiote-ui'],
+        );
         assert.equal(preview.host.packages['symbiote-engine'].version, '0.3.0-alpha.13');
         assert.equal(preview.host.packages['@symbiotejs/symbiote'].version, '3.8.0-webmcp.2');
         assert.equal(

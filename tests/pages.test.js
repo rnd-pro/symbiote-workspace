@@ -382,7 +382,10 @@ test('Pages-only sources and generated output stay out of the npm package', () =
     cwd: ROOT,
     encoding: 'utf8',
   });
-  const files = JSON.parse(output)[0].files.map((file) => file.path);
+  // npm 12 prints an object keyed by package name; older npm printed an array.
+  const parsed = JSON.parse(output);
+  const pack = Array.isArray(parsed) ? parsed[0] : Object.values(parsed)[0];
+  const files = pack.files.map((file) => file.path);
   const forbidden = [
     /^site\//,
     /^_site\//,
