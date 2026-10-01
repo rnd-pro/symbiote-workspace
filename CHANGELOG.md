@@ -15,29 +15,48 @@ All notable changes to this project will be documented in this file.
 - `package-lock.json` was tracked at `1.1.1` while `package.json` was
   `2.0.0-alpha.1`. The release gate read that as a version mismatch, correctly.
 
-### Added
-
-- `MIGRATION.md` describes the 1.x to 2.0 move, measured against the published
-  `1.2.3`: of the 89 files the two removed wildcards reached, 82 are no longer
-  reachable, and the guide says where each class of import goes instead.
-- `scripts/report-blocked-imports.js` walks a consumer's checkout and names every
-  `symbiote-workspace` specifier that would now fail, exiting non-zero so it can
-  gate a build. Browser import-map prefix mappings are reported separately,
-  because those do not go through `exports` at all.
-
 ### Changed
 
 - `tests/browser.test.js` imported nothing for the `createPresentationTimelineHash`
   its planner called. The library had handled that correctly — it wrapped the
   planner's error as `TOUR_REPLAN_UNAVAILABLE` rather than letting it escape.
 
-### Known
+### Added
 
-- Roughly 100 tests fail on the aligned-sequence contract in
-  `runtime/presentation/align.js`, which validates the same structure in three
-  places that disagree. Most of those suites previously failed with a single
-  load error instead of running, which is why the failure surface looked like
-  four tests. See the project debt ledger; this blocks a stable release.
+- The aligned sequence now retains the evidence a turn carries: `speaker`,
+  `transcript` and `words`, plus an optional top-level `voice` declaration. v1
+  used them as anchors and threw them away, so a finished sequence could not show
+  where a caption came from — a loss of lineage rather than a matter of taste.
+
+  What makes this safe rather than merely permissive:
+
+  - the speaker is checked whether or not a voice is declared, against the
+    authored persona in that case. Checking only when a declaration exists would
+    make dropping the declaration switch the check off.
+  - a declared voice owns the turn: `speakerId` for `single`, `speakerIds[i]` for
+    `dialogue`. A persona and a voice are different things, so a narrator that
+    speaks every turn is accepted.
+  - a transcript must be the authored turn's text after the same normalisation,
+    and creation and validation share one implementation, so a sequence cannot be
+    built in one place and rejected in the other.
+  - word timings are validated whenever they are passed, not only when an anchor
+    happens to resolve: an invalid `words` must not become an absent one.
+  - the declaration and the turns' evidence are covered by the integrity digest.
+    That binds the declarations; it does not prove whose voice is in the audio,
+    which needs an external receipt bound to `media.hash`.
+  - absent evidence stays absent, so a minimal sequence keeps the exact shape and
+    hash it had before.
+
+- An accepted caption composition now carries the audit alongside a rejected one.
+  `target-unreadable` had been moved to severity `warning`, but the review only
+  travelled inside the thrown error, so an accepted plan carried nothing: a
+  warning nobody can read is the same as no warning. The review sits outside the
+  hashed body — the digest covers what the composition claims, and the review is
+  an observation about that claim.
+
+- `MIGRATION.md`, and `scripts/report-blocked-imports.js`, which names every
+  `symbiote-workspace` specifier a 1.x consumer must change and exits non-zero so
+  it can gate a build.
 
 ## 2.0.0-alpha.1
 
