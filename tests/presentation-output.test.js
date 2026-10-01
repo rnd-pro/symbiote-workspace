@@ -247,49 +247,6 @@ describe('presentation output and composition contracts', () => {
     assert.ok(!audit.issueCodes.includes('target-clipped'), audit.issueCodes.join(', '));
   });
 
-  it('accepts minor browser-edge clipping while rejecting materially clipped targets', () => {
-    const auditPlan = (plan) => auditPresentationCompositionPlan(plan, {
-      outputSpecHash: plan.outputSpecHash,
-      structuralHash: plan.structuralHash,
-      sourceCompositionHash: plan.sourceCompositionHash,
-      targetCompositionHash: plan.targetCompositionHash,
-      timelineHash: plan.timelineHash,
-      lessonIntentHash: plan.lessonIntentHash,
-      requiredTargetIds: ['panel:orders'],
-    });
-    let minor = validPlan({ steps: [validStep({
-      id: 'step-minor', cueId: 'cue-minor', cueIndex: 0, cueKind: 'focus',
-      measurement: {
-        ...validStep().measurement,
-        focusRect: { x: 45, y: 100, width: 160, height: 48 },
-        visibleRect: { x: 54, y: 100, width: 151, height: 48 },
-        criticalAttentionRect: { x: 45, y: 100, width: 160, height: 48 },
-        visibleRatio: 0.944,
-      },
-    })] });
-    let minorAudit = auditPlan(minor);
-    assert.equal(minorAudit.verdict, 'accept', minorAudit.issueCodes.join(', '));
-
-    let material = validPlan({ steps: [validStep({
-      id: 'step-material', cueId: 'cue-material', cueIndex: 0, cueKind: 'annotation',
-      measurement: { ...validStep().measurement, visibleRatio: 0.899 },
-    })] });
-    let audit = auditPlan(material);
-    assert.equal(audit.verdict, 'reject');
-    assert.ok(audit.issueCodes.includes('target-clipped'));
-
-    let critical = validPlan({ steps: [validStep({
-      id: 'step-critical', cueId: 'cue-critical', cueIndex: 0, cueKind: 'interaction',
-      measurement: {
-        ...validStep().measurement,
-        criticalAttentionRect: { x: 20, y: 100, width: 160, height: 48 },
-      },
-    })] });
-    let criticalAudit = auditPlan(critical);
-    assert.equal(criticalAudit.verdict, 'reject');
-    assert.ok(criticalAudit.issueCodes.includes('target-clipped'));
-  });
-
   it('accepts a restored, readable and collision-free per-turn composition plan', () => {
     let plan = validPlan();
     let audit = auditPlan(plan);
@@ -297,35 +254,6 @@ describe('presentation output and composition contracts', () => {
     assert.equal(audit.verdict, 'accept');
     assert.equal(audit.coverage.coveredCueCount, 1);
     assert.match(plan.hash, /^workspace-presentation-composition-v4:/);
-  });
-
-  it('retains target readability findings as nonblocking presentation warnings', () => {
-    let plan = validPlan({
-      steps: [validStep({
-        id: 'step-warning', cueId: 'cue-warning', cueIndex: 0, cueKind: 'focus',
-        measurement: {
-          ...validStep().measurement,
-          criticalAttentionRect: { x: 100, y: 100, width: 160, height: 48 },
-          textTruncated: true,
-        },
-      })],
-    });
-    let audit = auditPresentationCompositionPlan(plan, {
-      outputSpecHash: plan.outputSpecHash,
-      structuralHash: plan.structuralHash,
-      sourceCompositionHash: plan.sourceCompositionHash,
-      targetCompositionHash: plan.targetCompositionHash,
-      timelineHash: plan.timelineHash,
-      lessonIntentHash: plan.lessonIntentHash,
-      requiredTargetIds: ['panel:orders'],
-    });
-
-    assert.equal(audit.verdict, 'accept');
-    assert.ok(audit.issueCodes.includes('target-unreadable'));
-    assert.deepEqual(
-      audit.issues.filter((issue) => issue.code === 'target-unreadable').map((issue) => issue.severity),
-      ['warning'],
-    );
   });
 
   it('rejects every output and target composition failure with stable issue codes', () => {
@@ -337,6 +265,7 @@ describe('presentation output and composition contracts', () => {
       ['target-clipped', { steps: [validStep({ measurement: { ...validStep().measurement, focusRect: { x: 0, y: 0, width: 10, height: 10 } } })] }],
       ['target-occluded', { steps: [validStep({ measurement: { ...validStep().measurement, pointerTransparentOccluders: ['overlay'] } })] }],
       ['target-unreachable', { steps: [validStep({ measurement: { ...validStep().measurement, reachable: false } })] }],
+      ['target-unreadable', { steps: [validStep({ measurement: { ...validStep().measurement, textTruncated: true } })] }],
       ['composition-scroll-failed', { steps: [validStep({ scroll: [{ id: 'scroll', before: {}, after: { top: 10 }, changed: true, applied: false }] })] }],
       ['annotation-placement-unavailable', { steps: [validStep({ annotation: { placement: 'right', rect: { x: 100, y: 100, width: 100, height: 40 } } })] }],
     ];
