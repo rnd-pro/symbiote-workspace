@@ -10,7 +10,7 @@ Everything below was measured against the published `1.2.3` and against
 ## Check your project first
 
 ```bash
-node node_modules/symbiote-workspace/scripts/report-blocked-imports.mjs <your-project>
+node node_modules/symbiote-workspace/scripts/report-blocked-imports.js <your-project>
 ```
 
 It walks a checkout, reports every `symbiote-workspace` specifier that would now

@@ -7,7 +7,7 @@
 // at the first screen that needed it. This walks a checkout and names every
 // specifier that would fail, so the migration is a list rather than a surprise.
 //
-//   node scripts/report-blocked-imports.mjs <path-to-project> [more paths...]
+//   node scripts/report-blocked-imports.js <path-to-project> [more paths...]
 //
 // Exit code is 1 when something would fail, 0 otherwise, so it can gate a build.
 
