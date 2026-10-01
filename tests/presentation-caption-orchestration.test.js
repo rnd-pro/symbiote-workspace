@@ -56,19 +56,28 @@ function fixture() {
       ],
     }],
   });
+  // The fixture presents one narrator, so it says so on both sides: the output
+  // declares the speaker and the alignment declares the voice that owns the
+  // turn. The alignment used to carry a speaker with no declaration at all,
+  // which is a presentation whose speaker identity nothing can check — and it
+  // defaulted the output to `dialogue`, so the two disagreed.
+  let narrator = timeline.turns[0].persona;
   let output = normalizePresentationOutputSpec({
     width: 1920,
     height: 1080,
     fps: 30,
     dpr: 1,
+    speakerMode: 'single',
+    speakerId: narrator,
     captions: { enabled: true, mode: 'karaoke', placement: 'bottom' },
   });
   let alignedSequence = createPresentationAlignedSequence(timeline, {
     media: { hash: 'audio:test', durationMs: 3000, locale: 'en-US' },
+    voice: { mode: 'single', speakerId: narrator },
     turns: [{
       startMs: 0,
       endMs: 3000,
-      speaker: timeline.turns[0].persona,
+      speaker: narrator,
       transcript: timeline.turns[0].text,
       words: [],
     }],
@@ -194,6 +203,9 @@ describe('planCaptionPlacements orchestration', () => {
     });
     input.alignedSequence = createPresentationAlignedSequence(input.timeline, {
       media: { hash: 'audio:test', durationMs: 6000, locale: 'en-US' },
+      // Rebuilt for two turns, so it declares the voice again: without a
+      // declaration there is no owner for a speaker to be checked against.
+      voice: { mode: 'single', speakerId: input.timeline.turns[0].persona },
       turns: [{
         startMs: 0,
         endMs: 6000,

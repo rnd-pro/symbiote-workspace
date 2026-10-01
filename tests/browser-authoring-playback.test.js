@@ -32,7 +32,10 @@ function fixture() {
   let { project } = createPresentationAuthoringProjectFromTimeline(timeline);
   let alignedSequence = createPresentationAlignedSequence(timeline, {
     media: { hash: 'sha256-browser-authoring-audio', durationMs: 1200, locale: 'en-US' },
-    turns: [{ startMs: 0, endMs: 1200, transcript: '', words: [] }],
+    // The transcript is the evidence that this turn was said, so it is the
+    // authored text — an empty one is a claim that nothing was, which the
+    // validator now refuses instead of quietly discarding.
+    turns: [{ startMs: 0, endMs: 1200, transcript: timeline.turns[0].text, words: [] }],
   });
   let schedule = createPresentationScheduleV2(project, alignedSequence);
   return { project, alignedSequence, schedule };
