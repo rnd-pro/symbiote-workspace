@@ -94,6 +94,7 @@
     "examples/",
     "docs/",
     "README.md",
+    "MIGRATION.md",
     "llms.txt",
     "LICENSE",
     "CHANGELOG.md"
