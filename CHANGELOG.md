@@ -24,6 +24,13 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- `mountWorkspace` now **requires** a persistence adapter that can commit
+  atomically when one is supplied, refusing with
+  `workspace_atomic_persistence_required` otherwise. An adapter that claims
+  `atomicCommit: true` without implementing `compareAndSet` is refused: a host
+  may declare that it needs nothing from the library, but it may not claim
+  support it does not have. A host that genuinely persists nothing can pass
+  `requireAtomicPersistence: false`; silence alone never opts a host out.
 - `assessUpdateReadiness` reports, before the first update, whether a host can be
   updated in place. Findings carry severities, a detail, and a remedy; a runtime
   that is present but not vouched for is a warning rather than a blocker.

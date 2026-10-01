@@ -384,6 +384,7 @@ import {
   normalizePresentationOutputSpec,
 } from './runtime/presentation-output.js';
 import { createWorkspaceState } from './runtime/workspace-state.js';
+import { supportsAtomicCommit } from './runtime/documents.js';
 
 function isObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -1919,6 +1920,23 @@ export function applyWorkspaceTheme(config, root, options = {}) {
 export function mountWorkspace(config, container, options = {}) {
   if (!container || typeof container.appendChild !== 'function') {
     throw new Error('mountWorkspace requires a DOM container element.');
+  }
+
+  // A persistence adapter that cannot compare-and-set cannot honour a commit
+  // that reports what it did. Declaring that support is mandatory, not advisory:
+  // a host may declare that it needs nothing from us, but it may not claim
+  // atomic support it does not have.
+  if (options.persistence && !supportsAtomicCommit(options.persistence)) {
+    if (options.requireAtomicPersistence !== false) {
+      let refusal = new Error(
+        'mountWorkspace requires a persistence adapter that can compare-and-set. An adapter that ' +
+          'cannot declare atomicCommit: true and implement compareAndSet would let a commit report ' +
+          'a write that did not happen. Pass requireAtomicPersistence: false only if nothing is persisted.',
+      );
+      refusal.code = 'workspace_atomic_persistence_required';
+      refusal.recoverable = true;
+      throw refusal;
+    }
   }
 
   let loader = options.loader || loadWorkspaceConfig;
