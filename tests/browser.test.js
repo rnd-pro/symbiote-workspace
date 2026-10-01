@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   applyWorkspaceTheme,
   collectWorkspaceInterfaceContext,
+  createPresentationTimelineHash,
   listPresentationCompositionCueSlots,
   mountWorkspace,
   normalizePresentationOutputSpec,
