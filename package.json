@@ -13,57 +13,65 @@
       "import": "./browser.js",
       "default": "./browser.js"
     },
-    "./schema": {
-      "import": "./schema/index.js",
-      "default": "./schema/index.js"
-    },
-    "./schema/*": "./schema/*",
-    "./loader": {
-      "import": "./loader/index.js",
-      "default": "./loader/index.js"
+    "./catalog": {
+      "import": "./catalog/index.js",
+      "default": "./catalog/index.js"
     },
     "./constructor": {
       "import": "./constructor/index.js",
       "default": "./constructor/index.js"
     },
-    "./catalog": {
-      "import": "./catalog/index.js",
-      "default": "./catalog/index.js"
-    },
-    "./sharing": {
-      "import": "./sharing/index.js",
-      "default": "./sharing/index.js"
-    },
-    "./validation": {
-      "import": "./validation/index.js",
-      "default": "./validation/index.js"
-    },
-    "./plugins": {
-      "import": "./plugins/index.js",
-      "default": "./plugins/index.js"
-    },
-    "./server": {
-      "import": "./server/index.js",
-      "default": "./server/index.js"
-    },
     "./handlers": {
       "import": "./handlers/index.js",
       "default": "./handlers/index.js"
+    },
+    "./loader": {
+      "import": "./loader/index.js",
+      "default": "./loader/index.js"
     },
     "./mcp": {
       "import": "./mcp/index.js",
       "default": "./mcp/index.js"
     },
+    "./package.json": "./package.json",
+    "./plugins": {
+      "import": "./plugins/index.js",
+      "default": "./plugins/index.js"
+    },
     "./runtime": {
       "import": "./runtime/index.js",
       "default": "./runtime/index.js"
     },
-    "./runtime/*": "./runtime/*",
+    "./runtime/composition-commit-point.js": "./runtime/composition-commit-point.js",
+    "./runtime/composition-registry.js": "./runtime/composition-registry.js",
+    "./runtime/portable-value.js": "./runtime/portable-value.js",
+    "./runtime/presentation.js": "./runtime/presentation.js",
+    "./runtime/workspace-state.js": "./runtime/workspace-state.js",
+    "./schema": {
+      "import": "./schema/index.js",
+      "default": "./schema/index.js"
+    },
+    "./schema/canonical-json.js": "./schema/canonical-json.js",
+    "./schema/composition-descriptor.js": "./schema/composition-descriptor.js",
+    "./schema/constants.js": "./schema/constants.js",
+    "./schema/module-capability.js": "./schema/module-capability.js",
+    "./schema/workspace-schema.js": "./schema/workspace-schema.js",
+    "./server": {
+      "import": "./server/index.js",
+      "default": "./server/index.js"
+    },
+    "./sharing": {
+      "import": "./sharing/index.js",
+      "default": "./sharing/index.js"
+    },
     "./ssr": {
       "import": "./ssr/index.js",
       "default": "./ssr/index.js"
     },
-    "./package.json": "./package.json"
+    "./validation": {
+      "import": "./validation/index.js",
+      "default": "./validation/index.js"
+    }
   },
   "files": [
     "index.js",
