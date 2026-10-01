@@ -226,10 +226,16 @@ values. Each is named explicitly.
 ## Update Readiness
 
 A workspace update is applied in place by the runtime's own `updateConfig`,
-`updateWorkspace`, or `applyConfig`. A host that provides none of these cannot be
-updated safely: remounting destroys whatever state lived only in the old mount.
+`updateWorkspace`, or `applyConfig`. **A host that provides none of these is
+refused** with `workspace_update_refused` — the update is refused *before
+anything is destroyed*, so a refused update keeps both the mount and the state
+that lived only in it.
 
-Rather than discover that on the first update, ask in advance:
+Earlier releases destroyed the old mount and mounted a replacement instead. That
+was silent data loss for any state not round-tripped through the store, so it is
+gone rather than deprecated.
+
+You can find out before the first update:
 
 ```js
 import { assessUpdateReadiness } from 'symbiote-workspace';
@@ -251,14 +257,8 @@ to parse prose while a host that wants to warn early still sees the rest. A
 runtime that is present but not vouched for is a **warning**, not a blocker: the
 contract cannot tell a real update from a hopeful one.
 
-To refuse rather than remount:
-
-```js
-mountWorkspace(element, config, { strictUpdates: true });
-```
-
-Strict mode refuses with `workspace_update_refused` **before anything is
-destroyed**, so a strict host loses neither its mount nor its state.
+To make a host upgradeable, give its runtime one of those three methods. Nothing
+else is required, and there is no option to opt back into remounting.
 
 ## Quick Start
 

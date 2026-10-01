@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## Unreleased
+## 2.0.0-alpha.1
 
 ### Breaking
 
@@ -12,14 +12,21 @@ All notable changes to this project will be documented in this file.
   named explicitly, so a file inside the package can be moved or renamed without
   a major version.
 
+### Removed
+
+- A workspace update is no longer destroyed and remounted when the runtime offers
+  no update method. It is refused with `workspace_update_refused` **before
+  anything is destroyed**, so a refused update keeps both the mount and the state
+  that lived only in it. `strictUpdates` is gone with it: refusing is no longer
+  opt-in, and there is one behaviour rather than two.
+- `lastUpdatePath` no longer reports `destroy-remount`, because that path no longer
+  exists.
+
 ### Added
 
 - `assessUpdateReadiness` reports, before the first update, whether a host can be
   updated in place. Findings carry severities, a detail, and a remedy; a runtime
   that is present but not vouched for is a warning rather than a blocker.
-- `mountWorkspace` accepts `strictUpdates`, which refuses an update with
-  `workspace_update_refused` before anything is destroyed, instead of remounting
-  and losing state that lived only in the old mount.
 - `resolveSlotOwner` exports the ownership axis a composition state slot resolves
   to, so consumers no longer repeat the mapping.
 - Composition descriptors may declare `views`; the contract validates a portable

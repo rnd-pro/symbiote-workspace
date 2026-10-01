@@ -1680,7 +1680,6 @@ export function collectWorkspaceInterfaceContext(config, root = null, options = 
 // it from whether the call threw.
 const UPDATE_PATHS = Object.freeze({
   runtimeUpdate: 'runtime-update',
-  destroyRemount: 'destroy-remount',
 });
 
 // Destroy is called on a path that is about to fail; a throwing destroy must not
@@ -2033,11 +2032,10 @@ export function mountWorkspace(config, container, options = {}) {
       });
     } else if (!runtimeMount && options.renderDefaultPreview !== false) {
       runtimeHandle = updateDefaultWorkspacePreview(nextConfig, wrapper, runtimeHandle, router);
-    } else if (runtimeMount) {
-      // Strict mode refuses before anything is destroyed. Opt-in, because
-      // removing the fallback outright is a behaviour change and a preparatory
-      // release has to keep honouring the contract it already published.
-      if (options.strictUpdates) {
+      } else if (runtimeMount) {
+        // The runtime offered no update method. The old mount is not destroyed:
+        // remounting loses whatever state lived only in it, and doing that
+        // silently is worse than refusing. Refusal is the contract.
         let refused = updateRefusedError(
           `Refusing to update "${nextConfig?.name ?? 'workspace'}" in place: the runtime offers no update method, and remounting would lose state that lived only in the old mount.`,
         );
@@ -2045,30 +2043,9 @@ export function mountWorkspace(config, container, options = {}) {
           path: 'update-refused',
           reason: refused.message,
           revision: commitResult.revision,
-          strict: true,
         });
         throw refused;
       }
-      if (typeof runtimeHandle?.destroy === 'function') runtimeHandle.destroy();
-      runtimeHandle = runtimeMount.call(options.runtimeController, {
-        config: nextConfig,
-        element: wrapper,
-        loaderResult: nextLoaderResult,
-        router,
-        workspaceState,
-        revision: commitResult.revision,
-      });
-      updatePath = UPDATE_PATHS.destroyRemount;
-      // The runtime offered no update method, so the old mount was destroyed and
-      // replaced. Until that becomes an error it has to be observable: a host
-      // that assumed an in-place update must be able to see that it got a
-      // remount instead, and that state living only in the old mount is gone.
-      reportUpdateFallback({
-        path: updatePath,
-        reason: 'runtime provided no updateConfig/updateWorkspace/applyConfig',
-        revision: commitResult.revision,
-      });
-    }
 
     currentConfig = nextConfig;
     loaderResult = nextLoaderResult;
