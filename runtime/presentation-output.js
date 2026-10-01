@@ -579,7 +579,9 @@ export function auditPresentationCompositionPlan(plan = {}, expectations = {}) {
       || visibleRect.height < 16
       || measurement.visibleRatio < 0.9
       || !rectContains(output.contentRect, visibleRect, 1)
-    ) add('target-clipped', path, 'target focus rectangle is clipped or outside usable content');
+    // Named for what it judges: the geometry that is visible, not the focus
+    // rectangle, which browser chrome may trim while the target stays usable.
+    ) add('target-clipped', path, 'target visible rectangle is clipped or outside usable content');
     if (step.cueKind === 'focus' || step.cueKind === 'interaction') {
       let criticalAttentionRect = measurement.criticalAttentionRect
         ? translateRect(
@@ -977,5 +979,17 @@ export function planCaptionPlacements(input = {}) {
   return {
     ...composition,
     hash: `${PRESENTATION_CAPTION_COMPOSITION_SCHEMA_VERSION}:${computeIntegrity(composition)}`,
+    // The audit travels with an accepted composition as well as with a rejected
+    // one. A readability warning that only existed on the throw path was a
+    // warning nobody could read, which is the same as no warning at all.
+    //
+    // Deliberately outside the hashed body: the hash covers what the plan claims,
+    // and the review is an observation about that claim, not part of it.
+    review: {
+      verdict: compositionAudit.verdict,
+      issueCodes: compositionAudit.issueCodes,
+      issues: compositionAudit.issues,
+      coverage: compositionAudit.coverage,
+    },
   };
 }

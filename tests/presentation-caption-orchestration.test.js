@@ -6,6 +6,7 @@ import {
   PRESENTATION_CAPTION_COMPOSITION_SCHEMA_VERSION,
   PRESENTATION_CAPTION_TIMING_TOLERANCE_MS,
   bindCaptionCuesToAlignedSequence,
+  auditPresentationCompositionPlan,
   createPresentationCompositionPlan,
   normalizePresentationOutputSpec,
   planCaptionPlacements,
@@ -229,8 +230,12 @@ describe('planCaptionPlacements orchestration', () => {
     assert.equal(cue.placement.zone, 'top');
     assert.ok(cue.decisionEvidence.activeAvoidRegionIds.includes('focus:0.0'));
     assert.ok(cue.decisionEvidence.activeAvoidRegionIds.includes('annotation:0.2'));
+    // The digest covers what the composition claims, so the projection has to
+    // be the same body without the digest. The review is an observation about
+    // that claim and is deliberately outside it.
     let projection = { ...composition };
     delete projection.hash;
+    delete projection.review;
     assert.equal(composition.hash, `${PRESENTATION_CAPTION_COMPOSITION_SCHEMA_VERSION}:${computeIntegrity(projection)}`);
   });
 
@@ -382,10 +387,16 @@ describe('planCaptionPlacements orchestration', () => {
     let cases = [
       ['target-hidden', (step) => ({ ...step.measurement, visible: false })],
       ['target-unreachable', (step) => ({ ...step.measurement, reachable: false })],
-      ['target-clipped', (step) => ({ ...step.measurement, focusRect: { x: 0, y: 0, width: 10, height: 10 } })],
+      // Clipping is judged on what is visible: browser chrome can trim focus
+      // pixels while the target stays usable, so a shrunken focusRect on its own
+      // is not a clipped target.
+      ['target-clipped', (step) => ({ ...step.measurement, visibleRect: { x: 0, y: 0, width: 10, height: 10 } })],
       ['target-occluded', (step) => ({ ...step.measurement, occluders: ['blocking-overlay'] })],
-      ['target-unreadable', (step) => ({ ...step.measurement, hasText: true, fontSizePx: 8 })],
     ];
+    // Readability is reported, not refused. It is asserted separately below
+    // because a warning reaches the plan and leaves the verdict alone: asserting
+    // a rejection here would demand the behaviour the code was changed away from.
+    const unreadableCase = (step) => ({ ...step.measurement, hasText: true, fontSizePx: 8 });
     for (let [issueCode, mutateMeasurement] of cases) {
       let input = fixture();
       let step0 = input.compositionPlan.steps[0];
@@ -397,11 +408,42 @@ describe('planCaptionPlacements orchestration', () => {
           input.compositionPlan.steps[2],
         ],
       });
+      // The plan records the composition it was built against; rebuilding it
+      // without re-deriving the hashes makes its own output context stale.
+      input.sourceCompositionHash = input.compositionPlan.sourceCompositionHash;
+      input.targetCompositionHash = input.compositionPlan.targetCompositionHash;
       assert.throws(
         () => planCaptionPlacements(input),
         (error) => error.code === 'PRESENTATION_COMPOSITION_REJECTED'
           && error.review.issueCodes.includes(issueCode),
         issueCode,
+      );
+    }
+
+    {
+      let input = fixture();
+      let step0 = input.compositionPlan.steps[0];
+      input.compositionPlan = createPresentationCompositionPlan({
+        ...input.compositionPlan,
+        steps: [
+          { ...step0, measurement: unreadableCase(step0) },
+          input.compositionPlan.steps[1],
+          input.compositionPlan.steps[2],
+        ],
+      });
+      input.sourceCompositionHash = input.compositionPlan.sourceCompositionHash;
+      input.targetCompositionHash = input.compositionPlan.targetCompositionHash;
+
+      // The real path, not a direct audit: the caption planner supplies the
+      // composition identities and the output and timeline hashes the audit
+      // needs, so calling the auditor bare would report a stale context that
+      // only this harness invented.
+      let composition = planCaptionPlacements(input);
+      let issues = composition.review?.issues ?? [];
+      assert.equal(composition.review?.verdict, 'accept', 'a warning does not turn the verdict into a rejection');
+      assert.ok(
+        issues.some((issue) => issue.code === 'target-unreadable' && issue.severity === 'warning'),
+        `expected a readability warning to reach the plan, got: ${issues.map((i) => `${i.code}:${i.severity}`).join(', ')}`,
       );
     }
 

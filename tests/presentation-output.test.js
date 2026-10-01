@@ -262,19 +262,34 @@ describe('presentation output and composition contracts', () => {
       ['composition-restore-mismatch', { restoredStructuralHash: 'stale' }],
       ['composition-simulation-active', { simulationFrozen: false }],
       ['target-hidden', { steps: [validStep({ measurement: { ...validStep().measurement, visible: false } })] }],
-      ['target-clipped', { steps: [validStep({ measurement: { ...validStep().measurement, focusRect: { x: 0, y: 0, width: 10, height: 10 } } })] }],
+      // The rule judges the geometry that is actually visible, not the focus
+      // rectangle: browser chrome can trim focus pixels while the target stays
+      // usable, so shrinking focusRect alone is not clipping. Shrinking what is
+      // seen is.
+      ['target-clipped', { steps: [validStep({ measurement: { ...validStep().measurement, visibleRect: { x: 0, y: 0, width: 10, height: 10 } } })] }],
       ['target-occluded', { steps: [validStep({ measurement: { ...validStep().measurement, pointerTransparentOccluders: ['overlay'] } })] }],
       ['target-unreachable', { steps: [validStep({ measurement: { ...validStep().measurement, reachable: false } })] }],
-      ['target-unreadable', { steps: [validStep({ measurement: { ...validStep().measurement, textTruncated: true } })] }],
+      // Readability is reported, not refused: a truncated target is a warning
+      // that reaches the plan, and the verdict only rejects on an error. The
+      // case below expects the code and the accept verdict together.
+      ['target-unreadable', { steps: [validStep({ measurement: { ...validStep().measurement, textTruncated: true } })] }, 'warning'],
       ['composition-scroll-failed', { steps: [validStep({ scroll: [{ id: 'scroll', before: {}, after: { top: 10 }, changed: true, applied: false }] })] }],
       ['annotation-placement-unavailable', { steps: [validStep({ annotation: { placement: 'right', rect: { x: 100, y: 100, width: 100, height: 40 } } })] }],
     ];
 
-    for (let [expectedCode, overrides] of cases) {
+    for (let [expectedCode, overrides, expectedSeverity = 'error'] of cases) {
       let plan = validPlan(overrides);
       let audit = auditPlan(plan);
-      assert.equal(audit.verdict, 'reject', expectedCode);
+      // A warning reaches the plan and leaves the verdict alone; only an error
+      // rejects. Asserting 'reject' for a warning code would demand the
+      // behaviour the code was changed away from.
+      assert.equal(audit.verdict, expectedSeverity === 'error' ? 'reject' : 'accept', expectedCode);
       assert.ok(audit.issueCodes.includes(expectedCode), `${expectedCode}: ${audit.issueCodes.join(', ')}`);
+      assert.equal(
+        audit.issues.find((issue) => issue.code === expectedCode)?.severity,
+        expectedSeverity,
+        `${expectedCode} severity`,
+      );
     }
   });
 
