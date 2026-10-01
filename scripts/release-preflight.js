@@ -65,9 +65,12 @@ let requiredPresentationDependencies = Object.freeze({
     dev: '0.3.0-alpha.13',
     peer: '>=0.3.0-alpha.13',
   }),
+  // Matches the manifest. This constant is the exact value the gate requires, so
+  // bumping the dependency without bumping it here fails the release for a reason
+  // that reads like a product problem and is a bookkeeping one.
   'symbiote-ui': Object.freeze({
-    dev: '0.3.0-alpha.63',
-    peer: '>=0.3.0-alpha.63',
+    dev: '0.3.0-alpha.71',
+    peer: '>=0.3.0-alpha.71',
   }),
 });
 

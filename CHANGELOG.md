@@ -2,6 +2,43 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Fixed
+
+- The root barrel was restored to the surface `tests/browser-entrypoint.test.js`
+  specifies. It re-exports runtime names through a hand-written list that had
+  fallen 58 names behind, so a consumer could not reach from the root what the
+  browser entry reached. Every added name is exported by `./runtime/index.js`;
+  the six names the test lists as browser-only are the only intentional
+  difference, and they are DOM-bound by contract.
+- `package-lock.json` was tracked at `1.1.1` while `package.json` was
+  `2.0.0-alpha.1`. The release gate read that as a version mismatch, correctly.
+
+### Added
+
+- `MIGRATION.md` describes the 1.x to 2.0 move, measured against the published
+  `1.2.3`: of the 89 files the two removed wildcards reached, 82 are no longer
+  reachable, and the guide says where each class of import goes instead.
+- `scripts/report-blocked-imports.js` walks a consumer's checkout and names every
+  `symbiote-workspace` specifier that would now fail, exiting non-zero so it can
+  gate a build. Browser import-map prefix mappings are reported separately,
+  because those do not go through `exports` at all.
+
+### Changed
+
+- `tests/browser.test.js` imported nothing for the `createPresentationTimelineHash`
+  its planner called. The library had handled that correctly — it wrapped the
+  planner's error as `TOUR_REPLAN_UNAVAILABLE` rather than letting it escape.
+
+### Known
+
+- Roughly 100 tests fail on the aligned-sequence contract in
+  `runtime/presentation/align.js`, which validates the same structure in three
+  places that disagree. Most of those suites previously failed with a single
+  load error instead of running, which is why the failure surface looked like
+  four tests. See the project debt ledger; this blocks a stable release.
+
 ## 2.0.0-alpha.1
 
 ### Breaking
