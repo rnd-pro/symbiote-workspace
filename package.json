@@ -1,6 +1,6 @@
 {
   "name": "symbiote-workspace",
-  "version": "2.0.0-alpha.1",
+  "version": "2.0.0",
   "type": "module",
   "description": "Toolkit for turning chat intent into portable, executable Symbiote workspaces.",
   "main": "index.js",
